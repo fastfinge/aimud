@@ -15,6 +15,18 @@ from the game is a different kind of act from smashing a chair.
 from evennia.utils import logger
 
 
+def forget_narrations(obj):
+    """
+    Drop the cached descriptions of what verbs do to this object.
+
+    Rules survive -- what "read" means has not changed -- but the words
+    describing this particular thing were written about the thing it used to
+    be, and would otherwise be replayed for something that no longer matches.
+    """
+    if obj.db.ai_commands:
+        obj.db.ai_commands = {}
+
+
 def _protected(obj, room):
     """True for things a verb must never destroy or carry away."""
     from evennia.objects.objects import DefaultCharacter
@@ -119,10 +131,22 @@ def _apply_one(actor, room, effect, bound, world_root):
         obj = _resolve(effect, "name", bound, room, actor)
         if obj is None or _protected(obj, room):
             return None
+        changed = False
         if effect.get("new_name"):
             obj.key = str(effect["new_name"]).strip()
+            changed = True
         if effect.get("new_description"):
             obj.db.desc = str(effect["new_description"]).strip()
+            changed = True
+        if effect.get("affordances") is not None:
+            obj.db.affordances = sorted(
+                {str(a).lower().strip() for a in effect["affordances"] if a}
+            )
+        if changed:
+            # Narrations were written about what this object was. A charred
+            # stub is not the candle whose description was cached, so the
+            # stored text is dropped and rewritten on next use.
+            forget_narrations(obj)
         return None
 
     if etype == "set_state":

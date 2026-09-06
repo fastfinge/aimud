@@ -309,24 +309,31 @@ class NPC(ObjectParent, DefaultObject):
                 )
 
         elif tool_name == "destroy":
+            # Routed through the effect layer so the same guards apply as to a
+            # player's verb: exits and player characters are never destroyed.
             obj_name = str(args.get("object_name", "")).strip()
             if obj_name:
-                obj, _ = _find_one(self, obj_name, location=room)
-                if not obj:
-                    obj, _ = _find_one(self, obj_name, location=self)
-                if obj and obj is not self and obj is not room:
-                    label = obj.key
-                    obj.delete()
-                    room.msg_contents(f"{self.key} destroys the {label}.")
+                from world.effects import apply as apply_effects
+
+                said = apply_effects(
+                    self, room, [{"type": "destroy_object", "name": obj_name}],
+                    world_root=room.db.world_root,
+                )
+                for line in said:
+                    room.msg_contents(f"{self.key} destroys something. {line}")
 
         elif tool_name == "modify":
             obj_name = str(args.get("object_name", "")).strip()
             if obj_name:
-                obj, _ = _find_one(self, obj_name, location=room)
-                if not obj:
-                    obj, _ = _find_one(self, obj_name, location=self)
-                if obj and obj is not self and obj is not room:
-                    if "new_name" in args:
-                        obj.key = str(args["new_name"]).strip()
-                    if "new_description" in args:
-                        obj.db.desc = str(args["new_description"]).strip()
+                from world.effects import apply as apply_effects
+
+                apply_effects(
+                    self, room,
+                    [{
+                        "type": "modify_object",
+                        "name": obj_name,
+                        "new_name": args.get("new_name"),
+                        "new_description": args.get("new_description"),
+                    }],
+                    world_root=room.db.world_root,
+                )

@@ -140,42 +140,77 @@ def _promoted(item, role, bound, unbound, resume, on_message):
     resume()
 
 
+def _busy(obj, verb):
+    """True if this verb is already in flight against this object."""
+    return verb in (obj.ndb.busy_verbs or set())
+
+
+def _hold(obj, verb):
+    busy = set(obj.ndb.busy_verbs or set())
+    busy.add(verb)
+    obj.ndb.busy_verbs = busy
+
+
+def _drop(obj, verb):
+    busy = set(obj.ndb.busy_verbs or set())
+    busy.discard(verb)
+    obj.ndb.busy_verbs = busy
+
+
 def _with_bindings(caller, room, account, raw, verb, bound, on_message, allow_effects):
     world_root = _world_root(room)
+
+    # Learning a rule and writing a narration are network round trips, and the
+    # effects land only once they return. Without a hold on the object itself,
+    # two people pulling the same lever in that window both apply its effects.
+    # The lock is per object AND verb, so one person reading a notice does not
+    # stop another burning it.
+    anchor = _anchor(bound)
+    if anchor is not None:
+        if _busy(anchor, verb):
+            on_message("Someone else is already doing that.", "")
+            return
+        _hold(anchor, verb)
+
+    def release(actor_text, room_text=""):
+        if anchor is not None:
+            _drop(anchor, verb)
+        _release(caller, on_message, actor_text, room_text)
+
     key = verbs.rule_key(verb, bound)
     rule = verb_gen.get_rule(world_root, key)
 
     if rule is not None:
-        _with_rule(caller, room, account, raw, verb, bound, rule, on_message,
+        _with_rule(caller, room, account, raw, verb, bound, rule, release,
                    allow_effects, world_root)
         return
 
     def learned(new_rule):
         verb_gen.store_rule(world_root, key, new_rule)
-        _with_rule(caller, room, account, raw, verb, bound, new_rule, on_message,
+        _with_rule(caller, room, account, raw, verb, bound, new_rule, release,
                    allow_effects, world_root)
 
     verb_gen.learn_rule(
         account, world_root, verb, bound, caller, raw,
         on_success=learned,
-        on_error=lambda err: _release(caller, on_message, f"|r{err}|n"),
+        on_error=lambda err: release(f"|r{err}|n"),
     )
 
 
-def _with_rule(caller, room, account, raw, verb, bound, rule, on_message,
+def _with_rule(caller, room, account, raw, verb, bound, rule, release,
                allow_effects, world_root):
     if not rule.get("valid", True):
-        _release(caller, on_message, rule.get("reason") or "You can't do that.")
+        release(rule.get("reason") or "You can't do that.")
         return
 
     complaint = verbs.check(rule.get("requires"), bound, caller)
     if complaint:
-        _release(caller, on_message, complaint)
+        release(complaint)
         return
 
     cached = _cached_narration(bound, verb)
     if cached is not None and not rule.get("repeatable"):
-        _release(caller, on_message, cached.get("actor", ""), cached.get("room", ""))
+        release(cached.get("actor", ""), cached.get("room", ""))
         return
 
     def _finish(actor_text, room_text):
@@ -188,7 +223,7 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, on_message,
                                   world_root=world_root)
         visible = " ".join([room_text] + extra).strip()
         _remember(caller, raw, bound, actor_text, extra)
-        _release(caller, on_message, actor_text, visible)
+        release(actor_text, visible)
 
     if cached is not None:
         _finish(cached.get("actor", ""), cached.get("room", ""))
@@ -197,7 +232,7 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, on_message,
     verb_gen.narrate(
         account, verb, bound, caller, raw,
         on_success=_finish,
-        on_error=lambda err: _release(caller, on_message, f"|r{err}|n"),
+        on_error=lambda err: release(f"|r{err}|n"),
     )
 
 
