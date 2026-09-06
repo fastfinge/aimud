@@ -36,7 +36,7 @@ class NPC(ObjectParent, DefaultObject):
     #: dropping in silence.
     KNOWN_TOOLS = frozenset([
         "say", "emote", "move", "get", "give", "attempt", "offer_quest",
-        "create", "destroy", "modify",
+        "set_goal", "create", "destroy", "modify",
     ])
 
     def at_object_creation(self):
@@ -234,6 +234,45 @@ class NPC(ObjectParent, DefaultObject):
             if obj is not self and obj.db.is_npc and npc_may_act(obj):
                 obj.witness(event_type, self.key, text, _depth=next_depth)
 
+    def _set_goal(self, want, room):
+        """
+        Take on something to work towards, said in the character's own words.
+
+        Turned into testable conditions by a separate call, for the same
+        reason quests are: a small dialogue model cannot produce typed
+        conditions in the middle of speaking in character. Rare enough not to
+        matter -- one call buys a purpose the planner then pursues for free.
+        """
+        from evennia.utils import logger
+
+        if not want:
+            return
+        account = self._find_account(room)
+        if not account:
+            return
+
+        def ready(conditions):
+            from world import goals
+
+            clean = goals.sanitise(conditions)
+            if not clean:
+                logger.log_info(
+                    f"{self.key}: wanted {want!r}, but it made no testable goal"
+                )
+                return
+            self.db.goal = clean
+            logger.log_info(f"{self.key} now wants: {goals.describe(clean, self)}")
+
+        from world.quest_gen import formalise_goal
+
+        formalise_goal(
+            account, self, want,
+            on_success=ready,
+            on_error=lambda err: logger.log_info(
+                f"{self.key}: could not turn {want!r} into a goal: {err}"
+            ),
+        )
+
     def _offer_quest(self, args, room):
         """
         Ask a player present to do something, in this NPC's own words.
@@ -319,9 +358,25 @@ class NPC(ObjectParent, DefaultObject):
         sometimes describe more than they do, so a rule that fails to bring
         about what it promised is set aside rather than tried forever.
         """
+        from world import goals
         from world.planner import check_outcome, plan_step
 
         world_root = room.db.world_root
+
+        # A goal that has been reached is done with. Leaving it set would
+        # leave the character permanently satisfied and unable to want
+        # anything else, because the planner would keep finding nothing to do.
+        goal = list(self.db.goal or [])
+        if goal and goals.satisfied(goal, self, world_root):
+            from evennia.utils import logger
+
+            self._add_to_history("action", self.key,
+                                 f"got what {self.key} wanted: "
+                                 f"{goals.describe(goal, self, world_root)}")
+            logger.log_info(f"{self.key} reached its goal; wanting nothing for now")
+            self.db.goal = []
+            return False
+
         action, rule_key, condition = plan_step(self, world_root)
         if not action:
             return False
@@ -409,6 +464,9 @@ class NPC(ObjectParent, DefaultObject):
                 room.msg_contents(f"{self.key} {action}")
                 self._add_to_history("emote", self.key, action)
                 self._notify_other_npcs(room, "emote", f"{self.key} {action}", _depth)
+
+        elif tool_name == "set_goal":
+            self._set_goal(str(args.get("want", "")).strip(), room)
 
         elif tool_name == "offer_quest":
             self._offer_quest(args, room)

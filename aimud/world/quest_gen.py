@@ -1,5 +1,8 @@
 """
-Turning what an NPC wants into a quest the game can test.
+Turning what a character wants into conditions the game can test.
+
+Used for two things that are the same job: a quest an NPC asks a player to
+do, and a goal an NPC sets for itself.
 
 An NPC asks for something in its own words -- "fetch me the chalk from the
 storeroom and I'll give you a token". Making that testable means naming real
@@ -165,3 +168,63 @@ def formalise(account, npc, target, request, offer, consequence, on_success, on_
     threads.deferToThread(
         _call_openrouter, api_key, model, messages
     ).addCallbacks(_done, _fail)
+
+
+_GOAL_SYSTEM = """You turn what a character wants into conditions a game can check.
+
+Respond with a single JSON object — no other text — matching:
+{"goal": [ ... ]}
+
+Each entry is one of:
+{"type": "holds",     "object": "brass key"}                   they are carrying it
+{"type": "delivered", "object": "letter", "to": "Clerk"}       they gave it to someone
+{"type": "state",     "object": "lamp", "is": ["lit"]}         its condition
+{"type": "gone",      "object": "rats"}                        it no longer exists
+{"type": "in_room",   "room": "Kitchen"}                       they went there
+
+Name objects and rooms as they are actually called in the list you are given.
+Give one or two conditions, and something reachable from where they are --
+this is what the character will do next, not their life's ambition. Return an
+empty list if what they want cannot be expressed this way."""
+
+
+def formalise_goal(account, npc, want, on_success, on_error):
+    """
+    Async. Turn a character's stated want into testable conditions.
+
+    Calls on_success([condition, ...]) or on_error(msg) in the main thread.
+    """
+    model = (account.get_model_for("quests")
+             or account.get_model_for("commands")
+             or "openai/gpt-4o-mini")
+    try:
+        api_key = account.get_openrouter_key()
+    except ValueError as e:
+        on_error(str(e))
+        return
+
+    room = npc.location
+    world = (room.db.world_description if room else "") or ""
+    messages = [
+        {"role": "system", "content": _GOAL_SYSTEM},
+        {
+            "role": "user",
+            "content": (
+                f"World: {world}\n\n"
+                f"{npc.key} wants: {want}\n\n"
+                f"{_surroundings(npc, npc)}\n\n"
+                f"Write this as checkable conditions."
+            ),
+        },
+    ]
+
+    def _done(content):
+        try:
+            data = _parse_json_object(content)
+            on_success(data.get("goal") or [])
+        except Exception as exc:
+            on_error(str(exc))
+
+    threads.deferToThread(
+        _call_openrouter, api_key, model, messages
+    ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))

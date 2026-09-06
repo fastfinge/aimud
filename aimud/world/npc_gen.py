@@ -167,6 +167,30 @@ NPC_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "set_goal",
+            "description": (
+                "Decide what you are going to work towards next, in your own "
+                "words: 'get the storeroom key', 'see the lamp in the chapel "
+                "lit', 'find out where the cook went'. You will then pursue it "
+                "on your own between conversations, so choose something you "
+                "could actually get done with what is around you. Use this "
+                "when you have nothing in particular you are working towards."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "want": {
+                        "type": "string",
+                        "description": "What you want to bring about, in a sentence",
+                    }
+                },
+                "required": ["want"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create",
             "description": "Create a new object in the room.",
             "parameters": {
@@ -371,7 +395,14 @@ def _want_line(npc):
 
     goal = list(npc.db.goal or [])
     if not goal:
-        return ""
+        # A character with nothing to pursue is asked to find something. The
+        # planner works at whatever is set here for free, so this is the one
+        # moment worth spending a call on: it buys purpose for a long while.
+        return (
+            "You are working towards nothing in particular. If anything here "
+            "suggests a purpose, set one with set_goal and you will pursue it "
+            "on your own between conversations.\n\n"
+        )
     room = npc.location
     world_root = room.db.world_root if room else None
     outstanding = [
