@@ -93,6 +93,14 @@ class NPC(ObjectParent, DefaultObject):
         account = self._find_account(room)
         if not account:
             return
+
+        # Working at a goal costs nothing: the world already knows what its
+        # verbs do, and that is the same thing a planner needs. Only when
+        # there is no useful step to take is the dialogue model asked what
+        # this character would do with itself.
+        if self._pursue_goal(room):
+            return
+
         self.ndb.reacting = True
         from world.npc_gen import generate_npc_idle
         generate_npc_idle(
@@ -302,6 +310,37 @@ class NPC(ObjectParent, DefaultObject):
 
         formalise(account, self, target, request, offer, consequence,
                   on_success=ready, on_error=failed)
+
+    def _pursue_goal(self, room):
+        """
+        Take one step towards this character's goal. True if something was done.
+
+        One step at a time, checked afterwards: effects are model-written and
+        sometimes describe more than they do, so a rule that fails to bring
+        about what it promised is set aside rather than tried forever.
+        """
+        from world.planner import check_outcome, plan_step
+
+        world_root = room.db.world_root
+        action, rule_key, condition = plan_step(self, world_root)
+        if not action:
+            return False
+
+        from world.worldgen import canonical_direction
+
+        if canonical_direction(action):
+            # The step is a way out; walking is not a verb attempt.
+            from commands.look_take_cmds import _find_one
+
+            exit_obj, _ = _find_one(self, action, location=room)
+            if exit_obj is None or getattr(exit_obj, "destination", None) is None:
+                return False
+            exit_obj.at_traverse(self, exit_obj.destination)
+            return True
+
+        self._attempt_verb(action, room)
+        check_outcome(self, world_root, condition, rule_key)
+        return True
 
     def _attempt_verb(self, action, room, _depth=0):
         """

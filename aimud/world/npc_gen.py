@@ -227,7 +227,8 @@ Respond with a single JSON object only — no other text:
 {
   "name": "Character Name (1-3 words)",
   "description": "2-4 sentences: what they look like, and nothing else",
-  "manner": "2-3 sentences: who they are and how they behave"
+  "manner": "2-3 sentences: who they are and how they behave",
+  "goal": [ ... ]
 }
 
 "description" is what a player sees when they look at this character. It is
@@ -249,6 +250,18 @@ It must NOT contain:
 
 "manner" is the opposite and is never shown to players: temperament, habits,
 what they want, how they speak and treat people. Put the character there.
+
+"goal" is the one thing this character is trying to bring about, written as
+conditions the game can check. Keep it small and near at hand -- something
+they could plausibly work at with what is around them, not a life ambition.
+Each entry is one of:
+{"type": "holds",     "object": "brass key"}          they want to be carrying it
+{"type": "state",     "object": "lamp", "is": ["lit"]} they want it to be so
+{"type": "in_room",   "room": "Kitchen"}               they want to get there
+{"type": "delivered", "object": "letter", "to": "Clerk"}
+{"type": "gone",      "object": "rats"}
+Name only things that plausibly exist in this world. Give an empty list for a
+character with nothing in particular to pursue.
 
 The character must fit naturally in the world and room described."""
 
@@ -509,6 +522,12 @@ def generate_npc(account, room, on_success, on_error):
             # players never see by looking, and which the character itself
             # needs in order to behave like anyone in particular.
             npc.db.manner = manner
+            # What they are trying to bring about. The planner works at this
+            # between conversations, so a character arrives already wanting
+            # something rather than waiting to be given a purpose.
+            from world import goals
+
+            npc.db.goal = goals.sanitise(data.get("goal"))
             npc.db.world_description = room.db.world_description
             on_success(npc)
         except Exception as exc:
