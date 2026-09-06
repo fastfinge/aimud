@@ -281,10 +281,13 @@ class NPC(ObjectParent, DefaultObject):
         } - NPC_FORBIDDEN_EFFECTS
 
         def deliver(actor_text, room_text=""):
-            visible = room_text or actor_text
+            # Only the third-person line is usable here. The actor line is
+            # written to whoever acted ("You touch a match to the wick"), and
+            # broadcasting that would tell the room it had done the thing.
+            visible = room_text
             if not visible:
                 return
-            room.msg_contents(f"{self.key}: {visible}")
+            room.msg_contents(visible)
             # The NPC's own record; _add_to_history also writes to its memory.
             self._add_to_history("action", self.key, visible)
             # Others present witness it too, through the depth-capped path so

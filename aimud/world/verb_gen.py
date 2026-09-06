@@ -71,15 +71,24 @@ _NARRATION_SYSTEM = """You narrate the result of an action in a text MUD.
 
 Respond with a single JSON object — no other text — matching:
 {"actor": "what the acting character experiences, 1-3 sentences",
- "room": "one short sentence others in the room see, or empty if nothing is visible"}
+ "room": "one full sentence others in the room see, beginning {actor}"}
 
 Write only from the character and the objects involved. Do NOT mention the
 room, the location, the surroundings, the weather, or anything you were not
 given — this text is stored on the object and will be shown again wherever
 that object later turns up.
 
-Second person for the actor ("You unfold the flyer..."). Third person for the
-room ("Bob unfolds a flyer."). Present tense."""
+"actor" is second person, addressed to whoever acted: "You unfold the flyer
+and the ink has run."
+
+"room" is third person and MUST refer to the acting character as the literal
+placeholder {actor}, never by a name and never as "he", "she" or "they" —
+the game substitutes whoever really did it, which may be someone else
+entirely when this text is shown again later. Write a whole sentence, not a
+fragment: "{actor} unfolds a damp flyer and frowns at it." — not "unfolds a
+damp flyer".
+
+Both say what actually happened, including the outcome. Present tense."""
 
 
 def _call_openrouter(api_key, model, messages):

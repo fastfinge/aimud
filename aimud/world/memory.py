@@ -159,9 +159,12 @@ def describe_event(event_type, actor_name, text):
     """
     if event_type == "say":
         return f'{actor_name} said: "{text}"'
+    # Some callers hand over text that already opens with the actor's name --
+    # a pose, or an action narrated as a whole sentence. Prefixing it again
+    # gives "Aria Delacroix Aria Delacroix lights the candle."
+    if actor_name and text.startswith(actor_name):
+        return text
     if event_type == "emote":
-        if text.startswith(actor_name):
-            return text
         return f"{actor_name} {text}"
     return f"{actor_name}: {text}"
 

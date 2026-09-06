@@ -282,6 +282,9 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         return
 
     def _finish(actor_text, room_text):
+        # The template is cached, not the finished line: the room text names
+        # the actor as {actor}, so the same narration reads correctly when
+        # somebody else does the same thing to the same object later.
         _store_narration(bound, verb, {"actor": actor_text, "room": room_text})
         allowed = [
             e for e in rule.get("effects", [])
@@ -289,7 +292,8 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         ]
         extra = effects_mod.apply(caller, room, allowed, bound=bound,
                                   world_root=world_root)
-        visible = " ".join([room_text] + extra).strip()
+        spoken = _for_room(room_text, caller, raw)
+        visible = " ".join([spoken] + extra).strip()
         _remember(caller, raw, bound, actor_text, extra)
         release(actor_text, visible)
         # The world just changed under everyone here, which is exactly when a
@@ -308,6 +312,28 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         on_success=_finish,
         on_error=lambda err: release(f"|r{err}|n"),
     )
+
+
+def _for_room(template, actor, raw):
+    """
+    The third-person line the room sees, with the actor filled in.
+
+    The narration names whoever acted as the literal {actor}, so the right
+    name appears whoever it turns out to be -- and a cached narration stays
+    true when a different character repeats the action. A model that returns
+    nothing, or a bare fragment with no subject, is repaired here rather than
+    broadcast as "lights the candle." with nobody attached to it.
+    """
+    name = actor.get_display_name(actor)
+    text = (template or "").strip()
+    if not text:
+        return ""
+    if "{actor}" in text:
+        return text.replace("{actor}", name)
+    # A fragment starting with a verb: give it its subject back.
+    if text[:1].islower():
+        return f"{name} {text}"
+    return text
 
 
 def _remember(caller, raw, bound, actor_text, changes):
