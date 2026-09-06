@@ -101,6 +101,7 @@ class CmdWorlds(Command):
     """
 
     key = "worlds"
+    aliases = ["world"]
     locks = "cmd:all()"
     help_category = "World"
 

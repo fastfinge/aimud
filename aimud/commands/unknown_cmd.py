@@ -31,6 +31,48 @@ def _in_ai_world(room):
     return bool(room and room.db.world_description)
 
 
+#: How closely a typed word must resemble a real command before we assume it
+#: was meant as one. High, because a genuine verb that merely rhymes with a
+#: command must still reach the world -- being told "did you mean recall?" when
+#: you tried to read something would be worse than the typo.
+NEAR_MISS = 0.85
+
+#: Short words are not checked at all. Among three and four letter words a
+#: coincidence is likelier than a typo -- "tie" scores 0.86 against "time" --
+#: and short verbs are exactly the ones players use most.
+MIN_GUARDED_LENGTH = 5
+
+
+def _closest_command(cmd, word):
+    """
+    A real command `word` almost is, if any.
+
+    Without this a mistyped command name is treated as an action and sent to a
+    model: typing "worldg" would cost a rule call and answer with narration
+    about doing something nonsensical, rather than saying it is not a command.
+
+    Anything the word matches exactly has already been run by the time we get
+    here, so only genuine near-misses reach this.
+    """
+    from world.verbs import similarity
+
+    cmdset = getattr(cmd, "cmdset", None)
+    if cmdset is None or len(word) < MIN_GUARDED_LENGTH:
+        return None
+
+    best, best_score = None, 0.0
+    for candidate in cmdset.commands:
+        for name in [candidate.key, *candidate.aliases]:
+            # Builder commands are staff-facing and mostly duplicates of a
+            # plain-named one, so "@time" is never a useful suggestion.
+            if not name or name.startswith("__") or name.startswith("@"):
+                continue
+            score = similarity(word, name)
+            if score > best_score:
+                best, best_score = name, score
+    return best if best_score >= NEAR_MISS else None
+
+
 def _try_direction(caller, cmd_verb, args):
     """
     Refuse bare directional input, and report whether it was consumed.
@@ -83,6 +125,15 @@ class CmdAIUnknown(SystemNoMatch):
         args = parts[1].strip() if len(parts) > 1 else ""
 
         if _try_direction(caller, cmd_verb, args):
+            return
+
+        # A near-miss for a real command was meant as one. Say so, rather than
+        # spending a model call narrating a mistyped command name.
+        suggestion = _closest_command(self, cmd_verb)
+        if suggestion:
+            caller.msg(
+                f"There is no |w{cmd_verb}|n command. Did you mean |w{suggestion}|n?"
+            )
             return
 
         if caller.ndb.attempting:
