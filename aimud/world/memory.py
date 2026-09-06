@@ -20,33 +20,64 @@ Two rules govern everything here:
 """
 
 import re
+import threading
 
 from twisted.internet import threads
 
 from evennia.utils import logger
 
-# Resolved on first use so that an import error is reported once, not on
-# every remembered event.
 _backend = None
-_backend_checked = False
+_state = "unknown"          # unknown | ready | missing
+
+#: mnemosyne keeps one SQLite connection, and SQLite connections are not
+#: shared between threads. Every call goes through this lock, so a burst of
+#: remembered events queues instead of colliding -- without it the log fills
+#: with "cannot start a transaction within a transaction" and
+#: "bad parameter or other API misuse", and memories are silently lost.
+#: The import is held under the same lock, since it must happen exactly once.
+_lock = threading.Lock()
 
 
-def _get_backend():
-    """The mnemosyne module, or None when it is unavailable."""
-    global _backend, _backend_checked
-    if not _backend_checked:
-        _backend_checked = True
+def _load_locked():
+    """Import mnemosyne. Caller must hold _lock, and must be in a thread."""
+    global _backend, _state
+    if _state == "unknown":
         try:
             _set_data_dir()
             import mnemosyne
 
-            _backend = mnemosyne
+            _backend, _state = mnemosyne, "ready"
         except Exception as exc:
-            _backend = None
+            _backend, _state = None, "missing"
             logger.log_info(
                 f"mnemosyne unavailable, characters will not form memories: {exc}"
             )
     return _backend
+
+
+def _with_backend(action):
+    """
+    Run `action(mnemosyne)` on the one connection, one caller at a time.
+
+    MUST be called from a thread. The import alone pulls in the embedding
+    stack and takes seconds, so doing any of this on the reactor would stall
+    every player in the game.
+    """
+    with _lock:
+        backend = _load_locked()
+        if backend is None:
+            return None
+        return action(backend)
+
+
+def warm_up():
+    """
+    Load mnemosyne in the background at server start.
+
+    Without this the first remembered event pays for the import, and it would
+    pay for it wherever that happened to be.
+    """
+    threads.deferToThread(_with_backend, lambda _backend: None).addErrback(_swallow)
 
 
 def _set_data_dir():
@@ -69,8 +100,15 @@ def _set_data_dir():
 
 
 def available():
-    """True when memories can actually be stored and recalled."""
-    return _get_backend() is not None
+    """
+    True unless we already know mnemosyne is unusable.
+
+    Deliberately does not trigger the import: this is called from command
+    code on the reactor thread, and loading there is exactly what must not
+    happen. Before the first load it answers optimistically and the worker
+    thread finds out for certain.
+    """
+    return _state != "missing"
 
 
 def bank_for(character):
@@ -228,7 +266,11 @@ def format_memories(memories):
 
 def _remember_sync(bank, text, kind, importance):
     """Store one memory. Runs in a thread; mnemosyne keeps its own SQLite."""
-    _get_backend().remember(text, bank=bank, source=kind, importance=importance)
+    _with_backend(
+        lambda backend: backend.remember(
+            text, bank=bank, source=kind, importance=importance
+        )
+    )
 
 
 def _recall_sync(bank, query, top_k):
@@ -238,5 +280,7 @@ def _recall_sync(bank, query, top_k):
     Each bank is a separate database file, so a character can only ever recall
     what they themselves experienced.
     """
-    results = _get_backend().recall(query, top_k=top_k, bank=bank)
+    results = _with_backend(
+        lambda backend: backend.recall(query, top_k=top_k, bank=bank)
+    ) or []
     return [r["content"] for r in results if r.get("content")]

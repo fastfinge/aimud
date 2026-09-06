@@ -34,6 +34,12 @@ def at_server_start():
     _place_unmapped_worlds()
     _ensure_quest_deadline_script()
 
+    # Load the memory backend off the reactor now, rather than making the
+    # first remembered event wait seconds for the embedding stack to import.
+    from world.memory import warm_up
+
+    warm_up()
+
 
 def _ensure_quest_deadline_script():
     """
