@@ -224,13 +224,39 @@ NPC_TOOLS = [
 
 _NPC_GEN_SYSTEM = """You generate NPC characters for a text-based MUD.
 Respond with a single JSON object only — no other text:
-{"name": "Character Name (1-3 words)", "description": "3-5 sentence vivid physical and behavioral description."}
+{
+  "name": "Character Name (1-3 words)",
+  "description": "2-4 sentences: what they look like, and nothing else",
+  "manner": "2-3 sentences: who they are and how they behave"
+}
+
+"description" is what a player sees when they look at this character. It is
+shown again every time anyone looks, wherever the character happens to be by
+then, so it must be true of them standing anywhere at all.
+
+Describe only what is visibly, durably so: build, face, hair, skin, clothing,
+what they carry or wear, scars, the state of their hands, how they smell.
+
+It must NOT contain:
+- anything they are doing. No sitting, standing, watching, straightening,
+  fidgeting, smiling, or greeting anyone. They will not be doing it later.
+- where they are, or any furniture, room or fixture. They walk from room to
+  room, and a character described behind a desk is wrong the moment they
+  leave it.
+- personality, mood, motive or history -- what they think, feel, want, or
+  have stopped caring about. None of that is visible.
+- the player: no "you", no "your", no reacting to being looked at.
+
+"manner" is the opposite and is never shown to players: temperament, habits,
+what they want, how they speak and treat people. Put the character there.
+
 The character must fit naturally in the world and room described."""
 
 _NPC_REACT_SYSTEM = (
     "You are {npc_name}, a character in a text-based MUD. Stay in character at all times.\n\n"
     "World: {world_desc}\n"
-    "Your description: {npc_desc}\n\n"
+    "How you look: {npc_desc}\n"
+    "{npc_manner}"
     "Current room: [{room_title}]\n"
     "{room_desc}\n"
     "{room_contents}\n\n"
@@ -472,12 +498,17 @@ def generate_npc(account, room, on_success, on_error):
             data = _parse_json(content)
             name = str(data.get("name", "Stranger")).strip()
             description = str(data.get("description", "")).strip()
+            manner = str(data.get("manner", "")).strip()
 
             from evennia import create_object
             from typeclasses.npcs import NPC
 
             npc = create_object(NPC, key=name, location=room)
             npc.db.desc = description
+            # Kept apart from the description: this is who they are, which
+            # players never see by looking, and which the character itself
+            # needs in order to behave like anyone in particular.
+            npc.db.manner = manner
             npc.db.world_description = room.db.world_description
             on_success(npc)
         except Exception as exc:
@@ -519,6 +550,7 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
         npc_name=npc.key,
         world_desc=world_desc,
         npc_desc=npc.db.desc or "(no description)",
+        npc_manner=(f"Who you are: {npc.db.manner}\n\n" if npc.db.manner else "\n"),
         room_title=room_title,
         room_desc=room_desc,
         room_contents=room_contents,
@@ -600,6 +632,7 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
         npc_name=npc.key,
         world_desc=world_desc,
         npc_desc=npc.db.desc or "(no description)",
+        npc_manner=(f"Who you are: {npc.db.manner}\n\n" if npc.db.manner else "\n"),
         room_title=room_title,
         room_desc=room_desc,
         room_contents=room_contents,
