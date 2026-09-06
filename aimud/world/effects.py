@@ -123,7 +123,7 @@ def _apply_one(actor, room, effect, bound, world_root):
         destination = actor if effect.get("to") == "actor" else room
         if obj.move_to(destination, quiet=True):
             label = obj.get_numbered_name(1, None, return_string=True)
-            return (f"{actor.key} takes {label}." if destination is actor
+            return (f"{actor.get_display_name(actor)} takes {label}." if destination is actor
                     else f"{label.capitalize()} is set down.")
         return None
 

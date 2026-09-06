@@ -23,6 +23,53 @@ class Character(ObjectParent, DefaultCharacter):
 
     """
 
+    def world_name(self, world_root=None):
+        """
+        What this character is called in a given world, if anything.
+
+        Names are per world, because a character who is "Sister Agnes" in a
+        convent has no business being Sister Agnes aboard a freighter. With
+        none set the account name stands.
+        """
+        if world_root is None:
+            room = self.location
+            world_root = room.db.world_root if room else None
+        if world_root is None:
+            return None
+        return (self.db.world_names or {}).get(str(world_root.id)) or None
+
+    def set_world_name(self, world_root, name):
+        """
+        Name this character in `world_root`, or clear it with a falsy name.
+
+        The name is also kept as an alias, so that a character can be spoken
+        to, given things and named in commands by what everyone actually calls
+        them -- an NPC that sees "Aria" would otherwise offer a quest to
+        nobody, since the lookup would be searching for the account name.
+        """
+        if world_root is None:
+            return None
+        names = dict(self.db.world_names or {})
+        key = str(world_root.id)
+        previous = names.get(key)
+
+        if name:
+            names[key] = name
+        else:
+            names.pop(key, None)
+        self.db.world_names = names
+
+        # Retire the old alias unless another world still uses that name.
+        if previous and previous not in names.values():
+            self.aliases.remove(previous)
+        if name and name.lower() != self.key.lower():
+            self.aliases.add(name)
+        return names.get(key)
+
+    def get_display_name(self, looker=None, **kwargs):
+        """Everyone, the character included, sees the name they chose here."""
+        return self.world_name() or super().get_display_name(looker, **kwargs)
+
     def at_say(self, message, msg_self=None, msg_location=None,
                receivers=None, msg_type="say", **kwargs):
         super().at_say(message, msg_self=msg_self, msg_location=msg_location,

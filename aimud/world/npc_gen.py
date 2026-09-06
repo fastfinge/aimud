@@ -314,7 +314,7 @@ def _room_context(room, npc):
         elif obj.db.is_npc:
             people.append(f"{obj.key} (NPC)")
         elif isinstance(obj, DefaultCharacter):
-            people.append(obj.key)
+            people.append(obj.get_display_name(npc))
         else:
             marks = list(obj.db.affordances or [])
             condition = list(obj.db.states or [])

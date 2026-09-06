@@ -126,7 +126,7 @@ def _describe_objects(bound, actor):
     """What the model is allowed to know: the objects, and nothing else."""
     from world import verbs
 
-    lines = [f"actor: {actor.key}"]
+    lines = [f"actor: {actor.get_display_name(actor)}"]
     for role, obj in sorted(bound.items()):
         marks = ", ".join(sorted(verbs.affordances(obj))) or "no special properties"
         condition = ", ".join(sorted(verbs.states(obj))) or "nothing notable"

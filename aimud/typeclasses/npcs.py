@@ -223,12 +223,15 @@ class NPC(ObjectParent, DefaultObject):
 
         from world import quests
 
+        # Matched against the name the NPC actually sees, since that is the
+        # one it will have used when asking.
         wanted = str(args.get("player", "")).strip().lower()
         target = None
         for obj in room.contents:
             if not isinstance(obj, DefaultCharacter):
                 continue
-            if not wanted or wanted in obj.key.lower():
+            known = [obj.key.lower(), obj.get_display_name(self).lower()]
+            if not wanted or any(wanted in name for name in known):
                 target = obj
                 break
         if target is None:
@@ -251,10 +254,11 @@ class NPC(ObjectParent, DefaultObject):
             f"|y{self.key} is asking something of you: |w{quest['title']}|y. "
             f"Type |wquests|y to see the terms.|n"
         )
-        room.msg_contents(f"{self.key} asks {target.key} for a favour.",
-                          exclude=[target])
+        room.msg_contents(
+            f"{self.key} asks {target.get_display_name(self)} for a favour.",
+            exclude=[target])
         self._add_to_history("action", self.key,
-                             f"asked {target.key} to {quest['title']}")
+                             f"asked {target.get_display_name(self)} to {quest['title']}")
 
     def _attempt_verb(self, action, room, _depth=0):
         """

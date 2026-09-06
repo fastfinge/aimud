@@ -70,7 +70,7 @@ class CmdQuests(Command):
         if room:
             verb = "accepts" if self.action == "accept" else "declines"
             room.msg_contents(
-                f"{caller.key} {verb} {quest['giver']}'s request.",
+                f"{caller.get_display_name(caller)} {verb} {quest['giver']}'s request.",
                 exclude=[caller],
             )
             from world.npc_gen import notify_npcs
