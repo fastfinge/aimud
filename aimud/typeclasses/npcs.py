@@ -289,10 +289,12 @@ class NPC(ObjectParent, DefaultObject):
             from world.memory import record_room_event
             record_room_event(room, "action", self.key, visible, actor=self)
 
-        # NPCs do not conjure fixtures: they act unprompted and often, so a
-        # noun that matches nothing must fail rather than be created.
+        # Fuzzy binding, because an NPC names things from memory in its own
+        # words: "the blackboard" should find the chalkboard already on the
+        # wall. It may still conjure a fixture nothing resembles, which is how
+        # a described-but-unmodelled thing becomes real.
         attempt(self, action, account, deliver, allow_effects=allowed,
-                allow_promote=False)
+                fuzzy=True)
 
     def _execute_one(self, tool_name, args, room, _depth=0):
         from commands.look_take_cmds import _find_one

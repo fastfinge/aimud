@@ -218,6 +218,13 @@ def generate_item(account, room, object_name, on_success, on_error):
             from typeclasses.objects import Object
 
             item = create_object(Object, key=name, location=room)
+            # Answer to the words that asked for it, not only to the name it
+            # was given. Ask for an astrolabe and get a "Brass Orrery", and
+            # without this the next request for an astrolabe finds nothing and
+            # conjures another one.
+            requested = str(object_name or "").strip().lower()
+            if requested and requested != name.lower():
+                item.aliases.add(requested)
             item.db.desc = description
             item.db.ai_takeable = takeable
             item.db.is_ai_item = True

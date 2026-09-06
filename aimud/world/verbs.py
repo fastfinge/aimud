@@ -117,6 +117,86 @@ def parse(raw):
 # Binding nouns to things that actually exist
 # ---------------------------------------------------------------------------
 
+#: How closely a name must resemble a phrase to count as the same thing.
+#: A player typing a noun means it, so only an exact or contained match will
+#: do -- guessing at their words is worse than saying "you see no such thing".
+#: An NPC is describing something from memory in its own words, and would
+#: rather find the blackboard already on the wall than hang another beside it.
+STRICT_SIMILARITY = 0.9
+FUZZY_SIMILARITY = 0.6
+
+
+def _words(text):
+    """
+    Meaningful words of a name or phrase.
+
+    Noise words are dropped here as well as in parse(), because they drag a
+    score down for saying nothing: "the board" against "Slate Chalkboard"
+    should be judged on "board" alone.
+    """
+    return [
+        w for w in re.findall(r"[a-z0-9]+", (text or "").lower())
+        if w and w not in _NOISE
+    ]
+
+
+def similarity(phrase, key):
+    """
+    How well `phrase` names something called `key`, from 0 to 1.
+
+    Exact wins, then containment -- "chalkboard" naming a "Stained Slate
+    Chalkboard" -- and below that the best per-word resemblance, which is what
+    lets "blackboard" find a chalkboard and still not find an astrolabe.
+    """
+    import difflib
+
+    phrase_words, key_words = _words(phrase), _words(key)
+    if not phrase_words or not key_words:
+        return 0.0
+    if phrase_words == key_words:
+        return 1.0
+    if set(phrase_words) <= set(key_words):
+        return 0.9
+    def best(word):
+        return max(
+            (difflib.SequenceMatcher(None, word, other).ratio(), other)
+            for other in key_words
+        )
+
+    # Every word of the phrase has to find a home, and the weakest one decides.
+    # Averaging instead lets a single strong word carry a wrong answer: "wall
+    # clock" would score well against a "Stained Wall Chalkboard" on the
+    # strength of "wall" alone.
+    score = min(best(word)[0] for word in phrase_words)
+
+    # What a name is *of* is its last word. "board" resembles "cardboard"
+    # slightly more than "chalkboard" on letters alone, but a Cardboard
+    # Nametag is a nametag, while a Slate Chalkboard is a board -- so a match
+    # against the head noun counts for more than one against a modifier.
+    if best(phrase_words[-1])[1] != key_words[-1]:
+        score *= 0.85
+    return score
+
+
+def _best_by_similarity(caller, phrase, threshold):
+    """
+    The thing in reach whose name best resembles `phrase`, if any is close
+    enough. Ties go to the oldest, so repeated attempts settle on one object
+    instead of wandering between near-identical ones.
+    """
+    candidates = []
+    for location in (caller, caller.location):
+        for obj in (location.contents if location else []):
+            if getattr(obj, "destination", None) is not None:
+                continue     # exits are matched by the movement code, not here
+            score = similarity(phrase, obj.key)
+            if score >= threshold:
+                candidates.append((score, -obj.id, obj))
+    if not candidates:
+        return None
+    return max(candidates)[2]
+
+
 def _matches(caller, phrase, location):
     """Every object at `location` that the phrase could refer to."""
     from commands.look_take_cmds import _find_one
@@ -138,7 +218,7 @@ def _matches(caller, phrase, location):
     return found
 
 
-def bind(caller, phrase):
+def bind(caller, phrase, fuzzy=False):
     """
     Find what a noun phrase refers to, searching outward from the character.
 
@@ -150,6 +230,10 @@ def bind(caller, phrase):
     predictability -- rather than reporting nothing.  Returning None here for
     an ambiguous noun is what let a room fill up with chalkboards: nothing
     matched, so another was conjured, which made the next match worse.
+
+    With `fuzzy`, a name only resembling the phrase will do. That is for NPCs,
+    who name things from memory in their own words: better they wipe the
+    chalkboard that is already there than hang a blackboard next to it.
     """
     if not phrase:
         return None
@@ -158,10 +242,13 @@ def bind(caller, phrase):
         candidates = _matches(caller, phrase, location)
         if candidates:
             return min(candidates, key=lambda o: o.id)
-    return None
+
+    return _best_by_similarity(
+        caller, phrase, FUZZY_SIMILARITY if fuzzy else STRICT_SIMILARITY
+    )
 
 
-def bind_all(caller, roles):
+def bind_all(caller, roles, fuzzy=False):
     """
     Bind every role. Returns (bound, unbound) -- {role: obj}, [role, ...].
 
@@ -171,7 +258,7 @@ def bind_all(caller, roles):
     """
     bound, unbound = {}, []
     for role, phrase in roles.items():
-        obj = bind(caller, phrase)
+        obj = bind(caller, phrase, fuzzy=fuzzy)
         if obj is None:
             unbound.append(role)
         else:

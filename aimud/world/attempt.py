@@ -81,7 +81,7 @@ def _anchor(bound):
 
 
 def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
-            allow_promote=True):
+            allow_promote=True, fuzzy=False):
     """
     Try to perform `raw` as a verb.
 
@@ -94,8 +94,12 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
     wait' and a slow one does not look like the game ignored the player.
 
     allow_promote decides whether a noun that matches nothing may be conjured
-    out of the room's description. True for a player, who asked for it once
-    and deliberately; false for an NPC, which acts unprompted and repeatedly.
+    out of the room's description.
+
+    fuzzy loosens noun binding, so a name that merely resembles something
+    already here counts as that thing. NPCs use it: they name things from
+    memory in their own words, and should reuse the fixture on the wall rather
+    than add another beside it.
     """
     room = caller.location
     if room is None:
@@ -106,14 +110,14 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
     if not verb:
         return
 
-    bound, unbound = verbs.bind_all(caller, parsed["roles"])
+    bound, unbound = verbs.bind_all(caller, parsed["roles"], fuzzy=fuzzy)
     waiter = _once(on_wait)
 
     if unbound:
         if not allow_promote:
-            # An NPC reaching for something that is not there simply fails, and
-            # silently: a character groping for a thing that does not exist is
-            # not worth announcing, and it cost nothing.
+            # Nothing here resembles what was asked for, and this caller may
+            # not invent it. Silent: groping for a thing that does not exist
+            # is not worth announcing, and it cost nothing.
             logger.log_info(
                 f"{caller.key} attempted {raw!r} but nothing matched "
                 f"{[parsed['roles'][r] for r in unbound]}"
