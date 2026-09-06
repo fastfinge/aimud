@@ -80,7 +80,8 @@ def _anchor(bound):
     return bound.get("direct") or next(iter(bound.values()))
 
 
-def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None):
+def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
+            allow_promote=True):
     """
     Try to perform `raw` as a verb.
 
@@ -91,6 +92,10 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None):
     on_wait() is called at most once, and only if the attempt is about to go
     to a model, so a cached verb answers instantly with no spurious 'please
     wait' and a slow one does not look like the game ignored the player.
+
+    allow_promote decides whether a noun that matches nothing may be conjured
+    out of the room's description. True for a player, who asked for it once
+    and deliberately; false for an NPC, which acts unprompted and repeatedly.
     """
     room = caller.location
     if room is None:
@@ -105,6 +110,16 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None):
     waiter = _once(on_wait)
 
     if unbound:
+        if not allow_promote:
+            # An NPC reaching for something that is not there simply fails, and
+            # silently: a character groping for a thing that does not exist is
+            # not worth announcing, and it cost nothing.
+            logger.log_info(
+                f"{caller.key} attempted {raw!r} but nothing matched "
+                f"{[parsed['roles'][r] for r in unbound]}"
+            )
+            on_message("", "")
+            return
         # A noun that is not an object yet may still be real -- fixtures live
         # in the room description until something reaches for them.
         waiter()
@@ -130,30 +145,46 @@ def _promote(caller, room, account, parsed, bound, unbound, resume, on_message):
     role = unbound[0]
     phrase = parsed["roles"][role]
 
+    from commands.look_take_cmds import _acquire_gen_lock, _release_gen_lock
     from world.item_gen import generate_item, validate_object_existence
+
+    # Creating a fixture takes two round trips, and a second attempt arriving
+    # in that window would create a second one. The lock is per room and
+    # phrase, the same guard `look` uses for the same reason.
+    if not _acquire_gen_lock(room, phrase.lower()):
+        on_message("Something is already appearing there.", "")
+        return
+
+    def done(actor_text, room_text=""):
+        _release_gen_lock(room, phrase.lower())
+        on_message(actor_text, room_text)
 
     def on_valid(_reason):
         generate_item(
             account, room, phrase,
-            on_success=lambda item: _promoted(item, role, bound, unbound, resume, on_message),
-            on_error=lambda err: on_message(f"|rCould not resolve {phrase}: {err}|n", ""),
+            on_success=lambda item: _promoted(item, role, bound, unbound,
+                                              resume, done, room, phrase),
+            on_error=lambda err: done(f"|rCould not resolve {phrase}: {err}|n", ""),
         )
 
     def on_invalid(_reason):
-        on_message(f"You see no {phrase} here.", "")
+        done(f"You see no {phrase} here.", "")
 
     validate_object_existence(account, room, phrase, on_valid, on_invalid,
-                              lambda err: on_message(f"|rError: {err}|n", ""))
+                              lambda err: done(f"|rError: {err}|n", ""))
 
 
-def _promoted(item, role, bound, unbound, resume, on_message):
+def _promoted(item, role, bound, unbound, resume, done, room, phrase):
+    from commands.look_take_cmds import _release_gen_lock
+
     bound[role] = item
     remaining = unbound[1:]
     if remaining:
         # Only one fixture is conjured per attempt; asking for two things that
         # both need inventing is a sign the parse was wrong.
-        on_message(f"You cannot make sense of that here.", "")
+        done("You cannot make sense of that here.", "")
         return
+    _release_gen_lock(room, phrase.lower())
     resume()
 
 

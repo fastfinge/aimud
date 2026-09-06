@@ -117,23 +117,48 @@ def parse(raw):
 # Binding nouns to things that actually exist
 # ---------------------------------------------------------------------------
 
+def _matches(caller, phrase, location):
+    """Every object at `location` that the phrase could refer to."""
+    from commands.look_take_cmds import _find_one
+
+    obj, multiple = _find_one(caller, phrase, location=location)
+    if obj is not None:
+        return [obj]
+    if not multiple:
+        return []
+    # _find_one reports ambiguity without saying what matched, so gather the
+    # candidates ourselves.
+    wanted = phrase.lower().strip()
+    words = [w for w in wanted.split() if len(w) > 2]
+    found = []
+    for candidate in (location.contents if location else []):
+        key = candidate.key.lower()
+        if key == wanted or wanted in key or any(w in key for w in words):
+            found.append(candidate)
+    return found
+
+
 def bind(caller, phrase):
     """
     Find what a noun phrase refers to, searching outward from the character.
 
     Inventory first, then the room, because "read my letter" should find the
-    one being carried.  Returns None when nothing matches -- the caller then
-    decides whether the noun is worth conjuring out of the room description.
+    one being carried.
+
+    Ambiguity is NOT absence.  Several things matching means the noun exists
+    several times over, so one of them is chosen -- the oldest, for
+    predictability -- rather than reporting nothing.  Returning None here for
+    an ambiguous noun is what let a room fill up with chalkboards: nothing
+    matched, so another was conjured, which made the next match worse.
     """
     if not phrase:
         return None
-    from commands.look_take_cmds import _find_one
 
-    obj, _ = _find_one(caller, phrase, location=caller)
-    if obj:
-        return obj
-    obj, _ = _find_one(caller, phrase, location=caller.location)
-    return obj
+    for location in (caller, caller.location):
+        candidates = _matches(caller, phrase, location)
+        if candidates:
+            return min(candidates, key=lambda o: o.id)
+    return None
 
 
 def bind_all(caller, roles):
