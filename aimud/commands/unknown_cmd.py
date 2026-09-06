@@ -110,5 +110,10 @@ class CmdAIUnknown(SystemNoMatch):
                 notify_npcs(room, "action", caller.get_display_name(caller),
                             room_text, exclude=caller, actor=caller)
 
+        def waiting():
+            # Only fires when the attempt actually has to go to a model, so a
+            # cached verb stays instant and a slow one does not look ignored.
+            caller.msg(f"You try to {raw}...")
+
         from world.attempt import attempt
-        attempt(caller, raw, account, deliver)
+        attempt(caller, raw, account, deliver, on_wait=waiting)

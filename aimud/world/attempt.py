@@ -43,9 +43,19 @@ def _cached_narration(bound, verb):
     if anchor is None:
         return None
     entry = (anchor.db.ai_commands or {}).get(verb)
-    if not isinstance(entry, dict) or "actor" not in entry:
+    if entry is None:
         return None
-    return entry
+    # Attributes come back as Evennia _SaverDict, which is a MutableMapping
+    # and NOT a dict subclass -- an isinstance(entry, dict) test here rejects
+    # every stored entry and silently defeats the whole cache.
+    try:
+        actor_text = entry.get("actor")
+        room_text = entry.get("room", "")
+    except AttributeError:
+        return None      # a plain string from the old command system
+    if not actor_text:
+        return None
+    return {"actor": actor_text, "room": room_text or ""}
 
 
 def _store_narration(bound, verb, entry):
@@ -70,13 +80,17 @@ def _anchor(bound):
     return bound.get("direct") or next(iter(bound.values()))
 
 
-def attempt(caller, raw, account, on_message, allow_effects=None):
+def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None):
     """
     Try to perform `raw` as a verb.
 
     on_message(actor_text, room_text) delivers the result; room_text may be
     empty when nothing was visible from outside.  allow_effects, when given,
     filters which effect types may fire -- NPCs are handed a narrower set.
+
+    on_wait() is called at most once, and only if the attempt is about to go
+    to a model, so a cached verb answers instantly with no spurious 'please
+    wait' and a slow one does not look like the game ignored the player.
     """
     room = caller.location
     if room is None:
@@ -88,17 +102,20 @@ def attempt(caller, raw, account, on_message, allow_effects=None):
         return
 
     bound, unbound = verbs.bind_all(caller, parsed["roles"])
+    waiter = _once(on_wait)
 
     if unbound:
         # A noun that is not an object yet may still be real -- fixtures live
         # in the room description until something reaches for them.
+        waiter()
         _promote(caller, room, account, parsed, bound, unbound,
                  lambda: _with_bindings(caller, room, account, raw, verb, bound,
-                                        on_message, allow_effects),
+                                        on_message, allow_effects, waiter),
                  on_message)
         return
 
-    _with_bindings(caller, room, account, raw, verb, bound, on_message, allow_effects)
+    _with_bindings(caller, room, account, raw, verb, bound, on_message,
+                   allow_effects, waiter)
 
 
 def _promote(caller, room, account, parsed, bound, unbound, resume, on_message):
@@ -157,7 +174,21 @@ def _drop(obj, verb):
     obj.ndb.busy_verbs = busy
 
 
-def _with_bindings(caller, room, account, raw, verb, bound, on_message, allow_effects):
+def _once(callback):
+    """Wrap a callback so it fires at most once, and tolerates None."""
+    fired = []
+
+    def call():
+        if callback is None or fired:
+            return
+        fired.append(True)
+        callback()
+
+    return call
+
+
+def _with_bindings(caller, room, account, raw, verb, bound, on_message,
+                   allow_effects, waiter=None):
     world_root = _world_root(room)
 
     # Learning a rule and writing a narration are network round trips, and the
@@ -177,19 +208,21 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message, allow_ef
             _drop(anchor, verb)
         _release(caller, on_message, actor_text, room_text)
 
+    waiter = waiter or _once(None)
     key = verbs.rule_key(verb, bound)
     rule = verb_gen.get_rule(world_root, key)
 
     if rule is not None:
         _with_rule(caller, room, account, raw, verb, bound, rule, release,
-                   allow_effects, world_root)
+                   allow_effects, world_root, waiter)
         return
 
     def learned(new_rule):
         verb_gen.store_rule(world_root, key, new_rule)
         _with_rule(caller, room, account, raw, verb, bound, new_rule, release,
-                   allow_effects, world_root)
+                   allow_effects, world_root, waiter)
 
+    waiter()
     verb_gen.learn_rule(
         account, world_root, verb, bound, caller, raw,
         on_success=learned,
@@ -198,7 +231,7 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message, allow_ef
 
 
 def _with_rule(caller, room, account, raw, verb, bound, rule, release,
-               allow_effects, world_root):
+               allow_effects, world_root, waiter=None):
     if not rule.get("valid", True):
         release(rule.get("reason") or "You can't do that.")
         return
@@ -229,6 +262,8 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         _finish(cached.get("actor", ""), cached.get("room", ""))
         return
 
+    if waiter:
+        waiter()
     verb_gen.narrate(
         account, verb, bound, caller, raw,
         on_success=_finish,
