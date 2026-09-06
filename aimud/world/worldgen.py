@@ -106,10 +106,89 @@ def _parse_room(content):
 # Context building (runs in main thread — DB access)
 # ---------------------------------------------------------------------------
 
-def _build_context(source_room, max_chars=4000):
+def _offset_direction(offset):
+    """Name the direction an (dx, dy, dz) offset points in, if any."""
+    from world.coords import DIRECTION_VECTORS
+
+    for direction, vector in DIRECTION_VECTORS.items():
+        if vector == offset:
+            return direction
+    return None
+
+
+def _neighbourhood(source_room, arrival_exit, radius=2, max_chars=4000):
+    """
+    Describe the area around the room being generated.
+
+    Returns a JSON string naming the target cell, its immediate neighbours by
+    direction, every room within `radius` cells, and the names already in use
+    nearby.  Adjacency is stated outright rather than implied by a tree, which
+    is what lets the model avoid rebuilding a room that already exists next
+    door.
+
+    Falls back to walking the world_parent chain for worlds with no
+    coordinates -- rooms whose old layout overlapped itself and could not be
+    placed.
+    """
+    from world import coords
+
+    world_root = source_room.db.world_root
+    source_coord = coords.get_coord(source_room)
+    target = coords.step(source_coord, arrival_exit) if source_coord else None
+
+    if world_root is None or target is None:
+        return _parent_chain_context(source_room, max_chars)
+
+    # The ten cells touching the target, looked up directly so that this and
+    # free_directions can never disagree -- a same-floor scan would miss the
+    # room above or below, including the source room on a vertical move.
+    touching = {
+        direction: coords.room_at(world_root, coords.step(target, direction))
+        for direction in coords.DIRECTION_VECTORS
+    }
+    adjacent = {
+        direction: (room.db.room_title or room.key) if room else None
+        for direction, room in touching.items()
+    }
+
+    # Wider area, same floor, for names to avoid reusing.
+    nearby = dict(coords.neighbours(world_root, target, radius=radius))
+    for direction, room in touching.items():
+        if room is not None:
+            offset = coords.DIRECTION_VECTORS[direction]
+            nearby.setdefault(offset, room)
+
+    # Full descriptions for what the new room touches; names only further out.
+    detail, total = [], 0
+    for offset, room in sorted(nearby.items(), key=lambda kv: sum(map(abs, kv[0]))):
+        title = room.db.room_title or room.key
+        entry = {"name": title, "coord": list(coords.get_coord(room) or ())}
+        if _offset_direction(offset) is not None:
+            desc = room.db.desc or ""
+            if total + len(desc) <= max_chars:
+                entry["description"] = desc
+                total += len(desc)
+        detail.append(entry)
+
+    payload = {
+        "target": {
+            "coord": list(target),
+            "arrived_from": OPPOSITES.get(arrival_exit, "back"),
+        },
+        "adjacent": adjacent,
+        "nearby": detail,
+        "names_in_use": sorted({r.db.room_title or r.key for r in nearby.values()}),
+        "free_directions": coords.free_directions(world_root, target),
+    }
+    return json.dumps(payload, indent=2)
+
+
+def _parent_chain_context(source_room, max_chars=4000):
     """
     Walk up the world_parent chain from source_room, collecting room summaries.
     Returns a string with most-distant room first, source_room last.
+
+    Only used for unmapped rooms; mapped worlds use _neighbourhood().
     """
     chain = []
     room = source_room
@@ -164,6 +243,17 @@ def _create_room(title, description, exits, world_description, source_room, arri
     # Tag lets us find all rooms belonging to a world efficiently.
     room.tags.add(str(actual_root.id), category="ai_world")
 
+    # Place the room on the world's sparse map.  The first room defines the
+    # origin; every other room sits one step from where the player came.
+    from world import coords
+    if source_room is None or arrival_exit is None:
+        coords.place(actual_root, room, coords.ORIGIN)
+    else:
+        source_coord = coords.get_coord(source_room)
+        target = coords.step(source_coord, arrival_exit) if source_coord else None
+        if target is not None:
+            coords.place(actual_root, room, target)
+
     if source_room and arrival_exit:
         reverse = OPPOSITES.get(arrival_exit, "back")
         ai_names = {e["name"] for e in exits}
@@ -186,6 +276,26 @@ def _create_room(title, description, exits, world_description, source_room, arri
                        hint=exit_data["destination_hint"])
 
     return room
+
+
+def ensure_return_exit(target_room, source_room, arrival_exit):
+    """
+    Give `target_room` an exit leading back to `source_room`, if it has none.
+
+    Used when a player walks into a cell that is already occupied: the forward
+    exit is linked to the room found there, and the room found there needs a
+    way back or the connection is one-way.
+    """
+    from typeclasses.exits import AIExit
+
+    reverse = OPPOSITES.get(arrival_exit, "back")
+    for obj in target_room.contents:
+        if getattr(obj, "destination", None) is None:
+            continue
+        # Already connected back, or the name is taken by another exit.
+        if obj.destination == source_room or obj.key == reverse:
+            return obj
+    return _make_exit(AIExit, reverse, target_room, source_room, pending=False)
 
 
 def _maybe_spawn_npc(account, room, on_ready):
@@ -339,8 +449,9 @@ def generate_connected_room(account, world_description, source_room, exit_name,
         return
 
     # Build context here (main thread — DB access is safe)
-    context = _build_context(source_room)
+    context = _neighbourhood(source_room, exit_name)
     reverse = OPPOSITES.get(exit_name, "back")
+    source_title = source_room.db.room_title or source_room.key
 
     hint_line = (
         f"When the '{exit_name}' exit was written, the room beyond it was described "
@@ -355,12 +466,16 @@ def generate_connected_room(account, world_description, source_room, exit_name,
             "role": "user",
             "content": (
                 f"World theme: {world_description}\n\n"
-                f"Nearby rooms (most distant first, closest at bottom):\n{context}\n\n"
-                f"The player moves through the '{exit_name}' exit from the bottom room. "
+                f"The player leaves '{source_title}' through its '{exit_name}' exit. "
                 f"Generate the room they arrive in.\n\n"
                 f"{hint_line}"
-                f"Do NOT include a '{reverse}' exit — that direction leads back and is "
-                f"created automatically. Include only forward exits."
+                f"Surrounding area:\n{context}\n\n"
+                f"'adjacent' lists what lies in each direction from the new room; "
+                f"null means nothing is built there yet. Your room must make sense "
+                f"between the rooms named there — do not repeat a room that already "
+                f"exists nearby, and do not reuse any name in 'names_in_use'.\n"
+                f"Give exits only from 'free_directions'. Do NOT include a "
+                f"'{reverse}' exit — that leads back and is created automatically."
             ),
         },
     ]

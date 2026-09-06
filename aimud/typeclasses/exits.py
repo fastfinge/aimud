@@ -35,6 +35,26 @@ class AIExit(ObjectParent, DefaultExit):
     while generation is in progress are queued and moved when it completes.
     """
 
+    def _room_already_there(self, source_room):
+        """
+        The room occupying the cell this exit leads to, or None.
+
+        Returns None for exits with no compass sense (portals, labelled exits)
+        and for rooms that predate the coordinate index -- both fall through to
+        ordinary generation.
+        """
+        from world import coords
+
+        world_root = source_room.db.world_root if source_room else None
+        source_coord = coords.get_coord(source_room) if source_room else None
+        if world_root is None or source_coord is None:
+            return None
+        target = coords.step(source_coord, self.key)
+        if target is None:
+            return None
+        found = coords.room_at(world_root, target)
+        return found if found is not source_room else None
+
     def at_traverse(self, traversing_object, target_location, **kwargs):
         if not self.db.pending_generation:
             return super().at_traverse(traversing_object, target_location, **kwargs)
@@ -46,6 +66,18 @@ class AIExit(ObjectParent, DefaultExit):
         if not world_description:
             traversing_object.msg("This exit leads nowhere.")
             return
+
+        # If a room already stands where this exit leads, connect to it rather
+        # than building a second one on the same spot.  This is what lets a
+        # world close back on itself, and it costs no API call.
+        existing = self._room_already_there(source_room)
+        if existing is not None:
+            from world.worldgen import ensure_return_exit
+
+            self.db.pending_generation = False
+            self.destination = existing
+            ensure_return_exit(existing, source_room, self.key)
+            return super().at_traverse(traversing_object, existing, **kwargs)
 
         # Queue the traveler; avoid spawning duplicate generation tasks.
         if self.ndb.generating:

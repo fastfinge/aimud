@@ -31,6 +31,41 @@ def at_server_start():
     how it was shut down.
     """
     _start_npc_idle_scripts()
+    _place_unmapped_worlds()
+
+
+def _place_unmapped_worlds():
+    """
+    Give coordinates to worlds generated before the coordinate index existed.
+
+    Runs once per world -- a root that already has an index is skipped -- so
+    this costs nothing on later starts.
+    """
+    from evennia.objects.models import ObjectDB
+    from evennia.utils import logger
+
+    roots = [
+        o for o in ObjectDB.objects.all()
+        if o.db_destination is None and o.db.is_world_root and not o.db.room_coords
+    ]
+    if not roots:
+        return
+
+    from world import coord_backfill
+    from world import coords
+
+    placed = collided = 0
+    for root in roots:
+        for room, coord, clash in coord_backfill._walk(root):
+            if clash is not None:
+                collided += 1
+                continue
+            coords.place(root, room, coord)
+            placed += 1
+    logger.log_info(
+        f"Mapped {placed} room(s) across {len(roots)} world(s); "
+        f"{collided} left unplaced where the old layout overlapped itself."
+    )
 
 
 def _start_npc_idle_scripts():
