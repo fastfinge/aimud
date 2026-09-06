@@ -212,6 +212,50 @@ class NPC(ObjectParent, DefaultObject):
             if obj is not self and obj.db.is_npc and npc_may_act(obj):
                 obj.witness(event_type, self.key, text, _depth=next_depth)
 
+    def _offer_quest(self, args, room):
+        """
+        Ask a player present to do something, with terms attached.
+
+        The offer sits in their quest list until they answer it, so an NPC
+        cannot commit anyone to anything by talking at them.
+        """
+        from evennia.objects.objects import DefaultCharacter
+
+        from world import quests
+
+        wanted = str(args.get("player", "")).strip().lower()
+        target = None
+        for obj in room.contents:
+            if not isinstance(obj, DefaultCharacter):
+                continue
+            if not wanted or wanted in obj.key.lower():
+                target = obj
+                break
+        if target is None:
+            return
+
+        quest = quests.offer(
+            self, target,
+            title=args.get("title"),
+            description=args.get("description"),
+            conditions=args.get("goal"),
+            reward=args.get("reward"),
+            punishment=args.get("punishment"),
+            time_limit=args.get("time_limit_seconds"),
+        )
+        if quest is None:
+            return
+
+        target.msg(
+            f'{self.key} says, "|w{quest["description"]}|n"\n'
+            f"|y{self.key} is asking something of you: |w{quest['title']}|y. "
+            f"Type |wquests|y to see the terms.|n"
+        )
+        room.msg_contents(f"{self.key} asks {target.key} for a favour.",
+                          exclude=[target])
+        self._add_to_history("action", self.key,
+                             f"asked {target.key} to {quest['title']}")
+
     def _attempt_verb(self, action, room, _depth=0):
         """
         Try a verb through the same pipeline a player's command uses.
@@ -263,6 +307,9 @@ class NPC(ObjectParent, DefaultObject):
                 room.msg_contents(f"{self.key} {action}")
                 self._add_to_history("emote", self.key, action)
                 self._notify_other_npcs(room, "emote", f"{self.key} {action}", _depth)
+
+        elif tool_name == "offer_quest":
+            self._offer_quest(args, room)
 
         elif tool_name == "attempt":
             action = str(args.get("action", "")).strip()

@@ -32,6 +32,28 @@ def at_server_start():
     """
     _start_npc_idle_scripts()
     _place_unmapped_worlds()
+    _ensure_quest_deadline_script()
+
+
+def _ensure_quest_deadline_script():
+    """
+    Make sure the one global quest-deadline clock is running.
+
+    Global rather than per-character: there is nothing character-specific
+    about noticing that a minute has passed.
+    """
+    from evennia import ScriptDB, create_script
+    from evennia.utils import logger
+
+    existing = ScriptDB.objects.filter(db_key="quest_deadlines")
+    running = [s for s in existing if s.db_is_active and s.interval > 0]
+    if running:
+        return
+    for stale in existing:
+        stale.stop()
+        stale.delete()
+    create_script("typeclasses.scripts.QuestDeadlineScript")
+    logger.log_info("Started the quest deadline clock.")
 
 
 def _place_unmapped_worlds():

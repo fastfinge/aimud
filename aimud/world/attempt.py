@@ -257,6 +257,10 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         visible = " ".join([room_text] + extra).strip()
         _remember(caller, raw, bound, actor_text, extra)
         release(actor_text, visible)
+        # The world just changed under everyone here, which is exactly when a
+        # quest may have quietly become finished.
+        from world.quests import review_room
+        review_room(room)
 
     if cached is not None:
         _finish(cached.get("actor", ""), cached.get("room", ""))

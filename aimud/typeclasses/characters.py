@@ -47,6 +47,12 @@ class Character(ObjectParent, DefaultCharacter):
 
         refresh_npcs_near(room)
 
+        # Arriving can satisfy a quest by itself, and is a natural moment to
+        # notice one that has run out of time.
+        from world.quests import review
+
+        review(self)
+
         # Where the character has been is part of what they know.
         from world.memory import remember
 

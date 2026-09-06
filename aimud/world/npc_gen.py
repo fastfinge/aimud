@@ -124,6 +124,63 @@ NPC_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "offer_quest",
+            "description": (
+                "Ask a player to do something for you, with a reward if they "
+                "manage it. Only offer something you would plausibly want, and "
+                "only to a player who is present. Say it in your own voice in "
+                "the description -- that is what they will read."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "player": {"type": "string", "description": "Name of the player to ask"},
+                    "title": {"type": "string", "description": "Short name for the errand"},
+                    "description": {
+                        "type": "string",
+                        "description": "What you say when you ask, 1-2 sentences",
+                    },
+                    "goal": {
+                        "type": "array",
+                        "description": (
+                            "What must become true. Each entry is one of: "
+                            '{"type":"holds","object":"brass key"} they carry it; '
+                            '{"type":"delivered","object":"letter","to":"Clerk"} they give it to someone; '
+                            '{"type":"state","object":"lamp","is":["lit"],"lacks":["broken"]} its condition; '
+                            '{"type":"gone","object":"rats"} it no longer exists; '
+                            '{"type":"exists","object":"stew"} it has been made; '
+                            '{"type":"in_room","room":"Kitchen"} they go there.'
+                        ),
+                        "items": {"type": "object"},
+                    },
+                    "reward": {
+                        "type": "array",
+                        "description": (
+                            "What they get. Usually "
+                            '{"type":"create_object","name":"...","description":"...","takeable":true,"location":"actor"}'
+                        ),
+                        "items": {"type": "object"},
+                    },
+                    "punishment": {
+                        "type": "array",
+                        "description": (
+                            "Optional. What it costs them to run out of time, e.g. "
+                            '{"type":"destroy_object","name":"their deposit"}. Omit for a kind character.'
+                        ),
+                        "items": {"type": "object"},
+                    },
+                    "time_limit_seconds": {
+                        "type": "integer",
+                        "description": "Optional deadline in seconds. Omit for no time limit.",
+                    },
+                },
+                "required": ["player", "title", "description", "goal"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create",
             "description": "Create a new object in the room.",
             "parameters": {
@@ -192,6 +249,7 @@ _NPC_REACT_SYSTEM = (
     "{room_desc}\n"
     "{room_contents}\n\n"
     "{known_verbs}"
+    "{want}"
     "Use the available tools to react naturally to recent events. "
     "You may call 0-3 tools per response. "
     "If nothing warrants a response, call no tools. Keep reactions brief and in-character.\n\n"
@@ -273,6 +331,34 @@ def _room_context(room, npc):
     if exits:
         parts.append("Exits: " + ", ".join(exits))
     return "\n".join(parts)
+
+
+def _want_line(npc):
+    """
+    What this character is trying to bring about, if anything.
+
+    This is the whole of the goal layer as far as an NPC is concerned: a
+    tested condition handed over as context. It costs nothing extra -- the
+    prompt is being sent anyway -- and it is the difference between a
+    character who reacts to the last thing said and one who wants something.
+    """
+    from world import goals
+
+    goal = list(npc.db.goal or [])
+    if not goal:
+        return ""
+    room = npc.location
+    world_root = room.db.world_root if room else None
+    outstanding = [
+        text for met, text in goals.progress(goal, npc, world_root) if not met
+    ]
+    if not outstanding:
+        return "You have what you wanted for now.\n\n"
+    return (
+        "What you want: " + ", then ".join(outstanding) + ".\n"
+        "Work towards it when the moment allows, in character. You may ask a "
+        "player to help, with something worth their while in return.\n\n"
+    )
 
 
 def _known_verbs(room):
@@ -451,6 +537,7 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
         room_desc=room_desc,
         room_contents=room_contents,
         known_verbs=known_line,
+        want=_want_line(npc),
     )
 
     def _fetch():
@@ -531,6 +618,7 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
         room_desc=room_desc,
         room_contents=room_contents,
         known_verbs=known_line,
+        want=_want_line(npc),
     )
 
     def _fetch():

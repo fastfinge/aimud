@@ -105,6 +105,36 @@ class Script(DefaultScript):
     pass
 
 
+class QuestDeadlineScript(DefaultScript):
+    """
+    One global script that expires quests whose time has run out.
+
+    Quests are otherwise reviewed whenever the world changes under a player,
+    which catches every completion. A deadline is the one thing that can fall
+    due while nobody does anything at all, so it needs a clock of its own.
+
+    Deliberately slow: a minute's imprecision on a several-minute errand is
+    not worth waking every session every second for.
+    """
+
+    def at_script_creation(self):
+        self.key = "quest_deadlines"
+        self.interval = 60
+        self.persistent = True
+        self.repeats = 0
+        self.start_delay = True
+
+    def at_repeat(self):
+        from evennia.server.sessionhandler import SESSIONS
+
+        from world.quests import review
+
+        for session in SESSIONS.get_sessions():
+            puppet = getattr(session, "puppet", None)
+            if puppet is not None and puppet.location is not None:
+                review(puppet)
+
+
 class NPCIdleScript(DefaultScript):
     """
     Attached to each NPC at creation. Fires every second and, while the NPC is
