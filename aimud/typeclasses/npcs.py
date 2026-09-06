@@ -114,6 +114,10 @@ class NPC(ObjectParent, DefaultObject):
         from world.following import move_followers
 
         move_followers(self, source_location)
+        from world.verbs import clear_on_move
+
+        room = self.location
+        clear_on_move(self, room.db.world_root if room else None)
         if active_players_in(self.location):
             note_player_nearby(self)
 

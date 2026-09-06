@@ -93,6 +93,11 @@ class Character(ObjectParent, DefaultCharacter):
 
         move_followers(self, source_location)
 
+        # You stood up to walk here: posture does not travel.
+        from world.verbs import clear_on_move
+
+        clear_on_move(self, room.db.world_root)
+
         # Arriving puts every NPC here back in company, so they keep acting
         # for a while after this character wanders off again.
         from world.activity import refresh_npcs_near

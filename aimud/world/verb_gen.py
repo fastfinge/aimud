@@ -32,7 +32,7 @@ Respond with a single JSON object — no other text — matching:
   "reason": "if invalid, one sentence on why",
   "requires": {"<role>": {"has": ["affordance"], "is": ["state"], "lacks": ["state"], "holds": ["item name"]}},
   "effects": [ ... ],
-  "new_states": [{"slug": "burning", "means": "on fire", "conflicts": ["wet"]}],
+  "new_states": [{"slug": "burning", "means": "on fire", "group": "fire"}],
   "repeatable": true
 }
 
@@ -53,6 +53,7 @@ requires are the conditions that must hold before the verb works:
 
 effects change the world. Each is one of:
 {"type": "set_state", "role": "direct", "add": ["burning"], "remove": ["dry"]}
+  (role may be "actor" to change the character acting)
 {"type": "create_object", "name": "...", "description": "...", "takeable": true, "affordances": [...], "states": [...], "location": "room|actor"}
 {"type": "destroy_object", "name_role": "direct"}
 {"type": "move_object", "name_role": "direct", "to": "actor|room"}
@@ -63,8 +64,14 @@ Prefer set_state over destroying and recreating things. Use an empty effects
 list for a verb that only produces a sensation.
 
 new_states declares any state slug you used that may not exist yet: give its
-meaning and the states it cancels out. Reuse the existing vocabulary when it
-already covers what you mean.
+meaning, and its "group" if it belongs to one. Reuse the existing vocabulary
+when it already covers what you mean.
+
+A group is a set of states only one of which can be true at once, so you do
+not have to list what a state cancels -- membership does it. "posture" holds
+seated, standing, lying, kneeling and the like, and ends when the character
+walks anywhere, so never write a rule that removes a posture on movement or
+requires the actor to not be standing before sitting; that is handled.
 Return only the JSON object."""
 
 _NARRATION_SYSTEM = """You narrate the result of an action in a text MUD.
@@ -187,6 +194,7 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
                     str(state.get("slug", "")),
                     means=str(state.get("means", "")),
                     conflicts=[str(c) for c in state.get("conflicts", [])],
+                    group=str(state.get("group", "")).strip().lower() or None,
                 )
             on_success({
                 "valid": bool(data.get("valid", True)),

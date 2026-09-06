@@ -316,7 +316,60 @@ def _similar(a, b):
     return a.startswith(b) or b.startswith(a)
 
 
-def register_state(world_root, slug, means="", conflicts=()):
+#: Groups of states that behave as a set rather than as loose flags.
+#:
+#: exclusive    -- only one member can be true of a thing at a time, so
+#:                 sitting down stops you standing without any rule saying so.
+#: ends_on_move -- walking out of the room ends it. You cannot carry a chair
+#:                 away by remaining seated on it.
+STATE_GROUPS = {
+    "posture": {"exclusive": True, "ends_on_move": True},
+    "wetness": {"exclusive": True, "ends_on_move": False},
+    "fire":    {"exclusive": True, "ends_on_move": False},
+}
+
+#: Where a state belongs when nothing says otherwise. Seeded for the ones a
+#: world is certain to invent, so posture is exclusive from the first use
+#: rather than from whenever a model happens to declare it -- left to itself
+#: it decided "seated" ruled out "following" and "mobile", neither of which
+#: anything sets, and said nothing about standing.
+DEFAULT_STATE_GROUP = {
+    slug: "posture" for slug in (
+        "seated", "sitting", "sat", "standing", "stood", "upright",
+        "lying", "lain", "laid", "prone", "supine", "reclining", "reclined",
+        "kneeling", "knelt", "crouching", "crouched", "perched", "sprawled",
+    )
+}
+DEFAULT_STATE_GROUP.update({
+    slug: "wetness" for slug in ("wet", "soaked", "damp", "dry", "sodden")
+})
+DEFAULT_STATE_GROUP.update({
+    slug: "fire" for slug in ("burning", "alight", "lit", "extinguished", "unlit")
+})
+
+
+def group_of(world_root, slug):
+    """Which group a state belongs to, or None."""
+    entry = vocabulary(world_root).get(slug) or {}
+    try:
+        declared = entry.get("group")
+    except AttributeError:
+        declared = None
+    return declared or DEFAULT_STATE_GROUP.get(slug)
+
+
+def group_members(world_root, group):
+    """Every state known to belong to `group`."""
+    if not group:
+        return set()
+    known = {slug for slug, g in DEFAULT_STATE_GROUP.items() if g == group}
+    for slug in vocabulary(world_root):
+        if group_of(world_root, slug) == group:
+            known.add(slug)
+    return known
+
+
+def register_state(world_root, slug, means="", conflicts=(), group=None):
     """
     Add a state to the world's vocabulary, or fold it onto an existing one.
 
@@ -338,6 +391,7 @@ def register_state(world_root, slug, means="", conflicts=()):
     vocab[slug] = {
         "means": means,
         "conflicts": [c for c in (conflicts or []) if c],
+        "group": group or DEFAULT_STATE_GROUP.get(slug, ""),
     }
     world_root.db.state_vocabulary = vocab
     return slug
@@ -360,9 +414,38 @@ def apply_states(obj, add=(), remove=(), world_root=None):
             continue
         for conflict in vocab.get(slug, {}).get("conflicts", []):
             current.discard(conflict)
+        # Everything in an exclusive group cancels everything else in it, so
+        # sitting down ends standing whether or not anyone wrote that rule.
+        group = group_of(world_root, slug)
+        if STATE_GROUPS.get(group, {}).get("exclusive"):
+            current -= (group_members(world_root, group) - {slug})
         current.add(slug)
 
     obj.db.states = sorted(current)
+    return obj.db.states
+
+
+def clear_on_move(obj, world_root=None):
+    """
+    Drop the states that walking away ends.
+
+    A character who was sitting is not still sitting in the next room: the
+    chair did not come with them. Called after every move, so it also repairs
+    anything left over from before groups existed.
+    """
+    if world_root is None:
+        room = obj.location
+        world_root = room.db.world_root if room else None
+    current = states(obj)
+    if not current:
+        return []
+    ending = {
+        slug for slug in current
+        if STATE_GROUPS.get(group_of(world_root, slug), {}).get("ends_on_move")
+    }
+    if not ending:
+        return sorted(current)
+    obj.db.states = sorted(current - ending)
     return obj.db.states
 
 
