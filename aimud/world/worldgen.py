@@ -106,6 +106,18 @@ def _parse_room(content):
 # Context building (runs in main thread — DB access)
 # ---------------------------------------------------------------------------
 
+def _room_exit_directions(room):
+    """The compass directions a room actually has exits in."""
+    seen = []
+    for obj in room.contents:
+        if getattr(obj, "destination", None) is None:
+            continue
+        direction = canonical_direction(obj.key)
+        if direction and direction not in seen:
+            seen.append(direction)
+    return seen
+
+
 def _offset_direction(offset):
     """Name the direction an (dx, dy, dz) offset points in, if any."""
     from world.coords import DIRECTION_VECTORS
@@ -139,17 +151,34 @@ def _neighbourhood(source_room, arrival_exit, radius=2, max_chars=4000):
     if world_root is None or target is None:
         return _parent_chain_context(source_room, max_chars)
 
-    # The ten cells touching the target, looked up directly so that this and
-    # free_directions can never disagree -- a same-floor scan would miss the
+    # The ten cells touching the target, looked up directly so that adjacency
+    # and availability can never disagree -- a same-floor scan would miss the
     # room above or below, including the source room on a vertical move.
     touching = {
         direction: coords.room_at(world_root, coords.step(target, direction))
         for direction in coords.DIRECTION_VECTORS
     }
-    adjacent = {
-        direction: (room.db.room_title or room.key) if room else None
-        for direction, room in touching.items()
-    }
+
+    # Being next to a room is not the same as opening onto it.  Classrooms
+    # along a corridor share walls and connect only to the corridor, so each
+    # direction reports which of the three it is: empty ground to build on, the
+    # way back, or a neighbour a door could optionally be cut through to.
+    back = OPPOSITES.get(arrival_exit, "back")
+    adjacent = {}
+    for direction, room in touching.items():
+        if room is None:
+            adjacent[direction] = {"room": None, "may_open_new_room": True}
+        elif direction == back:
+            adjacent[direction] = {
+                "room": room.db.room_title or room.key,
+                "already_connected": True,
+                "note": "the way back; this exit is created automatically",
+            }
+        else:
+            adjacent[direction] = {
+                "room": room.db.room_title or room.key,
+                "may_connect": True,
+            }
 
     # Wider area, same floor, for names to avoid reusing.
     nearby = dict(coords.neighbours(world_root, target, radius=radius))
@@ -159,10 +188,17 @@ def _neighbourhood(source_room, arrival_exit, radius=2, max_chars=4000):
             nearby.setdefault(offset, room)
 
     # Full descriptions for what the new room touches; names only further out.
+    # Each room reports the directions it actually opens onto, which is what
+    # shows the layout's habits: a corridor with doors on both sides, and
+    # rooms off it that open one way only.
     detail, total = [], 0
     for offset, room in sorted(nearby.items(), key=lambda kv: sum(map(abs, kv[0]))):
         title = room.db.room_title or room.key
-        entry = {"name": title, "coord": list(coords.get_coord(room) or ())}
+        entry = {
+            "name": title,
+            "coord": list(coords.get_coord(room) or ()),
+            "opens_onto": _room_exit_directions(room),
+        }
         if _offset_direction(offset) is not None:
             desc = room.db.desc or ""
             if total + len(desc) <= max_chars:
@@ -173,12 +209,11 @@ def _neighbourhood(source_room, arrival_exit, radius=2, max_chars=4000):
     payload = {
         "target": {
             "coord": list(target),
-            "arrived_from": OPPOSITES.get(arrival_exit, "back"),
+            "arrived_from": back,
         },
         "adjacent": adjacent,
         "nearby": detail,
         "names_in_use": sorted({r.db.room_title or r.key for r in nearby.values()}),
-        "free_directions": coords.free_directions(world_root, target),
     }
     return json.dumps(payload, indent=2)
 
@@ -267,15 +302,39 @@ def _create_room(title, description, exits, world_description, source_room, arri
             if name == reverse:
                 _make_exit(AIExit, name, room, source_room, pending=False)
             else:
-                _make_exit(AIExit, name, room, room, pending=True,
-                           hint=exit_data["destination_hint"])
+                _make_ai_exit(room, actual_root, exit_data)
     else:
         # First room — all AI exits are pending
         for exit_data in exits:
-            _make_exit(AIExit, exit_data["name"], room, room, pending=True,
-                       hint=exit_data["destination_hint"])
+            _make_ai_exit(room, actual_root, exit_data)
 
     return room
+
+
+def _make_ai_exit(room, world_root, exit_data):
+    """
+    Create one exit the model asked for.
+
+    An exit toward a cell that already holds a room is wired straight to it and
+    given a way back, so the room lists a real destination instead of promising
+    to generate something that is already standing there.  Everything else
+    stays pending until a player walks it.
+    """
+    from typeclasses.exits import AIExit
+    from world import coords
+
+    name = exit_data["name"]
+    coord = coords.get_coord(room)
+    target = coords.step(coord, name) if coord else None
+    existing = coords.room_at(world_root, target) if target else None
+
+    if existing is not None and existing is not room:
+        ex = _make_exit(AIExit, name, room, existing, pending=False)
+        ensure_return_exit(existing, room, name)
+        return ex
+
+    return _make_exit(AIExit, name, room, room, pending=True,
+                      hint=exit_data["destination_hint"])
 
 
 def ensure_return_exit(target_room, source_room, arrival_exit):
@@ -470,12 +529,20 @@ def generate_connected_room(account, world_description, source_room, exit_name,
                 f"Generate the room they arrive in.\n\n"
                 f"{hint_line}"
                 f"Surrounding area:\n{context}\n\n"
-                f"'adjacent' lists what lies in each direction from the new room; "
-                f"null means nothing is built there yet. Your room must make sense "
-                f"between the rooms named there — do not repeat a room that already "
-                f"exists nearby, and do not reuse any name in 'names_in_use'.\n"
-                f"Give exits only from 'free_directions'. Do NOT include a "
-                f"'{reverse}' exit — that leads back and is created automatically."
+                f"'adjacent' gives each direction from the new room. A room being "
+                f"next to yours does NOT mean a door joins them: classrooms along a "
+                f"corridor share walls but open only onto the corridor. Each "
+                f"direction is one of three cases:\n"
+                f"  may_open_new_room — empty ground; an exit here builds a new room\n"
+                f"  may_connect       — a room is already there; add an exit ONLY if "
+                f"a door genuinely belongs between the two, otherwise leave it as a "
+                f"shared wall\n"
+                f"  already_connected — the way back, created automatically; never "
+                f"list a '{reverse}' exit\n\n"
+                f"'opens_onto' shows which directions each nearby room actually has "
+                f"doors in — follow the layout's habits. Your room must make sense "
+                f"among its neighbours: do not repeat a room that already exists "
+                f"nearby, and do not reuse any name in 'names_in_use'."
             ),
         },
     ]
