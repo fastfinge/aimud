@@ -3,6 +3,7 @@ World management commands: worlds, worldremove, worldreset.
 """
 
 from commands.command import Command
+from world import lore
 
 
 def _get_account(caller):
@@ -129,7 +130,7 @@ class CmdWorlds(Command):
         current_root = _current_world_root(self.caller)
         lines = ["|wYour worlds:|n\n"]
         for i, (root, room_count) in enumerate(worlds, 1):
-            desc = root.db.world_description or "(no description)"
+            desc = lore.title(root)
             here = " |g[here]|n" if (current_root and current_root.id == root.id) else ""
             lines.append(f"  |w{i}.|n {desc}  |x({room_count} rooms explored){here}|n")
         lines.append("\nType |wworlds <number>|n to enter a world.")
@@ -163,7 +164,7 @@ class CmdWorlds(Command):
             dest = None
 
         destination = dest or root
-        desc = root.db.world_description or root.key
+        desc = lore.title(root)
         self.caller.msg(f"Entering world: |w{desc}|n")
         self.caller.move_to(destination, quiet=False)
 
@@ -279,7 +280,7 @@ class CmdWorldRemove(Command):
             )
             return
 
-        desc = root.db.world_description or root.key
+        desc = lore.title(root)
 
         if not self.confirmed:
             self.caller.msg(
@@ -296,7 +297,7 @@ class CmdWorldRemove(Command):
         current_root = _current_world_root(self.caller)
         lines = ["|wYour worlds (worldremove <number> to delete):|n\n"]
         for i, (root, room_count) in enumerate(worlds, 1):
-            desc = root.db.world_description or "(no description)"
+            desc = lore.title(root)
             here = " |y[current — cannot delete]|n" if (
                 current_root and current_root.id == root.id
             ) else ""
@@ -353,7 +354,16 @@ class CmdWorldReset(Command):
         if root is None:
             return
 
-        description = root.db.world_description
+        # Rebuild from everything the world was set up with, not just its
+        # theme: a reset that forgot the title and the player's name here
+        # would quietly undo half the wizard.
+        spec = {
+            "title": root.db.world_title or "",
+            "description": root.db.world_description or "",
+            "player_name": caller.world_name(root) or "",
+            "player_description": caller.world_desc(root) or "",
+        }
+        description = spec["description"]
         if not description:
             caller.msg(
                 "That world has no stored description, so it cannot be rebuilt. "
@@ -367,7 +377,7 @@ class CmdWorldReset(Command):
             suffix = f" {self.world_num}" if self.world_num else ""
             caller.msg(
                 f"|rWarning:|n this destroys all |w{room_count}|n room(s) of "
-                f"|w{description}|n, with everything in them, and generates the "
+                f"|w{lore.title(root)}|n, with everything in them, and generates the "
                 f"world again from that description.\n"
                 f"Type |wworldreset{suffix} confirm|n to proceed."
             )
@@ -380,7 +390,7 @@ class CmdWorldReset(Command):
             caller.msg(str(e))
             return
 
-        caller.msg(f"Rebuilding |w{description}|n — generating the new world first...")
+        caller.msg(f"Rebuilding |w{lore.title(root)}|n — generating the new world first...")
 
         def on_success(new_root):
             # Only now is the old world expendable.
@@ -389,7 +399,8 @@ class CmdWorldReset(Command):
                 message="|yThe world is being rebuilt around you.|n",
             )
             caller.msg(
-                f"|gRebuilt '|w{description}|g' — {removed} old room(s) removed.|n"
+                f"|gRebuilt '|w{spec['title'] or description}|g' — "
+                f"{removed} old room(s) removed.|n"
             )
             if caller.location is not new_root:
                 caller.move_to(new_root, quiet=False)
@@ -403,7 +414,8 @@ class CmdWorldReset(Command):
             )
 
         from world.worldgen import generate_first_room
-        generate_first_room(account, description, on_success, on_error)
+        generate_first_room(account, spec, on_success, on_error,
+                            creator_character=caller)
 
     def _target(self, worlds):
         """Resolve which world to reset, reporting any problem to the caller."""
@@ -426,7 +438,7 @@ class CmdWorldReset(Command):
         if current is None:
             lines = ["You are not in a world. Choose one to reset:\n"]
             for i, (root, count) in enumerate(worlds, 1):
-                desc = root.db.world_description or "(no description)"
+                desc = lore.title(root)
                 lines.append(f"  |w{i}.|n {desc}  |x({count} rooms)|n")
             lines.append("\nType |wworldreset <number> confirm|n.")
             caller.msg("\n".join(lines))

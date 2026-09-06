@@ -70,6 +70,38 @@ class Character(ObjectParent, DefaultCharacter):
         """Everyone, the character included, sees the name they chose here."""
         return self.world_name() or super().get_display_name(looker, **kwargs)
 
+    def world_desc(self, world_root=None):
+        """How this character looks in a given world, if anything is set."""
+        if world_root is None:
+            room = self.location
+            world_root = room.db.world_root if room else None
+        if world_root is None:
+            return None
+        return (self.db.world_descs or {}).get(str(world_root.id)) or None
+
+    def set_world_desc(self, world_root, text):
+        """
+        Describe this character in `world_root`, or clear it with empty text.
+
+        Kept per world for the same reason names are: the same person is a
+        different figure in a convent and on a freighter, and what someone
+        sees when they look should say so.
+        """
+        if world_root is None:
+            return None
+        descs = dict(self.db.world_descs or {})
+        key = str(world_root.id)
+        if text:
+            descs[key] = text
+        else:
+            descs.pop(key, None)
+        self.db.world_descs = descs
+        return descs.get(key)
+
+    def get_display_desc(self, looker, **kwargs):
+        """What a look shows: this world's description, else the ordinary one."""
+        return self.world_desc() or super().get_display_desc(looker, **kwargs)
+
     def at_say(self, message, msg_self=None, msg_location=None,
                receivers=None, msg_type="say", **kwargs):
         super().at_say(message, msg_self=msg_self, msg_location=msg_location,

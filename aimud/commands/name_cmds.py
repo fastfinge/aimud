@@ -46,7 +46,9 @@ class CmdName(Command):
             caller.msg("You are not in a world that keeps names.")
             return
 
-        world_desc = world_root.db.world_description or world_root.key
+        from world import lore
+
+        world_desc = lore.title(world_root)
         wanted = self.args.strip()
         current = caller.world_name(world_root)
 

@@ -131,7 +131,9 @@ def formalise(account, npc, target, request, offer, consequence, on_success, on_
         return
 
     room = npc.location
-    world = (room.db.world_description if room else "") or ""
+    from world import lore
+
+    world = lore.description(room, target)
 
     messages = [
         {"role": "system", "content": _SYSTEM},
@@ -204,7 +206,9 @@ def formalise_goal(account, npc, want, on_success, on_error):
         return
 
     room = npc.location
-    world = (room.db.world_description if room else "") or ""
+    from world import lore
+
+    world = lore.description(room)
     messages = [
         {"role": "system", "content": _GOAL_SYSTEM},
         {

@@ -83,7 +83,9 @@ def _room_context(room):
 
 
 def _world_and_room(room):
-    return f"World: {room.db.world_description or ''}\nRoom:\n{_room_context(room)}"
+    from world import lore
+
+    return f"World: {lore.description(room)}\nRoom:\n{_room_context(room)}"
 
 
 # ---------------------------------------------------------------------------

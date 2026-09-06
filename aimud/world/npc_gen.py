@@ -517,7 +517,9 @@ def generate_npc(account, room, on_success, on_error):
         on_error(str(e))
         return
 
-    world_desc = room.db.world_description or ""
+    from world import lore
+
+    world_desc = lore.description(room)
     room_title = room.db.room_title or room.key
     room_desc = room.db.desc or ""
 
@@ -584,7 +586,14 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
         on_error(str(e))
         return
 
-    world_desc = room.db.world_description or npc.db.world_description or ""
+    # {{user}} names whoever is here, so an NPC reads the world the way
+    # the player it is talking to appears in it.
+    from world import lore
+    from world.activity import active_players_in
+
+    nearby = active_players_in(room)
+    world_desc = (lore.description(room, nearby[0] if nearby else None)
+                  or npc.db.world_description or "")
     room_title = room.db.room_title or room.key
     room_desc = room.db.desc or ""
     room_contents = _room_context(room, npc)
@@ -663,7 +672,14 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
         on_error(str(e))
         return
 
-    world_desc = room.db.world_description or npc.db.world_description or ""
+    # {{user}} names whoever is here, so an NPC reads the world the way
+    # the player it is talking to appears in it.
+    from world import lore
+    from world.activity import active_players_in
+
+    nearby = active_players_in(room)
+    world_desc = (lore.description(room, nearby[0] if nearby else None)
+                  or npc.db.world_description or "")
     room_title = room.db.room_title or room.key
     room_desc = room.db.desc or ""
     room_contents = _room_context(room, npc)

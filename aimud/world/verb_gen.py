@@ -138,6 +138,13 @@ def store_rule(world_root, key, rule):
     world_root.db.verb_rules = rules
 
 
+def _lore(world_root, actor):
+    """The world as it reads to whoever is acting."""
+    from world import lore
+
+    return lore.description(world_root, actor)
+
+
 def _describe_objects(bound, actor):
     """What the model is allowed to know: the objects, and nothing else."""
     from world import verbs
@@ -175,7 +182,7 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
         {
             "role": "user",
             "content": (
-                f"World: {world_root.db.world_description if world_root else ''}\n\n"
+                f"World: {_lore(world_root, actor)}\n\n"
                 f"The player typed: '{raw}'\n"
                 f"Verb: {verb}\n\n"
                 f"Things involved:\n{_describe_objects(bound, actor)}\n\n"

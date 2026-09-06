@@ -863,11 +863,21 @@ def populate_room(account, room):
 # Public async API
 # ---------------------------------------------------------------------------
 
-def generate_first_room(account, world_description, on_success, on_error):
+def generate_first_room(account, spec, on_success, on_error,
+                        creator_character=None):
     """
     Async. Generate the starting room for a new world.
+
+    `spec` is what the worldgen wizard collected: title, description, and the
+    player's name and appearance in this world. A bare string is accepted as
+    the description alone, so older callers keep working.
+
     Calls on_success(room) or on_error(msg) in the main thread.
     """
+    if isinstance(spec, str):
+        spec = {"description": spec}
+    world_description = (spec.get("description") or "").strip()
+
     model = account.get_model_for("rooms") or "openai/gpt-4o-mini"
     try:
         api_key = account.get_openrouter_key()
@@ -923,6 +933,14 @@ def generate_first_room(account, world_description, on_success, on_error):
                         zone=zone,
                     )
                     room.db.world_plan = plan
+
+                    # Title, long description, and the player's name and
+                    # appearance here -- all set before anyone arrives, so the
+                    # first look already shows the world as it was designed.
+                    from world import lore
+
+                    lore.store(room, spec)
+                    lore.apply_to_player(room, creator_character, spec)
                     # Record this world on the account so `worlds` can list it.
                     created = account.db.created_worlds or []
                     created.append(room.id)
