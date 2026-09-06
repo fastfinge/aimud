@@ -1,0 +1,268 @@
+"""
+NPC typeclass.
+
+NPCs witness events in their room (dialogue, emotes, actions, gifts) and react
+via the dialogue model using OpenRouter tool-calling. Reactions are async; the
+tool calls they return are executed in the main thread.
+
+NPC-to-NPC awareness is implemented with a chain-depth cap: an NPC can react to
+another NPC's action, but the resulting reaction cannot trigger yet another NPC
+reaction (depth > MAX_NPC_CHAIN is silently dropped). This prevents runaway
+conversation loops while still allowing natural cross-NPC interaction.
+NPCs only react to each other when at least one player is in the room.
+"""
+
+from evennia.objects.objects import DefaultObject
+
+from .objects import ObjectParent
+
+MAX_HISTORY = 30    # events older than this are dropped
+MAX_NPC_CHAIN = 1   # how many NPC→NPC hops are allowed per player event
+
+
+class NPC(ObjectParent, DefaultObject):
+    """
+    An AI-driven non-player character.
+
+    Key db attributes:
+      db.desc              — physical description
+      db.world_description — cached world theme
+      db.is_npc            — True (used as a quick type check)
+      db.action_history    — list of {"type", "actor", "text"} event dicts
+    """
+
+    def at_object_creation(self):
+        super().at_object_creation()
+        self.db.is_npc = True
+        self.db.action_history = []
+        self.ensure_idle_script()
+
+    def ensure_idle_script(self):
+        """
+        Attach the idle script if missing and make sure its timer is running.
+
+        Called at creation and again for every NPC at server start, so an NPC
+        that predates the script — or whose timer was left stopped — starts
+        acting again rather than staying inert for good.
+        """
+        from typeclasses.scripts import NPCIdleScript
+
+        existing = self.scripts.get("npc_idle")
+        if not existing:
+            self.scripts.add(NPCIdleScript)
+            return
+        for script in existing:
+            if not script.db_is_active or script.interval <= 0:
+                script.start(interval=1, start_delay=True, repeats=0)
+
+    # ------------------------------------------------------------------ #
+    # Public API — called by room event hooks, notify_npcs(), and the script
+    # ------------------------------------------------------------------ #
+
+    def witness(self, event_type, actor_name, text, _depth=0):
+        """
+        Record an event and (if not already reacting and within chain depth)
+        trigger an AI reaction.
+
+        event_type : "say" | "action" | "emote"
+        actor_name : display name of the actor
+        text       : what was said / what happened
+        _depth     : NPC-to-NPC hop count; events with _depth > MAX_NPC_CHAIN
+                     are recorded in history but do not trigger a new reaction.
+        """
+        self._add_to_history(event_type, actor_name, text)
+        if not self.ndb.reacting and _depth <= MAX_NPC_CHAIN:
+            self._trigger_reaction(_depth)
+
+    # ------------------------------------------------------------------ #
+    def trigger_idle_action(self):
+        """Called by NPCIdleScript when the probability roll succeeds."""
+        if self.ndb.reacting:
+            return
+        room = self.location
+        if not room:
+            return
+        account = self._find_account(room)
+        if not account:
+            return
+        self.ndb.reacting = True
+        from world.npc_gen import generate_npc_idle
+        generate_npc_idle(
+            account=account,
+            npc=self,
+            room=room,
+            on_success=self._execute_tool_calls,
+            on_error=self._on_react_error,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Evennia hooks
+    # ------------------------------------------------------------------ #
+
+    def at_object_receive(self, moved_obj, source_location, move_type="move", **kwargs):
+        """React when a player gives this NPC an object."""
+        super().at_object_receive(moved_obj, source_location,
+                                  move_type=move_type, **kwargs)
+        # Only react to items given by characters (not picked up by self from room)
+        if source_location and hasattr(source_location, "account"):
+            giver_name = source_location.get_display_name(self)
+            item_name = moved_obj.get_display_name(self)
+            self.witness("action", giver_name,
+                         f"gave {item_name} to {self.key}", _depth=0)
+
+    # ------------------------------------------------------------------ #
+    # Internal
+    # ------------------------------------------------------------------ #
+
+    def _add_to_history(self, event_type, actor_name, text):
+        history = self.db.action_history or []
+        history.append({"type": event_type, "actor": actor_name, "text": text})
+        if len(history) > MAX_HISTORY:
+            history = history[-MAX_HISTORY:]
+        self.db.action_history = history
+
+    def _trigger_reaction(self, _depth=0):
+        room = self.location
+        if not room:
+            return
+        account = self._find_account(room)
+        if not account:
+            return
+        self.ndb.reacting = True
+        from world.npc_gen import generate_npc_reaction
+        generate_npc_reaction(
+            account=account,
+            npc=self,
+            room=room,
+            on_success=lambda calls: self._execute_tool_calls(calls, _depth),
+            on_error=self._on_react_error,
+        )
+
+    def _on_react_error(self, _err):
+        self.ndb.reacting = False
+
+    def _find_account(self, room):
+        """Return an account with an API key — prefer players currently in the room."""
+        for obj in room.contents:
+            account = getattr(obj, "account", None)
+            if account and account.db.openrouter_api_key:
+                return account
+        world_root = room.db.world_root
+        if world_root:
+            return world_root.db.world_creator
+        return None
+
+    def _execute_tool_calls(self, tool_calls, _depth=0):
+        """Apply a list of {"name": ..., "args": ...} dicts. Runs in main thread."""
+        self.ndb.reacting = False
+        # Reset idle probability whenever the NPC actually does something.
+        if tool_calls:
+            self.ndb.idle_probability = 0
+        room = self.location
+        if not room:
+            return
+        for call in tool_calls:
+            self._execute_one(call.get("name", ""), call.get("args", {}), room, _depth)
+
+    def _notify_other_npcs(self, room, event_type, text, _depth):
+        """
+        Notify other NPCs in the room of this NPC's action.
+        Only fires when at least one player is present, and respects MAX_NPC_CHAIN.
+        """
+        next_depth = _depth + 1
+        if next_depth > MAX_NPC_CHAIN:
+            return
+        has_player = any(
+            getattr(obj, "account", None) and obj.account.sessions.count() > 0
+            for obj in room.contents
+        )
+        if not has_player:
+            return
+        for obj in room.contents:
+            if obj is not self and obj.db.is_npc:
+                obj.witness(event_type, self.key, text, _depth=next_depth)
+
+    def _execute_one(self, tool_name, args, room, _depth=0):
+        from commands.look_take_cmds import _find_one
+
+        if tool_name == "say":
+            msg = str(args.get("message", "")).strip()
+            if msg:
+                room.msg_contents(f'{self.key} says, "|w{msg}|n"')
+                self._add_to_history("say", self.key, msg)
+                self._notify_other_npcs(room, "say", msg, _depth)
+
+        elif tool_name == "emote":
+            action = str(args.get("action", "")).strip()
+            if action:
+                room.msg_contents(f"{self.key} {action}")
+                self._add_to_history("emote", self.key, action)
+                self._notify_other_npcs(room, "emote", f"{self.key} {action}", _depth)
+
+        elif tool_name == "move":
+            direction = str(args.get("direction", "")).strip()
+            if direction:
+                exit_obj, _ = _find_one(self, direction, location=room)
+                if exit_obj and getattr(exit_obj, "destination", None) is not None:
+                    self.move_to(exit_obj.destination, quiet=False)
+
+        elif tool_name == "get":
+            obj_name = str(args.get("object_name", "")).strip()
+            if obj_name:
+                obj, _ = _find_one(self, obj_name, location=room)
+                if obj and obj is not self:
+                    if obj.move_to(self, quiet=True):
+                        room.msg_contents(
+                            f"{self.key} picks up {obj.get_display_name(self)}."
+                        )
+
+        elif tool_name == "give":
+            obj_name = str(args.get("object_name", "")).strip()
+            recipient_name = str(args.get("recipient", "")).strip()
+            if obj_name and recipient_name:
+                obj, _ = _find_one(self, obj_name, location=self)
+                recipient, _ = _find_one(self, recipient_name, location=room)
+                if obj and recipient and recipient is not self:
+                    if obj.move_to(recipient, quiet=True):
+                        room.msg_contents(
+                            f"{self.key} gives {obj.get_display_name(self)} "
+                            f"to {recipient.get_display_name(self)}."
+                        )
+
+        elif tool_name == "create":
+            from evennia import create_object
+            from typeclasses.objects import Object
+            name = str(args.get("name", "")).strip()
+            description = str(args.get("description", "")).strip()
+            takeable = bool(args.get("takeable", True))
+            if name:
+                obj = create_object(Object, key=name, location=room)
+                obj.db.desc = description
+                obj.db.ai_takeable = takeable
+                obj.db.is_ai_item = True
+                room.msg_contents(
+                    f"{self.key} produces {obj.get_display_name(self)}."
+                )
+
+        elif tool_name == "destroy":
+            obj_name = str(args.get("object_name", "")).strip()
+            if obj_name:
+                obj, _ = _find_one(self, obj_name, location=room)
+                if not obj:
+                    obj, _ = _find_one(self, obj_name, location=self)
+                if obj and obj is not self and obj is not room:
+                    label = obj.key
+                    obj.delete()
+                    room.msg_contents(f"{self.key} destroys the {label}.")
+
+        elif tool_name == "modify":
+            obj_name = str(args.get("object_name", "")).strip()
+            if obj_name:
+                obj, _ = _find_one(self, obj_name, location=room)
+                if not obj:
+                    obj, _ = _find_one(self, obj_name, location=self)
+                if obj and obj is not self and obj is not room:
+                    if "new_name" in args:
+                        obj.key = str(args["new_name"]).strip()
+                    if "new_description" in args:
+                        obj.db.desc = str(args["new_description"]).strip()
