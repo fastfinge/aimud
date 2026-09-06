@@ -107,15 +107,18 @@ class Script(DefaultScript):
 
 class NPCIdleScript(DefaultScript):
     """
-    Attached to each NPC at creation. Fires every second and, when at least
-    one player is in the room, increments the NPC's idle probability by 1%.
-    When the probability roll succeeds the NPC takes a spontaneous action and
-    the probability resets to 0.
+    Attached to each NPC at creation. Fires every second and, while the NPC is
+    allowed to act, increments its idle probability by 1%. When the
+    probability roll succeeds the NPC takes a spontaneous action and the
+    probability resets to 0.
 
     The probability also resets to 0 whenever the NPC acts for any reason
-    (reaction to dialogue/emotes/actions or another idle trigger).
-    Probability does not increase and no action is taken while no player is
-    present, or while the NPC is already processing a reaction.
+    (reaction to dialogue/emotes/actions or another idle trigger), and does
+    not increase while the NPC is already processing a reaction.
+
+    Whether it may act at all is `world.activity.npc_may_act`: an NPC keeps
+    going for a while after the players leave, so a world stays busy behind
+    them, but a world nobody is watching stops thinking entirely.
     """
 
     # These must be assigned in at_script_creation(), not as class attributes:
@@ -139,16 +142,11 @@ class NPCIdleScript(DefaultScript):
         if npc.ndb.reacting:
             return
 
-        room = npc.location
-        if not room:
-            return
+        # One gate for every reason an NPC might wake: a sleeping world, an
+        # idle player, or an NPC that has not been near anyone for a while.
+        from world.activity import npc_may_act
 
-        # Only tick while a logged-in player is present.
-        has_player = any(
-            getattr(obj, "account", None) and obj.account.sessions.count() > 0
-            for obj in room.contents
-        )
-        if not has_player:
+        if not npc_may_act(npc):
             return
 
         # Increment probability (capped at 100 so it doesn't spiral past certainty).

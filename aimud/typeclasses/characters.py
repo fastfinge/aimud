@@ -41,6 +41,12 @@ class Character(ObjectParent, DefaultCharacter):
         if not room:
             return
 
+        # Arriving puts every NPC here back in company, so they keep acting
+        # for a while after this character wanders off again.
+        from world.activity import refresh_npcs_near
+
+        refresh_npcs_near(room)
+
         # Where the character has been is part of what they know.
         from world.memory import remember
 

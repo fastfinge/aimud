@@ -99,6 +99,14 @@ class NPC(ObjectParent, DefaultObject):
     # Evennia hooks
     # ------------------------------------------------------------------ #
 
+    def at_post_move(self, source_location, move_type="move", **kwargs):
+        """Walking into a room where a player is counts as coming into company."""
+        super().at_post_move(source_location, move_type=move_type, **kwargs)
+        from world.activity import active_players_in, note_player_nearby
+
+        if active_players_in(self.location):
+            note_player_nearby(self)
+
     def at_object_receive(self, moved_obj, source_location, move_type="move", **kwargs):
         """React when a player gives this NPC an object."""
         super().at_object_receive(moved_obj, source_location,
@@ -143,6 +151,10 @@ class NPC(ObjectParent, DefaultObject):
         room = self.location
         if not room:
             return
+        from world.activity import npc_may_act
+
+        if not npc_may_act(self):
+            return
         account = self._find_account(room)
         if not account:
             return
@@ -185,19 +197,19 @@ class NPC(ObjectParent, DefaultObject):
     def _notify_other_npcs(self, room, event_type, text, _depth):
         """
         Notify other NPCs in the room of this NPC's action.
-        Only fires when at least one player is present, and respects MAX_NPC_CHAIN.
+
+        Respects MAX_NPC_CHAIN, and each recipient decides for itself whether
+        it is currently allowed to act -- which is what lets two NPCs hold a
+        conversation in a room the players have just left, while a world
+        nobody is watching stays silent.
         """
+        from world.activity import npc_may_act
+
         next_depth = _depth + 1
         if next_depth > MAX_NPC_CHAIN:
             return
-        has_player = any(
-            getattr(obj, "account", None) and obj.account.sessions.count() > 0
-            for obj in room.contents
-        )
-        if not has_player:
-            return
         for obj in room.contents:
-            if obj is not self and obj.db.is_npc:
+            if obj is not self and obj.db.is_npc and npc_may_act(obj):
                 obj.witness(event_type, self.key, text, _depth=next_depth)
 
     def _attempt_verb(self, action, room, _depth=0):
