@@ -200,6 +200,35 @@ class NPC(ObjectParent, DefaultObject):
             if obj is not self and obj.db.is_npc:
                 obj.witness(event_type, self.key, text, _depth=next_depth)
 
+    def _attempt_verb(self, action, room):
+        """
+        Try a verb through the same pipeline a player's command uses.
+
+        This is what lets an NPC actually light the lamp rather than say it
+        did: identical parsing, preconditions and effects.  The narrower
+        effect set reflects that nobody chose to let the NPC act -- it may
+        change objects, but not rewrite the room or walk the player around.
+        """
+        from world.attempt import NPC_FORBIDDEN_EFFECTS, attempt
+
+        account = self._find_account(room)
+        if not account:
+            return
+
+        allowed = {
+            "create_object", "destroy_object", "move_object",
+            "modify_object", "set_state",
+        } - NPC_FORBIDDEN_EFFECTS
+
+        def deliver(actor_text, room_text=""):
+            visible = room_text or actor_text
+            if not visible:
+                return
+            room.msg_contents(f"{self.key}: {visible}")
+            self._add_to_history("action", self.key, visible)
+
+        attempt(self, action, account, deliver, allow_effects=allowed)
+
     def _execute_one(self, tool_name, args, room, _depth=0):
         from commands.look_take_cmds import _find_one
 
@@ -216,6 +245,11 @@ class NPC(ObjectParent, DefaultObject):
                 room.msg_contents(f"{self.key} {action}")
                 self._add_to_history("emote", self.key, action)
                 self._notify_other_npcs(room, "emote", f"{self.key} {action}", _depth)
+
+        elif tool_name == "attempt":
+            action = str(args.get("action", "")).strip()
+            if action:
+                self._attempt_verb(action, room)
 
         elif tool_name == "move":
             direction = str(args.get("direction", "")).strip()

@@ -118,7 +118,8 @@ _CONTENTS_SYSTEM_PROMPT = """You populate a room in a text-based MUD with its lo
 Respond with a single JSON object — no other text — matching:
 {
   "items": [
-    {"name": "item name", "description": "1-2 sentences", "takeable": true}
+    {"name": "item name", "description": "1-2 sentences", "takeable": true,
+     "affordances": ["readable"], "states": []}
   ],
   "wants_npc": <true or false>
 }
@@ -126,6 +127,12 @@ Respond with a single JSON object — no other text — matching:
 items are the portable, removable things that happen to be here — never the
 room's fixtures, which are already in its description. Give 0 to 3, and prefer
 0 for a bare corridor. Do not repeat anything already named in the description.
+
+affordances are what can be done with each item, as lowercase single words:
+readable, openable, container, flammable, edible, drinkable, wearable,
+breakable, wieldable, and so on. They decide which verbs work on it, so give
+every one that genuinely applies. states are conditions currently true of it
+(dusty, wet, broken), usually empty.
 
 wants_npc asks whether someone is in this room right now. Judge it from the
 room: a place people work in, wait in, staff or gather in usually has somebody
@@ -821,6 +828,12 @@ def populate_room(account, room):
             obj.db.desc = str(item.get("description", "")).strip()
             obj.db.ai_takeable = bool(item.get("takeable", True))
             obj.db.is_ai_item = True
+            obj.db.affordances = sorted(
+                {str(a).lower().strip() for a in item.get("affordances", []) if a}
+            )
+            obj.db.states = sorted(
+                {str(s).lower().strip() for s in item.get("states", []) if s}
+            )
             # Evennia's own singular form, so it reads "a dried-out marker"
             # rather than "dried-out marker".
             created.append(obj.get_numbered_name(1, None, return_string=True))

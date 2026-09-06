@@ -29,9 +29,21 @@ Respond with a single JSON object — no other text:
 {
   "name": "Item Name (2-4 words, title case)",
   "description": "2-3 sentence atmospheric description of the item.",
-  "takeable": true|false
+  "takeable": true|false,
+  "affordances": ["readable", "flammable"],
+  "states": ["dusty"]
 }
-takeable should be false for fixed features (bolted or structural) and true for portable objects."""
+takeable should be false for fixed features (bolted or structural) and true for portable objects.
+
+affordances are what can be done with this thing, as lowercase single words:
+readable, openable, container, flammable, edible, drinkable, wearable,
+sittable, climbable, breakable, wet_able, movable, lockable, wieldable...
+Use as many as genuinely apply and invent others where they fit — these decide
+which verbs work on it, so a poster that cannot be read is a poster nobody can
+read. Give an empty list only for something truly inert.
+
+states are conditions currently true of it (locked, lit, wet, dirty, broken),
+usually empty for a new object."""
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +221,15 @@ def generate_item(account, room, object_name, on_success, on_error):
             item.db.desc = description
             item.db.ai_takeable = takeable
             item.db.is_ai_item = True
+            # What can be done with it, and what is currently true of it.
+            # Verb rules test these, so an object without affordances is one
+            # no verb will work on.
+            item.db.affordances = sorted(
+                {str(a).lower().strip() for a in data.get("affordances", []) if a}
+            )
+            item.db.states = sorted(
+                {str(s).lower().strip() for s in data.get("states", []) if s}
+            )
 
             on_success(item)
         except Exception as exc:

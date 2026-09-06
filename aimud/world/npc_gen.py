@@ -102,6 +102,28 @@ NPC_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "attempt",
+            "description": (
+                "Attempt an action on something, the way a player would type it: "
+                "'light the candle', 'read the notice', 'open the drawer'. The "
+                "world decides whether it works and what changes. Use this for "
+                "anything physical rather than describing it in an emote."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "description": "The action as a short command, e.g. 'light candle'",
+                    }
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create",
             "description": "Create a new object in the room.",
             "parameters": {

@@ -89,7 +89,7 @@ class CmdRemember(Command):
         def _fetch():
             # Recall and the model call share one trip into the thread pool,
             # keeping both off the reactor.
-            from world.cmd_gen import _call_openrouter
+            from world.verb_gen import _call_openrouter
             from world.memory import format_memories, recall_sync
 
             memories = recall_sync(bank, question, top_k=8)
