@@ -21,7 +21,9 @@ from evennia.utils.evmenu import EvMenu
 
 FUNCTIONS = [
     ("default",    "Default model when no function-specific model is set"),
-    ("rooms",      "Room and exit generation"),
+    ("rooms",      "Room descriptions and world planning"),
+    ("naming",     "Room names, types and exits (short, frequent calls)"),
+    ("contents",   "Items and NPCs placed in a finished room"),
     ("items",      "Item creation"),
     ("npcs",       "NPC creation"),
     ("dialogue",   "NPC dialogue generation"),
