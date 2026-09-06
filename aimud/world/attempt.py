@@ -110,6 +110,13 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
     if not verb:
         return
 
+    if verb == "follow":
+        # Standing arrangements are not verbs. Without this an NPC asking to
+        # follow someone would have the world learn a "follow" rule, which can
+        # only describe the moment it was used and not the arrangement.
+        _follow(caller, parsed, on_message)
+        return
+
     bound, unbound = verbs.bind_all(caller, parsed["roles"], fuzzy=fuzzy)
     waiter = _once(on_wait)
 
@@ -135,6 +142,30 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
 
     _with_bindings(caller, room, account, raw, verb, bound, on_message,
                    allow_effects, waiter)
+
+
+def _follow(caller, parsed, on_message):
+    """Start or stop following, for whoever asked -- player or NPC."""
+    from commands.follow_cmds import _find_person
+    from world.following import follow, unfollow
+
+    wanted = (parsed["roles"].get("direct")
+              or parsed["roles"].get("target") or "").strip()
+    if not wanted:
+        on_message(unfollow(caller), "")
+        return
+
+    target = _find_person(caller, wanted)
+    if target is None:
+        on_message(f"You see no {wanted} here.", "")
+        return
+
+    started, message = follow(caller, target)
+    room_text = ""
+    if started:
+        room_text = (f"{caller.get_display_name(caller)} begins following "
+                     f"{target.get_display_name(caller)}.")
+    on_message(message, room_text)
 
 
 def _promote(caller, room, account, parsed, bound, unbound, resume, on_message):

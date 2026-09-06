@@ -18,6 +18,7 @@ from evennia import default_cmds
 
 from commands.account_cmds import CmdApiKey, CmdModels
 from commands.look_take_cmds import CmdAIGet, CmdAILook
+from commands.follow_cmds import CmdFollow
 from commands.memory_cmds import CmdRemember
 from commands.name_cmds import CmdName
 from commands.quest_cmds import CmdQuests
@@ -44,6 +45,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdAILook())
         self.add(CmdAIGet())
         self.add(CmdAIEmote())
+        self.add(CmdFollow())
         self.add(CmdRemember())
         self.add(CmdName())
         self.add(CmdQuests())

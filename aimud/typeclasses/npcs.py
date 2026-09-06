@@ -111,7 +111,9 @@ class NPC(ObjectParent, DefaultObject):
         """Walking into a room where a player is counts as coming into company."""
         super().at_post_move(source_location, move_type=move_type, **kwargs)
         from world.activity import active_players_in, note_player_nearby
+        from world.following import move_followers
 
+        move_followers(self, source_location)
         if active_players_in(self.location):
             note_player_nearby(self)
 

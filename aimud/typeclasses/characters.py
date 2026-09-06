@@ -88,6 +88,11 @@ class Character(ObjectParent, DefaultCharacter):
         if not room:
             return
 
+        # Anyone following came with us.
+        from world.following import move_followers
+
+        move_followers(self, source_location)
+
         # Arriving puts every NPC here back in company, so they keep acting
         # for a while after this character wanders off again.
         from world.activity import refresh_npcs_near
