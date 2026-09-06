@@ -6,7 +6,6 @@ thread.  Only the network call to OpenRouter is deferred to a thread pool.
 """
 
 import json
-import random
 import re
 import urllib.request
 
@@ -121,13 +120,19 @@ Respond with a single JSON object — no other text — matching:
   "items": [
     {"name": "item name", "description": "1-2 sentences", "takeable": true}
   ],
-  "wants_npc": false
+  "wants_npc": <true or false>
 }
 
 items are the portable, removable things that happen to be here — never the
 room's fixtures, which are already in its description. Give 0 to 3, and prefer
 0 for a bare corridor. Do not repeat anything already named in the description.
-wants_npc is true only if a person would plausibly be here right now.
+
+wants_npc asks whether someone is in this room right now. Judge it from the
+room: a place people work in, wait in, staff or gather in usually has somebody
+there — an office has whoever works at it, a classroom has a teacher or a
+pupil, a shop has someone behind the counter. Passageways, storerooms and
+empty thresholds usually do not. Decide honestly for this room rather than
+defaulting either way; a world where nobody is ever anywhere feels dead.
 Return only the JSON object."""
 
 
@@ -760,6 +765,13 @@ def _generate_description(account, api_key, world_description, context, name,
     ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
 
 
+def _join_names(names):
+    """"a, b and c" -- for reading aloud, not for parsing."""
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
 def populate_room(account, room):
     """
     Async, fire-and-forget. Give a finished room its loose contents.
@@ -799,6 +811,8 @@ def populate_room(account, room):
             data = _parse_json_object(content)
         except Exception:
             return
+
+        created = []
         for item in (data.get("items") or [])[:3]:
             name = str(item.get("name", "")).strip()
             if not name:
@@ -807,10 +821,24 @@ def populate_room(account, room):
             obj.db.desc = str(item.get("description", "")).strip()
             obj.db.ai_takeable = bool(item.get("takeable", True))
             obj.db.is_ai_item = True
-        if data.get("wants_npc") and random.random() < 0.5:
+            # Evennia's own singular form, so it reads "a dried-out marker"
+            # rather than "dried-out marker".
+            created.append(obj.get_numbered_name(1, None, return_string=True))
+
+        # The player is already standing here, so anything that appears has to
+        # announce itself -- otherwise they only find it by leaving and coming
+        # back. An empty room simply gets no message.
+        if created:
+            room.msg_contents(f"You notice {_join_names(created)} here.")
+
+        if data.get("wants_npc"):
             from world.npc_gen import generate_npc
+
+            def arrived(npc):
+                room.msg_contents(f"You notice {npc.key} here.")
+
             generate_npc(account=account, room=room,
-                         on_success=lambda _npc: None,
+                         on_success=arrived,
                          on_error=lambda _err: None)
 
     threads.deferToThread(
