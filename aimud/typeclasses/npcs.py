@@ -31,6 +31,14 @@ class NPC(ObjectParent, DefaultObject):
       db.action_history    — list of {"type", "actor", "text"} event dicts
     """
 
+    #: Everything _execute_one implements. A call outside this set means the
+    #: model invented a tool, which is worth knowing about rather than
+    #: dropping in silence.
+    KNOWN_TOOLS = frozenset([
+        "say", "emote", "move", "get", "give", "attempt", "offer_quest",
+        "create", "destroy", "modify",
+    ])
+
     def at_object_creation(self):
         super().at_object_creation()
         self.db.is_npc = True
@@ -214,18 +222,21 @@ class NPC(ObjectParent, DefaultObject):
 
     def _offer_quest(self, args, room):
         """
-        Ask a player present to do something, with terms attached.
+        Ask a player present to do something, in this NPC's own words.
 
-        The offer sits in their quest list until they answer it, so an NPC
-        cannot commit anyone to anything by talking at them.
+        The words are turned into a checkable quest by a separate call, so the
+        dialogue model is never asked to produce a typed goal schema in the
+        middle of speaking in character -- which it never once managed.
         """
         from evennia.objects.objects import DefaultCharacter
+        from evennia.utils import logger
 
-        from world import quests
-
-        # Matched against the name the NPC actually sees, since that is the
-        # one it will have used when asking.
         wanted = str(args.get("player", "")).strip().lower()
+        request = str(args.get("request", "")).strip()
+        if not request:
+            logger.log_info(f"{self.key}: quest offer with no request, dropped")
+            return
+
         target = None
         for obj in room.contents:
             if not isinstance(obj, DefaultCharacter):
@@ -235,30 +246,56 @@ class NPC(ObjectParent, DefaultObject):
                 target = obj
                 break
         if target is None:
+            logger.log_info(
+                f"{self.key}: wanted to ask {wanted!r} for something, but nobody here matches"
+            )
             return
 
-        quest = quests.offer(
-            self, target,
-            title=args.get("title"),
-            description=args.get("description"),
-            conditions=args.get("goal"),
-            reward=args.get("reward"),
-            punishment=args.get("punishment"),
-            time_limit=args.get("time_limit_seconds"),
-        )
-        if quest is None:
+        account = self._find_account(room)
+        if not account:
             return
 
-        target.msg(
-            f'{self.key} says, "|w{quest["description"]}|n"\n'
-            f"|y{self.key} is asking something of you: |w{quest['title']}|y. "
-            f"Type |wquests|y to see the terms.|n"
-        )
-        room.msg_contents(
-            f"{self.key} asks {target.get_display_name(self)} for a favour.",
-            exclude=[target])
-        self._add_to_history("action", self.key,
-                             f"asked {target.get_display_name(self)} to {quest['title']}")
+        offer = str(args.get("offer", "")).strip()
+        consequence = str(args.get("consequence", "")).strip()
+        time_limit = args.get("time_limit_seconds")
+
+        def ready(spec):
+            from world import quests
+
+            quest = quests.offer(
+                self, target,
+                title=spec["title"],
+                description=request,
+                conditions=spec["goal"],
+                reward=spec["reward"],
+                punishment=spec["punishment"],
+                time_limit=time_limit,
+            )
+            if quest is None:
+                logger.log_info(
+                    f"{self.key}: quest {spec['title']!r} produced no testable "
+                    f"goal from {spec['goal']!r}, dropped"
+                )
+                return
+
+            target.msg(
+                f'{self.key} says, "|w{request}|n"\n'
+                f"|y{self.key} is asking something of you: |w{quest['title']}|y. "
+                f"Type |wquests|y to see the terms.|n"
+            )
+            room.msg_contents(
+                f"{self.key} asks {target.get_display_name(self)} for a favour.",
+                exclude=[target])
+            self._add_to_history("action", self.key,
+                                 f"asked {target.get_display_name(self)} to {quest['title']}")
+
+        def failed(err):
+            logger.log_info(f"{self.key}: could not turn a request into a quest: {err}")
+
+        from world.quest_gen import formalise
+
+        formalise(account, self, target, request, offer, consequence,
+                  on_success=ready, on_error=failed)
 
     def _attempt_verb(self, action, room, _depth=0):
         """
@@ -305,6 +342,14 @@ class NPC(ObjectParent, DefaultObject):
 
     def _execute_one(self, tool_name, args, room, _depth=0):
         from commands.look_take_cmds import _find_one
+
+        if tool_name not in self.KNOWN_TOOLS:
+            # Silently ignoring these is how a model quietly doing the wrong
+            # thing stays invisible.
+            from evennia.utils import logger
+
+            logger.log_info(f"{self.key}: unknown tool call {tool_name!r} ignored")
+            return
 
         if tool_name == "say":
             msg = str(args.get("message", "")).strip()

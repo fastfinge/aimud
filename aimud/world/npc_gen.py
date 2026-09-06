@@ -126,55 +126,41 @@ NPC_TOOLS = [
         "function": {
             "name": "offer_quest",
             "description": (
-                "Ask a player to do something for you, with a reward if they "
-                "manage it. Only offer something you would plausibly want, and "
-                "only to a player who is present. Say it in your own voice in "
-                "the description -- that is what they will read."
+                "Ask a player present to do something for you, in your own "
+                "words. Say what you want, what you will give them for it, and "
+                "any consequence of failing. The game works out how to check "
+                "it, so describe the errand plainly rather than in any "
+                "particular format -- and ask only for something that could "
+                "actually be done with what is around you."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "player": {"type": "string", "description": "Name of the player to ask"},
-                    "title": {"type": "string", "description": "Short name for the errand"},
-                    "description": {
+                    "player": {
                         "type": "string",
-                        "description": "What you say when you ask, 1-2 sentences",
+                        "description": "Name of the player you are asking",
                     },
-                    "goal": {
-                        "type": "array",
+                    "request": {
+                        "type": "string",
                         "description": (
-                            "What must become true. Each entry is one of: "
-                            '{"type":"holds","object":"brass key"} they carry it; '
-                            '{"type":"delivered","object":"letter","to":"Clerk"} they give it to someone; '
-                            '{"type":"state","object":"lamp","is":["lit"],"lacks":["broken"]} its condition; '
-                            '{"type":"gone","object":"rats"} it no longer exists; '
-                            '{"type":"exists","object":"stew"} it has been made; '
-                            '{"type":"in_room","room":"Kitchen"} they go there.'
+                            "What you want done, said the way you would say it: "
+                            "'bring me the chalk from the storeroom'"
                         ),
-                        "items": {"type": "object"},
                     },
-                    "reward": {
-                        "type": "array",
-                        "description": (
-                            "What they get. Usually "
-                            '{"type":"create_object","name":"...","description":"...","takeable":true,"location":"actor"}'
-                        ),
-                        "items": {"type": "object"},
+                    "offer": {
+                        "type": "string",
+                        "description": "What they get for doing it, e.g. 'my old brass compass'",
                     },
-                    "punishment": {
-                        "type": "array",
-                        "description": (
-                            "Optional. What it costs them to run out of time, e.g. "
-                            '{"type":"destroy_object","name":"their deposit"}. Omit for a kind character.'
-                        ),
-                        "items": {"type": "object"},
+                    "consequence": {
+                        "type": "string",
+                        "description": "Optional. What happens if they fail or run out of time.",
                     },
                     "time_limit_seconds": {
                         "type": "integer",
-                        "description": "Optional deadline in seconds. Omit for no time limit.",
+                        "description": "Optional deadline in seconds. Omit if there is no hurry.",
                     },
                 },
-                "required": ["player", "title", "description", "goal"],
+                "required": ["player", "request", "offer"],
             },
         },
     },

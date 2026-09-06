@@ -105,6 +105,18 @@ class Script(DefaultScript):
     pass
 
 
+#: Percentage points added to an NPC's urge to act, per second, while it is
+#: allowed to act at all. Every idle action is a model call, so this is the
+#: single biggest lever on what a populated world costs to run.
+#:
+#: The interval does not scale with the step: the odds climb every second, so
+#: it goes as roughly 1/sqrt(step). Halving the step only slows an NPC from
+#: acting every 12 seconds to every 17. A quarter of it gives every 25 --
+#: half the calls, and calmer company: something happening every twelve
+#: seconds is not lifelike, it is fidgeting.
+IDLE_STEP = 0.25
+
+
 class QuestDeadlineScript(DefaultScript):
     """
     One global script that expires quests whose time has run out.
@@ -180,7 +192,7 @@ class NPCIdleScript(DefaultScript):
             return
 
         # Increment probability (capped at 100 so it doesn't spiral past certainty).
-        prob = min((npc.ndb.idle_probability or 0) + 1, 100)
+        prob = min((npc.ndb.idle_probability or 0) + IDLE_STEP, 100)
         npc.ndb.idle_probability = prob
 
         # Roll — random() in [0, 1), so random() * 100 in [0, 100).
