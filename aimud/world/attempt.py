@@ -186,8 +186,9 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, on_message,
         ]
         extra = effects_mod.apply(caller, room, allowed, bound=bound,
                                   world_root=world_root)
-        _release(caller, on_message, actor_text,
-                 " ".join([room_text] + extra).strip())
+        visible = " ".join([room_text] + extra).strip()
+        _remember(caller, raw, bound, actor_text, extra)
+        _release(caller, on_message, actor_text, visible)
 
     if cached is not None:
         _finish(cached.get("actor", ""), cached.get("room", ""))
@@ -198,6 +199,29 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, on_message,
         on_success=_finish,
         on_error=lambda err: _release(caller, on_message, f"|r{err}|n"),
     )
+
+
+def _remember(caller, raw, bound, actor_text, changes):
+    """
+    Record what the character did, and what it changed.
+
+    Goes into the actor's own bank whether or not anyone saw it: reading a
+    letter alone in a room is still something you did, and "remember what did
+    the notice say?" should find it. What other people in the room remember
+    comes through the normal witnessing path, which only carries what was
+    actually visible.
+    """
+    from world.memory import remember
+
+    what = ", ".join(sorted(bound[r].key for r in bound)) or None
+    line = f"I did: {raw}"
+    if what:
+        line += f" (involving {what})"
+    if actor_text:
+        line += f" — {actor_text}"
+    if changes:
+        line += " " + " ".join(changes)
+    remember(caller, line, kind="did", importance=0.65)
 
 
 def _release(caller, on_message, actor_text, room_text=""):

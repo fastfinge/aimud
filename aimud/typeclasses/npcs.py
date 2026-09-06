@@ -200,7 +200,7 @@ class NPC(ObjectParent, DefaultObject):
             if obj is not self and obj.db.is_npc:
                 obj.witness(event_type, self.key, text, _depth=next_depth)
 
-    def _attempt_verb(self, action, room):
+    def _attempt_verb(self, action, room, _depth=0):
         """
         Try a verb through the same pipeline a player's command uses.
 
@@ -225,7 +225,13 @@ class NPC(ObjectParent, DefaultObject):
             if not visible:
                 return
             room.msg_contents(f"{self.key}: {visible}")
+            # The NPC's own record; _add_to_history also writes to its memory.
             self._add_to_history("action", self.key, visible)
+            # Others present witness it too, through the depth-capped path so
+            # one NPC acting cannot set off an endless chain of reactions.
+            self._notify_other_npcs(room, "action", visible, _depth)
+            from world.memory import record_room_event
+            record_room_event(room, "action", self.key, visible, actor=self)
 
         attempt(self, action, account, deliver, allow_effects=allowed)
 
@@ -249,7 +255,7 @@ class NPC(ObjectParent, DefaultObject):
         elif tool_name == "attempt":
             action = str(args.get("action", "")).strip()
             if action:
-                self._attempt_verb(action, room)
+                self._attempt_verb(action, room, _depth)
 
         elif tool_name == "move":
             direction = str(args.get("direction", "")).strip()

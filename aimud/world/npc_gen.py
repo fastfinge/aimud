@@ -191,9 +191,16 @@ _NPC_REACT_SYSTEM = (
     "Current room: [{room_title}]\n"
     "{room_desc}\n"
     "{room_contents}\n\n"
+    "{known_verbs}"
     "Use the available tools to react naturally to recent events. "
     "You may call 0-3 tools per response. "
-    "If nothing warrants a response, call no tools. Keep reactions brief and in-character."
+    "If nothing warrants a response, call no tools. Keep reactions brief and in-character.\n\n"
+    "To do something physical, use the `attempt` tool with the action written "
+    "as a short command — 'light candle', 'open drawer', 'read notice'. That "
+    "actually changes the world: the object really is lit, opened or taken, and "
+    "everyone present sees it. Do not use `emote` to pretend an action happened; "
+    "emote is for gestures and expression only. You are free to attempt actions "
+    "nobody has tried before."
 )
 
 # ---------------------------------------------------------------------------
@@ -229,27 +236,62 @@ def _parse_json(content):
 
 
 def _room_context(room, npc):
-    """Build a short room context string for the reaction prompt."""
+    """
+    Build a short room context string for the reaction prompt.
+
+    Objects are listed with what can be done to them and what is currently
+    true of them, because an NPC choosing an action needs to know that the
+    candle is flammable and already lit.  People are told apart by typeclass:
+    every Evennia object has a `sessions` attribute, so testing for one
+    listed keys, exits and NPCs alike as people.
+    """
+    from evennia.objects.objects import DefaultCharacter
+
     people, objects, exits = [], [], []
     for obj in room.contents:
         if obj is npc:
             continue
-        if hasattr(obj, "sessions"):
-            people.append(obj.key)
-        elif getattr(obj, "destination", None) is not None:
+        if getattr(obj, "destination", None) is not None:
             exits.append(obj.key)
         elif obj.db.is_npc:
             people.append(f"{obj.key} (NPC)")
+        elif isinstance(obj, DefaultCharacter):
+            people.append(obj.key)
         else:
-            objects.append(obj.key)
+            marks = list(obj.db.affordances or [])
+            condition = list(obj.db.states or [])
+            detail = ", ".join(marks) or "nothing special"
+            if condition:
+                detail += "; currently " + ", ".join(condition)
+            objects.append(f"{obj.key} ({detail})")
+
     parts = []
     if people:
         parts.append("People present: " + ", ".join(people))
     if objects:
-        parts.append("Objects here: " + ", ".join(objects))
+        parts.append("Objects here: " + "; ".join(objects))
     if exits:
         parts.append("Exits: " + ", ".join(exits))
     return "\n".join(parts)
+
+
+def _known_verbs(room):
+    """
+    Verbs this world has already worked out, cheapest first to reuse.
+
+    Offering them is not a restriction -- an NPC may attempt anything, and a
+    verb nobody has used yet simply costs the world one call to learn. Naming
+    the ones already known nudges reuse of what is free.
+    """
+    world_root = room.db.world_root if room else None
+    if not world_root:
+        return []
+    seen = []
+    for key in (world_root.db.verb_rules or {}):
+        verb = key.split("#", 1)[0]
+        if verb not in seen:
+            seen.append(verb)
+    return sorted(seen)
 
 
 #: How many recent events go into a prompt verbatim.  Everything older is
@@ -395,6 +437,12 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
     room_contents = _room_context(room, npc)
     history_text, bank, query = _memory_inputs(npc, room_title)
 
+    verbs_known = _known_verbs(room)
+    known_line = (
+        f"Actions this world already understands: {', '.join(verbs_known)}\n\n"
+        if verbs_known else ""
+    )
+
     system = _NPC_REACT_SYSTEM.format(
         npc_name=npc.key,
         world_desc=world_desc,
@@ -402,6 +450,7 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
         room_title=room_title,
         room_desc=room_desc,
         room_contents=room_contents,
+        known_verbs=known_line,
     )
 
     def _fetch():
@@ -468,6 +517,12 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
     # needs from further back is recalled rather than replayed.
     history_text, bank, query = _memory_inputs(npc, room_title)
 
+    verbs_known = _known_verbs(room)
+    known_line = (
+        f"Actions this world already understands: {', '.join(verbs_known)}\n\n"
+        if verbs_known else ""
+    )
+
     system = _NPC_REACT_SYSTEM.format(
         npc_name=npc.key,
         world_desc=world_desc,
@@ -475,6 +530,7 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
         room_title=room_title,
         room_desc=room_desc,
         room_contents=room_contents,
+        known_verbs=known_line,
     )
 
     def _fetch():
