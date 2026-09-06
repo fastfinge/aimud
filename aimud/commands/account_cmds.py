@@ -7,9 +7,6 @@ from evennia.accounts.accounts import DefaultAccount
 from commands.command import Command
 
 
-FUNCTION_NAMES = ("default", "rooms", "items", "npcs", "dialogue", "validation", "commands")
-
-
 def _get_account(caller):
     return caller if isinstance(caller, DefaultAccount) else caller.account
 

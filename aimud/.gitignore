@@ -27,6 +27,9 @@ __pycache__
 *.db3
 *.db3.bak-*
 
+# Per-character memory banks (mnemosyne). Game data, not source.
+server/memory/
+
 # Installation-specific.
 # For group efforts, comment out some or all of these.
 server/conf/secret_settings.py

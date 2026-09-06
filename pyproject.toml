@@ -6,4 +6,5 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "evennia>=6.1.0",
+    "mnemosyne-memory[all]>=3.15.1",
 ]

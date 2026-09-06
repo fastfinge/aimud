@@ -18,6 +18,7 @@ from evennia import default_cmds
 
 from commands.account_cmds import CmdApiKey, CmdModels
 from commands.look_take_cmds import CmdAIGet, CmdAILook
+from commands.memory_cmds import CmdRemember
 from commands.social_cmds import CmdAIEmote
 from commands.unknown_cmd import CmdAIUnknown
 from commands.world_cmds import CmdNPCGen, CmdWorldRemove, CmdWorldReset, CmdWorlds
@@ -41,6 +42,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdAILook())
         self.add(CmdAIGet())
         self.add(CmdAIEmote())
+        self.add(CmdRemember())
         self.add(CmdWorldgen())
         self.add(CmdWorlds())
         self.add(CmdWorldRemove())

@@ -230,34 +230,64 @@ def _room_context(room, npc):
     return "\n".join(parts)
 
 
+#: How many recent events go into a prompt verbatim.  Everything older is
+#: reached through memory instead, so this stays small on purpose.
+WORKING_MEMORY_EVENTS = 5
+
+
+def _memory_inputs(npc, room_title):
+    """
+    Prepare an NPC's prompt memory. Main thread -- it reads the Evennia DB.
+
+    Returns (recent events as text, memory bank name, recall query).  The
+    query is the last couple of events, since what an NPC needs to remember
+    is whatever bears on what just happened; with nothing going on, the room
+    itself is the cue.
+    """
+    from world.memory import bank_for
+
+    history = npc.db.action_history or []
+    recent = history[-WORKING_MEMORY_EVENTS:]
+    query = _format_history(history[-2:]) if history else f"being in {room_title}"
+    return _format_history(recent), bank_for(npc), query
+
+
 def _format_history(history):
     if not history:
         return "(no prior events)"
-    lines = []
-    for event in history:
-        etype = event.get("type", "action")
-        actor = event.get("actor", "?")
-        text = event.get("text", "")
-        if etype == "say":
-            lines.append(f'{actor} says: "{text}"')
-        elif etype == "emote":
-            lines.append(f"{actor} {text}")
-        else:
-            lines.append(f"{actor}: {text}")
-    return "\n".join(lines)
+    from world.memory import describe_event
+
+    return "\n".join(
+        describe_event(
+            event.get("type", "action"),
+            event.get("actor", "?"),
+            event.get("text", ""),
+        )
+        for event in history
+    )
 
 
 # ---------------------------------------------------------------------------
 # Public sync helper
 # ---------------------------------------------------------------------------
 
-def notify_npcs(room, event_type, actor_name, text, exclude=None):
+def notify_npcs(room, event_type, actor_name, text, exclude=None, actor=None):
     """
-    Notify every NPC in `room` of an event. Call from the main thread only.
+    Tell everyone in `room` that something happened. Main thread only.
+
+    NPCs witness it, which may provoke a reaction; player characters record it
+    to memory.  NPCs write their own memories through their history hook, so
+    they are not recorded twice here.
 
     event_type : "say" | "action" | "emote"
     exclude    : an object to skip (e.g. the NPC that caused the event)
+    actor      : the character responsible, when it is one -- they remember
+                 doing it rather than merely seeing it
     """
+    from world.memory import record_room_event
+
+    record_room_event(room, event_type, actor_name, text, actor=actor)
+
     for obj in room.contents:
         if obj is exclude:
             continue
@@ -341,7 +371,7 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
     room_title = room.db.room_title or room.key
     room_desc = room.db.desc or ""
     room_contents = _room_context(room, npc)
-    history_text = _format_history(npc.db.action_history or [])
+    history_text, bank, query = _memory_inputs(npc, room_title)
 
     system = _NPC_REACT_SYSTEM.format(
         npc_name=npc.key,
@@ -352,20 +382,24 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
         room_contents=room_contents,
     )
 
-    messages = [
-        {"role": "system", "content": system},
-        {
-            "role": "user",
-            "content": (
-                f"Recent events:\n{history_text}\n\n"
-                "Nothing has just happened — act of your own accord. "
-                "What do you do right now, naturally and in character? "
-                "Choose something that fits the moment and the world."
-            ),
-        },
-    ]
-
     def _fetch():
+        from world.memory import format_memories, recall_sync
+
+        recalled = format_memories(recall_sync(bank, query, top_k=6))
+        messages = [
+            {"role": "system", "content": system},
+            {
+                "role": "user",
+                "content": (
+                    f"What you remember about this place and these people:\n"
+                    f"{recalled}\n\n"
+                    f"Just now:\n{history_text}\n\n"
+                    "Nothing has just happened — act of your own accord. "
+                    "What do you do right now, naturally and in character? "
+                    "Choose something that fits the moment and the world."
+                ),
+            },
+        ]
         return _call_openrouter(api_key, model, messages, tools=NPC_TOOLS)
 
     def _done(raw):
@@ -407,7 +441,10 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
     room_title = room.db.room_title or room.key
     room_desc = room.db.desc or ""
     room_contents = _room_context(room, npc)
-    history_text = _format_history(npc.db.action_history or [])
+
+    # Working memory verbatim, long memory by relevance.  Anything the model
+    # needs from further back is recalled rather than replayed.
+    history_text, bank, query = _memory_inputs(npc, room_title)
 
     system = _NPC_REACT_SYSTEM.format(
         npc_name=npc.key,
@@ -418,15 +455,23 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
         room_contents=room_contents,
     )
 
-    messages = [
-        {"role": "system", "content": system},
-        {
-            "role": "user",
-            "content": f"Recent events:\n{history_text}\n\nHow do you respond?",
-        },
-    ]
-
     def _fetch():
+        # Recall runs here, inside the thread that was already being deferred
+        # for the network call, so it costs no extra hop and never touches the
+        # reactor.
+        from world.memory import format_memories, recall_sync
+
+        recalled = format_memories(recall_sync(bank, query, top_k=6))
+        messages = [
+            {"role": "system", "content": system},
+            {
+                "role": "user",
+                "content": (
+                    f"What you remember that bears on this:\n{recalled}\n\n"
+                    f"Just now:\n{history_text}\n\nHow do you respond?"
+                ),
+            },
+        ]
         return _call_openrouter(api_key, model, messages, tools=NPC_TOOLS)
 
     def _done(raw):

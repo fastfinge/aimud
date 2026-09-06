@@ -115,11 +115,29 @@ class NPC(ObjectParent, DefaultObject):
     # ------------------------------------------------------------------ #
 
     def _add_to_history(self, event_type, actor_name, text):
+        """
+        Record an event this NPC perceived or performed.
+
+        action_history is the NPC's working memory: a short tail sent verbatim
+        so the immediate exchange stays coherent.  The same event also goes to
+        the NPC's memory bank, which has no length limit and is what lets them
+        recall something from an hour ago that matters again now.
+        """
         history = self.db.action_history or []
         history.append({"type": event_type, "actor": actor_name, "text": text})
         if len(history) > MAX_HISTORY:
             history = history[-MAX_HISTORY:]
         self.db.action_history = history
+
+        from world.memory import describe_event, remember
+
+        mine = actor_name == self.key
+        remember(
+            self,
+            describe_event(event_type, actor_name, text),
+            kind="did" if mine else "witnessed",
+            importance=0.6 if mine else 0.4,
+        )
 
     def _trigger_reaction(self, _depth=0):
         room = self.location
@@ -204,7 +222,13 @@ class NPC(ObjectParent, DefaultObject):
             if direction:
                 exit_obj, _ = _find_one(self, direction, location=room)
                 if exit_obj and getattr(exit_obj, "destination", None) is not None:
-                    self.move_to(exit_obj.destination, quiet=False)
+                    destination = exit_obj.destination
+                    if self.move_to(destination, quiet=False):
+                        from world.memory import remember
+
+                        where = destination.db.room_title or destination.key
+                        remember(self, f"I walked {direction} to {where}",
+                                 kind="moved", importance=0.3)
 
         elif tool_name == "get":
             obj_name = str(args.get("object_name", "")).strip()

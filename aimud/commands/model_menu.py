@@ -27,6 +27,7 @@ FUNCTIONS = [
     ("items",      "Item creation"),
     ("npcs",       "NPC creation"),
     ("dialogue",   "NPC dialogue generation"),
+    ("memory",     "Answering the remember command"),
     ("validation", "Player input validation"),
     ("commands",   "Command and object behavior creation"),
 ]

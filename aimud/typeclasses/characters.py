@@ -30,16 +30,29 @@ class Character(ObjectParent, DefaultCharacter):
         room = self.location
         if not room:
             return
-        speaker_name = self.get_display_name(self)
-        for obj in room.contents:
-            if obj is not self and obj.db.is_npc:
-                obj.witness("say", speaker_name, message)
+        from world.npc_gen import notify_npcs
+
+        notify_npcs(room, "say", self.get_display_name(self), message,
+                    exclude=self, actor=self)
 
     def at_post_move(self, source_location, move_type="move", **kwargs):
         super().at_post_move(source_location, move_type=move_type, **kwargs)
         room = self.location
         if not room:
             return
+
+        # Where the character has been is part of what they know.
+        from world.memory import remember
+
+        where = room.db.room_title or room.key
+        came_from = source_location.db.room_title or source_location.key if source_location else None
+        remember(
+            self,
+            f"I arrived in {where}" + (f", coming from {came_from}" if came_from else ""),
+            kind="moved",
+            importance=0.3,
+        )
+
         world_root = room.db.world_root
         if not world_root:
             return
