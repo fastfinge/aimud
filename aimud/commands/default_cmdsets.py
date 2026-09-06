@@ -20,7 +20,7 @@ from commands.account_cmds import CmdApiKey, CmdModels
 from commands.look_take_cmds import CmdAIGet, CmdAILook
 from commands.social_cmds import CmdAIEmote
 from commands.unknown_cmd import CmdAIUnknown
-from commands.world_cmds import CmdNPCGen, CmdWorldRemove, CmdWorlds
+from commands.world_cmds import CmdNPCGen, CmdWorldRemove, CmdWorldReset, CmdWorlds
 from commands.worldgen_cmd import CmdWorldgen
 
 
@@ -44,6 +44,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdWorldgen())
         self.add(CmdWorlds())
         self.add(CmdWorldRemove())
+        self.add(CmdWorldReset())
         self.add(CmdNPCGen())
         self.add(CmdAIUnknown())
 

@@ -1,5 +1,5 @@
 """
-World management commands: worlds, worldremove.
+World management commands: worlds, worldremove, worldreset.
 """
 
 from commands.command import Command
@@ -40,6 +40,49 @@ def _current_world_root(caller):
     """Return the world_root of the room the caller is in, or None."""
     loc = getattr(caller, "location", None)
     return loc.db.world_root if loc else None
+
+
+def _clear_world(root, account, destination=None, message=None):
+    """
+    Delete every room of a world, and everything in them, and forget the world
+    on the account.
+
+    Characters are moved out first -- to `destination`, or to their own home --
+    whether or not they are logged in.  Everything else the world contains is
+    destroyed: deleting a room only sends its contents home, so items and NPCs
+    would otherwise survive as orphans scattered through Limbo.
+
+    Returns the number of rooms deleted.
+    """
+    from evennia import search_tag
+    from evennia.objects.objects import DefaultCharacter
+
+    root_id = root.id
+    rooms = list(search_tag(str(root_id), category="ai_world"))
+
+    for room in rooms:
+        for obj in list(room.contents):
+            if isinstance(obj, DefaultCharacter):
+                if message and obj.sessions.count():
+                    obj.msg(message)
+                obj.move_to(destination or getattr(obj, "home", None), quiet=True)
+            else:
+                # Items, NPCs and exits belong to the world, not to Limbo.
+                obj.delete()
+
+    for room in rooms:
+        room.delete()
+
+    created = account.db.created_worlds or []
+    if root_id in created:
+        created.remove(root_id)
+        account.db.created_worlds = created
+
+    locs = account.db.world_last_locations or {}
+    locs.pop(str(root_id), None)
+    account.db.world_last_locations = locs
+
+    return len(rooms)
 
 
 class CmdWorlds(Command):
@@ -260,35 +303,135 @@ class CmdWorldRemove(Command):
         self.caller.msg("\n".join(lines))
 
     def _delete_world(self, root, room_count, account, desc):
-        from evennia import search_tag
-
-        rooms = list(search_tag(str(root.id), category="ai_world"))
-
-        # Notify and relocate any characters caught inside.
-        for room in rooms:
-            for obj in list(room.contents):
-                if hasattr(obj, "sessions") and obj.sessions.count():
-                    home = getattr(obj, "home", None)
-                    obj.msg(
-                        f"|rThe world '{desc}' is being deleted. "
-                        "You have been moved to your home location.|n"
-                    )
-                    obj.move_to(home, quiet=True)
-
-        # Delete every room (exits located inside are deleted with their room).
-        for room in rooms:
-            room.delete()
-
-        # Remove from account tracking.
-        created = account.db.created_worlds or []
-        if root.id in created:
-            created.remove(root.id)
-            account.db.created_worlds = created
-
-        locs = account.db.world_last_locations or {}
-        locs.pop(str(root.id), None)
-        account.db.world_last_locations = locs
-
+        _clear_world(
+            root, account,
+            message=(f"|rThe world '{desc}' is being deleted. "
+                     "You have been moved to your home location.|n"),
+        )
         self.caller.msg(
             f"|gDeleted world '|w{desc}|g' — {room_count} room(s) removed.|n"
         )
+
+
+class CmdWorldReset(Command):
+    """
+    Wipe a world and build it again from the same description.
+
+    Usage:
+      worldreset
+      worldreset confirm
+      worldreset <number>
+      worldreset <number> confirm
+
+    With no number, resets the world you are standing in. With a number,
+    resets that world from your |wworlds|n list.
+
+    Every room, item and NPC in the world is destroyed and a fresh world is
+    generated from the same description, so you can try a change to the
+    generator without writing a new description each time.
+
+    The replacement is generated first and the old world is only removed once
+    it succeeds, so a failed generation leaves your existing world alone.
+    """
+
+    key = "worldreset"
+    locks = "cmd:all()"
+    help_category = "World"
+
+    def parse(self):
+        parts = self.args.strip().split()
+        self.world_num = int(parts[0]) if parts and parts[0].isdigit() else None
+        self.confirmed = bool(parts) and parts[-1].lower() == "confirm"
+
+    def func(self):
+        caller = self.caller
+        account = _get_account(caller)
+        worlds = _resolve_worlds(account)
+
+        root = self._target(worlds)
+        if root is None:
+            return
+
+        description = root.db.world_description
+        if not description:
+            caller.msg(
+                "That world has no stored description, so it cannot be rebuilt. "
+                "Use |wworldremove|n to delete it instead."
+            )
+            return
+
+        room_count = next(count for r, count in worlds if r.id == root.id)
+
+        if not self.confirmed:
+            suffix = f" {self.world_num}" if self.world_num else ""
+            caller.msg(
+                f"|rWarning:|n this destroys all |w{room_count}|n room(s) of "
+                f"|w{description}|n, with everything in them, and generates the "
+                f"world again from that description.\n"
+                f"Type |wworldreset{suffix} confirm|n to proceed."
+            )
+            return
+
+        # Fail before destroying anything, not after.
+        try:
+            account.get_openrouter_key()
+        except ValueError as e:
+            caller.msg(str(e))
+            return
+
+        caller.msg(f"Rebuilding |w{description}|n — generating the new world first...")
+
+        def on_success(new_root):
+            # Only now is the old world expendable.
+            removed = _clear_world(
+                root, account, destination=new_root,
+                message="|yThe world is being rebuilt around you.|n",
+            )
+            caller.msg(
+                f"|gRebuilt '|w{description}|g' — {removed} old room(s) removed.|n"
+            )
+            if caller.location is not new_root:
+                caller.move_to(new_root, quiet=False)
+            else:
+                caller.execute_cmd("look")
+
+        def on_error(err):
+            caller.msg(
+                f"|rWorld generation failed: {err}|n\n"
+                f"Your existing world was left untouched."
+            )
+
+        from world.worldgen import generate_first_room
+        generate_first_room(account, description, on_success, on_error)
+
+    def _target(self, worlds):
+        """Resolve which world to reset, reporting any problem to the caller."""
+        caller = self.caller
+        if not worlds:
+            caller.msg(
+                "You haven't created any worlds yet. "
+                "Use |wworldgen <description>|n to generate one."
+            )
+            return None
+
+        if self.world_num is not None:
+            idx = self.world_num - 1
+            if not (0 <= idx < len(worlds)):
+                caller.msg(f"Invalid world number. Choose 1–{len(worlds)}.")
+                return None
+            return worlds[idx][0]
+
+        current = _current_world_root(caller)
+        if current is None:
+            lines = ["You are not in a world. Choose one to reset:\n"]
+            for i, (root, count) in enumerate(worlds, 1):
+                desc = root.db.world_description or "(no description)"
+                lines.append(f"  |w{i}.|n {desc}  |x({count} rooms)|n")
+            lines.append("\nType |wworldreset <number> confirm|n.")
+            caller.msg("\n".join(lines))
+            return None
+
+        if not any(root.id == current.id for root, _ in worlds):
+            caller.msg("You can only reset worlds you created.")
+            return None
+        return current
