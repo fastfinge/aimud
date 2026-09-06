@@ -6,17 +6,26 @@ put in front of every generator and every character in it. Keeping them apart
 is what lets the description run to paragraphs without a world list becoming
 unreadable.
 
-The description may contain {{user}}, which stands for whoever is playing. It
-is substituted at the moment the text is used, not when it is written, so
-"{{user}} is the rightful heir" is true of whoever walks in -- and true under
-whatever name they gave themselves in this world.
+The description may contain <user>, which stands for whoever is playing. It is
+substituted at the moment the text is used, not when it is written, so "<user>
+is the rightful heir" is true of whoever walks in -- and true under whatever
+name they gave themselves in this world.
 """
 
 import re
 
-#: What the description calls the player. Doubled braces so it cannot collide
-#: with the {actor} placeholders used in narration.
-USER_TOKEN = re.compile(r"\{\{\s*user\s*\}\}", re.IGNORECASE)
+#: What the description calls the player.
+#:
+#: <user> is the spelling to recommend. {{user}} also works, because it is the
+#: obvious thing to type and what the wizard first offered -- but Evennia
+#: reserves "{{" as the escape for a literal brace, so the editor and every
+#: other display eats one of them and shows "{user}}" while the stored text is
+#: perfectly correct. That is alarming to look at, so anything that does not
+#: collide with the markup is better.
+USER_TOKEN = re.compile(
+    r"\{\{\s*user\s*\}\}" r"|<\s*user\s*>" r"|\$user\b",
+    re.IGNORECASE,
+)
 
 #: Stands in when nobody in particular is being addressed -- a room being
 #: generated before anyone arrives, say.

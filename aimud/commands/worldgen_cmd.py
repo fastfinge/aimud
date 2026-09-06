@@ -35,9 +35,9 @@ class CmdWorldgen(Command):
       |wTitle|n        a short name, which is what world listings show.
       |wDescription|n  as long as you like. Every room, item and character in
                        the world is generated with this in front of it, and
-                       every NPC is told it. Write |w{{user}}|n where the player
+                       every NPC is told it. Write |w<user>|n where the player
                        should be named, and it becomes whatever they are
-                       called in this world -- so "{{user}} is the rightful
+                       called in this world -- so "<user> is the rightful
                        heir" is true of whoever is playing.
       |wYour name|n    what you are called here, which you can change later
                        with |wname|n.
@@ -75,13 +75,18 @@ class CmdWorldgen(Command):
 # ---------------------------------------------------------------------------
 
 def _summary(draft):
+    from evennia.utils.ansi import raw
+
     def shown(value, empty):
         if not value:
             return f"|x{empty}|n"
         first = value.splitlines()[0]
         more = len(value.splitlines()) - 1
         text = first if len(first) <= 58 else first[:55].rstrip() + "..."
-        return f"{text}|x{f'  (+{more} more lines)' if more else ''}|n"
+        # Escaped, so what someone typed is what they see back. Evennia reads
+        # "{{" and "||" as markup, and would otherwise show "{{user}}" as
+        # "{user}}" and look as though the text had been damaged.
+        return f"{raw(text)}|x{f'  (+{more} more lines)' if more else ''}|n"
 
     return (
         f"  |w1.|n Title . . . . . {shown(draft.get('title'), 'not set')}\n"
@@ -97,8 +102,8 @@ def node_main(caller, raw_string, **kwargs):
         "|wNew world|n\n\n"
         + _summary(draft)
         + "\n\nThe description is put in front of every generator and every "
-        "character in the world. Write |w{{user}}|n where the player should be "
-        "named."
+        "character in the world. Write |w<user>|n where the player should be "
+        "named, and it becomes whatever they are called here."
     )
 
     options = [
@@ -164,6 +169,11 @@ def node_description(caller, raw_string, **kwargs):
                cmd_on_exit=None)
 
     # The menu has to stand aside while the editor has the screen.
+    caller.msg(
+        "Write |w<user>|n where the player should be named. "
+        "(The doubled-brace form works too, but Evennia's markup eats one "
+        "brace when showing it back -- what you type is stored correctly.)"
+    )
     EvEditor(caller, loadfunc=load, savefunc=save, quitfunc=quit_editor,
              key="world description", persistent=False)
     return "", []
