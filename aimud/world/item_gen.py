@@ -42,7 +42,9 @@ fullbody, bottom, underpants, socks, shoes, accessory. Leave it "" for
 anything that is not clothing.
 
 affordances are what can be done with this thing, as lowercase single words:
-readable, openable, container, flammable, edible, drinkable, wearable,
+readable, openable, container, surface, flammable, edible, drinkable, wearable,
+(a "container" is hollow and things go IN it; a "surface" has a top and things
+go ON it -- a table, a shelf, a counter, a desk. Many things are both.)
 sittable, climbable, breakable, wet_able, movable, lockable, wieldable...
 Use as many as genuinely apply and invent others where they fit — these decide
 which verbs work on it, so a poster that cannot be read is a poster nobody can

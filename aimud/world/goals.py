@@ -22,8 +22,8 @@ a verb can require of the world is also something a goal can ask for.
 
 #: Condition types understood here. Anything else is discarded on the way in,
 #: so a model inventing a condition cannot produce a quest nobody can finish.
-CONDITION_TYPES = ("state", "holds", "worn", "trait", "in_room", "exists",
-                   "gone", "delivered")
+CONDITION_TYPES = ("state", "holds", "worn", "trait", "placed", "in_room",
+                   "exists", "gone", "delivered")
 
 
 def _world_objects(world_root, actor):
@@ -90,7 +90,7 @@ def sanitise(conditions):
         if ctype not in CONDITION_TYPES:
             continue
         entry = {"type": ctype}
-        for field in ("object", "room", "to", "trait"):
+        for field in ("object", "room", "to", "trait", "host", "preposition"):
             if raw.get(field):
                 entry[field] = str(raw[field]).strip()
         for field in ("is", "lacks"):
@@ -155,6 +155,18 @@ def _test(condition, actor, world_root):
     if ctype == "holds":
         met = obj is not None and obj.location is actor
         return met, f"be carrying {name}"
+
+    if ctype == "placed":
+        # Where a thing has been put, which is a different question from who
+        # is carrying it: a ledger in the safe is not a ledger in a pocket.
+        from world import relations
+
+        host_name = condition.get("host", "")
+        preposition = condition.get("preposition") or relations.DEFAULT
+        obj = find_object(world_root, actor, name)
+        host = find_object(world_root, actor, host_name)
+        met = relations.test(obj, preposition, host)
+        return met, f"get {name} {preposition} {host_name}"
 
     if ctype == "worn":
         # Carrying a coat and having it on are different things, and a

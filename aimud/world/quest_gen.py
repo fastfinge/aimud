@@ -40,6 +40,7 @@ goal is what must become true for the errand to be done. Each entry is one of:
 {"type": "holds",     "object": "brass key"}                  they are carrying it
 {"type": "worn",      "object": "grey habit"}                 they have it on
 {"type": "trait",     "trait": "standing", "min": 10}         a figure about them
+{"type": "placed",    "object": "ledger", "preposition": "in", "host": "safe"}
 {"type": "delivered", "object": "letter", "to": "Clerk"}      they gave it to someone
 {"type": "state",     "object": "lamp", "is": ["lit"], "lacks": ["broken"]}
 {"type": "gone",      "object": "rats"}                        it no longer exists
@@ -60,6 +61,11 @@ lists of effects, usually:
 
 A "trait" condition and a set_trait effect may only name a trait the world
 already keeps; the register is given to you below. Do not invent one here.
+
+"placed" is for putting a thing somewhere rather than merely carrying it --
+"in" a container, "on" a surface, "under" or "behind" anything. Use it when
+the errand is about where something ends up; use "delivered" when it ends up
+with a person.
 
 Give an empty punishment list unless the character clearly threatened one.
 Keep the goal to one or two conditions. Return only the JSON object."""
@@ -229,6 +235,7 @@ Each entry is one of:
 {"type": "holds",     "object": "brass key"}                   they are carrying it
 {"type": "worn",      "object": "grey habit"}                  they have it on
 {"type": "trait",     "trait": "standing", "min": 10}          a figure about them
+{"type": "placed",    "object": "ledger", "preposition": "in", "host": "safe"}
 {"type": "delivered", "object": "letter", "to": "Clerk"}       they gave it to someone
 {"type": "state",     "object": "lamp", "is": ["lit"]}         its condition
 {"type": "gone",      "object": "rats"}                        it no longer exists

@@ -129,7 +129,9 @@ room's fixtures, which are already in its description. Give 0 to 3, and prefer
 0 for a bare corridor. Do not repeat anything already named in the description.
 
 affordances are what can be done with each item, as lowercase single words:
-readable, openable, container, flammable, edible, drinkable, wearable,
+readable, openable, container, surface, flammable, edible, drinkable, wearable,
+(a "container" is hollow and things go IN it; a "surface" has a top and things
+go ON it -- a table, a shelf, a counter, a desk. Many things are both.)
 breakable, wieldable, and so on. They decide which verbs work on it, so give
 every one that genuinely applies. states are conditions currently true of it
 (dusty, wet, broken), usually empty.

@@ -88,35 +88,50 @@ def parse(raw):
     """
     Split raw input into a verb and its noun phrases by role.
 
-    Returns {"verb": str, "roles": {role: phrase}} where "direct" is the
-    thing acted on and the rest are named by the preposition that introduced
-    them.  Word order is preserved, so "tie rope to tree" and "tie tree to
-    rope" parse differently, which is the whole point of tracking roles
-    rather than collecting a bag of nouns.
+    Returns {"verb": str, "roles": {role: phrase},
+             "prepositions": {role: word}} where "direct" is the thing acted
+    on and the rest are named by the preposition that introduced them.  Word
+    order is preserved, so "tie rope to tree" and "tie tree to tree" parse
+    differently, which is the whole point of tracking roles rather than
+    collecting a bag of nouns.
+
+    The preposition itself is kept as well as the role it implies, because
+    several of them share a role and do not share a meaning: "on the table"
+    and "under the table" are both `target`, and putting a book in one place
+    rather than the other is the whole of what the player asked for.
     """
     words = [w for w in re.findall(r"[\w'-]+", raw.lower()) if w]
     if not words:
-        return {"verb": "", "roles": {}}
+        return {"verb": "", "roles": {}, "prepositions": {}}
 
     verb = canonical_verb(words[0])
-    roles = {}
+    roles, prepositions = {}, {}
     current_role = "direct"
+    current_word = ""
     current = []
+
+    def flush():
+        # Both the phrase and the word that introduced it, together: a role
+        # closed by the next preposition has to keep its own, or "put key in
+        # box with care" would forget that the box was an "in".
+        if current:
+            roles.setdefault(current_role, " ".join(current))
+            if current_word:
+                prepositions.setdefault(current_role, current_word)
 
     for word in words[1:]:
         if word in PREPOSITION_ROLES:
-            if current:
-                roles.setdefault(current_role, " ".join(current))
-                current = []
+            flush()
+            current = []
             current_role = PREPOSITION_ROLES[word]
+            current_word = word
             continue
         if word in _NOISE:
             continue
         current.append(word)
 
-    if current:
-        roles.setdefault(current_role, " ".join(current))
-    return {"verb": verb, "roles": roles}
+    flush()
+    return {"verb": verb, "roles": roles, "prepositions": prepositions}
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +263,15 @@ def bind(caller, phrase, fuzzy=False):
         candidates = _matches(caller, phrase, location)
         if candidates:
             return min(candidates, key=lambda o: o.id)
+
+    # Then outward: on the table, under the rug, inside the open drawer. A
+    # thing put down somewhere has to stay nameable, or putting it away would
+    # be the same as losing it.
+    from world import relations
+
+    placed = relations.find(caller, phrase)
+    if placed is not None:
+        return placed
 
     return _best_by_similarity(
         caller, phrase, FUZZY_SIMILARITY if fuzzy else STRICT_SIMILARITY

@@ -126,9 +126,17 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
     # limits -- and so no world ever invents its own private meaning for it.
     # `handle` declines anything that is not really about clothes, and those
     # go on through the ordinary pipeline.
-    from world import clothing
+    from world import clothing, relations
 
     if clothing.handle(caller, verb, bound, on_message):
+        return
+
+    # Putting a thing in, on, under or behind another thing is a mechanic for
+    # the same reason wearing is: every one of those words means exactly one
+    # thing and the game already knows what. `handle` declines anything that
+    # is not really a placement -- "put out the fire" -- and those go on to
+    # the ordinary pipeline.
+    if relations.handle(caller, verb, parsed, bound, on_message):
         return
 
     if unbound:

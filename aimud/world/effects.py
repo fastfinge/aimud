@@ -112,11 +112,29 @@ def _apply_one(actor, room, effect, bound, world_root):
         return f"{label.capitalize()} is gone."
 
     if etype == "move_object":
+        from world import relations
+
         obj = _resolve(effect, "name", bound, room, actor)
         if obj is None or _protected(obj, room):
             return None
-        destination = actor if effect.get("to") == "actor" else room
+
+        # "to" is the actor, the room, or the role of something to put it in
+        # or on. That last case is the one a rule could never say before, and
+        # is why a verb that meant to put the key in the box used to drop it
+        # on the floor instead.
+        where = str(effect.get("to", "room")).strip()
+        if where not in ("actor", "room") and where in bound:
+            host = bound[where]
+            preposition = str(effect.get("preposition", "")).strip().lower()
+            if preposition not in relations.PREPOSITIONS:
+                preposition = relations.DEFAULT
+            ok, message = relations.place(obj, host, preposition, quiet=True)
+            return message if ok else None
+
+        destination = actor if where == "actor" else room
         if obj.move_to(destination, quiet=True):
+            # It is in a hand or on a floor now, not on or in anything.
+            relations.displace(obj)
             label = obj.get_numbered_name(1, None, return_string=True)
             return (f"{actor.get_display_name(actor)} takes {label}." if destination is actor
                     else f"{label.capitalize()} is set down.")

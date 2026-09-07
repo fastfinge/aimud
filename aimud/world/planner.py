@@ -226,6 +226,26 @@ def _for_condition(actor, world_root, condition):
             return f"wear {obj.key}", None
         return None, None
 
+    if ctype == "placed":
+        # Fetch it, find the thing it goes at, put it there. Placement is a
+        # mechanic rather than a learned verb, so there is no rule to blame
+        # and nothing to check afterwards.
+        from world import relations
+
+        host_name = condition.get("host", "")
+        preposition = condition.get("preposition") or relations.DEFAULT
+        obj = _bind(actor, name)
+        if obj is None:
+            step = _step_towards_object(actor, name)
+            return (step, None) if step else (None, None)
+        host = _bind(actor, host_name)
+        if host is None:
+            step = _step_towards_object(actor, host_name)
+            return (step, None) if step else (None, None)
+        if obj.location is not actor and relations.host_of(obj) is not host:
+            return f"get {obj.key}", None
+        return f"put {obj.key} {preposition} {host.key}", None
+
     if ctype == "delivered":
         obj = _bind(actor, name)
         recipient = condition.get("to", "")

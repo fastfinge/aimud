@@ -26,6 +26,20 @@ def _in_ai_world(room):
     return bool(room and room.db.world_description)
 
 
+def _reach(caller, query):
+    """
+    Something in reach that the room's own contents did not answer for.
+
+    A key in an open drawer, a mug on the table: in plain sight, and a player
+    should be able to take or examine it without emptying the drawer onto the
+    floor first. Anything inside a closed container is not in reach, which is
+    what closing it is for.
+    """
+    from world import relations
+
+    return relations.find(caller, query)
+
+
 def _find_one(caller, query, **search_kwargs):
     """
     Search with quiet=True and normalize the result.
@@ -135,6 +149,11 @@ class CmdAILook(_DefaultLook):
             return
 
         if not obj:
+            # Before conjuring anything, look outward: on the table, in the
+            # open drawer. Inventing a second mug because the first one was
+            # put down somewhere would be the worst of both.
+            obj = _reach(caller, query)
+        if not obj:
             self._ai_look(caller, query)
             return
 
@@ -222,6 +241,8 @@ class CmdAIGet(_DefaultGet):
             caller.search(query, location=room)  # let Evennia show disambiguation
             return
 
+        if not obj:
+            obj = _reach(caller, query)
         if not obj:
             self._ai_take_nonexistent(caller, query, room)
             return

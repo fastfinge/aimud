@@ -438,7 +438,9 @@ descriptions are what a player sees on looking at that item alone, so they
 must not mention the character, the room, or anything else.
 
 affordances are what can be done with a thing, as lowercase single words:
-readable, openable, container, flammable, edible, drinkable, wearable,
+readable, openable, container, surface, flammable, edible, drinkable, wearable,
+(a "container" is hollow and things go IN it; a "surface" has a top and things
+go ON it -- a table, a shelf, a counter, a desk. Many things are both.)
 breakable, wieldable. Every garment must include "wearable". states are
 conditions currently true of it (patched, bloodstained, damp), usually empty.
 Return only the JSON object."""

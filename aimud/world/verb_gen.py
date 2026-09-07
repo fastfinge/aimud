@@ -61,6 +61,7 @@ effects change the world. Each is one of:
 {"type": "create_object", "name": "...", "description": "...", "takeable": true, "affordances": [...], "states": [...], "location": "room|actor"}
 {"type": "destroy_object", "name_role": "direct"}
 {"type": "move_object", "name_role": "direct", "to": "actor|room"}
+{"type": "move_object", "name_role": "direct", "to": "container", "preposition": "in"}
 {"type": "modify_object", "name_role": "direct", "new_name": "...", "new_description": "..."}
 {"type": "move_actor", "exit": "north"}
 {"type": "set_trait", "role": "actor", "trait": "stamina", "change": -5}
@@ -72,6 +73,20 @@ an effect plays out over time instead of all at once: a poison that drains at
 -1 a second, a rest that restores at +2, a skill going slowly rusty. Set rate
 back to 0 to stop it. Use set_trait for anything that is true of a character
 by degree — effort spent, harm taken, practice gained, standing won or lost.
+
+move_object's "to" is "actor" (into their hands), "room" (onto the floor), or
+the ROLE of another thing involved, in which case give a "preposition" saying
+how it goes there: "in", "on", "under" or "behind". So a verb that tips a
+drawer's contents onto a table moves them to that role with "on", and one that
+posts a letter moves it to the box with "in". Never invent a state like
+"in_box" or "on_table" to stand in for this -- where a thing is, is not a
+property of the thing, and the game tracks it properly.
+
+Putting something somewhere is not itself a verb you define. The game already
+knows what `put`, `place` and `insert` mean, and that things go IN containers
+and ON surfaces; if the verb you are given is only a way of saying "put this
+there", mark it invalid. Define a verb when the placement is a *consequence*
+of something else -- pouring, posting, sheathing, burying.
 
 Prefer set_state over destroying and recreating things. Use an empty effects
 list for a verb that only produces a sensation.
@@ -193,17 +208,35 @@ def _lore(world_root, actor):
 
 
 def _describe_objects(bound, actor):
-    """What the model is allowed to know: the objects, and nothing else."""
-    from world import verbs
+    """
+    What the model is allowed to know: the objects, and nothing else.
+
+    Including where each one is relative to the others, and what it is holding.
+    A rule about pouring a jug into a bowl cannot be written sensibly without
+    knowing the bowl is a container and that it already has something in it,
+    and a model told neither will invent a state to stand in for both.
+    """
+    from world import relations, verbs
 
     lines = [f"actor: {actor.get_display_name(actor)}"]
     for role, obj in sorted(bound.items()):
         marks = ", ".join(sorted(verbs.affordances(obj))) or "no special properties"
         condition = ", ".join(sorted(verbs.states(obj))) or "nothing notable"
-        lines.append(
-            f"{role}: {obj.key} — {obj.db.desc or '(no description)'}\n"
-            f"    properties: {marks}\n    currently: {condition}"
-        )
+        entry = (f"{role}: {obj.key} — {obj.db.desc or '(no description)'}\n"
+                 f"    properties: {marks}\n    currently: {condition}")
+
+        where = relations.context_line(obj, actor)
+        if where:
+            entry += f"\n    sitting: {where}"
+        holding = []
+        for preposition in relations.PREPOSITIONS:
+            here = relations.contents(obj, preposition)
+            if here:
+                holding.append(f"{preposition} it: "
+                               f"{', '.join(o.key for o in here)}")
+        if holding:
+            entry += f"\n    holding: {'; '.join(holding)}"
+        lines.append(entry)
     return "\n".join(lines)
 
 

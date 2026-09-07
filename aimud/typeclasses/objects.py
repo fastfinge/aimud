@@ -22,6 +22,43 @@ class ObjectParent:
 
     """
 
+    def get_display_things(self, looker, **kwargs):
+        """
+        What is on, in, under or behind this thing when you look at it.
+
+        Anything can hold something else, so this belongs to every object
+        rather than to a special container class -- a shelf, a corpse and an
+        upturned hat are all somewhere a player will try to put a thing.
+        Characters override it again for their own reasons.
+
+        A room is the exception. This mixin reaches rooms as well, and a room
+        is not something things are placed *at*: its contents are simply what
+        is lying about, and listing them as "Inside:" would be both wrong and
+        a strange way to describe standing in a study.
+        """
+        from evennia.objects.objects import DefaultRoom
+
+        if isinstance(self, DefaultRoom):
+            return super().get_display_things(looker, **kwargs)
+
+        from world import relations
+
+        return relations.describe(self, looker)
+
+    def at_get(self, getter, **kwargs):
+        """Taken into a hand: it is no longer on or in anything."""
+        super().at_get(getter, **kwargs)
+        from world import relations
+
+        relations.displace(self)
+
+    def at_drop(self, dropper, **kwargs):
+        """Put down on the floor: likewise."""
+        super().at_drop(dropper, **kwargs)
+        from world import relations
+
+        relations.displace(self)
+
 
 class Object(ObjectParent, DefaultObject):
     """
