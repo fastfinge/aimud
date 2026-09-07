@@ -350,6 +350,44 @@ class NPC(ObjectParent, DefaultObject):
         formalise(account, self, target, request, offer, consequence,
                   on_success=ready, on_error=failed)
 
+    def _walk(self, direction, room):
+        """
+        Leave by an exit. True if the character actually went somewhere.
+
+        Goes through at_traverse rather than moving straight to the exit's
+        destination: an exit that has never been used points at its own room
+        until the far side is built, so moving to its destination walks a
+        character into the room it is already standing in -- which is what
+        produced "leaving X, heading for X" in the log.
+
+        An unexplored exit is left alone. Walking through one builds a whole
+        new room, which is three model calls spent on somewhere nobody asked
+        to see; exploring is for players.
+        """
+        from commands.look_take_cmds import _find_one
+        from evennia.utils import logger
+
+        exit_obj, _ = _find_one(self, direction, location=room)
+        if exit_obj is None or getattr(exit_obj, "destination", None) is None:
+            logger.log_info(f"{self.key}: no exit {direction!r} to take from {room.key}")
+            return False
+        if exit_obj.db.pending_generation or exit_obj.destination is room:
+            logger.log_info(
+                f"{self.key}: {direction!r} from {room.key} leads nowhere built yet"
+            )
+            return False
+
+        destination = exit_obj.destination
+        exit_obj.at_traverse(self, destination)
+        if self.location is destination:
+            from world.memory import remember
+
+            where = destination.db.room_title or destination.key
+            remember(self, f"I walked {direction} to {where}",
+                     kind="moved", importance=0.3)
+            return True
+        return False
+
     def _pursue_goal(self, room):
         """
         Take one step towards this character's goal. True if something was done.
@@ -385,13 +423,7 @@ class NPC(ObjectParent, DefaultObject):
 
         if canonical_direction(action):
             # The step is a way out; walking is not a verb attempt.
-            from commands.look_take_cmds import _find_one
-
-            exit_obj, _ = _find_one(self, action, location=room)
-            if exit_obj is None or getattr(exit_obj, "destination", None) is None:
-                return False
-            exit_obj.at_traverse(self, exit_obj.destination)
-            return True
+            return self._walk(action, room)
 
         self._attempt_verb(action, room)
         check_outcome(self, world_root, condition, rule_key)
@@ -479,15 +511,7 @@ class NPC(ObjectParent, DefaultObject):
         elif tool_name == "move":
             direction = str(args.get("direction", "")).strip()
             if direction:
-                exit_obj, _ = _find_one(self, direction, location=room)
-                if exit_obj and getattr(exit_obj, "destination", None) is not None:
-                    destination = exit_obj.destination
-                    if self.move_to(destination, quiet=False):
-                        from world.memory import remember
-
-                        where = destination.db.room_title or destination.key
-                        remember(self, f"I walked {direction} to {where}",
-                                 kind="moved", importance=0.3)
+                self._walk(direction, room)
 
         elif tool_name == "get":
             obj_name = str(args.get("object_name", "")).strip()
