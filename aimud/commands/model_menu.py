@@ -234,11 +234,20 @@ def _save_param(account, function, key, value):
 
 def _param_rows(account, function, model_id):
     """
-    One line per setting this model takes: what it is, and where that came from.
+    One line per setting, with what it is and where that value came from.
+
+    Returns (rows, params, unsupported) where `unsupported` are the settings
+    listed only because somebody set them.
 
     The point of showing the default rather than a blank is that a player
     cannot tune what they cannot see. "Temperature 1.0 (OpenRouter default)"
     tells them both what is happening now and what the dial is set to.
+
+    For the same reason, a setting somebody has SET is always listed even when
+    the current model does not offer it. Models differ in what they take, so
+    changing the model used to make settings disappear from this screen while
+    they went on being stored and sent -- invisible, unchangeable, and still
+    in every request. A setting that is in force must be on this screen.
     """
     from world import model_params
 
@@ -246,7 +255,14 @@ def _param_rows(account, function, model_id):
     mine = _stored_params(account, function)
     inherited = _stored_params(account, "default") if function != "default" else {}
 
-    rows, params = [], model_params.supported_params(record)
+    offered = model_params.supported_params(record)
+    offered_keys = {param.key for param in offered}
+    in_force = set(mine) | set(inherited)
+    unsupported = [param for param in model_params.PARAMS
+                   if param.key in in_force and param.key not in offered_keys]
+    params = offered + unsupported
+
+    rows = []
     for i, param in enumerate(params, 1):
         if param.key in mine:
             value, source = mine[param.key], "|gyours|n"
@@ -257,15 +273,30 @@ def _param_rows(account, function, model_id):
             source = {"model": "|xmodel default|n",
                       "api": "|xOpenRouter default|n",
                       "unset": "|xunset|n"}[source]
+        if param in unsupported:
+            source += "|r, not offered by this model|n"
         shown = model_params.show(value)
         rows.append(f"  |w{i:2}.|n {param.label:<20} {shown:<10} |x(|n{source}|x)|n")
-    return rows, params
+    return rows, params, unsupported
 
 
 def _make_param_goto(function, key):
     def _goto(caller, raw_string):
         return "node_set_param", {"function": function, "param": key}
     return _goto
+
+
+def _make_drop_goto(function, keys):
+    """Clear just the settings the newly chosen model does not list."""
+    def _drop(caller, raw_string):
+        account = _get_account(caller)
+        for key in keys:
+            _save_param(account, function, key, None)
+        caller.msg(f"|gCleared {len(keys)} setting"
+                   f"{'s' if len(keys) != 1 else ''} for {function} that this "
+                   f"model does not list.|n")
+        return "node_function", {"function": function}
+    return _drop
 
 
 def _make_reset_goto(function):
@@ -298,7 +329,7 @@ def node_function(caller, raw_string, **kwargs):
         model_note = "|xnothing set, so the game's own fallback|n"
 
     description = dict(FUNCTIONS).get(function, "")
-    rows, params = _param_rows(account, function, model_id)
+    rows, params, unsupported = _param_rows(account, function, model_id)
 
     header = [
         f"|wConfigure: {function}|n  |x{description}|n",
@@ -315,6 +346,17 @@ def node_function(caller, raw_string, **kwargs):
         "|xOnly settings you have changed yourself are sent; the rest are left|n",
         "|xout so the model or OpenRouter applies its own.|n",
     ]
+    if unsupported:
+        count = len(unsupported)
+        many = count != 1
+        footer += [
+            "",
+            f"|r{count} setting{'s' if many else ''} below "
+            f"{'are' if many else 'is'} set but not listed by this model.|n",
+            f"|x{'They are' if many else 'It is'} still sent — most providers "
+            f"quietly ignore what they do not use — but you can|n",
+            "|xchange or clear them here like any other.|n",
+        ]
 
     options = [{
         "key": ("m", "model"),
@@ -328,7 +370,17 @@ def node_function(caller, raw_string, **kwargs):
             "desc": f"{param.label} — {param.note}",
             "goto": _make_param_goto(function, param.key),
         })
-    if _stored_params(account, function):
+    mine = _stored_params(account, function)
+    droppable = [param.key for param in unsupported if param.key in mine]
+    if droppable:
+        options.append({
+            "key": ("x", "drop"),
+            "desc": (f"Clear the {len(droppable)} setting"
+                     f"{'s' if len(droppable) != 1 else ''} this model does "
+                     f"not list"),
+            "goto": _make_drop_goto(function, droppable),
+        })
+    if mine:
         options.append({
             "key": ("r", "reset"),
             "desc": "Put every setting for this function back to its default",
@@ -369,6 +421,11 @@ def node_set_param(caller, raw_string, **kwargs):
     limits = model_params.range_note(param)
     if limits:
         lines.append(f"  |xAccepted range: {limits}.|n")
+    if not model_params.supported(param, record):
+        lines.append(
+            f"  |rThis model does not list {param.label}.|n |xIt is still "
+            f"sent if set, and most providers ignore what they do not use.|n"
+        )
     lines.append("")
     if key in mine:
         lines.append(f"  Currently |g{model_params.show(mine[key])}|n, set by you.")
