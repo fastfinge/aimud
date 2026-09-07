@@ -6,11 +6,31 @@ Commands describe the input the account can do to the game.
 """
 
 from evennia.commands.command import Command as BaseCommand
+from evennia.commands.default.muxcommand import MuxCommand as BaseMuxCommand
 
-# from evennia import default_cmds
+
+class GoalReminder:
+    """
+    Shows a player the next step towards their goal, after anything they type.
+
+    `at_post_cmd` is the only hook the command handler offers that fires for
+    every command, so the reminder is mixed in here and this class is named as
+    COMMAND_DEFAULT_CLASS in settings -- which is what every one of Evennia's
+    own commands inherits from. Without that the reminder would appear after
+    this game's commands and not after `look`, which is the one it is most
+    wanted under.
+
+    It never raises and never acts. See world.hints.
+    """
+
+    def at_post_cmd(self):
+        super().at_post_cmd()
+        from world.hints import after_command
+
+        after_command(self.caller)
 
 
-class Command(BaseCommand):
+class Command(GoalReminder, BaseCommand):
     """
     Base command (you may see this if a child command had no help text defined)
 
@@ -31,6 +51,17 @@ class Command(BaseCommand):
     #         every command, like prompts.
     #
     pass
+
+
+class MuxCommand(GoalReminder, BaseMuxCommand):
+    """
+    The base every one of Evennia's default commands is built on.
+
+    Named as COMMAND_DEFAULT_CLASS in settings, which is how `look`, `get`,
+    `say` and the rest come to carry the goal reminder without any of them
+    being touched. It adds nothing else: MuxCommand's own parsing is what the
+    default commands expect, and changing it would break them.
+    """
 
 
 # -------------------------------------------------------------

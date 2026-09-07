@@ -119,7 +119,7 @@ Respond with a single JSON object — no other text — matching:
 {
   "items": [
     {"name": "item name", "description": "1-2 sentences", "takeable": true,
-     "affordances": ["readable"], "states": []}
+     "affordances": ["readable"], "states": [], "clothing_type": ""}
   ],
   "wants_npc": <true or false>
 }
@@ -133,6 +133,11 @@ readable, openable, container, flammable, edible, drinkable, wearable,
 breakable, wieldable, and so on. They decide which verbs work on it, so give
 every one that genuinely applies. states are conditions currently true of it
 (dusty, wet, broken), usually empty.
+
+clothing_type goes with "wearable" and says what kind of garment it is: hat,
+jewelry, top, undershirt, gloves, fullbody, bottom, underpants, socks, shoes,
+accessory. A coat left over a chair can be picked up and put on by anyone who
+finds it. Leave it "" for everything that is not clothing.
 
 wants_npc asks whether someone is in this room right now. Judge it from the
 room: a place people work in, wait in, staff or gather in usually has somebody
@@ -149,6 +154,11 @@ Return only the JSON object."""
 
 def _call_openrouter(api_key, model, messages):
     payload = {"model": model, "messages": messages}
+    # The sampling settings chosen for this job ride on the model choice. See
+    # world.model_params: only what the player actually set is sent.
+    from world.model_params import of as _settings
+
+    payload.update(_settings(model))
     req = urllib.request.Request(
         OPENROUTER_URL,
         data=json.dumps(payload).encode(),
@@ -580,17 +590,31 @@ def _check_name(data, existing_names, world_root, source_category):
     return None
 
 
-def _generate_plan(account, api_key, world_description, on_done):
+def _guide(source, facet):
+    """
+    This world's instructions for one generator, as a block for a prompt.
+
+    `source` is a room, a world root, or the wizard spec a world is about to
+    be built from -- so the first room reads the same guidance as every room
+    after it, before there is a world to read it off.
+    """
+    from world import lore
+
+    return lore.guidance_block(source, facet)
+
+
+def _generate_plan(account, api_key, world_description, guidance, on_done):
     """
     Async. Ask for the world's zones and singleton room types.
 
     Failure is not fatal: a world with no plan simply generates without zone
     guidance, so on_done is always called.
     """
-    model = account.get_model_for("rooms") or "openai/gpt-4o-mini"
+    model = account.model_for("rooms")
     messages = [
         {"role": "system", "content": _PLAN_SYSTEM_PROMPT},
-        {"role": "user", "content": f"World theme: {world_description}\n\nPlan its zones."},
+        {"role": "user",
+         "content": f"World theme: {world_description}\n\n{guidance}Plan its zones."},
     ]
 
     def _done(content):
@@ -623,9 +647,7 @@ def _generate_name(account, api_key, world_description, context, source_room,
     Short output, so a rejected answer costs one small call rather than a whole
     room's worth of prose.
     """
-    model = (account.get_model_for("naming")
-             or account.get_model_for("rooms")
-             or "openai/gpt-4o-mini")
+    model = account.model_for("naming", "rooms")
     world_root = source_room.db.world_root
     plan = world_plan(world_root)
     existing = _nearby_names(source_room, exit_name)
@@ -639,6 +661,7 @@ def _generate_name(account, api_key, world_description, context, source_room,
 
     base = (
         f"World theme: {world_description}\n\n"
+        + _guide(source_room, "rooms")
         + (f"Zones in this world:\n{zone_lines}\n\n" if zone_lines else "")
         + (f"Already built, do not create a second one: "
            f"{', '.join(f'{k} ({v})' for k, v in taken.items())}\n\n" if taken else "")
@@ -738,16 +761,17 @@ def _nearby_names(source_room, exit_name):
     return names
 
 
-def _generate_description(account, api_key, world_description, context, name,
-                          room_type, category, on_success, on_error):
+def _generate_description(account, api_key, world_description, guidance, context,
+                          name, room_type, category, on_success, on_error):
     """Async. Write the room's description, given the area around it."""
-    model = account.get_model_for("rooms") or "openai/gpt-4o-mini"
+    model = account.model_for("rooms")
     messages = [
         {"role": "system", "content": _DESC_SYSTEM_PROMPT},
         {
             "role": "user",
             "content": (
                 f"World theme: {world_description}\n\n"
+                f"{guidance}"
                 f"Room: {name}\n"
                 f"Kind: {room_type or 'unspecified'} ({category or 'unspecified'})\n\n"
                 f"Surrounding area, for continuity only — do not name these rooms:\n"
@@ -791,16 +815,17 @@ def populate_room(account, room):
         api_key = account.get_openrouter_key()
     except ValueError:
         return
-    model = (account.get_model_for("contents")
-             or account.get_model_for("items")
-             or "openai/gpt-4o-mini")
+    model = account.model_for("contents", "items")
+
+    from world import lore
 
     messages = [
         {"role": "system", "content": _CONTENTS_SYSTEM_PROMPT},
         {
             "role": "user",
             "content": (
-                f"World theme: {room.db.world_description}\n\n"
+                f"World theme: {lore.description(room)}\n\n"
+                f"{_guide(room, 'items')}"
                 f"Room: {room.db.room_title or room.key}\n"
                 f"Kind: {room.db.room_type or 'unspecified'} "
                 f"({room.db.room_category or 'unspecified'})\n\n"
@@ -811,8 +836,7 @@ def populate_room(account, room):
     ]
 
     def _done(content):
-        from evennia import create_object
-        from typeclasses.objects import Object
+        from world import clothing
 
         try:
             data = _parse_json_object(content)
@@ -821,19 +845,11 @@ def populate_room(account, room):
 
         created = []
         for item in (data.get("items") or [])[:3]:
-            name = str(item.get("name", "")).strip()
-            if not name:
+            # Through the clothing layer, so a coat left over the back of a
+            # chair is a coat somebody can pick up and put on.
+            obj = clothing.create(item, location=room)
+            if obj is None:
                 continue
-            obj = create_object(Object, key=name, location=room)
-            obj.db.desc = str(item.get("description", "")).strip()
-            obj.db.ai_takeable = bool(item.get("takeable", True))
-            obj.db.is_ai_item = True
-            obj.db.affordances = sorted(
-                {str(a).lower().strip() for a in item.get("affordances", []) if a}
-            )
-            obj.db.states = sorted(
-                {str(s).lower().strip() for s in item.get("states", []) if s}
-            )
             # Evennia's own singular form, so it reads "a dried-out marker"
             # rather than "dried-out marker".
             created.append(obj.get_numbered_name(1, None, return_string=True))
@@ -868,17 +884,20 @@ def generate_first_room(account, spec, on_success, on_error,
     """
     Async. Generate the starting room for a new world.
 
-    `spec` is what the worldgen wizard collected: title, description, and the
-    player's name and appearance in this world. A bare string is accepted as
-    the description alone, so older callers keep working.
+    `spec` is what the worldgen wizard collected: title, description, the
+    player's name and appearance in this world, and the per-generator
+    guidance. A bare string is accepted as the description alone, so older
+    callers keep working.
 
     Calls on_success(room) or on_error(msg) in the main thread.
     """
     if isinstance(spec, str):
         spec = {"description": spec}
     world_description = (spec.get("description") or "").strip()
+    # Read off the spec: the world does not exist yet to be asked.
+    rooms_guidance = _guide(spec, "rooms")
 
-    model = account.get_model_for("rooms") or "openai/gpt-4o-mini"
+    model = account.model_for("rooms")
     try:
         api_key = account.get_openrouter_key()
     except ValueError as e:
@@ -896,6 +915,7 @@ def generate_first_room(account, spec, on_success, on_error,
                 "role": "user",
                 "content": (
                     f"World theme: {world_description}\n\n"
+                    + rooms_guidance
                     + (f"Zones in this world:\n{zone_lines}\n\n" if zone_lines else "")
                     + f"This is the world's first room — the way in. It should be "
                       f"circulation or a threshold rather than a destination, so the "
@@ -951,8 +971,8 @@ def generate_first_room(account, spec, on_success, on_error,
                     on_error(str(exc))
 
             _generate_description(
-                account, api_key, world_description, "(this is the first room)",
-                name, room_type, category,
+                account, api_key, world_description, rooms_guidance,
+                "(this is the first room)", name, room_type, category,
                 on_success=finish, on_error=on_error,
             )
 
@@ -960,7 +980,7 @@ def generate_first_room(account, spec, on_success, on_error,
             _call_openrouter, api_key, model, messages
         ).addCallbacks(with_name, lambda f: on_error(f.getErrorMessage()))
 
-    _generate_plan(account, api_key, world_description, with_plan)
+    _generate_plan(account, api_key, world_description, rooms_guidance, with_plan)
 
 
 def generate_connected_room(account, world_description, source_room, exit_name,
@@ -983,6 +1003,7 @@ def generate_connected_room(account, world_description, source_room, exit_name,
     # Build context here (main thread — DB access is safe)
     context = _neighbourhood(source_room, exit_name)
     reverse = OPPOSITES.get(exit_name, "back")
+    rooms_guidance = _guide(source_room, "rooms")
 
     def with_name(named):
         name = str(named.get("name", "")).strip() or "Unnamed Room"
@@ -995,7 +1016,8 @@ def generate_connected_room(account, world_description, source_room, exit_name,
         exits = _allowed_exits(named.get("exits"), source_room, exit_name, reverse)
 
         _generate_description(
-            account, api_key, world_description, context, name, room_type, category,
+            account, api_key, world_description, rooms_guidance, context, name,
+            room_type, category,
             on_success=lambda description: finish(name, description, exits,
                                                   room_type, category, zone),
             on_error=on_error,

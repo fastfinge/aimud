@@ -10,6 +10,7 @@ import json
 import re
 import urllib.request
 
+from evennia.utils import logger
 from twisted.internet import threads
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -107,7 +108,10 @@ NPC_TOOLS = [
                 "Attempt an action on something, the way a player would type it: "
                 "'light the candle', 'read the notice', 'open the drawer'. The "
                 "world decides whether it works and what changes. Use this for "
-                "anything physical rather than describing it in an emote."
+                "anything physical rather than describing it in an emote. "
+                "Clothes work this way too: 'wear the grey coat', 'remove my "
+                "apron'. Anyone looking at you sees what you have on, so what "
+                "you put on or take off really does change how you appear."
             ),
             "parameters": {
                 "type": "object",
@@ -118,6 +122,33 @@ NPC_TOOLS = [
                     }
                 },
                 "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_traits",
+            "description": (
+                "Take stock of somebody -- how strong, how skilled, how well, "
+                "how well thought of. Your own figures you already know and "
+                "they are given to you above; use this for other people in the "
+                "room. What you find comes back to you as something you have "
+                "noticed, so you can act on it on your next turn. Sizing "
+                "somebody up is a thing anyone can do by looking at them, so "
+                "use it when it would matter -- before picking a fight, "
+                "before trusting a stranger with an errand, when someone "
+                "looks unwell."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "person": {
+                        "type": "string",
+                        "description": "Who to size up. Leave empty for yourself.",
+                    },
+                },
+                "required": [],
             },
         },
     },
@@ -279,17 +310,27 @@ Respond with a single JSON object only — no other text:
   "name": "Character Name (1-3 words)",
   "description": "2-4 sentences: what they look like, and nothing else",
   "manner": "2-3 sentences: who they are and how they behave",
-  "goal": [ ... ]
+  "goal": [ ... ],
+  "traits": [{"slug": "swordsmanship", "value": 12}]
 }
 
-"description" is what a player sees when they look at this character. It is
-shown again every time anyone looks, wherever the character happens to be by
-then, so it must be true of them standing anywhere at all.
+"description" is the character's BODY, and nothing else. It is shown again
+every single time anyone looks at them, for the rest of the character's life,
+so every word of it must still be true years later in another room wearing
+different clothes. Write only what they cannot take off or put down.
 
-Describe only what is visibly, durably so: build, face, hair, skin, clothing,
-what they carry or wear, scars, the state of their hands, how they smell.
+Write about: species, apparent age, height and build, skin, hair colour,
+length and texture, eye colour, the shape of the face, hands, voice, and
+permanent marks -- scars, tattoos, a missing finger, a birthmark. Two to four
+sentences of that, in the present tense.
 
 It must NOT contain:
+- clothing, armour, jewellery, footwear, spectacles, or anything else worn.
+  The game dresses characters separately and lists what they have on beneath
+  this text; naming a coat here would go on describing a coat they took off an
+  hour ago, and describe it twice while they still wear it.
+- anything they are carrying, holding, or have slung over a shoulder. They put
+  things down.
 - anything they are doing. No sitting, standing, watching, straightening,
   fidgeting, smiling, or greeting anyone. They will not be doing it later.
 - where they are, or any furniture, room or fixture. They walk from room to
@@ -299,6 +340,9 @@ It must NOT contain:
   have stopped caring about. None of that is visible.
 - the player: no "you", no "your", no reacting to being looked at.
 
+If you find yourself writing "wearing", "dressed", "clad", "in a", "carries"
+or "holds", stop: that belongs to the clothing, not to the person.
+
 "manner" is the opposite and is never shown to players: temperament, habits,
 what they want, how they speak and treat people. Put the character there.
 
@@ -307,6 +351,7 @@ conditions the game can check. Keep it small and near at hand -- something
 they could plausibly work at with what is around them, not a life ambition.
 Each entry is one of:
 {"type": "holds",     "object": "brass key"}          they want to be carrying it
+{"type": "worn",      "object": "grey habit"}         they want to have it on
 {"type": "state",     "object": "lamp", "is": ["lit"]} they want it to be so
 {"type": "in_room",   "room": "Kitchen"}               they want to get there
 {"type": "delivered", "object": "letter", "to": "Clerk"}
@@ -314,12 +359,22 @@ Each entry is one of:
 Name only things that plausibly exist in this world. Give an empty list for a
 character with nothing in particular to pursue.
 
+"traits" is what is measurably true of this character, as figures. Give 0 to 4,
+and ONLY ones already in the world's register, which is listed for you below.
+Do not invent a trait here: a register is only worth having if everyone in the
+world is measured by the same yardstick, and new traits are added when the
+world's rules need them, not when a character is born. Give an empty list if
+none of the registered traits say anything about this person. "value" is where
+they stand — an ordinary person is middling, not exceptional.
+
 The character must fit naturally in the world and room described."""
 
 _NPC_REACT_SYSTEM = (
     "You are {npc_name}, a character in a text-based MUD. Stay in character at all times.\n\n"
     "World: {world_desc}\n"
+    "{guidance}"
     "How you look: {npc_desc}\n"
+    "{npc_traits}"
     "{npc_manner}"
     "Current room: [{room_title}]\n"
     "{room_desc}\n"
@@ -337,12 +392,68 @@ _NPC_REACT_SYSTEM = (
     "nobody has tried before."
 )
 
+_NPC_OUTFIT_SYSTEM = """You dress a character in a text-based MUD and give them what they carry.
+Respond with a single JSON object — no other text — matching:
+{
+  "worn": [
+    {"name": "item name", "description": "1-2 sentences",
+     "clothing_type": "top", "wearstyle": "",
+     "affordances": ["wearable"], "states": []}
+  ],
+  "carried": [
+    {"name": "item name", "description": "1-2 sentences", "takeable": true,
+     "affordances": ["readable"], "states": []}
+  ]
+}
+
+You are given the character's body — their build, colouring and permanent
+marks. That is fixed and already written. Your job is everything they can take
+off or put down.
+
+worn is what they have on, from the skin outwards. Give 2 to 6 garments: real
+people are not wearing one thing. Dress them for who they are, what they do
+and where they are, and let the clothes say something the body cannot — rank,
+trade, poverty, vanity, mourning, how long since they last changed.
+
+clothing_type must be one of: {garment_types}. Use "fullbody" for a robe,
+dress or overall; "accessory" for a belt, bag or scarf; "jewelry" for rings and
+chains. Only one hat, one pair of gloves, one pair of socks and one pair of
+shoes each.
+
+wearstyle is optional, and is shown after the garment's name: "slung over one
+shoulder", "buttoned to the throat". Leave it "" unless it says something.
+
+carried is what is in their hands or pockets — 0 to 3 things, and 0 is a fine
+answer. Tools of their trade, something they are taking somewhere, something
+they should not have.
+
+name every item as a bare noun phrase with no article and no capital letters
+unless it is a proper name: "scuffed leather apron", not "A Scuffed Leather
+Apron". The game adds the article when it shows the item.
+
+Anything that comes as a pair is named "pair of ...": "pair of hobnailed
+boots", "pair of wool gloves". Never a bare plural on its own.
+
+descriptions are what a player sees on looking at that item alone, so they
+must not mention the character, the room, or anything else.
+
+affordances are what can be done with a thing, as lowercase single words:
+readable, openable, container, flammable, edible, drinkable, wearable,
+breakable, wieldable. Every garment must include "wearable". states are
+conditions currently true of it (patched, bloodstained, damp), usually empty.
+Return only the JSON object."""
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _call_openrouter(api_key, model, messages, tools=None):
     payload = {"model": model, "messages": messages}
+    # The sampling settings chosen for this job ride on the model choice. See
+    # world.model_params: only what the player actually set is sent.
+    from world.model_params import of as _settings
+
+    payload.update(_settings(model))
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
@@ -381,6 +492,15 @@ def _room_context(room, npc):
     """
     from evennia.objects.objects import DefaultCharacter
 
+    from world import clothing
+
+    def person(obj, label):
+        # What somebody has on is half of what there is to notice about them,
+        # and the only half that changes. A character who cannot see the
+        # bloodstained apron has nothing to remark on.
+        outfit = clothing.inventory_line(obj, npc)
+        return f"{label} — {outfit}" if outfit else label
+
     people, objects, exits, unexplored = [], [], [], []
     for obj in room.contents:
         if obj is npc:
@@ -390,9 +510,9 @@ def _room_context(room, npc):
             if obj.db.pending_generation or obj.destination is room:
                 unexplored.append(obj.key)
         elif obj.db.is_npc:
-            people.append(f"{obj.key} (NPC)")
+            people.append(person(obj, f"{obj.key} (NPC)"))
         elif isinstance(obj, DefaultCharacter):
-            people.append(obj.get_display_name(npc))
+            people.append(person(obj, obj.get_display_name(npc)))
         else:
             marks = list(obj.db.affordances or [])
             condition = list(obj.db.states or [])
@@ -416,6 +536,20 @@ def _room_context(room, npc):
         parts.append(
             "Nobody has been through these yet: " + ", ".join(unexplored))
     return "\n".join(parts)
+
+
+def _trait_line(npc):
+    """
+    What is measurably true of this character, for its own prompt.
+
+    Free, like the want line: the prompt is being sent anyway. A character
+    that does not know it is down to ten stamina cannot decide to sit, and one
+    that does not know its own standing cannot trade on it.
+    """
+    from world import traits
+
+    described = traits.describe(npc)
+    return f"What is true of you: {described}\n" if described else ""
 
 
 def _want_line(npc):
@@ -589,14 +723,14 @@ def generate_npc(account, room, on_success, on_error):
     Async. Generate and spawn an NPC appropriate for the room.
     Calls on_success(npc_obj) or on_error(msg) in the main thread.
     """
-    model = account.get_model_for("npcs") or "openai/gpt-4o-mini"
+    model = account.model_for("npcs")
     try:
         api_key = account.get_openrouter_key()
     except ValueError as e:
         on_error(str(e))
         return
 
-    from world import lore
+    from world import lore, traits
 
     world_desc = lore.description(room)
     room_title = room.db.room_title or room.key
@@ -607,7 +741,9 @@ def generate_npc(account, room, on_success, on_error):
         {
             "role": "user",
             "content": (
-                f"World: {world_desc}\n"
+                f"World: {world_desc}\n\n"
+                f"{lore.guidance_block(room, 'npcs')}"
+                f"{traits.vocabulary_block(room.db.world_root)}"
                 f"Room: [{room_title}]\n{room_desc}\n\n"
                 "Generate an NPC who would naturally be found here."
             ),
@@ -641,7 +777,25 @@ def generate_npc(account, room, on_success, on_error):
 
             npc.db.goal = goals.sanitise(data.get("goal"))
             npc.db.world_description = room.db.world_description
+            # Only traits the world already keeps. A character born with one
+            # nobody else has is the beginning of a second vocabulary, which
+            # is the one thing the register exists to prevent -- so anything
+            # unregistered is dropped here rather than quietly added.
+            world_root = room.db.world_root
+            for spec in (data.get("traits") or [])[:4]:
+                try:
+                    slug = traits._slug(spec.get("slug", ""))
+                    if not slug or not traits.known(world_root, slug):
+                        continue
+                    traits.adjust(npc, slug, set_to=spec.get("value"),
+                                  world_root=world_root, announce=False)
+                except Exception as exc:
+                    logger.log_info(f"could not give {npc.key} a trait: {exc}")
             on_success(npc)
+            # Nobody arrives naked and empty-handed. A second pass, the way a
+            # finished room gets its contents: the character exists and can be
+            # spoken to already, and their clothes catch up a moment later.
+            dress_npc(account, npc)
         except Exception as exc:
             on_error(str(exc))
 
@@ -651,6 +805,77 @@ def generate_npc(account, room, on_success, on_error):
     threads.deferToThread(_fetch).addCallbacks(_done, _fail)
 
 
+def dress_npc(account, npc):
+    """
+    Async, fire-and-forget. Give a new character their clothes and belongings.
+
+    A second pass rather than part of the first, for the same reason a room's
+    contents are: the character is usable the moment they exist, and asking
+    one call to invent a person and their wardrobe together gets a worse
+    answer at both. Errors are swallowed -- an underdressed character is a
+    small loss and a stalled generation is not.
+    """
+    from world import clothing
+
+    room = npc.location
+    if room is None:
+        return
+    try:
+        api_key = account.get_openrouter_key()
+    except ValueError:
+        return
+    model = account.model_for("contents", "items", "npcs")
+
+    from world import goals, lore
+
+    system = _NPC_OUTFIT_SYSTEM.replace(
+        "{garment_types}", ", ".join(clothing.GARMENT_TYPES))
+    messages = [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": (
+                f"World: {lore.description(room)}\n\n"
+                f"{lore.guidance_block(room, 'npcs')}"
+                f"Room: [{room.db.room_title or room.key}]\n"
+                f"{room.db.desc or ''}\n\n"
+                f"Character: {npc.key}\n"
+                f"Their body: {npc.db.desc or '(not described)'}\n"
+                f"Who they are: {npc.db.manner or '(not described)'}\n"
+                f"What they want: {goals.describe(npc.db.goal)}\n\n"
+                f"Dress {npc.key} and give them what they carry."
+            ),
+        },
+    ]
+
+    def _done(raw):
+        try:
+            content = raw["choices"][0]["message"].get("content") or ""
+            data = _parse_json(content)
+        except Exception:
+            return
+        if npc.location is None:
+            return      # deleted while the call was in flight
+
+        # Worn first and in the order given: the model dresses from the skin
+        # outwards, and the contrib covers an undershirt only when the shirt
+        # that hides it goes on after it.
+        for spec in (data.get("worn") or [])[:8]:
+            try:
+                clothing.create(spec, location=npc, worn_on=npc)
+            except Exception as exc:
+                logger.log_info(f"could not dress {npc.key}: {exc}")
+        for spec in (data.get("carried") or [])[:3]:
+            try:
+                clothing.create(spec, location=npc)
+            except Exception as exc:
+                logger.log_info(f"could not equip {npc.key}: {exc}")
+
+    threads.deferToThread(
+        _call_openrouter, api_key, model, messages
+    ).addCallbacks(_done, lambda _f: None)
+
+
 def generate_npc_idle(account, npc, room, on_success, on_error):
     """
     Async. Prompt the NPC to take a spontaneous, self-initiated action.
@@ -658,7 +883,7 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
     asks the model what the NPC would do of its own accord right now.
     Calls on_success(list[{"name", "args"}]) or on_error(msg) in the main thread.
     """
-    model = account.get_model_for("dialogue") or "openai/gpt-4o-mini"
+    model = account.model_for("dialogue")
     try:
         api_key = account.get_openrouter_key()
     except ValueError as e:
@@ -667,7 +892,7 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
 
     # {{user}} names whoever is here, so an NPC reads the world the way
     # the player it is talking to appears in it.
-    from world import lore
+    from world import clothing, lore
     from world.activity import active_players_in
 
     nearby = active_players_in(room)
@@ -689,7 +914,10 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
     system = _NPC_REACT_SYSTEM.format(
         npc_name=npc.key,
         world_desc=world_desc,
-        npc_desc=npc.db.desc or "(no description)",
+        guidance=lore.guidance_block(room, "dialogue",
+                                     nearby[0] if nearby else None),
+        npc_desc=clothing.own_appearance(npc, npc.db.desc or "") or "(no description)",
+        npc_traits=_trait_line(npc),
         npc_manner=(f"Who you are: {npc.db.manner}\n\n" if npc.db.manner else "\n"),
         room_title=room_title,
         room_desc=room_desc,
@@ -746,7 +974,7 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
     Async. Send the NPC's context + history to the dialogue model with tool-calling.
     Calls on_success(list[{"name", "args"}]) or on_error(msg) in the main thread.
     """
-    model = account.get_model_for("dialogue") or "openai/gpt-4o-mini"
+    model = account.model_for("dialogue")
     try:
         api_key = account.get_openrouter_key()
     except ValueError as e:
@@ -755,7 +983,7 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
 
     # {{user}} names whoever is here, so an NPC reads the world the way
     # the player it is talking to appears in it.
-    from world import lore
+    from world import clothing, lore
     from world.activity import active_players_in
 
     nearby = active_players_in(room)
@@ -780,7 +1008,10 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
     system = _NPC_REACT_SYSTEM.format(
         npc_name=npc.key,
         world_desc=world_desc,
-        npc_desc=npc.db.desc or "(no description)",
+        guidance=lore.guidance_block(room, "dialogue",
+                                     nearby[0] if nearby else None),
+        npc_desc=clothing.own_appearance(npc, npc.db.desc or "") or "(no description)",
+        npc_traits=_trait_line(npc),
         npc_manner=(f"Who you are: {npc.db.manner}\n\n" if npc.db.manner else "\n"),
         room_title=room_title,
         room_desc=room_desc,

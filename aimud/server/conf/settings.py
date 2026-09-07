@@ -34,6 +34,12 @@ from evennia.settings_default import *
 # This is the name of your game. Make it catchy!
 SERVERNAME = "aimud"
 
+# Every one of Evennia's own commands inherits from this class, so naming our
+# own here is what puts the goal reminder under `look`, `get` and `say` as
+# well as under the commands this game defines. It subclasses MuxCommand and
+# changes nothing else -- see commands/command.py.
+COMMAND_DEFAULT_CLASS = "commands.command.MuxCommand"
+
 
 ######################################################################
 # Settings given in secret_settings.py override those in this file.

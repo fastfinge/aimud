@@ -282,6 +282,10 @@ def abandon(character, quest_id=None):
         return None, "You have nothing underway to abandon."
     _update(character, quest["id"], status=ABANDONED)
     _release_goal(character, quest)
+    # Counted with the failures. Saying plainly that you will not do it is
+    # better manners than letting the clock run out, but the errand is still
+    # one somebody asked for and did not get.
+    _tally(character, FAILED, _world_root(character), quest["title"])
     return quest, f"You give up on: {quest['title']}."
 
 
@@ -336,6 +340,27 @@ def _short_time(seconds):
     return f"{seconds} seconds"
 
 
+def _world_root(character):
+    room = getattr(character, "location", None)
+    return room.db.world_root if room else None
+
+
+def _tally(character, outcome, world_root, title=""):
+    """
+    Add one to the character's record of errands run.
+
+    Every world keeps these two, under these names, whatever else it invents:
+    a count of what somebody has actually done is the plainest fact there is
+    about them, and it is worth nothing if half the world calls it something
+    else. They are seeded into every register for that reason.
+    """
+    from world import traits
+
+    slug = "quests_completed" if outcome == DONE else "quests_failed"
+    traits.bump(character, slug, 1, world_root=world_root,
+                reason=title or None)
+
+
 def _apply(character, effects, world_root):
     from world.effects import apply as apply_effects
 
@@ -365,6 +390,7 @@ def review(character, announce=True):
         if goals.satisfied(quest.get("goal"), character, world_root):
             _update(character, quest_id, status=DONE)
             _release_goal(character, quest)
+            _tally(character, DONE, world_root, quest["title"])
             said = _apply(character, quest.get("reward"), world_root)
             if announce:
                 _tell(character,
@@ -379,6 +405,7 @@ def review(character, announce=True):
         if left is not None and left <= 0:
             _update(character, quest_id, status=FAILED)
             _release_goal(character, quest)
+            _tally(character, FAILED, world_root, quest["title"])
             said = _apply(character, quest.get("punishment"), world_root)
             if announce:
                 _tell(character,

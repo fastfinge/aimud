@@ -120,6 +120,17 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
     bound, unbound = verbs.bind_all(caller, parsed["roles"], fuzzy=fuzzy)
     waiter = _once(on_wait)
 
+    # Wearing is a mechanic, not something a world has to work out. Caught
+    # here, before any of the learning machinery, so a player's `wear` command
+    # and an NPC deciding to put its coat on reach the same code and the same
+    # limits -- and so no world ever invents its own private meaning for it.
+    # `handle` declines anything that is not really about clothes, and those
+    # go on through the ordinary pipeline.
+    from world import clothing
+
+    if clothing.handle(caller, verb, bound, on_message):
+        return
+
     if unbound:
         if not allow_promote:
             # Nothing here resembles what was asked for, and this caller may

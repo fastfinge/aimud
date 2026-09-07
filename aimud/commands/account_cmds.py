@@ -76,17 +76,33 @@ class CmdApiKey(Command):
 
 class CmdModels(Command):
     """
-    Configure which AI model to use for each game function.
+    Choose which AI model answers for each part of the game, and how.
 
     Usage:
       models
       models refresh
 
-    Opens an interactive menu to select models from your OpenRouter account
-    for each generation function (rooms, items, npcs, etc.).  Requires an
-    API key to be set first (see |wapikey|n).
+    Opens a menu with a screen for each job the game asks a model to do --
+    room descriptions, NPC dialogue, deciding what a verb means, and so on.
+    Each screen sets two things:
 
-    Use |wmodels refresh|n to re-fetch the model list from OpenRouter.
+      |wthe model|n     picked from everything your OpenRouter key can reach.
+      |wits settings|n  temperature, top P, the penalties, and whatever else
+                    that particular model accepts.
+
+    Every setting shows what it is currently at even when you have not
+    touched it, and where that figure came from -- the model's own default,
+    OpenRouter's, or something you set for |wdefault|n and inherited here. Only
+    settings you changed yourself are sent; the rest are left out so the
+    provider applies its own.
+
+    This is what lets one world be tuned differently from another, and one job
+    differently from the next: dialogue is usually better loose and surprising,
+    while the rules that decide what an action does want to be dull and
+    repeatable.
+
+    Requires an API key (see |wapikey|n). Use |wmodels refresh|n to re-fetch
+    the model list from OpenRouter.
     """
 
     key = "models"

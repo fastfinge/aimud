@@ -79,6 +79,32 @@ def _effect_achieves(effect, condition, obj_name):
         removed = {str(s).lower() for s in (effect.get("remove") or [])}
         return bool(unwanted) and unwanted <= removed
 
+    if ctype == "trait" and etype == "set_trait":
+        if str(effect.get("trait", "")) != str(condition.get("trait", "")):
+            return False
+        # Which way the goal wants it to move, and which way this effect moves
+        # it. A rate counts: an effect that starts something draining is how a
+        # goal about a falling figure gets met, just not immediately.
+        low, high = condition.get("min"), condition.get("max")
+        wants_up = low is not None
+        change = effect.get("change")
+        rate = effect.get("rate")
+        if effect.get("set_to") is not None:
+            target = float(effect["set_to"])
+            return (low is None or target >= low) and (high is None or target <= high)
+        for amount in (change, rate):
+            if amount is None:
+                continue
+            try:
+                amount = float(amount)
+            except (TypeError, ValueError):
+                continue
+            if amount > 0 and wants_up:
+                return True
+            if amount < 0 and high is not None:
+                return True
+        return False
+
     if ctype == "holds" and etype == "move_object":
         return effect.get("to") == "actor"
 
@@ -183,6 +209,23 @@ def _for_condition(actor, world_root, condition):
             return (step, None) if step else (None, None)
         return None, None
 
+    if ctype == "worn":
+        # Three steps, one at a time: find it, pick it up, put it on. Wearing
+        # is a mechanic rather than a learned verb, so there is no rule to
+        # blame and nothing to check afterwards -- it either went on or it did
+        # not, and the next look will say which.
+        obj = _bind(actor, name)
+        if obj is None:
+            step = _step_towards_object(actor, name)
+            return (step, None) if step else (None, None)
+        if obj.location is not actor:
+            if obj.location is actor.location:
+                return f"get {obj.key}", None
+            return (_step_towards_object(actor, name), None)
+        if not obj.db.worn:
+            return f"wear {obj.key}", None
+        return None, None
+
     if ctype == "delivered":
         obj = _bind(actor, name)
         recipient = condition.get("to", "")
@@ -196,6 +239,9 @@ def _for_condition(actor, world_root, condition):
             return (step, None) if step else (None, None)
         return f"give {obj.key} to {recipient}", None
 
+    if ctype == "trait":
+        return _trait_step(actor, world_root, condition)
+
     if ctype in ("state", "gone"):
         obj = _bind(actor, name)
         if obj is None:
@@ -203,6 +249,76 @@ def _for_condition(actor, world_root, condition):
             return (step, None) if step else (None, None)
         return _verb_for(actor, world_root, condition, obj)
 
+    return None, None
+
+
+def _needed_affordances(key):
+    """
+    What the direct object of a cached rule has to be, read off its key.
+
+    A rule is stored under "eat#direct:edible", which says the rule applies to
+    anything edible. That is exactly the question a planner has when it wants
+    a trait raised and needs something to do it with -- so the answer is read
+    back out of the key rather than stored twice.
+    """
+    _verb, _, signature = key.partition("#")
+    for part in signature.split("|"):
+        role, _, marks = part.partition(":")
+        if role != "direct":
+            continue
+        if marks in ("", "plain"):
+            return set()
+        return {m for m in marks.split(",") if m}
+    return None      # the rule takes no direct object at all
+
+
+def _thing_matching(actor, wanted):
+    """Something in reach with all of these affordances, nearest first."""
+    for location in (actor, actor.location):
+        for obj in (location.contents if location else []):
+            if getattr(obj, "destination", None) is not None:
+                continue
+            if obj is actor:
+                continue
+            if wanted <= verbs.affordances(obj):
+                return obj
+    return None
+
+
+def _trait_step(actor, world_root, condition):
+    """
+    Something to do that would move a figure about this character.
+
+    The world has already been taught which verbs change which traits -- that
+    is what a rule's set_trait effect is -- so wanting to be stronger becomes
+    a search for a verb the world knows will raise strength, and then for
+    something in reach to use it on. "To recover your stamina, eat something
+    edible" falls out of the rules themselves rather than being written here.
+    """
+    rules = (world_root.db.verb_rules or {}) if world_root else {}
+    slug = condition.get("trait", "")
+
+    for key, rule in rules.items():
+        rule = dict(rule)
+        if not rule.get("valid", True) or unreliable(world_root, key):
+            continue
+        if not _rule_would_achieve(rule, condition, slug):
+            continue
+
+        verb = key.split("#", 1)[0]
+        wanted = _needed_affordances(key)
+        if wanted is None:
+            # A verb that acts on nothing in particular -- "rest", "pray".
+            if verbs.check(rule.get("requires"), {}, actor) is None:
+                return verb, key
+            continue
+
+        obj = _thing_matching(actor, wanted)
+        if obj is None:
+            continue
+        if verbs.check(rule.get("requires"), {"direct": obj}, actor) is not None:
+            continue
+        return f"{verb} {obj.key}", key
     return None, None
 
 
@@ -231,16 +347,18 @@ def _verb_for(actor, world_root, condition, obj):
     return None, None
 
 
-def plan_step(actor, world_root):
+def plan_for(actor, world_root, goal):
     """
-    The next thing this character should do about its goal.
+    The next thing to do about `goal`, whoever's goal it is.
 
     Returns (action, rule_key, condition) or (None, None, None). The action is
     written the way a player would type it, so it goes through exactly the same
     verb pipeline -- an NPC pursuing a goal is doing ordinary things, not
-    operating a private mechanism.
+    operating a private mechanism. That is also what lets the same answer be
+    handed to a player as a suggestion: it is a command, not an instruction to
+    some inner machinery.
     """
-    goal = list(actor.db.goal or [])
+    goal = list(goal or [])
     if not goal or actor.location is None:
         return None, None, None
 
@@ -251,6 +369,42 @@ def plan_step(actor, world_root):
         if action:
             return action, key, dict(condition)
     return None, None, None
+
+
+def plan_step(actor, world_root):
+    """The next thing this character should do about its own goal."""
+    return plan_for(actor, world_root, actor.db.goal)
+
+
+def advise(actor, world_root, goal):
+    """
+    What to do next about a goal, for somebody who will do it themselves.
+
+    Returns (action, note). `action` is the command to type, or None when
+    there is nothing to suggest; `note` says what it is in aid of, or why
+    there is no suggestion. Nothing here decides anything or acts: this is the
+    planner answering a question, which is the whole difference between
+    helping a player and playing for them.
+    """
+    if not goal:
+        return None, "You have nothing in mind."
+    if goals.satisfied(goal, actor, world_root):
+        return None, "You have done it."
+
+    action, _key, condition = plan_for(actor, world_root, goal)
+    if action:
+        _met, text = goals._test(condition, actor, world_root)
+        return action, text
+
+    outstanding = [text for met, text in goals.progress(goal, actor, world_root)
+                   if not met]
+    # Goal descriptions read as "be in Library", "be carrying brass lamp", so
+    # they take a verb-phrase frame -- "closer to be in Library" does not.
+    wanted = outstanding[0] if outstanding else "do that"
+    return None, (
+        f"Nothing you can do from here would help you {wanted}. "
+        f"Whatever it needs may be somewhere you have not been yet."
+    )
 
 
 def check_outcome(actor, world_root, condition, rule_key):

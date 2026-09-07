@@ -1,6 +1,8 @@
 """
 EvMenu nodes for configuring per-function AI model selections.
 
+Two things are configured per job: which model answers, and how it is asked.
+
 Storage layout on account.db.ai_models:
     {
         "default":    "openai/gpt-4o",
@@ -9,8 +11,21 @@ Storage layout on account.db.ai_models:
         ...
     }
 
+and, alongside it, on account.db.ai_params:
+    {
+        "default":   {"temperature": 0.4},
+        "dialogue":  {"temperature": 1.1, "presence_penalty": 0.4},
+        ...
+    }
+
+A job's settings sit on top of "default"'s, and only what was actually set is
+ever sent -- see world.model_params for why a value equal to the default is
+not the same as leaving it out.
+
 The model list is fetched once per session from OpenRouter and cached on
-account.ndb.openrouter_models_cache.  `models refresh` clears the cache.
+account.ndb.openrouter_models_cache.  `models refresh` clears the cache. Each
+model record carries what it supports and what it defaults to, which is what
+lets a job's screen offer exactly the settings that model will take.
 """
 
 import json
@@ -103,18 +118,23 @@ def _open_menu(account):
 
 def _current_display(account):
     cfg = account.db.ai_models or {}
+    params = account.db.ai_params or {}
     default = cfg.get("default")
     lines = []
     for func, _ in FUNCTIONS:
         val = cfg.get(func)
         if val:
-            lines.append(f"  |w{func:<12}|n {val}")
-        elif func == "default":
-            lines.append(f"  |w{func:<12}|n |x(not set)|n")
-        elif default:
-            lines.append(f"  |w{func:<12}|n |x(using default: {default})|n")
+            shown = val
+        elif func == "default" or not default:
+            shown = "|x(not set)|n"
         else:
-            lines.append(f"  |w{func:<12}|n |x(not set)|n")
+            shown = f"|x(using default: {default})|n"
+        # Tuned settings belong on this screen too: a job behaving oddly is as
+        # likely to be a temperature set weeks ago as it is to be the model,
+        # and this is the first place anybody would look.
+        tuned = len(params.get(func) or {})
+        note = f"  |y+{tuned} setting{'s' if tuned != 1 else ''}|n" if tuned else ""
+        lines.append(f"  |w{func:<12}|n {shown}{note}")
     return "\n".join(lines)
 
 
@@ -137,7 +157,10 @@ def _make_set_goto(function, model_id):
         cfg[function] = model_id
         acct.db.ai_models = cfg
         caller.msg(f"|g{function} → {model_id}|n")
-        return "node_main", {}
+        # Back to the function's own screen rather than the list: the settings
+        # a model offers depend on the model, so this is where the player wants
+        # to look next.
+        return "node_function", {"function": function}
     return _set
 
 
@@ -148,7 +171,7 @@ def _make_clear_goto(function):
         cfg.pop(function, None)
         acct.db.ai_models = cfg
         caller.msg(f"|gCleared model override for {function}.|n")
-        return "node_main", {}
+        return "node_function", {"function": function}
     return _clear
 
 
@@ -165,16 +188,214 @@ def _make_search_goto(function):
 
 def node_main(caller, raw_string, **kwargs):
     account = _get_account(caller)
-    text = "|wConfigure AI Models|n\n\n" + _current_display(account) + "\n\nSelect a function to configure:"
+    text = ("|wConfigure AI Models|n\n\n" + _current_display(account)
+            + "\n\nSelect a function to configure its model and settings:")
     options = []
     for i, (func, desc) in enumerate(FUNCTIONS, 1):
         options.append({
             "key": str(i),
             "desc": f"{func} — {desc}",
-            "goto": ("node_select_model", {"function": func, "page": 0, "search": ""}),
+            "goto": ("node_function", {"function": func}),
         })
     options.append({"key": ("q", "quit"), "desc": "Quit", "goto": "node_quit"})
     return text, options
+
+
+# ---------------------------------------------------------------------------
+# One job: its model, and how that model is asked
+# ---------------------------------------------------------------------------
+
+def _model_record(account, model_id):
+    """The cached OpenRouter entry for a model, or {}."""
+    for record in (account.ndb.openrouter_models_cache or []):
+        if record.get("id") == model_id:
+            return record
+    return {}
+
+
+def _stored_params(account, function):
+    return dict((account.db.ai_params or {}).get(function) or {})
+
+
+def _save_param(account, function, key, value):
+    """Set or unset one setting for one job."""
+    everything = dict(account.db.ai_params or {})
+    mine = dict(everything.get(function) or {})
+    if value is None:
+        mine.pop(key, None)
+    else:
+        mine[key] = value
+    if mine:
+        everything[function] = mine
+    else:
+        everything.pop(function, None)
+    account.db.ai_params = everything
+
+
+def _param_rows(account, function, model_id):
+    """
+    One line per setting this model takes: what it is, and where that came from.
+
+    The point of showing the default rather than a blank is that a player
+    cannot tune what they cannot see. "Temperature 1.0 (OpenRouter default)"
+    tells them both what is happening now and what the dial is set to.
+    """
+    from world import model_params
+
+    record = _model_record(account, model_id)
+    mine = _stored_params(account, function)
+    inherited = _stored_params(account, "default") if function != "default" else {}
+
+    rows, params = [], model_params.supported_params(record)
+    for i, param in enumerate(params, 1):
+        if param.key in mine:
+            value, source = mine[param.key], "|gyours|n"
+        elif param.key in inherited:
+            value, source = inherited[param.key], "|yfrom default|n"
+        else:
+            value, source = model_params.default_for(param, record)
+            source = {"model": "|xmodel default|n",
+                      "api": "|xOpenRouter default|n",
+                      "unset": "|xunset|n"}[source]
+        shown = model_params.show(value)
+        rows.append(f"  |w{i:2}.|n {param.label:<20} {shown:<10} |x(|n{source}|x)|n")
+    return rows, params
+
+
+def _make_param_goto(function, key):
+    def _goto(caller, raw_string):
+        return "node_set_param", {"function": function, "param": key}
+    return _goto
+
+
+def _make_reset_goto(function):
+    def _reset(caller, raw_string):
+        account = _get_account(caller)
+        everything = dict(account.db.ai_params or {})
+        everything.pop(function, None)
+        account.db.ai_params = everything
+        caller.msg(f"|gEvery setting for {function} is back to its default.|n")
+        return "node_function", {"function": function}
+    return _reset
+
+
+def node_function(caller, raw_string, **kwargs):
+    """Everything about one job: which model answers, and how it is asked."""
+    function = kwargs.get("function", "default")
+    account = _get_account(caller)
+
+    cfg = account.db.ai_models or {}
+    chosen = cfg.get(function)
+    fallback = cfg.get("default")
+    if chosen:
+        model_id = chosen
+        model_note = "|yset for this function|n"
+    elif function != "default" and fallback:
+        model_id = fallback
+        model_note = "|xfrom default|n"
+    else:
+        model_id = account.DEFAULT_MODEL
+        model_note = "|xnothing set, so the game's own fallback|n"
+
+    description = dict(FUNCTIONS).get(function, "")
+    rows, params = _param_rows(account, function, model_id)
+
+    header = [
+        f"|wConfigure: {function}|n  |x{description}|n",
+        "",
+        f"  |wModel|n  {model_id}  |x(|n{model_note}|x)|n",
+        "",
+        "|wSettings|n — what is sent with every request for this function:",
+    ]
+    if not params:
+        header.append("  |x(this model publishes no tunable settings)|n")
+
+    footer = [
+        "",
+        "|xOnly settings you have changed yourself are sent; the rest are left|n",
+        "|xout so the model or OpenRouter applies its own.|n",
+    ]
+
+    options = [{
+        "key": ("m", "model"),
+        "desc": f"Change the model ({model_id})",
+        "goto": ("node_select_model",
+                 {"function": function, "page": 0, "search": ""}),
+    }]
+    for i, param in enumerate(params, 1):
+        options.append({
+            "key": str(i),
+            "desc": f"{param.label} — {param.note}",
+            "goto": _make_param_goto(function, param.key),
+        })
+    if _stored_params(account, function):
+        options.append({
+            "key": ("r", "reset"),
+            "desc": "Put every setting for this function back to its default",
+            "goto": _make_reset_goto(function),
+        })
+    options.append({"key": ("b", "back"), "desc": "Back to the function list",
+                    "goto": "node_main"})
+
+    return "\n".join(header + rows + footer), options
+
+
+def node_set_param(caller, raw_string, **kwargs):
+    """Type a value for one setting, or clear it back to the default."""
+    from world import model_params
+
+    function = kwargs.get("function", "default")
+    key = kwargs.get("param", "")
+    param = model_params.PARAMS_BY_KEY.get(key)
+    if param is None:
+        return "node_function", {"function": function}
+
+    account = _get_account(caller)
+    cfg = account.db.ai_models or {}
+    model_id = cfg.get(function) or cfg.get("default") or account.DEFAULT_MODEL
+    record = _model_record(account, model_id)
+
+    mine = _stored_params(account, function)
+    default, source = model_params.default_for(param, record)
+    origin = {"model": "this model's own default",
+              "api": "OpenRouter's default",
+              "unset": "left out entirely"}[source]
+
+    lines = [
+        f"|w{param.label}|n for |w{function}|n",
+        "",
+        f"  {param.note}",
+    ]
+    limits = model_params.range_note(param)
+    if limits:
+        lines.append(f"  |xAccepted range: {limits}.|n")
+    lines.append("")
+    if key in mine:
+        lines.append(f"  Currently |g{model_params.show(mine[key])}|n, set by you.")
+    else:
+        lines.append(f"  Currently |x{model_params.show(default)}|n — {origin}.")
+    lines.append("")
+    lines.append("Type a value, or |wdefault|n to stop overriding it.")
+
+    def _save(caller, raw, **kw):
+        value, complaint = model_params.parse(param, raw)
+        if complaint:
+            caller.msg(f"|r{complaint}|n")
+            return "node_set_param", {"function": function, "param": key}
+        _save_param(_get_account(caller), function, key, value)
+        if value is None:
+            caller.msg(f"|g{param.label} for {function} is back to its default.|n")
+        else:
+            caller.msg(f"|g{param.label} for {function} → "
+                       f"{model_params.show(value)}|n")
+        return "node_function", {"function": function}
+
+    return "\n".join(lines), [
+        {"key": ("b", "back"), "desc": "Back without changing it",
+         "goto": ("node_function", {"function": function})},
+        {"key": "_default", "desc": f"Type a value for {param.label}",
+         "goto": _save},
+    ]
 
 
 def node_select_model(caller, raw_string, **kwargs):
@@ -247,8 +468,8 @@ def node_select_model(caller, raw_string, **kwargs):
         })
     options.append({
         "key": ("b", "back"),
-        "desc": "Back to function list",
-        "goto": "node_main",
+        "desc": f"Back to {function}",
+        "goto": ("node_function", {"function": function}),
     })
     options.append({
         "key": "_default",

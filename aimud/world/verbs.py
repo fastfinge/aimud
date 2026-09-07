@@ -69,6 +69,12 @@ VERB_SYNONYMS = {
     "slumber": "sleep",
     "clean": "wash", "rinse": "wash",
     "fix": "repair", "mend": "repair",
+    # Clothing. These four are not learned verbs at all -- world.clothing
+    # takes them over before an attempt reaches a model -- but they still have
+    # to fold onto one spelling first, or "doff" would be learned as a verb of
+    # its own and "remove" would go on meaning something else.
+    "don": "wear", "wearing": "wear",
+    "doff": "remove", "unwear": "remove",
 }
 
 
@@ -481,4 +487,15 @@ def check(requirements, bound, actor):
         for carried in needed.get("holds", []):
             if not any(carried.lower() in o.key.lower() for o in obj.contents):
                 return f"You would need {carried} for that."
+
+        # What is measurably true of a person, tested the same way as what is
+        # true of a thing. This is what lets a rule say "you need 10 stamina
+        # for that" rather than only "the door must be unlocked".
+        wanted_traits = needed.get("trait") or needed.get("traits")
+        if wanted_traits:
+            from world import traits as traits_mod
+
+            complaint = traits_mod.meets(obj, wanted_traits)
+            if complaint:
+                return complaint
     return None

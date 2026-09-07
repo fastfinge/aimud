@@ -87,24 +87,19 @@ def _resolve(effect, key, bound, room, actor):
 
 
 def _apply_one(actor, room, effect, bound, world_root):
-    from evennia import create_object
-
-    from typeclasses.objects import Object
     from world import verbs
 
     etype = str(effect.get("type", "")).strip()
 
     if etype == "create_object":
-        name = str(effect.get("name", "")).strip()
-        if not name:
-            return None
+        from world import clothing
+
         location = actor if effect.get("location") == "actor" else room
-        obj = create_object(Object, key=name, location=location)
-        obj.db.desc = str(effect.get("description", "")).strip()
-        obj.db.ai_takeable = bool(effect.get("takeable", True))
-        obj.db.is_ai_item = True
-        obj.db.affordances = sorted({str(a).lower() for a in effect.get("affordances", [])})
-        obj.db.states = sorted({str(s).lower() for s in effect.get("states", [])})
+        # Through the clothing layer: a verb that produces a cloak has
+        # produced something wearable, not a cloak-shaped prop.
+        obj = clothing.create(effect, location=location)
+        if obj is None:
+            return None
         where = "is now here" if location is room else "is now carried"
         return f"{obj.get_numbered_name(1, None, return_string=True)} {where}."
 
@@ -147,6 +142,34 @@ def _apply_one(actor, room, effect, bound, world_root):
             # stub is not the candle whose description was cached, so the
             # stored text is dropped and rewritten on next use.
             forget_narrations(obj)
+        return None
+
+    if etype == "set_trait":
+        # The one effect that acts on a person rather than a thing. `role`
+        # names whom -- almost always "actor" -- and `rate` is what makes an
+        # effect play out over time instead of all at once: a poison that
+        # drains, a skill that goes rusty, a wound that closes.
+        from world import traits
+
+        # Named roles are honoured, but a trait effect with nobody named is
+        # about whoever acted -- that is what it always means.
+        who = _resolve(effect, "name", bound, room, actor) or actor
+        if not traits.has_traits(who):
+            return None
+        slug = str(effect.get("trait", "")).strip()
+        if not slug:
+            return None
+        outcome = traits.adjust(
+            who, slug,
+            change=effect.get("change"),
+            set_to=effect.get("set_to"),
+            rate=effect.get("rate"),
+            world_root=world_root,
+        )
+        if outcome is None:
+            return None
+        # The character has already been told directly; the room is told only
+        # that something about them changed, never the figure itself.
         return None
 
     if etype == "set_state":

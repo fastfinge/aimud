@@ -8,7 +8,9 @@ creation commands.
 
 """
 
+from evennia.contrib.rpg.traits import TraitHandler
 from evennia.objects.objects import DefaultCharacter
+from evennia.utils import lazy_property
 
 from .objects import ObjectParent
 
@@ -22,6 +24,11 @@ class Character(ObjectParent, DefaultCharacter):
     properties and methods available on all Object child classes like this.
 
     """
+
+    @lazy_property
+    def traits(self):
+        """What is measurably true of this character. See world.traits."""
+        return TraitHandler(self)
 
     def world_name(self, world_root=None):
         """
@@ -99,8 +106,23 @@ class Character(ObjectParent, DefaultCharacter):
         return descs.get(key)
 
     def get_display_desc(self, looker, **kwargs):
-        """What a look shows: this world's description, else the ordinary one."""
-        return self.world_desc() or super().get_display_desc(looker, **kwargs)
+        """
+        What a look shows: this world's description, plus what is being worn.
+
+        The description is what is permanently true of a body; the clothes are
+        read off the garments actually being carried, so changing them changes
+        how the character appears without anything having to rewrite the text.
+        """
+        from world import clothing
+
+        base = self.world_desc() or super().get_display_desc(looker, **kwargs)
+        return clothing.appearance(self, base, looker)
+
+    def get_display_things(self, looker, **kwargs):
+        """What the character is visibly carrying -- never what they have on."""
+        from world import clothing
+
+        return clothing.display_things(self, looker, **kwargs)
 
     def at_say(self, message, msg_self=None, msg_location=None,
                receivers=None, msg_type="say", **kwargs):
@@ -141,6 +163,13 @@ class Character(ObjectParent, DefaultCharacter):
         from world.quests import review
 
         review(self)
+
+        # A trait with a rate drifts while nothing is watching, and nothing
+        # fires when it does. Arriving somewhere is the moment to be told the
+        # fever broke on the way.
+        from world.traits import notice_changes
+
+        notice_changes(self)
 
         # Where the character has been is part of what they know.
         from world.memory import remember

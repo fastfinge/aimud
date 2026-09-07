@@ -18,13 +18,27 @@ from evennia import default_cmds
 
 from commands.account_cmds import CmdApiKey, CmdModels
 from commands.look_take_cmds import CmdAIGet, CmdAILook
+# The contrib's inventory is kept as it stands: it is the one clothing command
+# with nothing for this game to decide, and it already separates what is worn
+# from what is merely carried.
+from evennia.contrib.game_systems.clothing.clothing import CmdInventory
+
+from commands.clothing_cmds import CmdCover, CmdRemove, CmdUncover, CmdWear
 from commands.follow_cmds import CmdFollow
+from commands.goal_cmds import CmdGoal
 from commands.memory_cmds import CmdRemember
 from commands.name_cmds import CmdName
 from commands.quest_cmds import CmdQuests
 from commands.social_cmds import CmdAIEmote
+from commands.trait_cmds import CmdScore
 from commands.unknown_cmd import CmdAIUnknown
-from commands.world_cmds import CmdNPCGen, CmdWorldRemove, CmdWorldReset, CmdWorlds
+from commands.world_cmds import (
+    CmdNPCGen,
+    CmdWorldEdit,
+    CmdWorldRemove,
+    CmdWorldReset,
+    CmdWorlds,
+)
 from commands.worldgen_cmd import CmdWorldgen
 
 
@@ -46,13 +60,21 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdAIGet())
         self.add(CmdAIEmote())
         self.add(CmdFollow())
+        self.add(CmdWear())
+        self.add(CmdRemove())
+        self.add(CmdCover())
+        self.add(CmdUncover())
+        self.add(CmdInventory())
+        self.add(CmdScore())
         self.add(CmdRemember())
         self.add(CmdName())
         self.add(CmdQuests())
+        self.add(CmdGoal())
         self.add(CmdWorldgen())
         self.add(CmdWorlds())
         self.add(CmdWorldRemove())
         self.add(CmdWorldReset())
+        self.add(CmdWorldEdit())
         self.add(CmdNPCGen())
         self.add(CmdAIUnknown())
 

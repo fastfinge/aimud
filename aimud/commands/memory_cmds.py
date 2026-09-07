@@ -80,9 +80,7 @@ class CmdRemember(Command):
             return
         caller.ndb.recalling = True
 
-        model = (account.get_model_for("memory")
-                 or account.get_model_for("dialogue")
-                 or "openai/gpt-4o-mini")
+        model = account.model_for("memory", "dialogue")
         bank = bank_for(caller)
         caller.msg("You cast your mind back...")
 

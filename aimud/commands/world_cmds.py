@@ -1,5 +1,5 @@
 """
-World management commands: worlds, worldremove, worldreset.
+World management commands: worlds, worldedit, worldremove, worldreset.
 """
 
 from commands.command import Command
@@ -41,6 +41,43 @@ def _current_world_root(caller):
     """Return the world_root of the room the caller is in, or None."""
     loc = getattr(caller, "location", None)
     return loc.db.world_root if loc else None
+
+
+def _choose_world(caller, worlds, world_num, action, usage):
+    """
+    Which world a command with an optional number is aimed at, or None.
+
+    With a number it is that one; without, it is the world the caller is
+    standing in. Anything that stops it resolving is reported here, so the
+    caller is told what to type next rather than merely refused.
+    """
+    if not worlds:
+        caller.msg(
+            "You haven't created any worlds yet. "
+            "Use |wworldgen <description>|n to generate one."
+        )
+        return None
+
+    if world_num is not None:
+        idx = world_num - 1
+        if not (0 <= idx < len(worlds)):
+            caller.msg(f"Invalid world number. Choose 1–{len(worlds)}.")
+            return None
+        return worlds[idx][0]
+
+    current = _current_world_root(caller)
+    if current is None:
+        lines = [f"You are not in a world. Choose one to {action}:\n"]
+        for i, (root, count) in enumerate(worlds, 1):
+            lines.append(f"  |w{i}.|n {lore.title(root)}  |x({count} rooms)|n")
+        lines.append(f"\nType |w{usage}|n.")
+        caller.msg("\n".join(lines))
+        return None
+
+    if not any(root.id == current.id for root, _ in worlds):
+        caller.msg(f"You can only {action} worlds you created.")
+        return None
+    return current
 
 
 def _quest_holders(rooms, account):
@@ -387,14 +424,9 @@ class CmdWorldReset(Command):
             return
 
         # Rebuild from everything the world was set up with, not just its
-        # theme: a reset that forgot the title and the player's name here
-        # would quietly undo half the wizard.
-        spec = {
-            "title": root.db.world_title or "",
-            "description": root.db.world_description or "",
-            "player_name": caller.world_name(root) or "",
-            "player_description": caller.world_desc(root) or "",
-        }
+        # theme: a reset that forgot the title, the guidance, or the player's
+        # name here would quietly undo half the wizard.
+        spec = lore.spec_of(root, caller)
         description = spec["description"]
         if not description:
             caller.msg(
@@ -451,32 +483,53 @@ class CmdWorldReset(Command):
 
     def _target(self, worlds):
         """Resolve which world to reset, reporting any problem to the caller."""
+        return _choose_world(self.caller, worlds, self.world_num,
+                             "reset", "worldreset <number> confirm")
+
+
+class CmdWorldEdit(Command):
+    """
+    Change what a world tells its generators, without rebuilding it.
+
+    Usage:
+      worldedit
+      worldedit <number>
+
+    Opens the same wizard |wworldgen|n uses, filled in with what this world
+    was set up with: its title, its description, your name and looks here, and
+    the guidance given to each generator separately -- rooms, characters,
+    items, dialogue and the world's rules.
+
+    With no number it edits the world you are standing in; with one, that
+    world from your |wworlds|n list.
+
+    Nothing already built changes. The rooms, items and characters that exist
+    keep the text they were written with, and the new wording governs whatever
+    is generated afterwards -- so you can try a change out by walking into
+    somewhere new rather than throwing the world away. Use |wworldreset|n when
+    you do want it all built again from the top.
+    """
+
+    key = "worldedit"
+    locks = "cmd:all()"
+    help_category = "World"
+
+    def parse(self):
+        arg = self.args.strip()
+        self.world_num = int(arg) if arg.isdigit() else None
+
+    def func(self):
         caller = self.caller
-        if not worlds:
-            caller.msg(
-                "You haven't created any worlds yet. "
-                "Use |wworldgen <description>|n to generate one."
-            )
-            return None
+        account = _get_account(caller)
+        worlds = _resolve_worlds(account)
 
-        if self.world_num is not None:
-            idx = self.world_num - 1
-            if not (0 <= idx < len(worlds)):
-                caller.msg(f"Invalid world number. Choose 1–{len(worlds)}.")
-                return None
-            return worlds[idx][0]
+        root = _choose_world(caller, worlds, self.world_num,
+                             "edit", "worldedit <number>")
+        if root is None:
+            return
 
-        current = _current_world_root(caller)
-        if current is None:
-            lines = ["You are not in a world. Choose one to reset:\n"]
-            for i, (root, count) in enumerate(worlds, 1):
-                desc = lore.title(root)
-                lines.append(f"  |w{i}.|n {desc}  |x({count} rooms)|n")
-            lines.append("\nType |wworldreset <number> confirm|n.")
-            caller.msg("\n".join(lines))
-            return None
+        from commands.worldgen_cmd import open_wizard
 
-        if not any(root.id == current.id for root, _ in worlds):
-            caller.msg("You can only reset worlds you created.")
-            return None
-        return current
+        spec = lore.spec_of(root, caller)
+        spec.update(mode="edit", world_id=root.id)
+        open_wizard(caller, spec)

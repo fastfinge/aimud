@@ -12,7 +12,9 @@ conversation loops while still allowing natural cross-NPC interaction.
 NPCs only react to each other when at least one player is in the room.
 """
 
+from evennia.contrib.rpg.traits import TraitHandler
 from evennia.objects.objects import DefaultObject
+from evennia.utils import lazy_property
 
 from .objects import ObjectParent
 
@@ -50,14 +52,38 @@ class NPC(ObjectParent, DefaultObject):
     #: dropping in silence.
     KNOWN_TOOLS = frozenset([
         "say", "emote", "move", "get", "give", "attempt", "offer_quest",
-        "answer_quest", "set_goal", "create", "destroy", "modify",
+        "answer_quest", "set_goal", "check_traits", "create", "destroy",
+        "modify",
     ])
+
+    @lazy_property
+    def traits(self):
+        """What is measurably true of this character. See world.traits."""
+        return TraitHandler(self)
 
     def at_object_creation(self):
         super().at_object_creation()
         self.db.is_npc = True
         self.db.action_history = []
         self.ensure_idle_script()
+
+    def get_display_desc(self, looker, **kwargs):
+        """
+        How the character looks: their body, and then what they have on.
+
+        The stored description is only what is permanently true of them, so
+        this is where an NPC that changed its coat starts looking different.
+        """
+        from world import clothing
+
+        base = super().get_display_desc(looker, **kwargs)
+        return clothing.appearance(self, base, looker)
+
+    def get_display_things(self, looker, **kwargs):
+        """What the character is visibly carrying -- never what they have on."""
+        from world import clothing
+
+        return clothing.display_things(self, looker, **kwargs)
 
     def ensure_idle_script(self):
         """
@@ -108,10 +134,13 @@ class NPC(ObjectParent, DefaultObject):
         # An errand finished or run out of time is noticed here, and that is
         # also what releases the goal the planner has been working at. It costs
         # no model call -- these are the same condition tests the planner runs.
-        from world import quests
+        from world import quests, traits
 
         quests.review(self)
         quests.lapse_offers(self)
+        # Anything that drifted since the last turn reaches this character's
+        # working memory now, in time to be part of what it does next.
+        traits.notice_changes(self)
 
         account = self._find_account(room)
         if not account:
@@ -316,6 +345,36 @@ class NPC(ObjectParent, DefaultObject):
             on_error=lambda err: logger.log_info(
                 f"{self.key}: could not turn {want!r} into a goal: {err}"
             ),
+        )
+
+    def _check_traits(self, who, room):
+        """
+        Size somebody up, and remember what was found.
+
+        A tool here acts; it cannot hand an answer back to the model that
+        called it. So what this finds goes into working memory instead, which
+        is the same route a refusal takes -- the character has noticed
+        something, and it is there in front of them on their next turn.
+        """
+        from world import traits
+
+        target = self
+        if who and who.lower() not in (self.key.lower(), "me", "myself"):
+            from commands.look_take_cmds import _find_one
+
+            target, _ = _find_one(self, who, location=room)
+            if target is None or not traits.has_traits(target):
+                self._note_to_self(f"there is no {who} here to take stock of")
+                return
+
+        described = traits.describe(target)
+        name = "I" if target is self else target.get_display_name(self)
+        if not described:
+            self._note_to_self(f"there is nothing measurable about {name}")
+            return
+        self._note_to_self(
+            f"taking stock of {name}: {described}" if target is not self
+            else f"taking stock of myself: {described}"
         )
 
     def _offer_quest(self, args, room):
@@ -662,6 +721,9 @@ class NPC(ObjectParent, DefaultObject):
 
         elif tool_name == "set_goal":
             self._set_goal(str(args.get("want", "")).strip(), room)
+
+        elif tool_name == "check_traits":
+            self._check_traits(str(args.get("person", "")).strip(), room)
 
         elif tool_name == "offer_quest":
             self._offer_quest(args, room)

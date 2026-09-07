@@ -11,6 +11,7 @@ class CmdQuests(Command):
 
     Usage:
       quests
+      quests hint
       quests accept
       quests decline
       quests abandon
@@ -25,6 +26,12 @@ class CmdQuests(Command):
 
     Some errands come with a time limit, and some with a consequence for
     letting it run out. Both are shown before you agree to anything.
+
+    |wquests hint|n shows how far along you are and what to do next: the
+    actual command to type, worked out from where you are standing and what
+    the world already knows. It is a reminder, not an autopilot -- nothing
+    acts for you, and ignoring it costs you nothing. See also |wgoal|n, which
+    does the same for something you decided to do yourself.
 
     A number may be given if you want to name one exactly, but with a single
     errand at a time it is rarely needed.
@@ -55,8 +62,17 @@ class CmdQuests(Command):
             caller.msg(quests.format_list(caller))
             return
 
+        if self.action == "hint":
+            # Bring it up to date first: a hint for something already finished
+            # would be worse than none.
+            quests.review(caller)
+            from world import hints
+
+            caller.msg(hints.quest_hint(caller))
+            return
+
         if self.action not in ("accept", "decline", "abandon"):
-            caller.msg("Usage: |wquests|n, |wquests accept|n, "
+            caller.msg("Usage: |wquests|n, |wquests hint|n, |wquests accept|n, "
                        "|wquests decline|n, |wquests abandon|n.")
             return
 

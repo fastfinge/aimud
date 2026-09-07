@@ -95,7 +95,16 @@ class AIExit(ObjectParent, DefaultExit):
             return super().at_traverse(traversing_object, target_location, **kwargs)
 
         source_room = self.location
-        world_description = source_room.db.world_description if source_room else None
+        # Read from the world root rather than the room's own copy, so that a
+        # description changed with `worldedit` governs every room built after
+        # it. The room's copy is the fallback for anything built before worlds
+        # kept their text in one place.
+        from world import lore
+
+        world_description = (
+            (lore.raw_description(source_room) or source_room.db.world_description)
+            if source_room else None
+        )
 
         if not world_description:
             traversing_object.msg("This exit leads nowhere.")

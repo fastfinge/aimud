@@ -22,7 +22,8 @@ a verb can require of the world is also something a goal can ask for.
 
 #: Condition types understood here. Anything else is discarded on the way in,
 #: so a model inventing a condition cannot produce a quest nobody can finish.
-CONDITION_TYPES = ("state", "holds", "in_room", "exists", "gone", "delivered")
+CONDITION_TYPES = ("state", "holds", "worn", "trait", "in_room", "exists",
+                   "gone", "delivered")
 
 
 def _world_objects(world_root, actor):
@@ -89,12 +90,20 @@ def sanitise(conditions):
         if ctype not in CONDITION_TYPES:
             continue
         entry = {"type": ctype}
-        for field in ("object", "room", "to"):
+        for field in ("object", "room", "to", "trait"):
             if raw.get(field):
                 entry[field] = str(raw[field]).strip()
         for field in ("is", "lacks"):
             if raw.get(field):
                 entry[field] = [str(s).lower().strip() for s in raw[field] if s]
+        for field in ("min", "max"):
+            if raw.get(field) is not None:
+                try:
+                    entry[field] = float(raw[field])
+                except (TypeError, ValueError):
+                    pass
+        if ctype == "trait" and not entry.get("trait"):
+            continue     # a trait goal that names no trait can never be tested
         clean.append(entry)
     return clean
 
@@ -117,6 +126,27 @@ def _test(condition, actor, world_root):
         met = find_object(world_root, actor, name) is None
         return met, f"get rid of {name}"
 
+    if ctype == "trait":
+        # A want about the character rather than about the world. The same
+        # shape a verb rule requires, so anything a rule can demand of someone
+        # is something they can set out to become.
+        from world import traits
+
+        slug = condition.get("trait", "")
+        low, high = condition.get("min"), condition.get("max")
+        current = traits.value(actor, slug)
+        met = current is not None
+        if met and low is not None:
+            met = current >= low
+        if met and high is not None:
+            met = current <= high
+        label = slug.replace("_", " ")
+        if low is not None:
+            return met, f"get {label} to {traits._round(low)}"
+        if high is not None:
+            return met, f"get {label} down to {traits._round(high)}"
+        return met, f"have some {label}"
+
     obj = find_object(world_root, actor, name)
 
     if ctype == "exists":
@@ -125,6 +155,12 @@ def _test(condition, actor, world_root):
     if ctype == "holds":
         met = obj is not None and obj.location is actor
         return met, f"be carrying {name}"
+
+    if ctype == "worn":
+        # Carrying a coat and having it on are different things, and a
+        # character who wants to look like somebody has to do the second.
+        met = obj is not None and obj.location is actor and bool(obj.db.worn)
+        return met, f"be wearing {name}"
 
     if ctype == "delivered":
         recipient_name = condition.get("to", "")

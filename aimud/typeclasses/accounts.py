@@ -146,6 +146,12 @@ class Account(DefaultAccount):
             )
         return key
 
+    #: What every job falls back to when the account has chosen nothing. Kept
+    #: here rather than repeated at each call site, so that a model resolved
+    #: this way always carries the sampling settings for its job -- even when
+    #: the player has tuned a job without picking a model for it.
+    DEFAULT_MODEL = "openai/gpt-4o-mini"
+
     def get_model_for(self, function):
         """Return the configured model ID for a function, falling back to 'default'.
 
@@ -153,6 +159,44 @@ class Account(DefaultAccount):
         """
         cfg = self.db.ai_models or {}
         return cfg.get(function) or cfg.get("default")
+
+    def get_params_for(self, function):
+        """
+        The sampling settings chosen for a job: temperature, top_p and so on.
+
+        A job's own settings sit on top of whatever was set for 'default', so
+        a world can be made steady everywhere and then loosened for dialogue
+        alone. Only what the player actually set is here; model and API
+        defaults are shown in the menu but never sent, because a value equal
+        to the default is not the same as leaving it out.
+        """
+        from world import model_params
+
+        stored = self.db.ai_params or {}
+        merged = {**(stored.get("default") or {}),
+                  **(stored.get(function) or {})}
+        return model_params.clean(merged)
+
+    def model_for(self, *functions):
+        """
+        The model to use for a job, with that job's settings attached.
+
+        Several names may be given, tried in order: `model_for("quests",
+        "commands")` is "the quest model, or failing that the one for
+        commands". The settings are always the FIRST name's -- they belong to
+        the job being done, not to whichever model happened to answer for it.
+        """
+        chosen = ""
+        for function in functions:
+            chosen = self.get_model_for(function)
+            if chosen:
+                break
+
+        from world.model_params import ModelChoice
+
+        primary = functions[0] if functions else "default"
+        return ModelChoice(chosen or self.DEFAULT_MODEL,
+                           self.get_params_for(primary))
 
 
 class Guest(DefaultGuest):
