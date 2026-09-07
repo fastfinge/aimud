@@ -11,15 +11,23 @@ class CmdQuests(Command):
 
     Usage:
       quests
-      quests accept <number>
-      quests decline <number>
+      quests accept
+      quests decline
+      quests abandon
 
     Characters you meet may ask you to do things. Anything offered waits at
     the top of the list until you accept or decline it; anything underway
     shows each part of it and whether you have done that part yet.
 
+    You carry one errand at a time. Until it is done, has failed, or you
+    abandon it, nobody will ask you for anything else -- and abandoning costs
+    you nothing beyond the giver knowing you are not going to do it.
+
     Some errands come with a time limit, and some with a consequence for
     letting it run out. Both are shown before you agree to anything.
+
+    A number may be given if you want to name one exactly, but with a single
+    errand at a time it is rarely needed.
     """
 
     key = "quests"
@@ -47,19 +55,19 @@ class CmdQuests(Command):
             caller.msg(quests.format_list(caller))
             return
 
-        if self.action not in ("accept", "decline"):
-            caller.msg("Usage: |wquests|n, |wquests accept <number>|n, "
-                       "|wquests decline <number>|n.")
+        if self.action not in ("accept", "decline", "abandon"):
+            caller.msg("Usage: |wquests|n, |wquests accept|n, "
+                       "|wquests decline|n, |wquests abandon|n.")
             return
 
-        if self.number is None:
-            caller.msg(f"Which one? Try |wquests {self.action} <number>|n.")
-            return
-
+        # The number is optional: there is only ever one offer waiting and one
+        # errand underway, so naming it is a convenience, not a requirement.
         if self.action == "accept":
             quest, message = quests.accept(caller, self.number)
-        else:
+        elif self.action == "decline":
             quest, message = quests.decline(caller, self.number)
+        else:
+            quest, message = quests.abandon(caller, self.number)
 
         caller.msg(message)
         if quest is None:
@@ -68,7 +76,8 @@ class CmdQuests(Command):
         # The person who asked should hear the answer.
         room = caller.location
         if room:
-            verb = "accepts" if self.action == "accept" else "declines"
+            verb = {"accept": "accepts", "decline": "declines",
+                    "abandon": "gives up on"}[self.action]
             room.msg_contents(
                 f"{caller.get_display_name(caller)} {verb} {quest['giver']}'s request.",
                 exclude=[caller],

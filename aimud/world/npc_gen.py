@@ -124,21 +124,48 @@ NPC_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "offer_quest",
+            "name": "answer_quest",
             "description": (
-                "Ask a player present to do something for you, in your own "
-                "words. Say what you want, what you will give them for it, and "
-                "any consequence of failing. The game works out how to check "
-                "it, so describe the errand plainly rather than in any "
-                "particular format -- and ask only for something that could "
-                "actually be done with what is around you."
+                "Answer a request somebody has made of you. Refusing is a "
+                "perfectly good answer, and the right one when it does not "
+                "suit who you are or what you are already doing. Agreeing "
+                "means you will work at it until it is done, fails, or you "
+                "give it up."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "player": {
+                    "accept": {
+                        "type": "boolean",
+                        "description": "true to agree to it, false to refuse",
+                    },
+                },
+                "required": ["accept"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "offer_quest",
+            "description": (
+                "Ask someone present -- player or character -- to do something "
+                "for you, in your own words. Say what you want, what you will "
+                "give them for it, and any consequence of failing. The game "
+                "works out how to check it, so describe the errand plainly "
+                "rather than in any particular format, and ask only for "
+                "something that could actually be done with what is around "
+                "you. Use this sparingly: ask when you genuinely need a hand "
+                "with what you are trying to do, not as a way of making "
+                "conversation. Anyone already running an errand cannot take "
+                "another."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "person": {
                         "type": "string",
-                        "description": "Name of the player you are asking",
+                        "description": "Name of the person you are asking",
                     },
                     "request": {
                         "type": "string",
@@ -160,7 +187,7 @@ NPC_TOOLS = [
                         "description": "Optional deadline in seconds. Omit if there is no hurry.",
                     },
                 },
-                "required": ["player", "request", "offer"],
+                "required": ["person", "request", "offer"],
             },
         },
     },
@@ -399,8 +426,28 @@ def _want_line(npc):
     tested condition handed over as context. It costs nothing extra -- the
     prompt is being sent anyway -- and it is the difference between a
     character who reacts to the last thing said and one who wants something.
+
+    An errand somebody set is the same thing wearing a different hat, so it
+    belongs here too: what was asked, who asked, and whether it is still
+    waiting on an answer.
     """
-    from world import goals
+    from world import goals, quests
+
+    room = npc.location
+    world_root = room.db.world_root if room else None
+
+    # An unanswered request comes before anything else this character wants.
+    # It is the only situation in which answer_quest is offered at all, so
+    # leaving it unsaid would be offering a tool with no reason given.
+    offer = quests.offered_to(npc)
+    if offer is not None:
+        asked = offer.get("description") or offer.get("title")
+        return (
+            f"{offer['giver']} has asked something of you: {asked}\n"
+            "Answer with answer_quest, as this character would. You are free "
+            "to refuse; agreeing means you will work at it until it is done "
+            "or you give it up.\n\n"
+        )
 
     goal = list(npc.db.goal or [])
     if not goal:
@@ -412,18 +459,41 @@ def _want_line(npc):
             "suggests a purpose, set one with set_goal and you will pursue it "
             "on your own between conversations.\n\n"
         )
-    room = npc.location
-    world_root = room.db.world_root if room else None
+
     outstanding = [
         text for met, text in goals.progress(goal, npc, world_root) if not met
     ]
     if not outstanding:
         return "You have what you wanted for now.\n\n"
+
+    quest = quests.current(npc)
+    owed = f" You took this on for {quest['giver']}." if quest else ""
     return (
-        "What you want: " + ", then ".join(outstanding) + ".\n"
-        "Work towards it when the moment allows, in character. You may ask a "
-        "player to help, with something worth their while in return.\n\n"
+        "What you want: " + ", then ".join(outstanding) + f".{owed}\n"
+        "Work towards it when the moment allows, in character.\n\n"
     )
+
+
+def _tools_for(npc, room):
+    """
+    The tools this character may use at this moment.
+
+    A tool that cannot be used is worse than a missing one: offered every
+    turn, it gets chosen every turn and refused every turn. Both quest tools
+    are usable only in one specific situation, so they are only offered in
+    it -- which is most of why players were being buried in requests, and why
+    the world read as though it revolved around them.
+    """
+    from world import quests
+
+    drop = set()
+    if quests.offered_to(npc) is None:
+        drop.add("answer_quest")
+    if not quests.candidates(room, exclude=npc):
+        drop.add("offer_quest")
+    if not drop:
+        return NPC_TOOLS
+    return [tool for tool in NPC_TOOLS if tool["function"]["name"] not in drop]
 
 
 def _known_verbs(room):
@@ -614,6 +684,8 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
         if verbs_known else ""
     )
 
+    tools = _tools_for(npc, room)
+
     system = _NPC_REACT_SYSTEM.format(
         npc_name=npc.key,
         world_desc=world_desc,
@@ -644,7 +716,7 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
                 ),
             },
         ]
-        return _call_openrouter(api_key, model, messages, tools=NPC_TOOLS)
+        return _call_openrouter(api_key, model, messages, tools=tools)
 
     def _done(raw):
         try:
@@ -703,6 +775,8 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
         if verbs_known else ""
     )
 
+    tools = _tools_for(npc, room)
+
     system = _NPC_REACT_SYSTEM.format(
         npc_name=npc.key,
         world_desc=world_desc,
@@ -732,7 +806,7 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
                 ),
             },
         ]
-        return _call_openrouter(api_key, model, messages, tools=NPC_TOOLS)
+        return _call_openrouter(api_key, model, messages, tools=tools)
 
     def _done(raw):
         try:

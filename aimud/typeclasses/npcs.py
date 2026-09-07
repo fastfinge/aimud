@@ -50,7 +50,7 @@ class NPC(ObjectParent, DefaultObject):
     #: dropping in silence.
     KNOWN_TOOLS = frozenset([
         "say", "emote", "move", "get", "give", "attempt", "offer_quest",
-        "set_goal", "create", "destroy", "modify",
+        "answer_quest", "set_goal", "create", "destroy", "modify",
     ])
 
     def at_object_creation(self):
@@ -104,6 +104,15 @@ class NPC(ObjectParent, DefaultObject):
         room = self.location
         if not room:
             return
+
+        # An errand finished or run out of time is noticed here, and that is
+        # also what releases the goal the planner has been working at. It costs
+        # no model call -- these are the same condition tests the planner runs.
+        from world import quests
+
+        quests.review(self)
+        quests.lapse_offers(self)
+
         account = self._find_account(room)
         if not account:
             return
@@ -317,26 +326,31 @@ class NPC(ObjectParent, DefaultObject):
         dialogue model is never asked to produce a typed goal schema in the
         middle of speaking in character -- which it never once managed.
         """
-        from evennia.objects.objects import DefaultCharacter
         from evennia.utils import logger
 
-        wanted = str(args.get("player", "")).strip().lower()
+        from world import quests
+
+        # "person" is what the tool asks for now; "player" is what it used to
+        # ask for, and the model still reaches for it.
+        wanted = str(args.get("person") or args.get("player") or "").strip().lower()
         request = str(args.get("request", "")).strip()
         if not request:
             logger.log_info(f"{self.key}: quest offer with no request, dropped")
             return
 
+        # Only people with a free slot. An errand pressed on somebody already
+        # running one is worse than no errand at all: it cannot be taken, and
+        # it is what made the world feel like a queue of requests.
         target = None
-        for obj in room.contents:
-            if not isinstance(obj, DefaultCharacter):
-                continue
+        for obj in quests.candidates(room, exclude=self):
             known = [obj.key.lower(), obj.get_display_name(self).lower()]
             if not wanted or any(wanted in name for name in known):
                 target = obj
                 break
         if target is None:
             logger.log_info(
-                f"{self.key}: wanted to ask {wanted!r} for something, but nobody here matches"
+                f"{self.key}: wanted to ask {wanted!r} for something, but "
+                f"nobody here is free to take it on"
             )
             return
 
@@ -367,14 +381,22 @@ class NPC(ObjectParent, DefaultObject):
                 )
                 return
 
-            target.msg(
-                f'{self.key} says, "|w{request}|n"\n'
-                f"|y{self.key} is asking something of you: |w{quest['title']}|y. "
-                f"Type |wquests|y to see the terms.|n"
-            )
-            room.msg_contents(
-                f"{self.key} asks {target.get_display_name(self)} for a favour.",
-                exclude=[target])
+            if target.db.is_npc:
+                # Asked out loud, so the room sees the arrangement being made.
+                # The offer now sits in their quest list, and they answer it on
+                # their own next turn.
+                room.msg_contents(f'{self.key} says, "{request}"')
+                target.witness("say", self.key, request)
+            else:
+                target.msg(f'{self.key} says, "|w{request}|n"')
+                target.msg(
+                    f"|y{self.key} is asking something of you: |w{quest['title']}|y. "
+                    f"Type |wquests|y to see the terms, then |wquests accept|y "
+                    f"or |wquests decline|y to answer.|n"
+                )
+                room.msg_contents(
+                    f"{self.key} asks {target.get_display_name(self)} for a favour.",
+                    exclude=[target])
             self._add_to_history("action", self.key,
                                  f"asked {target.get_display_name(self)} to {quest['title']}")
 
@@ -385,6 +407,43 @@ class NPC(ObjectParent, DefaultObject):
 
         formalise(account, self, target, request, offer, consequence,
                   on_success=ready, on_error=failed)
+
+    def _answer_quest(self, args, room):
+        """
+        Say yes or no to what somebody has asked of this character.
+
+        Accepting is what ties a quest to the planner: quests.accept makes the
+        errand this character's goal, and the planner then works at it exactly
+        as it works at a goal the character set itself.
+        """
+        from evennia.utils import logger
+
+        from world import quests
+
+        if quests.offered_to(self) is None:
+            logger.log_info(f"{self.key}: answered a request nobody had made")
+            return
+
+        if bool(args.get("accept", True)):
+            quest, _message = quests.accept(self)
+            if quest is None:
+                return
+            said = f"{self.key} agrees to {quest['giver']}'s request: {quest['title']}."
+        else:
+            quest, _message = quests.decline(self)
+            if quest is None:
+                return
+            said = f"{self.key} turns down {quest['giver']}'s request."
+
+        room.msg_contents(said)
+        self._add_to_history("action", self.key, said)
+
+        from world.npc_gen import notify_npcs
+
+        notify_npcs(room, "action", self.key, said, exclude=self, actor=self)
+
+        # It may already be satisfied by what this character happens to carry.
+        quests.review(self)
 
     def _walk(self, direction, room):
         """
@@ -471,6 +530,7 @@ class NPC(ObjectParent, DefaultObject):
             logger.log_info(f"{self.key} reached its goal; wanting nothing for now")
             self.db.goal = []
             self.db.goal_stalls = 0
+            self.db.goal_from_quest = None
             return False
 
         action, rule_key, condition = plan_step(self, world_root)
@@ -517,8 +577,20 @@ class NPC(ObjectParent, DefaultObject):
             f"{goals.describe(goal, self, world_root)} in {stalls} turns; "
             f"giving up on it"
         )
+
+        # If somebody set this errand, they should not be left waiting on it.
+        if self.db.goal_from_quest is not None:
+            from world import quests
+
+            quest, _message = quests.abandon(self, self.db.goal_from_quest)
+            if quest is not None and self.location:
+                self.location.msg_contents(
+                    f"{self.key} gives up on {quest['giver']}'s errand: "
+                    f"{quest['title']}.")
+
         self.db.goal = []
         self.db.goal_stalls = 0
+        self.db.goal_from_quest = None
 
     def _attempt_verb(self, action, room, _depth=0):
         """
@@ -593,6 +665,9 @@ class NPC(ObjectParent, DefaultObject):
 
         elif tool_name == "offer_quest":
             self._offer_quest(args, room)
+
+        elif tool_name == "answer_quest":
+            self._answer_quest(args, room)
 
         elif tool_name == "attempt":
             action = str(args.get("action", "")).strip()

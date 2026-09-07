@@ -35,6 +35,66 @@ ACTIVE = "active"
 DONE = "done"
 FAILED = "failed"
 DECLINED = "declined"
+ABANDONED = "abandoned"
+
+#: How long an offer waits for an answer before it quietly lapses.
+#:
+#: Something has to, or one unanswered request holds the character's single
+#: quest slot shut for good and nobody can ever ask them anything again. An
+#: NPC either replies on its next turn or was never going to; a player may
+#: reasonably be doing something else, walk away from the keyboard, or simply
+#: want to think about it, so they are given far longer.
+OFFER_LAPSES_AFTER = 180
+OFFER_LAPSES_AFTER_PLAYER = 900
+
+
+def is_person(obj):
+    """
+    True for anything that can be asked to do something.
+
+    NPCs are not DefaultCharacter subclasses here, so the obvious isinstance
+    test quietly excludes exactly the characters this module now exists to
+    include.
+    """
+    from evennia.objects.objects import DefaultCharacter
+
+    return bool(obj.db.is_npc) or isinstance(obj, DefaultCharacter)
+
+
+def current(character):
+    """The one quest this character has underway, or None."""
+    for quest in _quests(character):
+        if quest.get("status") == ACTIVE:
+            return quest
+    return None
+
+
+def offered_to(character):
+    """The one offer waiting on this character's answer, or None."""
+    for quest in _quests(character):
+        if quest.get("status") == OFFERED:
+            return quest
+    return None
+
+
+def can_accept(character):
+    """
+    True when this character is free to be asked something.
+
+    One errand at a time, and one offer outstanding at a time. Without this a
+    character -- a player especially -- collects errands faster than anybody
+    could run them, and the world starts to look like a queue of requests
+    rather than a place.
+    """
+    return current(character) is None and offered_to(character) is None
+
+
+def candidates(room, exclude=None):
+    """Everyone in `room` who could take on a quest right now."""
+    if room is None:
+        return []
+    return [obj for obj in room.contents
+            if obj is not exclude and is_person(obj) and can_accept(obj)]
 
 
 def _quests(character):
@@ -62,6 +122,13 @@ def offer(npc, character, title, description, conditions,
     An offer whose goal survives sanitising to nothing is refused here rather
     than accepted and left impossible.
     """
+    if not can_accept(character):
+        logger.log_info(
+            f"quest offer from {npc.key} to {character.key} discarded: "
+            f"they already have one"
+        )
+        return None
+
     clean = goals.sanitise(conditions)
     if not clean:
         logger.log_info(f"quest offer from {npc.key} discarded: no testable goal")
@@ -169,26 +236,90 @@ def _update(character, quest_id, **changes):
     _save(character, entries)
 
 
-def accept(character, quest_id):
+def accept(character, quest_id=None):
     """Take on an offered quest. Returns (quest, message)."""
-    quest = _find(character, quest_id)
+    quest = _find(character, quest_id) if quest_id is not None else offered_to(character)
     if quest is None or quest.get("status") != OFFERED:
         return None, "There is no such offer."
+    if current(character) is not None:
+        return None, ("You already have something underway. Finish or "
+                      "|wquests abandon|n it first.")
+    quest_id = quest["id"]
     _update(character, quest_id, status=ACTIVE, accepted_at=time.time())
     quest = _find(character, quest_id)
+
+    # For a character the planner drives, an accepted errand simply becomes
+    # what they are working towards. That is the whole integration: a quest
+    # goal and a character's own goal are already the same kind of thing.
+    _adopt_goal(character, quest)
+
     deadline = ""
     if quest.get("time_limit"):
         deadline = f" You have {_short_time(quest['time_limit'])}."
     return quest, f"You accept: |w{quest['title']}|n.{deadline}"
 
 
-def decline(character, quest_id):
+def decline(character, quest_id=None):
     """Turn down an offered quest. Returns (quest, message)."""
-    quest = _find(character, quest_id)
+    quest = _find(character, quest_id) if quest_id is not None else offered_to(character)
     if quest is None or quest.get("status") != OFFERED:
         return None, "There is no such offer."
-    _update(character, quest_id, status=DECLINED)
+    _update(character, quest["id"], status=DECLINED)
     return quest, f"You decline: {quest['title']}."
+
+
+def abandon(character, quest_id=None):
+    """
+    Give up on the quest underway. Returns (quest, message).
+
+    No punishment is exacted. A punishment is the price of letting a deadline
+    run out with the giver still waiting; saying plainly that you are not
+    going to do it is a different thing, and the giver at least knows where
+    they stand.
+    """
+    quest = _find(character, quest_id) if quest_id is not None else current(character)
+    if quest is None or quest.get("status") != ACTIVE:
+        return None, "You have nothing underway to abandon."
+    _update(character, quest["id"], status=ABANDONED)
+    _release_goal(character, quest)
+    return quest, f"You give up on: {quest['title']}."
+
+
+def lapse_offers(character, older_than=OFFER_LAPSES_AFTER):
+    """
+    Quietly decline offers nobody ever answered. Returns how many.
+
+    An unanswered offer holds the one slot shut, so a character who was asked
+    something and never replied could never be asked anything again.
+    """
+    now = time.time()
+    lapsed = 0
+    for quest in _quests(character):
+        if quest.get("status") != OFFERED:
+            continue
+        if now - (quest.get("offered_at") or now) >= older_than:
+            _update(character, quest["id"], status=DECLINED)
+            lapsed += 1
+    return lapsed
+
+
+def _adopt_goal(character, quest):
+    """Make an accepted quest the goal the planner works at."""
+    if not character.db.is_npc:
+        return
+    character.db.goal = [dict(c) for c in (quest.get("goal") or [])]
+    character.db.goal_stalls = 0
+    character.db.goal_from_quest = quest.get("id")
+
+
+def _release_goal(character, quest):
+    """Stop working at a quest goal once the quest is over."""
+    if not character.db.is_npc:
+        return
+    if character.db.goal_from_quest == quest.get("id"):
+        character.db.goal = []
+        character.db.goal_stalls = 0
+        character.db.goal_from_quest = None
 
 
 def remaining(quest):
@@ -233,35 +364,72 @@ def review(character, announce=True):
 
         if goals.satisfied(quest.get("goal"), character, world_root):
             _update(character, quest_id, status=DONE)
+            _release_goal(character, quest)
             said = _apply(character, quest.get("reward"), world_root)
             if announce:
-                character.msg(f"|gQuest complete: |w{quest['title']}|g.|n")
-                for line in said:
-                    character.msg(line)
+                _tell(character,
+                      f"|gQuest complete: |w{quest['title']}|g.|n",
+                      f"{character.key} has done what {quest['giver']} asked: "
+                      f"{quest['title']}.",
+                      said)
             finished.append((quest, True))
             continue
 
         left = remaining(quest)
         if left is not None and left <= 0:
             _update(character, quest_id, status=FAILED)
+            _release_goal(character, quest)
             said = _apply(character, quest.get("punishment"), world_root)
             if announce:
-                character.msg(f"|rQuest failed: |w{quest['title']}|r — out of time.|n")
-                for line in said:
-                    character.msg(line)
+                _tell(character,
+                      f"|rQuest failed: |w{quest['title']}|r — out of time.|n",
+                      f"{character.key} has run out of time on "
+                      f"{quest['giver']}'s errand: {quest['title']}.",
+                      said)
             finished.append((quest, False))
 
     return finished
 
 
-def review_room(room):
-    """Review the quests of every player character in a room."""
-    from evennia.objects.objects import DefaultCharacter
+def _tell(character, own, public, extra=()):
+    """
+    Report a quest outcome to whoever should hear it.
 
+    A player reads their own messages. An NPC has nobody reading its
+    messages at all, so the room hears instead -- which is rather the point
+    of letting NPCs run errands for each other: what a player standing there
+    sees is the world getting on with its own business.
+    """
+    if not character.db.is_npc:
+        character.msg(own)
+        for line in extra:
+            character.msg(line)
+        return
+
+    room = character.location
+    if room is None:
+        return
+    room.msg_contents(public)
+    for line in extra:
+        room.msg_contents(line)
+    if hasattr(character, "_add_to_history"):
+        character._add_to_history("action", character.key, public)
+
+    # The people standing there should be able to react to it -- the character
+    # who asked most of all. This is the same path any other room event takes,
+    # so it respects the chain cap and the activity gate.
+    from world.npc_gen import notify_npcs
+
+    notify_npcs(room, "action", character.key, public, exclude=character,
+                actor=character)
+
+
+def review_room(room):
+    """Review the quests of everyone in a room, NPCs included."""
     if room is None:
         return
     for obj in list(room.contents):
-        if isinstance(obj, DefaultCharacter):
+        if is_person(obj):
             review(obj)
 
 
@@ -290,7 +458,8 @@ def format_list(character):
                 lines.append(f"      |xReward:|n {_summarise(quest['reward'])}")
             if quest.get("punishment"):
                 lines.append(f"      |xIf you fail:|n {_summarise(quest['punishment'])}")
-        lines.append("\nType |wquests accept <number>|n or |wquests decline <number>|n.")
+        lines.append("")
+        lines.append("Type |wquests accept|n or |wquests decline|n.")
 
     if active:
         if offers:
@@ -303,6 +472,9 @@ def format_list(character):
             for met, text in goals.progress(quest["goal"], character, world_root):
                 mark = "|gdone|n" if met else "|xtodo|n"
                 lines.append(f"      [{mark}] {text}")
+        lines.append("")
+        lines.append("|xOne errand at a time. |wquests abandon|x gives this "
+                     "one up, and nothing is exacted for it.|n")
 
     return "\n".join(lines)
 

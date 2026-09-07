@@ -139,12 +139,28 @@ class QuestDeadlineScript(DefaultScript):
     def at_repeat(self):
         from evennia.server.sessionhandler import SESSIONS
 
-        from world.quests import review
+        from world.quests import (OFFER_LAPSES_AFTER_PLAYER, current,
+                                  lapse_offers, offered_to, review)
 
         for session in SESSIONS.get_sessions():
             puppet = getattr(session, "puppet", None)
             if puppet is not None and puppet.location is not None:
                 review(puppet)
+                lapse_offers(puppet, older_than=OFFER_LAPSES_AFTER_PLAYER)
+
+        # NPCs run errands too, and one standing alone in a room with nobody
+        # to prompt it would otherwise never notice its deadline pass. Only
+        # those actually holding something are looked at, so this stays cheap
+        # however many characters the world has.
+        from typeclasses.npcs import NPC
+
+        for npc in NPC.objects.all_family():
+            if npc.location is None:
+                continue
+            if current(npc) is not None:
+                review(npc)
+            if offered_to(npc) is not None:
+                lapse_offers(npc)
 
 
 class NPCIdleScript(DefaultScript):
