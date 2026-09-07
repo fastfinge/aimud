@@ -29,6 +29,19 @@ from evennia.utils import logger
 _backend = None
 _state = "unknown"          # unknown | ready | missing
 
+#: Set when the server is going down. Writes stop being accepted at that
+#: point: they are serialised behind one lock at roughly a fifth of a second
+#: each, so a busy world can leave a queue that Twisted then waits for while
+#: shutting down its thread pool. Six seconds of that is enough for the
+#: replacement server to find the webserver port still held, and the reload
+#: fails outright.
+_closing = False
+
+#: Most writes that may be waiting at once. Past this the oldest events are
+#: worth more than the newest ones are worth waiting for.
+MAX_PENDING = 12
+_pending = 0
+
 #: mnemosyne keeps one SQLite connection, and SQLite connections are not
 #: shared between threads. Every call goes through this lock, so a burst of
 #: remembered events queues instead of colliding -- without it the log fills
@@ -133,15 +146,47 @@ def remember(character, text, kind="event", importance=0.5):
     memory's source so recall can be biased later if we want it.
     importance is 0..1; the things a character did themselves matter more to
     them than things they merely saw.
+
+    Dropped rather than queued when the server is closing or the backlog is
+    already long. A memory is worth having; it is not worth holding a shutdown
+    open for, and a queue that outlives the process helps nobody.
     """
-    if not text or not available():
+    global _pending
+
+    if not text or _closing or not available():
         return
+    if _pending >= MAX_PENDING:
+        logger.log_info(
+            f"memory: {_pending} writes already waiting, dropping one for "
+            f"{character.key}"
+        )
+        return
+
     bank = bank_for(character)
 
     def _write():
-        _remember_sync(bank, text, kind, importance)
+        try:
+            _remember_sync(bank, text, kind, importance)
+        finally:
+            _finished()
 
+    _pending += 1
     threads.deferToThread(_write).addErrback(_swallow)
+
+
+def _finished():
+    global _pending
+    _pending = max(0, _pending - 1)
+
+
+def stop():
+    """
+    Stop accepting memories, because the server is going down.
+
+    Anything already running finishes; nothing new is queued behind it.
+    """
+    global _closing
+    _closing = True
 
 
 def _swallow(failure):

@@ -122,7 +122,13 @@ def at_server_stop():
     This is called just before the server is shut down, regardless
     of it is for a reload, reset or shutdown.
     """
-    pass
+    # Memory writes are serialised, so a busy world can leave a queue behind.
+    # Twisted waits for its thread pool while shutting down, and a shutdown
+    # that takes several seconds leaves the webserver port held when the
+    # replacement server starts -- which makes a reload fail outright.
+    from world.memory import stop
+
+    stop()
 
 
 def at_server_reload_start():
