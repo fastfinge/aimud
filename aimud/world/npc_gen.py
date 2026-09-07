@@ -354,18 +354,14 @@ def _room_context(room, npc):
     """
     from evennia.objects.objects import DefaultCharacter
 
-    people, objects, exits = [], [], []
+    people, objects, exits, unexplored = [], [], [], []
     for obj in room.contents:
         if obj is npc:
             continue
         if getattr(obj, "destination", None) is not None:
-            # Only ways this character could actually take.  An exit whose far
-            # side has not been built yet is refused when walked, so offering
-            # it here invites the model to choose it every single turn and be
-            # silently turned back -- which is how an NPC ends up standing in
-            # one room doing nothing for minutes on end.
-            if not obj.db.pending_generation and obj.destination is not room:
-                exits.append(obj.key)
+            exits.append(obj.key)
+            if obj.db.pending_generation or obj.destination is room:
+                unexplored.append(obj.key)
         elif obj.db.is_npc:
             people.append(f"{obj.key} (NPC)")
         elif isinstance(obj, DefaultCharacter):
@@ -385,6 +381,13 @@ def _room_context(room, npc):
         parts.append("Objects here: " + "; ".join(objects))
     if exits:
         parts.append("Exits: " + ", ".join(exits))
+    if unexplored:
+        # Named on their own line rather than folded into the list above, so
+        # what comes back to the move tool stays a bare direction. Worth
+        # telling: a character with somewhere to be and no known way there
+        # should be able to decide to go and look.
+        parts.append(
+            "Nobody has been through these yet: " + ", ".join(unexplored))
     return "\n".join(parts)
 
 

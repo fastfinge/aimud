@@ -26,6 +26,41 @@ class Exit(ObjectParent, DefaultExit):
     pass
 
 
+#: World root id -> the exit an NPC currently has building there.
+#:
+#: A player waiting at an exit is the whole point of the game and never queues
+#: behind anybody.  An NPC is different: every character in a world idles on
+#: its own timer, so without this a populated world could set a dozen rooms
+#: generating at the same moment somebody logged in -- three model calls each,
+#: for rooms nobody is standing in.  One at a time still grows the world, and
+#: the wait costs an NPC nothing.
+_NPC_BUILDS = {}
+
+
+def _is_player(obj):
+    """True for something a person is playing through."""
+    return getattr(obj, "account", None) is not None
+
+
+def _account_for(traversing_object, source_room):
+    """
+    An account whose API key can pay for the room beyond this exit.
+
+    A player brings their own.  An NPC has none at all, so the cost falls to
+    whoever is in the room, and failing that to the world's creator -- the
+    same account that paid for every other room in it.
+    """
+    account = getattr(traversing_object, "account", None)
+    if account and account.db.openrouter_api_key:
+        return account
+    for obj in (source_room.contents if source_room else []):
+        other = getattr(obj, "account", None)
+        if other and other.db.openrouter_api_key:
+            return other
+    world_root = source_room.db.world_root if source_room else None
+    return world_root.db.world_creator if world_root else None
+
+
 class AIExit(ObjectParent, DefaultExit):
     """
     An exit created by AI world generation.
@@ -59,12 +94,16 @@ class AIExit(ObjectParent, DefaultExit):
         if not self.db.pending_generation:
             return super().at_traverse(traversing_object, target_location, **kwargs)
 
-        account = getattr(traversing_object, "account", None) or traversing_object
         source_room = self.location
         world_description = source_room.db.world_description if source_room else None
 
         if not world_description:
             traversing_object.msg("This exit leads nowhere.")
+            return
+
+        account = _account_for(traversing_object, source_room)
+        if account is None:
+            traversing_object.msg("There is no way through yet.")
             return
 
         # If a room already stands where this exit leads, connect to it rather
@@ -88,6 +127,15 @@ class AIExit(ObjectParent, DefaultExit):
                 traversing_object.msg("A room is already being generated here — you'll be moved when it's ready.")
             return
 
+        # NPCs take turns at this; a player never waits on one.
+        world_root = source_room.db.world_root
+        if not _is_player(traversing_object):
+            holder = _NPC_BUILDS.get(getattr(world_root, "id", None))
+            if holder is not None and holder != self.id:
+                return
+            if world_root is not None:
+                _NPC_BUILDS[world_root.id] = self.id
+
         self.ndb.generating = True
         self.ndb.waiting_travelers = [traversing_object]
         traversing_object.msg(f"Generating room to the {self.key}...")
@@ -95,8 +143,13 @@ class AIExit(ObjectParent, DefaultExit):
         exit_key = self.key  # capture before async
         hint = self.db.destination_hint or ""
 
-        def on_success(room):
+        def release():
             self.ndb.generating = False
+            if _NPC_BUILDS.get(getattr(world_root, "id", None)) == self.id:
+                del _NPC_BUILDS[world_root.id]
+
+        def on_success(room):
+            release()
             self.db.pending_generation = False
             self.destination = room
             for traveler in (self.ndb.waiting_travelers or []):
@@ -105,9 +158,14 @@ class AIExit(ObjectParent, DefaultExit):
             self.ndb.waiting_travelers = []
 
         def on_error(err):
-            self.ndb.generating = False
+            release()
             for traveler in (self.ndb.waiting_travelers or []):
                 traveler.msg(f"|rRoom generation failed: {err}|n")
+                # An NPC has nowhere to read that, and would pick the same way
+                # again next turn. Telling it keeps it from looping on a door
+                # that cannot be built.
+                if hasattr(traveler, "_note_to_self"):
+                    traveler._note_to_self(f"the way {self.key} from here would not open")
             self.ndb.waiting_travelers = []
 
         from world.worldgen import generate_connected_room

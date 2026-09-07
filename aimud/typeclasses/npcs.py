@@ -396,9 +396,11 @@ class NPC(ObjectParent, DefaultObject):
         character into the room it is already standing in -- which is what
         produced "leaving X, heading for X" in the log.
 
-        An unexplored exit is left alone. Walking through one builds a whole
-        new room, which is three model calls spent on somewhere nobody asked
-        to see; exploring is for players.
+        An unexplored exit is walked like any other, and builds the room
+        behind it. It costs three model calls, but the room is only ever built
+        once and a player will stand in it sooner or later -- whereas a world
+        whose characters may only tread ground a player has already covered
+        feels small, and pens them in.
         """
         from commands.look_take_cmds import _find_one
         from evennia.utils import logger
@@ -408,15 +410,32 @@ class NPC(ObjectParent, DefaultObject):
             logger.log_info(f"{self.key}: no exit {direction!r} to take from {room.key}")
             self._note_to_self(f"there is no way {direction} from here")
             return False
-        if exit_obj.db.pending_generation or exit_obj.destination is room:
-            logger.log_info(
-                f"{self.key}: {direction!r} from {room.key} leads nowhere built yet"
-            )
+
+        destination = exit_obj.destination
+        unbuilt = bool(exit_obj.db.pending_generation)
+        if not unbuilt and destination is room:
+            # Pointing at its own room without being marked pending: there is
+            # nothing on the other side and nothing on its way either.
+            logger.log_info(f"{self.key}: {direction!r} from {room.key} goes nowhere")
             self._note_to_self(f"the way {direction} from here is not open")
             return False
 
-        destination = exit_obj.destination
         exit_obj.at_traverse(self, destination)
+
+        if unbuilt:
+            # Either the far side is being built with this character waiting on
+            # it, or the world's one build is already under way somewhere else
+            # and this turn is spent waiting for a go. Nothing further to
+            # decide this turn in either case, so the idle model is not asked.
+            if self not in (exit_obj.ndb.waiting_travelers or []):
+                return True
+
+            from world.memory import remember
+
+            remember(self, f"I went {direction} to see what was there",
+                     kind="moved", importance=0.3)
+            return True
+
         if self.location is destination:
             from world.memory import remember
 
