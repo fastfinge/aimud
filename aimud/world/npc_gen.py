@@ -359,7 +359,13 @@ def _room_context(room, npc):
         if obj is npc:
             continue
         if getattr(obj, "destination", None) is not None:
-            exits.append(obj.key)
+            # Only ways this character could actually take.  An exit whose far
+            # side has not been built yet is refused when walked, so offering
+            # it here invites the model to choose it every single turn and be
+            # silently turned back -- which is how an NPC ends up standing in
+            # one room doing nothing for minutes on end.
+            if not obj.db.pending_generation and obj.destination is not room:
+                exits.append(obj.key)
         elif obj.db.is_npc:
             people.append(f"{obj.key} (NPC)")
         elif isinstance(obj, DefaultCharacter):

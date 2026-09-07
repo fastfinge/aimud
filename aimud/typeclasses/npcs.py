@@ -31,6 +31,20 @@ class NPC(ObjectParent, DefaultObject):
       db.action_history    — list of {"type", "actor", "text"} event dicts
     """
 
+    #: An NPC is a person, not a thing.  Without this they inherit
+    #: DefaultObject's "object" content type, and a room lists them among the
+    #: litter -- "You see: an Attendant Min-su and a stray pink flip-flop" --
+    #: article and all, with no Characters line at all.  That is a very good
+    #: way for a player to walk straight past somebody.
+    _content_types = ("character",)
+
+    #: Idle turns a goal may yield no plannable step before it is given up.
+    #: A goal can name a room that was never built or an object that exists
+    #: nowhere, and the planner has nothing to say about either.  Left alone
+    #: the character wants it forever, and every idle turn falls through to a
+    #: model call that cannot possibly fix it.
+    GOAL_STALL_LIMIT = 10
+
     #: Everything _execute_one implements. A call outside this set means the
     #: model invented a tool, which is worth knowing about rather than
     #: dropping in silence.
@@ -169,6 +183,27 @@ class NPC(ObjectParent, DefaultObject):
             importance=0.6 if mine else 0.4,
         )
 
+    def _note_to_self(self, text):
+        """
+        Put something in working memory without remembering it for good.
+
+        A refusal has to reach the next prompt -- otherwise the model asks for
+        the same impossible thing every turn and is silently turned back every
+        turn -- but it is not an event anybody witnessed, and writing it to the
+        memory bank would fill that bank with the character's own thwarted
+        intentions.  Repeats are dropped so one blocked exit cannot crowd the
+        history out.
+        """
+        history = self.db.action_history or []
+        if history:
+            last = history[-1]
+            if last.get("actor") == self.key and last.get("text") == text:
+                return
+        history.append({"type": "action", "actor": self.key, "text": text})
+        if len(history) > MAX_HISTORY:
+            history = history[-MAX_HISTORY:]
+        self.db.action_history = history
+
     def _trigger_reaction(self, _depth=0):
         room = self.location
         if not room:
@@ -261,6 +296,7 @@ class NPC(ObjectParent, DefaultObject):
                 )
                 return
             self.db.goal = clean
+            self.db.goal_stalls = 0
             logger.log_info(f"{self.key} now wants: {goals.describe(clean, self)}")
 
         from world.quest_gen import formalise_goal
@@ -370,11 +406,13 @@ class NPC(ObjectParent, DefaultObject):
         exit_obj, _ = _find_one(self, direction, location=room)
         if exit_obj is None or getattr(exit_obj, "destination", None) is None:
             logger.log_info(f"{self.key}: no exit {direction!r} to take from {room.key}")
+            self._note_to_self(f"there is no way {direction} from here")
             return False
         if exit_obj.db.pending_generation or exit_obj.destination is room:
             logger.log_info(
                 f"{self.key}: {direction!r} from {room.key} leads nowhere built yet"
             )
+            self._note_to_self(f"the way {direction} from here is not open")
             return False
 
         destination = exit_obj.destination
@@ -413,11 +451,14 @@ class NPC(ObjectParent, DefaultObject):
                                  f"{goals.describe(goal, self, world_root)}")
             logger.log_info(f"{self.key} reached its goal; wanting nothing for now")
             self.db.goal = []
+            self.db.goal_stalls = 0
             return False
 
         action, rule_key, condition = plan_step(self, world_root)
         if not action:
+            self._give_up_eventually(goal, world_root)
             return False
+        self.db.goal_stalls = 0
 
         from world.worldgen import canonical_direction
 
@@ -428,6 +469,37 @@ class NPC(ObjectParent, DefaultObject):
         self._attempt_verb(action, room)
         check_outcome(self, world_root, condition, rule_key)
         return True
+
+    def _give_up_eventually(self, goal, world_root):
+        """
+        Count an idle turn the planner could make no move on, and eventually
+        stop wanting the thing.
+
+        Some goals cannot be worked towards at all: one that names a room
+        nobody ever built, or an object that exists in no room in the world.
+        The planner correctly finds no step, and the character then falls
+        through to the dialogue model on every idle turn for the rest of its
+        life -- a model call each time, spent on a want that no answer can
+        satisfy.  After enough turns of that the goal is dropped, and the
+        character is free to want something it can actually do.
+        """
+        if not goal:
+            return
+        stalls = (self.db.goal_stalls or 0) + 1
+        self.db.goal_stalls = stalls
+        if stalls < self.GOAL_STALL_LIMIT:
+            return
+
+        from evennia.utils import logger
+        from world import goals
+
+        logger.log_info(
+            f"{self.key}: no way to make progress towards "
+            f"{goals.describe(goal, self, world_root)} in {stalls} turns; "
+            f"giving up on it"
+        )
+        self.db.goal = []
+        self.db.goal_stalls = 0
 
     def _attempt_verb(self, action, room, _depth=0):
         """
