@@ -117,18 +117,61 @@ def _start_npc_idle_scripts():
         logger.log_info(f"Started idle scripts for {repaired} NPC(s).")
 
 
+def _release_webserver_ports():
+    """
+    Stop listening on the internal webserver port before the reactor does.
+
+    A reload does not wait for the old server to exit.  The portal launches
+    the replacement the moment the AMP connection drops, and the old process
+    then spends a further second or three finishing its shutdown -- during
+    which it is still holding 127.0.0.1:4005.  The new server reaches for
+    that port, cannot have it, and dies on the spot:
+
+        CannotListenError: Couldn't listen on 127.0.0.1:4005 [WinError 10048]
+
+    Nothing is wrong with the code when this happens; the two processes
+    simply overlap.  On Linux the bind would be allowed anyway, because
+    Twisted sets SO_REUSEADDR there and not on Windows, which is why this
+    only ever bites here.
+
+    Handing the port back at the start of our own shutdown, rather than at
+    the end of Twisted's, is what closes the gap.  Twisted's own stopService
+    is safe to run afterwards: it checks whether the port is still open.
+    """
+    import evennia
+    from django.conf import settings
+    from evennia.utils import logger
+
+    service = getattr(evennia, "EVENNIA_SERVER_SERVICE", None)
+    if service is None:
+        return
+
+    for _proxy_port, server_port in getattr(settings, "WEBSERVER_PORTS", []):
+        try:
+            child = service.getServiceNamed(f"EvenniaWebServer{server_port}")
+        except KeyError:
+            continue  # webserver disabled, or already gone
+        if not child.running:
+            continue  # already handed back, on the reload path
+        try:
+            child.stopService()
+            logger.log_info(f"Released webserver port {server_port} early.")
+        except Exception as err:
+            logger.log_info(f"Could not release webserver port {server_port}: {err}")
+
+
 def at_server_stop():
     """
     This is called just before the server is shut down, regardless
     of it is for a reload, reset or shutdown.
     """
-    # Memory writes are serialised, so a busy world can leave a queue behind.
-    # Twisted waits for its thread pool while shutting down, and a shutdown
-    # that takes several seconds leaves the webserver port held when the
-    # replacement server starts -- which makes a reload fail outright.
+    # Memory writes are serialised, so a busy world can leave a queue behind,
+    # and Twisted waits for its thread pool while shutting down. Every second
+    # of that is a second the replacement server is waiting on our ports.
     from world.memory import stop
 
     stop()
+    _release_webserver_ports()
 
 
 def at_server_reload_start():
@@ -142,7 +185,10 @@ def at_server_reload_stop():
     """
     This is called only time the server stops before a reload.
     """
-    pass
+    # The earliest hook we get on the reload path, and the replacement server
+    # is already starting by the time it runs -- so the port goes back here
+    # rather than waiting for at_server_stop a few hundred milliseconds later.
+    _release_webserver_ports()
 
 
 def at_server_cold_start():
