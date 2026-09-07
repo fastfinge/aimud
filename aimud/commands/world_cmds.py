@@ -43,6 +43,27 @@ def _current_world_root(caller):
     return loc.db.world_root if loc else None
 
 
+def _quest_holders(rooms, account):
+    """
+    Everyone who might be carrying a quest from this world.
+
+    The characters standing in it, plus the account's own playable characters
+    -- a player can perfectly well be somewhere else entirely when they delete
+    a world they took an errand from.
+    """
+    from evennia.objects.objects import DefaultCharacter
+
+    found = {}
+    for room in rooms:
+        for obj in room.contents:
+            if isinstance(obj, DefaultCharacter):
+                found[obj.id] = obj
+    for character in (getattr(account, "characters", None) or []):
+        if character:
+            found[character.id] = character
+    return list(found.values())
+
+
 def _clear_world(root, account, destination=None, message=None):
     """
     Delete every room of a world, and everything in them, and forget the world
@@ -58,8 +79,19 @@ def _clear_world(root, account, destination=None, message=None):
     from evennia import search_tag
     from evennia.objects.objects import DefaultCharacter
 
+    from world import quests
+
     root_id = root.id
     rooms = list(search_tag(str(root_id), category="ai_world"))
+
+    # Quests are held by the player, not by the world, so deleting the world
+    # leaves them behind: an errand from somebody who no longer exists, about
+    # things that no longer exist, which can never be finished and is re-tested
+    # on every deadline tick.  Collected before anything is destroyed, because
+    # older quests are identified by who gave them.
+    givers = {obj.id for room in rooms for obj in room.contents if obj.db.is_npc}
+    for character in _quest_holders(rooms, account):
+        quests.forget_world(character, root_id, givers)
 
     for room in rooms:
         for obj in list(room.contents):

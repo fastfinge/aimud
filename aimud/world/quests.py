@@ -74,12 +74,17 @@ def offer(npc, character, title, description, conditions,
         except (TypeError, ValueError):
             limit = None
 
+    # Which world this was agreed in, so it can be forgotten with that world.
+    room = npc.location
+    root = room.db.world_root if room else None
+
     quest = {
         "id": _next_id(character),
         "title": str(title or "An errand").strip(),
         "description": str(description or "").strip(),
         "giver": npc.key,
         "giver_id": npc.id,
+        "world_root": root.id if root else None,
         "goal": clean,
         "reward": _clean_effects(reward),
         "punishment": _clean_effects(punishment),
@@ -92,6 +97,42 @@ def offer(npc, character, title, description, conditions,
     entries.append(quest)
     _save(character, entries)
     return quest
+
+
+def forget_world(character, root_id, giver_ids=()):
+    """
+    Drop every quest that belonged to a world being deleted. Returns how many.
+
+    A quest outlives its world unless something removes it.  The giver is
+    gone, the objects its goal names are gone and the room it was agreed in
+    is gone -- but the quest itself sits on the player, who is not deleted
+    along with the world.  Left alone it shows in `quests` forever, can never
+    be completed, and is re-tested on every deadline tick.
+
+    Matched on the world first.  Quests recorded before they knew which world
+    they came from are matched on who gave them instead, which is why the
+    givers are collected before the world's NPCs are destroyed.
+    """
+    try:
+        root_id = int(root_id)
+    except (TypeError, ValueError):
+        return 0
+    givers = {g for g in giver_ids if g is not None}
+
+    kept, dropped = [], 0
+    for quest in _quests(character):
+        theirs = quest.get("world_root")
+        if theirs is None:
+            belongs = quest.get("giver_id") in givers
+        else:
+            belongs = theirs == root_id
+        if belongs:
+            dropped += 1
+        else:
+            kept.append(quest)
+    if dropped:
+        _save(character, kept)
+    return dropped
 
 
 def _clean_effects(effects):
