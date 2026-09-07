@@ -40,6 +40,22 @@ def _reach(caller, query):
     return relations.find(caller, query)
 
 
+def _or_typo(caller, query):
+    """
+    (obj, complaint) for a name nothing here answered to.
+
+    The last thing tried before conjuring, and the reason it exists: a typo
+    and an invention look exactly alike to this game, so "blackbaord" would
+    otherwise buy a second blackboard, slightly different from the first,
+    standing beside it for good. A confident match is used; a near miss is
+    put back to the player; only a genuinely new name gets made.
+    """
+    from world import naming
+
+    obj, suggestion = naming.instead_of_creating(caller, query)
+    return obj, suggestion
+
+
 def _find_one(caller, query, **search_kwargs):
     """
     Search with quiet=True and normalize the result.
@@ -154,6 +170,11 @@ class CmdAILook(_DefaultLook):
             # put down somewhere would be the worst of both.
             obj = _reach(caller, query)
         if not obj:
+            obj, complaint = _or_typo(caller, query)
+            if complaint:
+                caller.msg(complaint)
+                return
+        if not obj:
             self._ai_look(caller, query)
             return
 
@@ -243,6 +264,11 @@ class CmdAIGet(_DefaultGet):
 
         if not obj:
             obj = _reach(caller, query)
+        if not obj:
+            obj, complaint = _or_typo(caller, query)
+            if complaint:
+                caller.msg(complaint)
+                return
         if not obj:
             self._ai_take_nonexistent(caller, query, room)
             return

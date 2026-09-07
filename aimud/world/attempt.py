@@ -156,7 +156,7 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
         _promote(caller, room, account, parsed, bound, unbound,
                  lambda: _with_bindings(caller, room, account, raw, verb, bound,
                                         on_message, allow_effects, waiter),
-                 on_message)
+                 on_message, fuzzy=fuzzy)
         return
 
     _with_bindings(caller, room, account, raw, verb, bound, on_message,
@@ -187,7 +187,8 @@ def _follow(caller, parsed, on_message):
     on_message(message, room_text)
 
 
-def _promote(caller, room, account, parsed, bound, unbound, resume, on_message):
+def _promote(caller, room, account, parsed, bound, unbound, resume, on_message,
+             fuzzy=False):
     """
     Try to turn an unbound noun into a real object.
 
@@ -201,6 +202,26 @@ def _promote(caller, room, account, parsed, bound, unbound, resume, on_message):
 
     from commands.look_take_cmds import _acquire_gen_lock, _release_gen_lock
     from world.item_gen import generate_item, validate_object_existence
+    from world.naming import instead_of_creating
+
+    # A typo and an invention are the same thing to this game, so the last
+    # question before making anything is whether something here already
+    # answers to a near-enough name. An NPC takes a near miss as good enough:
+    # it is naming things from memory in its own words, and there is nobody
+    # to put the question to.
+    existing, complaint = instead_of_creating(caller, phrase, fuzzy=fuzzy)
+    if existing is not None:
+        bound[role] = existing
+        remaining = unbound[1:]
+        if not remaining:
+            resume()
+            return
+        unbound = remaining
+        phrase = parsed["roles"][unbound[0]]
+        role = unbound[0]
+    elif complaint:
+        on_message(complaint, "")
+        return
 
     # Creating a fixture takes two round trips, and a second attempt arriving
     # in that window would create a second one. The lock is per room and
