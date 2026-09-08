@@ -849,6 +849,20 @@ def check(requirements, bound, actor, world_root=None):
                 note(f"{_cap(name)} {be} already {state}.")
 
         for carried in needed.get("holds", []):
+            # A rule may name another role here rather than an item, and for
+            # the verbs where holding matters it almost always does: "to throw
+            # it you must be holding it" is a condition about whatever is being
+            # thrown, which has no name until somebody throws something. Read
+            # literally it asks the player to carry an object called "direct",
+            # which nothing is and nothing can be -- so the rule could never be
+            # satisfied, and picking the thing up changed nothing.
+            role_wanted = bound.get(str(carried).strip().lower())
+            if role_wanted is not None:
+                if role_wanted not in obj.contents:
+                    held_name, _be, _pronoun = _speak_of(role_wanted, actor)
+                    note(f"{_cap(name)} {be} not holding {held_name}.")
+                continue
+
             if not any(carried.lower() in o.key.lower() for o in obj.contents):
                 # A rule writes the item as a bare noun phrase ("brass key"),
                 # which needs an article to be said aloud. Any it already has

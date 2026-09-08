@@ -28,7 +28,7 @@ from commands.drop_cmds import CmdAIDrop
 from commands.follow_cmds import CmdFollow
 from commands.goal_cmds import CmdGoal
 from commands.help_cmds import CmdAIHelp
-from commands.memory_cmds import CmdRemember
+from commands.memory_cmds import CmdMemoryMaintenance, CmdRemember
 from commands.name_cmds import CmdName
 from commands.quest_cmds import CmdQuests
 from commands.social_cmds import CmdAIEmote
@@ -37,9 +37,11 @@ from commands.unknown_cmd import CmdAIUnknown
 from commands.world_cmds import (
     CmdNPCGen,
     CmdWorldEdit,
+    CmdWorldOpen,
     CmdWorldRemove,
     CmdWorldReset,
     CmdWorlds,
+    CmdZones,
 )
 from commands.worldgen_cmd import CmdWorldgen
 
@@ -79,6 +81,9 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdWorldRemove())
         self.add(CmdWorldReset())
         self.add(CmdWorldEdit())
+        self.add(CmdMemoryMaintenance())
+        self.add(CmdWorldOpen())
+        self.add(CmdZones())
         self.add(CmdNPCGen())
         self.add(CmdAIUnknown())
 

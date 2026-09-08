@@ -533,3 +533,133 @@ class CmdWorldEdit(Command):
         spec = lore.spec_of(root, caller)
         spec.update(mode="edit", world_id=root.id)
         open_wizard(caller, spec)
+
+
+class CmdZones(Command):
+    """
+    Show the areas of the world you are in, and how full each one is.
+
+    Usage:
+      zones
+
+    Every room belongs to an area, and every area has a size it was planned
+    to be. An area that has reached that size takes no more rooms, and the
+    next room built at its edge starts somewhere new instead. Areas contain
+    other areas -- a town holds a school, which holds a gym block -- and each
+    one says what may exist only once inside it.
+    """
+
+    key = "zones"
+    locks = "cmd:all()"
+    help_category = "World"
+
+    def func(self):
+        from world import zones
+
+        root = _current_world_root(self.caller)
+        if root is None:
+            self.caller.msg("You are not in a generated world.")
+            return
+
+        if not zones.all_zones(root):
+            self.caller.msg("This world has no areas recorded yet.")
+            return
+
+        location = getattr(self.caller, "location", None)
+        self.here = zones.slugify(location.db.zone) if location else ""
+        self.root = root
+        lines = [f"|wAreas of {lore.title(root)}:|n\n"]
+        self._branch(zones.ROOT, 0, lines)
+        self.caller.msg("\n".join(lines))
+
+    def _branch(self, zone_id, level, lines):
+        """One area and everything inside it, deepest last."""
+        from world import zones
+
+        if zone_id != zones.ROOT:
+            lines.append(self._line(zone_id, level))
+        for child in sorted(zones.children_of(self.root, zone_id),
+                            key=lambda z: zones.name_of(self.root, z)):
+            self._branch(child, level + (0 if zone_id == zones.ROOT else 1), lines)
+
+    def _line(self, zone_id, level):
+        from world import zones
+
+        record = zones.get(self.root, zone_id)
+        filled, size = len(record["rooms"]), record["budget"]
+        if not zones.placed(self.root, zone_id):
+            state = "|xnot built yet|n"
+        elif zones.finished(self.root, zone_id):
+            state = "|yfinished|n"
+        elif zones.full(self.root, zone_id):
+            state = "|yfull; its parts are still growing|n"
+        else:
+            state = f"|g{size - filled} to go|n"
+
+        indent = "  " + "    " * level
+        mark = " |g[you are here]|n" if zone_id == self.here else ""
+        out = [f"{indent}|w{record['name']}|n — {filled}/{size} rooms, {state}{mark}"]
+        if record["purpose"]:
+            out.append(f"{indent}    |x{record['purpose']}|n")
+        if record.get("singleton_types"):
+            only = ", ".join(record["singleton_types"])
+            out.append(f"{indent}    |xonly one of: {only}|n")
+        return "\n".join(out)
+
+
+class CmdWorldOpen(Command):
+    """
+    Open a way on, in a world that has nowhere left to go.
+
+    Usage:
+      worldopen
+
+    A world grows by having somewhere unexplored left in it. Every room built
+    spends one of those and leaves behind however many its exits promise, so a
+    run of dead ends can close a world off entirely -- no unexplored ways, no
+    more rooms, however small it stopped.
+
+    This finds the best place to carry on from and opens a door there. Worlds
+    built from now on do this for themselves the moment they would otherwise
+    have ended; this is for one that already has.
+    """
+
+    key = "worldopen"
+    locks = "cmd:all()"
+    help_category = "World"
+
+    def func(self):
+        from world.worldgen import ensure_frontier, frontier, pending_exits
+
+        root = _current_world_root(self.caller)
+        if root is None:
+            self.caller.msg("You are not in a generated world.")
+            return
+
+        left = frontier(root)
+        if left:
+            ways = pending_exits(root)[:5]
+            where = ", ".join(
+                f"{ex.key} from {ex.location.db.room_title or ex.location.key}"
+                for ex in ways
+            )
+            self.caller.msg(
+                f"|w{lore.title(root)}|n still has {left} way(s) nobody has "
+                f"taken. Nothing to open.\n|x{where}|n"
+            )
+            return
+
+        opened = ensure_frontier(root, near=self.caller.location)
+        if opened is None:
+            self.caller.msg(
+                "There is nowhere left to open a way onto — every room is "
+                "walled in on all six sides. That should not be possible; "
+                "the world may have lost its coordinates."
+            )
+            return
+
+        where = opened.location.db.room_title or opened.location.key
+        self.caller.msg(
+            f"A way |w{opened.key}|n opens from |w{where}|n. "
+            f"The world has somewhere to go again."
+        )

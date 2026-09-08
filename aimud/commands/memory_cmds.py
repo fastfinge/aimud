@@ -117,3 +117,97 @@ class CmdRemember(Command):
             caller.msg(f"|rYou cannot gather your thoughts: {failure.getErrorMessage()}|n")
 
         threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+
+
+class CmdMemoryMaintenance(Command):
+    """
+    Consolidate memories, and clear up after characters that no longer exist.
+
+    Usage:
+      memcheck            what would be done, changing nothing
+      memcheck sleep      consolidate now
+      memcheck sweep      delete banks whose character is gone
+      memcheck distil     turn recent summaries into what characters know
+      memcheck all        all three
+
+    Sleeping is what makes a memory permanent. Anything not consolidated is
+    deleted once it passes mnemosyne's retention window, so a character that
+    never sleeps remembers only the last few days. It happens on a clock and
+    at every server start; this is for doing it now.
+
+    Sweeping deletes the memories of characters that have been removed --
+    usually a whole world at once. Those banks are unreachable: a dbref is
+    never issued twice, so nothing will ever ask for them again.
+
+    Distilling reads what sleeping wrote and asks the memory model what each
+    character now knows. It is the only part of this that costs anything, so
+    it happens on its own only when the game has been quiet for a while; this
+    runs it whether or not it has.
+    """
+
+    key = "memcheck"
+    locks = "cmd:perm(Builder) or perm(Admin)"
+    help_category = "World"
+
+    def func(self):
+        from world import memory
+
+        what = self.args.strip().lower() or "report"
+        if not memory.available():
+            self.caller.msg("The memory backend is not available.")
+            return
+
+        banks = memory._bank_names()
+        stranded = memory.orphaned_banks()
+        alive = len(banks) - len(stranded)
+
+        if what == "report":
+            lines = [
+                f"|wMemory banks:|n {len(banks)} "
+                f"({alive} in use, {len(stranded)} orphaned)"
+            ]
+            for name in stranded[:10]:
+                lines.append(f"  |x{name} — character #{name.rsplit('-', 1)[1]} is gone|n")
+            if len(stranded) > 10:
+                lines.append(f"  |x...and {len(stranded) - 10} more|n")
+            lines.append(
+                "\nType |wmemcheck sleep|n to consolidate, |wmemcheck sweep|n "
+                "to clear up, |wmemcheck all|n for both."
+            )
+            self.caller.msg("\n".join(lines))
+            return
+
+        if what in ("sleep", "all"):
+            self.caller.msg(
+                f"Consolidating {len(banks)} bank(s) in the background..."
+            )
+            memory.consolidate(
+                on_done=lambda result: self.caller.msg(
+                    f"Consolidated. {sum(1 for r in result.values() if isinstance(r, dict) and r.get('status') != 'no_op')} "
+                    f"of {len(result)} bank(s) had anything old enough to sleep on."
+                )
+            )
+
+        if what in ("sweep", "all"):
+            if not stranded:
+                self.caller.msg("No orphaned banks to clear up.")
+                return
+            self.caller.msg(f"Clearing up {len(stranded)} orphaned bank(s)...")
+            memory.drop_banks(
+                stranded,
+                on_done=lambda removed: self.caller.msg(
+                    f"Deleted {len(removed)} bank(s)."
+                ),
+            )
+
+        if what in ("distil", "all"):
+            from world.fact_gen import distil
+
+            self.caller.msg("Distilling recent summaries into facts...")
+            distil(on_done=lambda tally: self.caller.msg(
+                f"Distilled {tally['facts']} fact(s) from "
+                f"{tally['characters']} character(s)."
+            ))
+
+        if what not in ("sleep", "sweep", "distil", "all"):
+            self.caller.msg("Usage: memcheck [sleep|sweep|distil|all]")

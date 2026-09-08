@@ -216,3 +216,52 @@ class NPCIdleScript(DefaultScript):
         if random.random() * 100 < prob:
             npc.ndb.idle_probability = 0
             npc.trigger_idle_action()
+
+
+class MemorySleepScript(DefaultScript):
+    """
+    One global script that lets every character sleep on what it has learned.
+
+    Consolidation is not housekeeping that can be skipped. mnemosyne trims
+    working memory on every write and deletes anything not yet consolidated
+    once it passes the retention window -- a week, by default. Rows that have
+    been through a sleep cycle are exempt and kept for good. A server that
+    never sleeps therefore forgets everything older than a week, quietly, and
+    a character's past is only as long as the last few days.
+
+    Slow on purpose. Nothing becomes eligible until it is half the retention
+    window old, so there is nothing an hourly pass would find that a daily one
+    misses, and the work is proportional to the number of characters that have
+    ever existed.
+
+    It also waits for the game to go quiet. Consolidation holds the memory
+    lock while it summarises, and distilling runs a model per character; both
+    would be felt as a stall by anybody mid-conversation. In a single-player
+    game the right moment is simply the one where nobody is typing, and this
+    checks for it rather than hoping the interval lands well.
+    """
+
+    def at_script_creation(self):
+        self.key = "memory_sleep"
+        self.interval = 30 * 60          # asks often; acts rarely
+        self.persistent = True
+        self.repeats = 0
+        self.start_delay = True
+
+    def at_repeat(self):
+        from world.activity import quiet_enough_for_heavy_work
+        from world.fact_gen import distil
+        from world.memory import consolidate
+
+        if not quiet_enough_for_heavy_work():
+            return
+
+        # Distilling reads what consolidation writes, so it goes second --
+        # and only if sleeping got far enough to have written anything. Each
+        # checks the room is still quiet before it starts, so a player coming
+        # back between the two stops the second one.
+        def then_distil(_result):
+            if quiet_enough_for_heavy_work():
+                distil()
+
+        consolidate(on_done=then_distil)

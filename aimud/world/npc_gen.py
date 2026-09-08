@@ -796,21 +796,87 @@ def _known_verbs(room):
 WORKING_MEMORY_EVENTS = 5
 
 
-def _memory_inputs(npc, room_title):
+def _recall_cues(npc, room, room_title):
+    """
+    What to ask a character's memory about, best cue first.
+
+    Recall used to be asked about the last thing that happened, which is the
+    one thing it cannot usefully answer: the last thing that happened is
+    already in the prompt, verbatim, two inches further down. What is missing
+    from the prompt is everything older -- and what makes an old memory worth
+    having now is the situation the character is standing in.
+
+    So the cues are the situation itself, in the order they earn their place:
+
+    Who is here. The strongest of them, and the one recency serves worst: a
+    character who has been sitting with somebody for twenty turns has long
+    since pushed their arrival out of working memory, so the history of
+    knowing them is exactly what the prompt no longer says. Someone who is not
+    in the room is left out on purpose -- what a character remembers about an
+    absent third party is rarely what they should be thinking about.
+
+    What they are trying to do, which is what makes a memory relevant rather
+    than merely familiar.
+
+    Where they are, for whatever happened here before.
+
+    What they are carrying, last: an NPC holding a key seldom needs memories
+    about the key, and it earns its place only on the turns when the stronger
+    cues came back with nothing.
+
+    The last event is kept as a cue too, but as one among several rather than
+    the only one. It is still what provoked this turn, and a memory that bears
+    on it is still worth having -- it is being the sole cue that was wrong.
+    """
+    from evennia.objects.objects import DefaultCharacter
+
+    from world import goals
+
+    people, things = [], []
+    for obj in room.contents:
+        if obj is npc or getattr(obj, "destination", None) is not None:
+            continue
+        if obj.db.is_npc or isinstance(obj, DefaultCharacter):
+            people.append(obj.key)
+
+    for obj in npc.contents:
+        if not obj.db.worn:
+            things.append(obj.key)
+
+    world_root = room.db.world_root
+    want = goals.describe(npc.db.goal, npc, world_root) if npc.db.goal else ""
+
+    history = npc.db.action_history or []
+    cues = list(people)
+    if want and want != "nothing in particular":
+        cues.append(want)
+    cues.append(room_title)
+    if history:
+        cues.append(_format_history(history[-1:]))
+    cues.extend(things)
+    return cues
+
+
+def _memory_inputs(npc, room, room_title):
     """
     Prepare an NPC's prompt memory. Main thread -- it reads the Evennia DB.
 
-    Returns (recent events as text, memory bank name, recall query).  The
-    query is the last couple of events, since what an NPC needs to remember
-    is whatever bears on what just happened; with nothing going on, the room
-    itself is the cue.
+    Returns (recent events as text, memory bank name, recall cues, the lines
+    already on show).
+
+    The lines already on show are handed to recall so it can leave them out.
+    A character remembers an event in the very words its working memory holds
+    it in, so without that the events it is being asked about come back as the
+    memories most relevant to themselves -- and the prompt says everything
+    twice. See memory.recall_sync.
     """
     from world.memory import bank_for
 
     history = npc.db.action_history or []
     recent = history[-WORKING_MEMORY_EVENTS:]
-    query = _format_history(history[-2:]) if history else f"being in {room_title}"
-    return _format_history(recent), bank_for(npc), query
+    on_show = [_format_history([event]) for event in recent]
+    cues = _recall_cues(npc, room, room_title)
+    return _format_history(recent), bank_for(npc), cues, on_show
 
 
 def _format_history(history):
@@ -1080,7 +1146,7 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
     room_title = room.db.room_title or room.key
     room_desc = room.db.desc or ""
     room_contents = _room_context(room, npc)
-    history_text, bank, query = _memory_inputs(npc, room_title)
+    history_text, bank, cues, on_show = _memory_inputs(npc, room, room_title)
 
     verbs_known = _known_verbs(room)
     known_line = (
@@ -1106,9 +1172,10 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
     )
 
     def _fetch():
-        from world.memory import format_memories, recall_sync
+        from world.memory import format_memories, recall_for_cues
 
-        recalled = format_memories(recall_sync(bank, query, top_k=6))
+        recalled = format_memories(
+            recall_for_cues(bank, cues, top_k=6, already_known=on_show))
         messages = [
             {"role": "system", "content": system},
             {
@@ -1177,7 +1244,7 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
 
     # Working memory verbatim, long memory by relevance.  Anything the model
     # needs from further back is recalled rather than replayed.
-    history_text, bank, query = _memory_inputs(npc, room_title)
+    history_text, bank, cues, on_show = _memory_inputs(npc, room, room_title)
 
     verbs_known = _known_verbs(room)
     known_line = (
@@ -1206,9 +1273,10 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
         # Recall runs here, inside the thread that was already being deferred
         # for the network call, so it costs no extra hop and never touches the
         # reactor.
-        from world.memory import format_memories, recall_sync
+        from world.memory import format_memories, recall_for_cues
 
-        recalled = format_memories(recall_sync(bank, query, top_k=6))
+        recalled = format_memories(
+            recall_for_cues(bank, cues, top_k=6, already_known=on_show))
         messages = [
             {"role": "system", "content": system},
             {
