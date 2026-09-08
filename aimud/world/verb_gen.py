@@ -61,6 +61,9 @@ requires are the conditions that must hold before the verb works:
            {"reputation": {"max": 0}}. Only people have traits, so this
            belongs on "actor" or on a role that is a character.
 
+has, is, lacks and holds are always lists, including when the condition names
+one thing: "holds": ["direct"], never "holds": "direct".
+
 effects change the world. Each is one of:
 {"type": "set_state", "role": "direct", "add": ["burning"], "remove": ["dry"]}
   (role may be "actor" to change the character acting)
