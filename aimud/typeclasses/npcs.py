@@ -12,6 +12,9 @@ conversation loops while still allowing natural cross-NPC interaction.
 NPCs only react to each other when at least one player is in the room.
 """
 
+import random
+import re
+
 from evennia.contrib.rpg.traits import TraitHandler
 from evennia.objects.objects import DefaultObject
 from evennia.utils import lazy_property
@@ -20,6 +23,17 @@ from .objects import ObjectParent
 
 MAX_HISTORY = 30    # events older than this are dropped
 MAX_NPC_CHAIN = 1   # how many NPC→NPC hops are allowed per player event
+
+#: How much likelier a character is to speak up for each thing it has let pass.
+#:
+#: Everyone in a room used to answer everything, so talking to one person in
+#: front of two others was three conversations at once and none of them the one
+#: you started. A character now lets an exchange it has no part in go by, and
+#: only gradually becomes more inclined to put its oar in -- which is what
+#: standing in a room where other people are talking is actually like.
+#:
+#: Being spoken to by name is a separate matter and never rolls at all.
+ATTENTION_STEP = 10
 
 #: Second person turned round, longest first so "You are" is seen before
 #: "You". The world addresses whoever acted; a character's working memory is
@@ -95,6 +109,21 @@ class NPC(ObjectParent, DefaultObject):
         self.db.action_history = []
         self.ensure_idle_script()
 
+    def at_object_delete(self):
+        """
+        Take this character's memories with it.
+
+        A bank is named for the dbref that owns it and would otherwise outlive
+        the character indefinitely -- a database file per person, for a person
+        nothing can refer to again, since a dbref is never issued twice. Doing
+        it here catches every route to deletion, including a whole world being
+        removed out from under a roomful of characters.
+        """
+        from world.memory import forget_character
+
+        forget_character(self)
+        return super().at_object_delete()
+
     def get_display_desc(self, looker, **kwargs):
         """
         How the character looks: their body, and then what they have on.
@@ -137,8 +166,19 @@ class NPC(ObjectParent, DefaultObject):
 
     def witness(self, event_type, actor_name, text, _depth=0):
         """
-        Record an event and (if not already reacting and within chain depth)
-        trigger an AI reaction.
+        Record an event and decide whether to answer it.
+
+        Everything witnessed is remembered, answered or not. That is the whole
+        point of letting something pass: a character who said nothing while two
+        people argued still heard the argument, and should be able to bring it
+        up an hour later.
+
+        What is answered depends on whether it was addressed here. Being named
+        is always answered -- if somebody asks you something by name and you
+        stare through them, nothing about the room reads as alive. Everything
+        else is rolled for, against a figure that climbs with each thing let
+        past, so an unaddressed character stays out of a conversation at first
+        and grows likelier to join it the longer it runs.
 
         event_type : "say" | "action" | "emote"
         actor_name : display name of the actor
@@ -147,8 +187,97 @@ class NPC(ObjectParent, DefaultObject):
                      are recorded in history but do not trigger a new reaction.
         """
         self._add_to_history(event_type, actor_name, text)
-        if not self.ndb.reacting and _depth <= MAX_NPC_CHAIN:
+
+        if self.ndb.reacting or _depth > MAX_NPC_CHAIN:
+            return
+
+        if self.addressed_by(text) or self.only_listener():
+            # Deliberately does not touch the figure. Being spoken to is a
+            # different thing from having sat quietly through five exchanges,
+            # and answering to your own name should not buy anybody a longer
+            # silence in the conversation going on around them.
             self._trigger_reaction(_depth)
+            return
+
+        chance = self.ndb.attention or 0
+        if random.random() * 100 < chance:
+            # Reset on being given the floor rather than on saying something.
+            # A character that takes its turn and decides silence is the right
+            # answer has still had its turn, and leaving the figure standing
+            # would have it asked again on the very next event, and the one
+            # after that -- a model call each time, to be told nothing again.
+            self.ndb.attention = 0
+            self._trigger_reaction(_depth)
+        else:
+            self.ndb.attention = min(chance + ATTENTION_STEP, 100)
+
+    # ------------------------------------------------------------------ #
+    def _people_here(self):
+        """
+        Everyone in this room, this character included.
+
+        Both kinds of person, counted the way the room context counts them: an
+        NPC is a DefaultObject carrying is_npc rather than a DefaultCharacter,
+        so testing for the typeclass alone would find the players and miss
+        every character the world made itself.
+        """
+        from evennia.objects.objects import DefaultCharacter
+
+        room = self.location
+        if room is None:
+            return []
+        return [
+            obj for obj in room.contents
+            if obj.db.is_npc or isinstance(obj, DefaultCharacter)
+        ]
+
+    def only_listener(self):
+        """
+        True when this character is the only one anybody here could mean.
+
+        Naming somebody in a room holding just the two of you is not how
+        people talk. There is no ambiguity to resolve, so an exchange between
+        two characters alone runs the way it did before any of this: every
+        remark answered, because every remark is addressed.
+
+        This is why the rule is about the room rather than about the speaker.
+        The third person to walk in does not have to say anything for the
+        conversation to become a conversation with an audience -- from that
+        moment a remark could be meant for either of them, and both go back to
+        judging whether it was meant for them.
+        """
+        return len(self._people_here()) == 2
+
+    def _names(self):
+        """Every way somebody in this room might name this character."""
+        from world.npc_gen import TITLES
+
+        names = {(self.key or "").lower()}
+        for alias in self.aliases.all():
+            names.add(str(alias).lower())
+        # "Sergeant Bram Ketch" answers to "Bram" and to "Ketch" but not to
+        # "Sergeant": that is a station rather than a name, and half the guards
+        # in a world may share it.
+        for word in re.findall(r"[\w']+", (self.key or "").lower()):
+            if len(word) > 2 and word not in TITLES:
+                names.add(word)
+        return {name for name in names if name}
+
+    def addressed_by(self, text):
+        """
+        Whether `text` names this character.
+
+        Matched on whole words, so a character called Al is not addressed by
+        every mention of always, and an apostrophe in a name does not end the
+        match early.
+        """
+        lowered = str(text or "").lower()
+        if not lowered:
+            return False
+        return any(
+            re.search(rf"(?<!\w){re.escape(name)}(?!\w)", lowered)
+            for name in self._names()
+        )
 
     # ------------------------------------------------------------------ #
     def trigger_idle_action(self):
