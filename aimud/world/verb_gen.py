@@ -170,11 +170,16 @@ walks anywhere, so never write a rule that removes a posture on movement or
 requires the actor to not be standing before sitting; that is handled.
 
 Holding a thing in your hands is handled too, and is not a verb you define.
-The game knows what it means to wield, brandish or lower something, and tracks
-what each character has in hand. So never invent a "wielded", "equipped",
-"held" or "drawn" state and never write an effect that represents taking hold
-of something; if the verb you are given is only a way of saying "take this in
-hand", mark it invalid.
+The game knows what it means to take something in hand and to put it away
+again, and tracks what each character has in hand. So never invent a
+"wielded", "equipped", "held" or "drawn" state and never write an effect that
+represents taking hold of something; if the verb you are given is only a way
+of saying "take this in hand", mark it invalid.
+
+That is about inventory and nothing else. Contact between people is not
+inventory: holding somebody's hand, an arm round a shoulder, a hand caught
+and squeezed are social acts, and among the most ordinary things a world
+needs verbs for. Never turn one away because the word "hold" appears in it.
 
 Nor is a thing's own worth a verb's business. What a sword or a breastplate
 does for whoever has it is written on the item as a bonus and applies for
@@ -189,6 +194,7 @@ tracks who is wearing what. So never invent a "worn", "wearing", "equipped" or
 "dressed" state, never write an effect that moves clothing onto a character to
 represent wearing it, and never require an actor to be wearing something. If
 the verb you are given is only a way of saying "put this on", mark it invalid.
+{engine_commands}
 Return only the JSON object."""
 
 _NARRATION_SYSTEM = """You narrate the result of an action in a text MUD.
@@ -389,7 +395,8 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
     messages = [
         {"role": "system",
          "content": _RULE_SYSTEM.replace(
-             "{naming_rule}", verbs.naming_rule())},
+             "{naming_rule}", verbs.naming_rule()).replace(
+             "{engine_commands}", verbs.engine_command_block())},
         {
             "role": "user",
             "content": (

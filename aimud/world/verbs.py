@@ -381,6 +381,114 @@ def naming_rule():
 
 
 # ---------------------------------------------------------------------------
+# What the game already answers for itself
+# ---------------------------------------------------------------------------
+
+_ENGINE_RULE_HEAD = """The game already answers these verbs itself, and the
+list is all of them -- read off the running game rather than remembered:
+
+"""
+
+_ENGINE_RULE_TAIL = """
+
+Treat that list as closed, in both directions. A verb ON it is not yours to
+define: mark it invalid. A verb NOT on it IS yours, however much it resembles
+one that is -- "handhold" is not "hold", "embrace" is not "wear", "pull" is
+not "get". Never refuse a verb on the grounds that the engine probably
+handles it, or that it sounds like the sort of thing an engine would: if it
+is not listed above then nothing handles it, and refusing it leaves this
+world with no way to perform the action at all.
+"""
+
+#: Worked out once. The command set cannot change without a reload and the
+#: modules below are read at import, so there is nothing here that can go
+#: stale within the life of one server.
+_ENGINE_VERBS = None
+
+
+def engine_verbs():
+    """
+    Every verb the game itself answers, read off the running game.
+
+    Two sources, because there are two ways a verb never reaches a model: a
+    real command in the character's command set, and the three modules that
+    take a verb over inside the attempt pipeline when the noun suits --
+    wearing, wielding, and putting one thing on another.
+
+    Read rather than written out here. A hand-written list is one that goes
+    quietly stale: the day somebody adds a command or aliases one, a prompt
+    saying otherwise starts teaching a model something false, and nothing
+    fails loudly enough for anyone to notice.
+
+    Only the "general" category is offered. Building, admin and system
+    commands are staff tools no verb rule could be mistaken for, and putting
+    @teleport in front of a model deciding what "kiss" means is only noise.
+    """
+    global _ENGINE_VERBS
+    if _ENGINE_VERBS is not None:
+        return _ENGINE_VERBS
+
+    from world import clothing, gear, relations
+
+    found = set()
+    for module in (clothing, gear, relations):
+        found.update(str(verb) for verb in getattr(module, "VERBS", ()))
+
+    try:
+        from commands.default_cmdsets import CharacterCmdSet
+
+        cmdset = CharacterCmdSet()
+        cmdset.at_cmdset_creation()
+    except Exception as exc:
+        # Worth saying out loud rather than degrading in silence. The prompt
+        # goes out either way, and one built from the intercepts alone will
+        # let through rules for verbs the game already answers.
+        logger.log_info(f"verbs: could not read the command set: {exc}")
+        _ENGINE_VERBS = sorted(found)
+        return _ENGINE_VERBS
+
+    for command in cmdset.commands:
+        if (getattr(command, "help_category", "") or "").lower() != "general":
+            continue
+        for name in [command.key] + list(command.aliases or []):
+            # Punctuation aliases -- the quote mark for say, the colon for
+            # pose -- are not verbs anybody would write a rule for, and one
+            # sitting in a list of words reads as a typing mistake.
+            name = str(name or "")
+            if name[:1].isalpha():
+                found.add(name)
+
+    # A verb is folded onto its canonical form before anybody is asked about
+    # it, so "grab" arrives as "get" and is answered by the engine under a
+    # name the player never typed. Those spellings are engine verbs too, and
+    # a list that left them out would be inviting a rule for one of them.
+    # Only the ones landing on a verb already found: "tug" folds to "pull",
+    # which nothing handles, so tug stays free.
+    for spelling, canonical in VERB_SYNONYMS.items():
+        if canonical in found:
+            found.add(spelling)
+
+    _ENGINE_VERBS = sorted(found)
+    return _ENGINE_VERBS
+
+
+def engine_command_block():
+    """
+    The closed list of engine verbs, for a prompt that must not redefine one.
+
+    This exists because "the engine probably handles that" is a guess, and a
+    model left to make it makes it by resemblance. Told in prose that wearing
+    and wielding are handled, it went on to refuse get, give, pull and -- the
+    one that actually cost us -- handhold, on the grounds that holding a thing
+    in your hands is surely a mechanic too. Every one of those was a rule the
+    world then could not write and an action nothing could perform. A list
+    turns the guess into a lookup.
+    """
+    return (_ENGINE_RULE_HEAD + "  " + ", ".join(engine_verbs())
+            + _ENGINE_RULE_TAIL)
+
+
+# ---------------------------------------------------------------------------
 # The world's state vocabulary
 # ---------------------------------------------------------------------------
 
