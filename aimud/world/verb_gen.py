@@ -30,7 +30,7 @@ Respond with a single JSON object — no other text — matching:
 {
   "valid": true,
   "reason": "if invalid, one sentence on why",
-  "requires": {"<role>": {"has": ["affordance"], "is": ["state"], "lacks": ["state"], "holds": ["item name"], "trait": {"stamina": {"min": 10}}}},
+  "requires": {"<role>": {"has": ["affordance"], "is": ["state"], "lacks": ["state"], "holds": ["direct" or "item name"], "trait": {"stamina": {"min": 10}}}},
   "check": {"trait": "swordsmanship", "against": {"role": "direct", "trait": "swordsmanship"}},
   "effects": [ ... ],
   "new_states": [{"slug": "burning", "means": "on fire", "group": "fire", "group_ends_on_move": false}],
@@ -51,7 +51,12 @@ requires are the conditions that must hold before the verb works:
   has    — an affordance the object must have (readable, flammable, openable)
   is     — a state it must be in (open, lit, wet)
   lacks  — a state it must NOT be in (already burning, already open)
-  holds  — something the actor must be carrying
+  holds  — something the role must be carrying. Either a role ("direct"),
+           meaning the thing itself must be in their hands, or the name of a
+           separate item ("brass key"). Use the role whenever the condition is
+           about the thing being acted on: throwing something requires holding
+           that something, and naming it any other way is a condition no
+           player can ever meet.
   trait  — a figure the character must reach: {"stamina": {"min": 10}}, or
            {"reputation": {"max": 0}}. Only people have traits, so this
            belongs on "actor" or on a role that is a character.
