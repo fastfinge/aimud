@@ -749,6 +749,44 @@ def clear_on_move(obj, world_root=None):
 #: with eight clauses would answer with a paragraph, so the tail is dropped.
 MAX_COMPLAINTS = 3
 
+#: The requirement clauses that name several things and are read one at a time.
+_LISTED = ("has", "is", "lacks", "holds")
+
+
+def requirements(requires):
+    """
+    A rule's preconditions, with every clause that lists things a real list.
+
+    Asked for one condition, a model writes one word rather than a list of
+    one: {"holds": "direct"} instead of {"holds": ["direct"]}. Read as
+    written that is not one requirement but six, one per letter, and the
+    player is told to pick up "the d". Worse, it half-passes -- a letter that
+    appears in the name of anything they are carrying is satisfied -- so the
+    complaint that surfaces is whichever letter they happen to own least of,
+    naming a thing that does not exist and that no action could ever produce.
+
+    Fixed here, where rules are read, rather than where they are written:
+    every world already playing has these clauses stored, and a rule is only
+    written once.
+    """
+    clean = {}
+    for role, needed in (requires or {}).items():
+        try:
+            clause = dict(needed)
+        except (TypeError, ValueError):
+            continue     # a role whose conditions are not conditions at all
+        for field in _LISTED:
+            listed = clause.get(field)
+            if listed is None:
+                continue
+            if isinstance(listed, str):
+                listed = [listed] if listed.strip() else []
+            elif not isinstance(listed, (list, tuple, set, frozenset)):
+                listed = [listed]
+            clause[field] = [str(item) for item in listed if str(item).strip()]
+        clean[role] = clause
+    return clean
+
 
 def _cap(text):
     """
@@ -784,11 +822,11 @@ def _as_quality(affordance):
     return word if word.endswith(("able", "ible")) else f"a {word}"
 
 
-def check(requirements, bound, actor, world_root=None):
+def check(requires, bound, actor, world_root=None):
     """
     Test a rule's preconditions. Returns None when met, else why not.
 
-    requirements is {role: {"has": [affordance], "lacks": [state],
+    requires is {role: {"has": [affordance], "lacks": [state],
     "is": [state], "holds": [name]}} where role may also be "actor".
 
     The message is the point of this function as much as the verdict. It used
@@ -806,7 +844,7 @@ def check(requirements, bound, actor, world_root=None):
         if text and text not in complaints:
             complaints.append(text)
 
-    for role, needed in (requirements or {}).items():
+    for role, needed in requirements(requires).items():
         obj = actor if role == "actor" else bound.get(role)
         if obj is None:
             note("There is nothing here to do that to.")

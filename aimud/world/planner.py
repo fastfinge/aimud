@@ -171,9 +171,12 @@ def _burns_itself_down(rule):
     now, which makes it a question about this attempt rather than about the
     rule, and answering it wrongly would hide a perfectly repeatable route.
     """
-    from world import checks
+    from world import checks, verbs
 
-    requires = rule.get("requires") or {}
+    # Read through the same normaliser the checks use, so a clause written as
+    # one word rather than a list of one is a condition here too and not a
+    # string this walks letter by letter.
+    requires = verbs.requirements(rule.get("requires"))
     if not requires:
         return False
 
