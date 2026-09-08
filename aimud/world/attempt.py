@@ -402,7 +402,11 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
     # and this time it landed. Only a verb with a settled, single outcome may
     # answer from the cache without touching the world.
     if cached is not None and result is None and not rule.get("repeatable"):
-        release(cached.get("actor", ""), cached.get("room", ""))
+        # What is cached is the template, so the room line still names its
+        # actor as {actor} and has to be filled in here too -- broadcasting it
+        # raw hands a stray format placeholder to msg_contents.
+        release(cached.get("actor", ""),
+                _for_room(cached.get("room", ""), caller, raw))
         return
 
     def _finish(actor_text, room_text):

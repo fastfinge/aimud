@@ -753,6 +753,28 @@ MAX_COMPLAINTS = 3
 _LISTED = ("has", "is", "lacks", "holds")
 
 
+def _named(value):
+    """
+    Every name a requirement clause holds, however it was written.
+
+    A model asked for a list of conditions writes one of three things: the
+    list, one bare word, or -- having been shown a list -- a list with the
+    list inside it. Only the names matter, so all three flatten to the same
+    thing here rather than each shape being guarded against separately.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, (list, tuple, set, frozenset)):
+        found = []
+        for item in value:
+            found.extend(_named(item))
+        return found
+    text = str(value)
+    return [text] if text.strip() else []
+
+
 def requirements(requires):
     """
     A rule's preconditions, with every clause that lists things a real list.
@@ -765,6 +787,11 @@ def requirements(requires):
     complaint that surfaces is whichever letter they happen to own least of,
     naming a thing that does not exist and that no action could ever produce.
 
+    A list nested inside the list fails the other way and never passes at
+    all: the condition becomes the printed shape of the list, which is not a
+    state anything can be in, so the rule is unsatisfiable and the player is
+    told they are "not ['greeted']".
+
     Fixed here, where rules are read, rather than where they are written:
     every world already playing has these clauses stored, and a rule is only
     written once.
@@ -776,14 +803,11 @@ def requirements(requires):
         except (TypeError, ValueError):
             continue     # a role whose conditions are not conditions at all
         for field in _LISTED:
-            listed = clause.get(field)
-            if listed is None:
-                continue
-            if isinstance(listed, str):
-                listed = [listed] if listed.strip() else []
-            elif not isinstance(listed, (list, tuple, set, frozenset)):
-                listed = [listed]
-            clause[field] = [str(item) for item in listed if str(item).strip()]
+            # A clause written as an explicit null becomes an empty list and
+            # not a null left in place, which is what everything downstream
+            # reads as "no conditions" without having to test for it.
+            if field in clause:
+                clause[field] = _named(clause[field])
         clean[role] = clause
     return clean
 
