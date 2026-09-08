@@ -107,16 +107,26 @@ class Character(ObjectParent, DefaultCharacter):
 
     def get_display_desc(self, looker, **kwargs):
         """
-        What a look shows: this world's description, plus what is being worn.
+        What a look shows: this world's description, the clothes, the state.
 
         The description is what is permanently true of a body; the clothes are
         read off the garments actually being carried, so changing them changes
         how the character appears without anything having to rewrite the text.
-        """
-        from world import clothing
+        The condition comes last because it is the part that changes fastest.
 
-        base = self.world_desc() or super().get_display_desc(looker, **kwargs)
-        return clothing.appearance(self, base, looker)
+        DefaultCharacter's description is taken directly rather than through
+        `super()`, which would be ObjectParent's -- that one appends the
+        condition itself, and it must not arrive twice.
+        """
+        from world import clothing, verbs
+
+        base = self.world_desc() or DefaultCharacter.get_display_desc(
+            self, looker, **kwargs)
+        text = clothing.appearance(self, base, looker)
+        line = verbs.condition(self, looker)
+        if not line:
+            return text
+        return f"{text}\n\n{line}" if (text or "").strip() else line
 
     def get_display_things(self, looker, **kwargs):
         """What the character is visibly carrying -- never what they have on."""

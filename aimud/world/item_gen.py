@@ -7,7 +7,6 @@ Two models are used (configured separately via the `models` command):
 """
 
 import json
-import re
 import urllib.request
 
 from twisted.internet import threads
@@ -17,7 +16,14 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _EXISTENCE_SYSTEM_PROMPT = """You are a game master for a text MUD deciding if an object could plausibly exist in a room.
 Respond with JSON only: {"valid": true|false, "reason": "one sentence"}
 Be permissive — if it's plausible for the world and room, say valid.
-Deny only clear impossibilities (e.g. a spaceship in a medieval dungeon)."""
+Deny only clear impossibilities (e.g. a spaceship in a medieval dungeon).
+
+One thing is never valid however plausible it sounds: part of a living body.
+A hand, a shoulder, hair, a wing, an antenna belongs to whoever has it and is
+not a separate object, so answer invalid — otherwise it is built and left
+lying on the floor. This is about bodies only: part of a made thing (a door
+handle, a table leg, a page of a book) is fine, and so is a part that has
+plainly been cut free — a severed hand, a mounted stag's head, a bone."""
 
 _TAKEABILITY_SYSTEM_PROMPT = """You are a game master deciding if a player can pick up an object in a MUD.
 Respond with JSON only: {"valid": true|false, "reason": "one sentence"}
@@ -32,7 +38,9 @@ Respond with a single JSON object — no other text:
   "takeable": true|false,
   "affordances": ["readable", "flammable"],
   "states": ["dusty"],
-  "clothing_type": ""
+  "clothing_type": "",
+  "trait_bonuses": {"defence": 2},
+  "bonus_when": "worn"
 }
 takeable should be false for fixed features (bolted or structural) and true for portable objects.
 
@@ -51,7 +59,9 @@ which verbs work on it, so a poster that cannot be read is a poster nobody can
 read. Give an empty list only for something truly inert.
 
 states are conditions currently true of it (locked, lit, wet, dirty, broken),
-usually empty for a new object."""
+usually empty for a new object.
+
+{naming_rule}"""
 
 
 # ---------------------------------------------------------------------------
@@ -80,13 +90,16 @@ def _call_openrouter(api_key, model, messages):
 
 
 def _parse_json(content):
-    try:
-        return json.loads(content) if isinstance(content, str) else content
-    except json.JSONDecodeError:
-        m = re.search(r'\{.*\}', content, re.DOTALL)
-        if m:
-            return json.loads(m.group())
-        raise ValueError(f"No JSON in model response: {content!r}")
+    """
+    Parse a model response that should be a single JSON object.
+
+    Delegates to world.model_json, which repairs the near-misses models make
+    -- a trailing comma, a stray comment, an answer cut off mid-object --
+    rather than losing a whole generation over one character.
+    """
+    from world.model_json import parse_object
+
+    return parse_object(content)
 
 
 def _room_context(room):
@@ -218,12 +231,17 @@ def generate_item(account, room, object_name, on_success, on_error):
         on_error(str(e))
         return
 
+    from world import gear, verbs
+
     messages = [
-        {"role": "system", "content": _ITEM_SYSTEM_PROMPT},
+        {"role": "system",
+         "content": _ITEM_SYSTEM_PROMPT.replace(
+             "{naming_rule}", verbs.naming_rule())},
         {
             "role": "user",
             "content": (
                 f"{_world_and_room(room, 'items')}\n\n"
+                f"{gear.prompt_block(room.db.world_root if room else None)}"
                 f"Generate the item the player is examining: '{object_name}'"
             ),
         },

@@ -17,6 +17,7 @@ lights it for everyone rather than claiming to.
 
 from evennia.utils import logger
 
+from world import checks
 from world import effects as effects_mod
 from world import verb_gen, verbs
 
@@ -30,9 +31,15 @@ def _world_root(room):
     return room.db.world_root if room else None
 
 
-def _cached_narration(bound, verb):
+def _cached_narration(bound, verb, outcome="success"):
     """
     A narration already learned for these exact objects, if any.
+
+    Kept per outcome as well as per verb, because a contested verb has more
+    than one thing to say about the same object: the first time somebody
+    misses their swing must not become the text everybody sees when they land
+    it. That also keeps a contest affordable -- four narrations per object and
+    verb at the very most, however many times it is attempted.
 
     Entries written by the previous command system stored a single "response"
     and were often about the room they were produced in, which is the problem
@@ -49,21 +56,47 @@ def _cached_narration(bound, verb):
     # and NOT a dict subclass -- an isinstance(entry, dict) test here rejects
     # every stored entry and silently defeats the whole cache.
     try:
-        actor_text = entry.get("actor")
-        room_text = entry.get("room", "")
+        inner = entry.get(outcome)
     except AttributeError:
         return None      # a plain string from the old command system
+    if inner is None:
+        # Written before outcomes existed: one entry, describing the verb
+        # working. That is the success text and it is not any of the others.
+        inner = entry if outcome == "success" else None
+    if inner is None:
+        return None
+    try:
+        actor_text = inner.get("actor")
+        room_text = inner.get("room", "")
+    except AttributeError:
+        return None
     if not actor_text:
         return None
     return {"actor": actor_text, "room": room_text or ""}
 
 
-def _store_narration(bound, verb, entry):
+def _store_narration(bound, verb, outcome, entry):
     anchor = _anchor(bound)
     if anchor is None:
         return
     cache = dict(anchor.db.ai_commands or {})
-    cache[verb] = entry
+
+    # Only entries already keyed by outcome are carried over. A single old
+    # entry cannot be told apart from the outcome it described, so it is let
+    # go and written again on the next success rather than filed under a
+    # result it may never have been about.
+    by_outcome = {}
+    existing = cache.get(verb)
+    try:
+        items = list(existing.items())
+    except AttributeError:
+        items = []
+    for name, value in items:
+        if name in checks.OUTCOMES and hasattr(value, "get"):
+            by_outcome[name] = dict(value)
+
+    by_outcome[outcome] = entry
+    cache[verb] = by_outcome
     anchor.db.ai_commands = cache
 
 
@@ -126,9 +159,16 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
     # limits -- and so no world ever invents its own private meaning for it.
     # `handle` declines anything that is not really about clothes, and those
     # go on through the ordinary pipeline.
-    from world import clothing, relations
+    from world import clothing, gear, relations
 
     if clothing.handle(caller, verb, bound, on_message):
+        return
+
+    # Taking a thing in hand is a mechanic for exactly the reasons wearing is,
+    # and the generators have been calling things "wieldable" since before
+    # anything could be wielded. `handle` declines anything that is not really
+    # about wielding -- "draw the curtain" -- and those go on to the model.
+    if gear.handle(caller, verb, bound, on_message):
         return
 
     # Putting a thing in, on, under or behind another thing is a mechanic for
@@ -342,13 +382,26 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         release(rule.get("reason") or "You can't do that.")
         return
 
-    complaint = verbs.check(rule.get("requires"), bound, caller)
+    complaint = verbs.check(rule.get("requires"), bound, caller,
+                            world_root=world_root)
     if complaint:
         release(complaint)
         return
 
-    cached = _cached_narration(bound, verb)
-    if cached is not None and not rule.get("repeatable"):
+    # Preconditions say whether the attempt was allowed; the check says
+    # whether it worked. That order is the whole point: you are told you have
+    # no key before anything is rolled, and told you fumbled the lock only
+    # once the attempt was a real one.
+    contest = checks.wanted(rule)
+    result = (checks.resolve(caller, contest, bound, world_root)
+              if contest else None)
+    outcome = result["outcome"] if result else "success"
+
+    cached = _cached_narration(bound, verb, outcome)
+    # A contested verb always runs its effects again: the player swung again,
+    # and this time it landed. Only a verb with a settled, single outcome may
+    # answer from the cache without touching the world.
+    if cached is not None and result is None and not rule.get("repeatable"):
         release(cached.get("actor", ""), cached.get("room", ""))
         return
 
@@ -356,16 +409,18 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         # The template is cached, not the finished line: the room text names
         # the actor as {actor}, so the same narration reads correctly when
         # somebody else does the same thing to the same object later.
-        _store_narration(bound, verb, {"actor": actor_text, "room": room_text})
+        _store_narration(bound, verb, outcome,
+                         {"actor": actor_text, "room": room_text})
         allowed = [
-            e for e in rule.get("effects", [])
+            e for e in checks.effects_for(rule, outcome)
             if allow_effects is None or e.get("type") in allow_effects
         ]
         extra = effects_mod.apply(caller, room, allowed, bound=bound,
                                   world_root=world_root)
         spoken = _for_room(room_text, caller, raw)
         visible = " ".join([spoken] + extra).strip()
-        _remember(caller, raw, bound, actor_text, extra)
+        _remember(caller, raw, bound, actor_text, extra, outcome=outcome,
+                  contested=result is not None)
         release(actor_text, visible)
         # The world just changed under everyone here, which is exactly when a
         # quest may have quietly become finished.
@@ -382,6 +437,7 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         account, verb, bound, caller, raw,
         on_success=_finish,
         on_error=lambda err: release(f"|r{err}|n"),
+        result=result,
     )
 
 
@@ -407,7 +463,8 @@ def _for_room(template, actor, raw):
     return text
 
 
-def _remember(caller, raw, bound, actor_text, changes):
+def _remember(caller, raw, bound, actor_text, changes, outcome="success",
+              contested=False):
     """
     Record what the character did, and what it changed.
 
@@ -420,9 +477,15 @@ def _remember(caller, raw, bound, actor_text, changes):
     from world.memory import remember
 
     what = ", ".join(sorted(bound[r].key for r in bound)) or None
-    line = f"I did: {raw}"
+    line = f"I tried to: {raw}" if contested else f"I did: {raw}"
     if what:
         line += f" (involving {what})"
+    # A failure is a thing that happened to you and worth remembering as one:
+    # an NPC beaten off twice should know it before trying a third time, and
+    # "I did: attack the guard" on its own reads as a victory.
+    if contested:
+        line += (" and succeeded" if outcome in checks.GOOD
+                 else " and failed")
     if actor_text:
         line += f" — {actor_text}"
     if changes:

@@ -65,6 +65,46 @@ particular poster — and stores that on the object, so it travels with it. The
 part that generalises is stored by kind; the part that is specific is stored on
 the specific thing. Neither is stored on the room.
 
+### Some verbs can be lost
+
+A rule may declare a **check**: a figure of yours that decides the attempt, and
+either a number to beat or somebody else's figure opposing it. Fighting,
+forcing, climbing, stealing and persuading get one; reading a notice does not,
+and a world that made everything a gamble would be a worse one, not a better.
+
+The model decides only what the contest *is*, once, when the rule is learned.
+The dice are code -- a d20 against your trait, the margin choosing between a
+critical failure, a failure, a success and a critical success -- so the same
+fight is the same odds every time, nothing is spent to roll it, and the numbers
+are yours to tune. It is also what makes a strong opponent genuinely harder
+than a weak one: a rule contested by *swordsmanship against theirs* covers the
+recruit and the veteran without knowing either exists.
+
+Each outcome keeps its own narration on the object, so missing a swing costs
+one narration ever and never becomes the text somebody reads when they land it.
+A rule that gives a check has to say what failing costs, too -- a failure that
+costs nothing is only a command you retype until it works.
+
+### Armour and weapons are worth something
+
+An item can carry `trait_bonuses` — what it is worth to whoever has it — and a
+`bonus_when` saying what has to be true for it to count: **worn**, **wielded**,
+or merely **carried**. A coat of mail is +3 defence and −1 stealth while it is
+on, and nothing at all in a pack. Every generator that can make an object can
+give one, so a breastplate found in a chest protects exactly as well as one a
+guard was created wearing.
+
+Nothing is added or subtracted. Putting a helmet on recalculates what all your
+gear is worth and writes that total to the trait's modifier, leaving the figure
+you earned untouched underneath — so a bonus cannot drift, however many times
+you change, and taking a thing off removes exactly what putting it on added.
+`score` says where the difference came from.
+
+Wielding is a mechanic rather than a learned verb, for the same reason wearing
+is: `wield`, `brandish` and `equip` never reach a model, and hand the attempt
+back when the noun is not something to hold, so `draw the curtain` still means
+whatever the world decides it means. Two hands, so a sword and a shield.
+
 ### People, not props
 
 Characters are generated with a body, a private manner nobody sees, a goal they
@@ -304,6 +344,9 @@ Beyond that:
   command until you have it; `goal` alone drops it.
 - **Get dressed.** `wear`, `remove`, `cover`, `inventory`. What you have on is
   part of how you look to everyone else.
+- **Empty your pockets.** `drop all` puts down everything at once, clothes
+  included, for when several worlds' worth of interesting objects have
+  accumulated about your person.
 - **Check yourself.** `score` shows every trait this world has decided to
   measure about you.
 
@@ -335,12 +378,14 @@ Beyond that:
 |---|---|
 | `look [thing]` | Look. Mentioned-but-nonexistent things become real. |
 | `get <thing>` | Pick something up. |
+| `drop <thing>` / `drop all` | Put something down. `all` empties you out, worn clothes included. |
 | `name <what you are called here>` | Rename yourself in this world. |
 | `follow <person>` / `follow` | Travel with somebody, or stop. |
 | `pose <action>` | Emote. |
 | `remember <question>` | Ask your own memory something. |
 | `score [trait]` | Your traits, and what they stand at. |
 | `wear` / `remove` / `cover` / `uncover` / `inventory` | Clothing. |
+| `wield <thing>` / `unwield <thing>` | Take something in hand, or lower it. |
 | `quests` / `quests hint` / `quests accept \| decline \| abandon` | Errands. |
 | `goal <what you want>` / `goal` | Set or drop a goal, with nudges. |
 
@@ -363,6 +408,7 @@ nobody active in it does not think at all**.
 | Say something with an NPC present | 1 per NPC | The big recurring cost |
 | Try a verb the world has never seen | 2 | Rule + narration |
 | Try that verb again, anywhere | 0–1 | The rule is free; a new object needs narration |
+| Lose a fight you have already lost once | 0 | Each outcome is narrated once per thing |
 | Look at something only mentioned in prose | 2 | Plausibility check + creation |
 | Take on an errand | 1 | Turning it into something checkable |
 | An NPC acting on its own | 0–1 | Free whenever the planner finds a step |
@@ -473,6 +519,8 @@ The interesting half is `world/`:
 | `verb_gen.py` | Learning what a verb does; narrating what happened |
 | `attempt.py` | One verb attempt, deciding everything free before paying |
 | `effects.py` | The only way a verb changes the world |
+| `checks.py` | Rolling for an outcome, so trying is not the same as doing |
+| `gear.py` | What a thing is worth to whoever wears or wields it |
 | `npc_gen.py` | Creating characters, dressing them, and their dialogue |
 | `goals.py` | Conditions about the world that can be tested |
 | `planner.py` | One next step towards a goal, with no model involved |

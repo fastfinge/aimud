@@ -245,6 +245,20 @@ def _refuse(text):
     return False, text, ""
 
 
+def _revalue(character):
+    """
+    Work out again what this character's gear is worth to them.
+
+    Armour is worth nothing in a pile beside the bed. What a garment does for
+    somebody depends on it being on, so every path that changes what is worn
+    has to say so -- see world.gear, which recomputes the whole total rather
+    than trusting anybody to add and subtract correctly.
+    """
+    from world import gear
+
+    gear.recompute(character)
+
+
 def put_on(character, garment, wearstyle=True):
     """
     Wear a garment. Returns (worn, what the wearer is told, what the room sees).
@@ -277,6 +291,7 @@ def put_on(character, garment, wearstyle=True):
     # article, and the room should hear one voice for this whether a player or
     # a character put the coat on.
     garment.wear(character, wearstyle, quiet=True)
+    _revalue(character)
 
     label = _garment_name(garment, character)
     name = character.get_display_name(character)
@@ -298,6 +313,7 @@ def take_off(character, garment):
     label = _garment_name(garment, character)
     revealed = [g for g in character.contents if g.db.covered_by is garment]
     garment.remove(character, quiet=True)
+    _revalue(character)
 
     name = character.get_display_name(character)
     tail = f", revealing {iter_to_str([_garment_name(g, character) for g in revealed])}" \
@@ -420,8 +436,39 @@ def create(spec, location, worn_on=None):
     obj.db.affordances = affordances
     obj.db.states = sorted({str(s).lower().strip()
                             for s in (spec.get("states") or []) if s})
+    # Answerable to its condition from the first moment: a bottle created
+    # half full is gettable as "full bottle" without waiting for a verb.
+    from world import verbs
+
+    verbs.refresh_state_aliases(obj)
     if kind in GARMENT_TYPES:
         obj.db.clothing_type = kind
+
+    # What the thing is worth to whoever has it. Every generator that can make
+    # an object comes through here, so a breastplate found in a chest protects
+    # exactly as well as one a guard was created wearing.
+    from world import gear
+
+    granted = {}
+    try:
+        declared = (spec.get("trait_bonuses") or {}).items()
+    except AttributeError:
+        declared = []
+    for slug, amount in declared:
+        from world import traits
+
+        slug = traits._slug(slug)
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            continue
+        if slug and amount:
+            granted[slug] = amount
+    if granted:
+        obj.db.trait_bonuses = granted
+        when = str(spec.get("bonus_when", "")).strip().lower()
+        if when in gear.CONDITIONS:
+            obj.db.bonus_when = when
 
     if worn_on is not None:
         style = str(spec.get("wearstyle", "")).strip()

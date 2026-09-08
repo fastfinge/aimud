@@ -116,11 +116,91 @@ def _effect_achieves(effect, condition, obj_name):
     return False
 
 
-def _rule_would_achieve(rule, condition, obj_name):
+#: The outcomes a plan may aim at, in the order it should prefer them.
+#:
+#: Failing is a real route to some things and the only route to a few. A
+#: character who wants a broken shoulder gets one by forcing a door they
+#: cannot force, and one who wants to be rid of what they are carrying gets
+#: that from the branch where they drop it -- so a planner that reads only
+#: success leaves goals the world can satisfy looking impossible.
+#:
+#: But it is a route whose likeliest outcome is something else, and usually
+#: something the character did NOT want. A rule that happens to light a lamp
+#: when smashing it goes wrong is not the way to light a lamp while any rule
+#: lights one on purpose. So both are searched and success is searched first:
+#: failing on purpose is a last resort, which is what it is.
+PLAN_OUTCOMES = ("success", "failure")
+
+
+def _rule_would_achieve(rule, condition, obj_name, outcome="success"):
+    from world import checks
+
     return any(
         _effect_achieves(effect, condition, obj_name)
-        for effect in (rule.get("effects") or [])
+        for effect in checks.effects_for(rule, outcome)
     )
+
+
+def _effect_role(effect):
+    """Which role an effect acts on, however it happens to name it."""
+    for key in ("name_role", "role", "to_role"):
+        role = effect.get(key)
+        if role:
+            return str(role)
+    return ""
+
+
+def _burns_itself_down(rule):
+    """
+    True when succeeding at this rule makes it impossible to attempt again.
+
+    Only matters for a plan that is aiming at the failure branch. Failing is a
+    route you cannot choose, so it is worth taking only when you can keep
+    taking it: attacking a guard until one of the blows goes badly is a way of
+    getting hurt, but forcing a door that is then open is one attempt at
+    getting hurt and afterwards a door standing open for no reason anybody in
+    the room can see.
+
+    Read off the rule alone, by asking whether its own success would falsify
+    its own preconditions. Nothing is rolled and nothing is simulated -- this
+    runs inside the planner's search, which costs nothing and must go on
+    costing nothing.
+
+    Traits are deliberately not considered. Whether spending five stamina
+    drops a character below the ten a rule needs depends on what they have
+    now, which makes it a question about this attempt rather than about the
+    rule, and answering it wrongly would hide a perfectly repeatable route.
+    """
+    from world import checks
+
+    requires = rule.get("requires") or {}
+    if not requires:
+        return False
+
+    for effect in checks.effects_for(rule, "success"):
+        try:
+            etype = str(effect.get("type", ""))
+        except AttributeError:
+            continue
+        role = _effect_role(effect)
+        needed = requires.get(role) if role else None
+        if needed is None:
+            continue
+
+        if etype == "destroy_object":
+            return True     # the thing the rule needs will not be there
+        if etype == "set_state":
+            added = {str(s) for s in effect.get("add") or []}
+            removed = {str(s) for s in effect.get("remove") or []}
+            if added & {str(s) for s in needed.get("lacks") or []}:
+                return True
+            if removed & {str(s) for s in needed.get("is") or []}:
+                return True
+        if etype == "modify_object" and effect.get("affordances") is not None:
+            kept = {str(a).lower() for a in effect["affordances"] or []}
+            if {str(a).lower() for a in needed.get("has") or []} - kept:
+                return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -318,27 +398,32 @@ def _trait_step(actor, world_root, condition):
     rules = (world_root.db.verb_rules or {}) if world_root else {}
     slug = condition.get("trait", "")
 
-    for key, rule in rules.items():
-        rule = dict(rule)
-        if not rule.get("valid", True) or unreliable(world_root, key):
-            continue
-        if not _rule_would_achieve(rule, condition, slug):
-            continue
+    # Every rule is tried as a way of succeeding before any is tried as a way
+    # of failing. See PLAN_OUTCOMES.
+    for outcome in PLAN_OUTCOMES:
+        for key, rule in rules.items():
+            rule = dict(rule)
+            if not rule.get("valid", True) or unreliable(world_root, key):
+                continue
+            if not _rule_would_achieve(rule, condition, slug, outcome):
+                continue
+            if outcome == "failure" and _burns_itself_down(rule):
+                continue
 
-        verb = key.split("#", 1)[0]
-        wanted = _needed_affordances(key)
-        if wanted is None:
-            # A verb that acts on nothing in particular -- "rest", "pray".
-            if verbs.check(rule.get("requires"), {}, actor) is None:
-                return verb, key
-            continue
+            verb = key.split("#", 1)[0]
+            wanted = _needed_affordances(key)
+            if wanted is None:
+                # A verb that acts on nothing in particular -- "rest", "pray".
+                if verbs.check(rule.get("requires"), {}, actor) is None:
+                    return verb, key
+                continue
 
-        obj = _thing_matching(actor, wanted)
-        if obj is None:
-            continue
-        if verbs.check(rule.get("requires"), {"direct": obj}, actor) is not None:
-            continue
-        return f"{verb} {obj.key}", key
+            obj = _thing_matching(actor, wanted)
+            if obj is None:
+                continue
+            if verbs.check(rule.get("requires"), {"direct": obj}, actor) is not None:
+                continue
+            return f"{verb} {obj.key}", key
     return None, None
 
 
@@ -353,17 +438,21 @@ def _verb_for(actor, world_root, condition, obj):
     from world import verb_gen
 
     rules = (world_root.db.verb_rules or {}) if world_root else {}
-    for key, rule in rules.items():
-        rule = dict(rule)
-        if not rule.get("valid", True) or unreliable(world_root, key):
-            continue
-        if not _rule_would_achieve(rule, condition, obj.key):
-            continue
-        bound = {"direct": obj}
-        if verbs.check(rule.get("requires"), bound, actor) is not None:
-            continue
-        verb = key.split("#", 1)[0]
-        return f"{verb} {obj.key}", key
+    # Success routes first, then the ones that only work by going wrong.
+    for outcome in PLAN_OUTCOMES:
+        for key, rule in rules.items():
+            rule = dict(rule)
+            if not rule.get("valid", True) or unreliable(world_root, key):
+                continue
+            if not _rule_would_achieve(rule, condition, obj.key, outcome):
+                continue
+            if outcome == "failure" and _burns_itself_down(rule):
+                continue
+            bound = {"direct": obj}
+            if verbs.check(rule.get("requires"), bound, actor) is not None:
+                continue
+            verb = key.split("#", 1)[0]
+            return f"{verb} {obj.key}", key
     return None, None
 
 
@@ -437,5 +526,14 @@ def check_outcome(actor, world_root, condition, rule_key):
     if not rule_key or not condition:
         return
     met, _text = goals._test(condition, actor, world_root)
-    if not met:
-        note_failure(world_root, rule_key)
+    if met:
+        return
+
+    # A contested rule is allowed to not work: that is what a check is for,
+    # and losing a fight twice is not evidence that fighting is broken. Left
+    # unguarded, this would quietly blacklist every verb worth rolling for.
+    from world import checks, verb_gen
+
+    if checks.wanted(verb_gen.get_rule(world_root, rule_key)):
+        return
+    note_failure(world_root, rule_key)

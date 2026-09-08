@@ -21,6 +21,34 @@ from .objects import ObjectParent
 MAX_HISTORY = 30    # events older than this are dropped
 MAX_NPC_CHAIN = 1   # how many NPC→NPC hops are allowed per player event
 
+#: Second person turned round, longest first so "You are" is seen before
+#: "You". The world addresses whoever acted; a character's working memory is
+#: its own and reads back in the first person.
+_TURNED_ROUND = (
+    ("You are", "I am"), ("you are", "I am"),
+    ("You have", "I have"), ("you have", "I have"),
+    ("You would", "I would"), ("you would", "I would"),
+    ("Your", "My"), ("your", "my"),
+    ("You", "I"), ("you", "I"),
+)
+
+
+def _as_noticed(text):
+    """
+    A refusal written to the actor, as the character would have taken it.
+
+    Colour codes are dropped as well: they are markup for a screen, and this
+    is going into a prompt, where "|r" is only noise a model has to ignore.
+    """
+    import re
+
+    plain = re.sub(r"\|\[?[a-zA-Z0-9]", "", str(text or "")).strip()
+    if not plain:
+        return ""
+    for second, first in _TURNED_ROUND:
+        plain = plain.replace(second, first)
+    return f"that did not work -- {plain}"
+
 
 class NPC(ObjectParent, DefaultObject):
     """
@@ -604,8 +632,15 @@ class NPC(ObjectParent, DefaultObject):
             # The step is a way out; walking is not a verb attempt.
             return self._walk(action, room)
 
-        self._attempt_verb(action, room)
-        check_outcome(self, world_root, condition, rule_key)
+        # Judged when the attempt is finished, not when it is started. A verb
+        # the world has never seen goes to a model to be learned, so the line
+        # after this one used to run before the rule existed, let alone did
+        # anything -- and every newly learned rule collected a failure it had
+        # not earned.
+        self._attempt_verb(
+            action, room,
+            on_done=lambda: check_outcome(self, world_root, condition, rule_key),
+        )
         return True
 
     def _give_up_eventually(self, goal, world_root):
@@ -651,7 +686,7 @@ class NPC(ObjectParent, DefaultObject):
         self.db.goal_stalls = 0
         self.db.goal_from_quest = None
 
-    def _attempt_verb(self, action, room, _depth=0):
+    def _attempt_verb(self, action, room, _depth=0, on_done=None):
         """
         Try a verb through the same pipeline a player's command uses.
 
@@ -659,6 +694,12 @@ class NPC(ObjectParent, DefaultObject):
         did: identical parsing, preconditions and effects.  The narrower
         effect set reflects that nobody chose to let the NPC act -- it may
         change objects, but not rewrite the room or walk the player around.
+
+        `on_done` is called once the attempt has actually finished and its
+        effects have landed.  It has to be a callback: an attempt the world
+        has not met before goes to a model, so this returns long before
+        anything has happened, and whatever wants to know how it went cannot
+        simply look on the next line.
         """
         from world.attempt import NPC_FORBIDDEN_EFFECTS, attempt
 
@@ -666,17 +707,38 @@ class NPC(ObjectParent, DefaultObject):
         if not account:
             return
 
+        # set_trait belongs here for the same reason set_state does: what an
+        # NPC does lands for everyone or the NPC is only claiming to do it. A
+        # spell that weakens somebody has to actually weaken them, and a fight
+        # an NPC loses has to cost the NPC its own stamina. Which figures move
+        # and whose is the rule's decision, not this list's.
         allowed = {
             "create_object", "destroy_object", "move_object",
-            "modify_object", "set_state",
+            "modify_object", "set_state", "set_trait",
         } - NPC_FORBIDDEN_EFFECTS
 
         def deliver(actor_text, room_text=""):
+            # Effects have already been applied by the time this is called,
+            # so this is the first moment anything may ask what the attempt
+            # achieved. Both texts empty means the attempt was refused before
+            # it did anything -- nothing here matched what was named -- and
+            # there is no outcome to judge a rule by.
+            if on_done is not None and (actor_text or room_text):
+                on_done()
+
             # Only the third-person line is usable here. The actor line is
             # written to whoever acted ("You touch a match to the wick"), and
             # broadcasting that would tell the room it had done the thing.
             visible = room_text
             if not visible:
+                # Nothing happened in the room, so there is nothing to show
+                # anyone -- but if the world said why, the character has to
+                # hear it. This is the route `_note_to_self` was written for:
+                # a refusal that never reaches the next prompt is a refusal
+                # the model earns again every turn, asking to sit on the same
+                # bottle for as long as the bottle is there.
+                if actor_text:
+                    self._note_to_self(_as_noticed(actor_text))
                 return
             room.msg_contents(visible)
             # The NPC's own record; _add_to_history also writes to its memory.

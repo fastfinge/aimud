@@ -15,6 +15,20 @@ from twisted.internet import threads
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+#: How many times a character may be sent back to be renamed. Each retry is a
+#: whole generation rather than a cheap naming call the way a room's is, so
+#: the model is asked to keep the character it invented and change only the
+#: name -- and after this many tries the answer is taken as it stands.
+NAME_ATTEMPTS = 3
+
+#: Words that are a station rather than a name. Two sergeants are not two
+#: people with the same name, and rejecting the second one would be wrong.
+TITLES = frozenset("""
+    mr mrs ms miss mx dr doctor prof professor sir dame lady lord madam
+    master mistress captain sergeant corporal officer constable brother
+    sister father mother elder young old the of van von der den de la
+""".split())
+
 # ---------------------------------------------------------------------------
 # Tool definitions sent to the dialogue model
 # ---------------------------------------------------------------------------
@@ -314,6 +328,14 @@ Respond with a single JSON object only — no other text:
   "traits": [{"slug": "swordsmanship", "value": 12}]
 }
 
+"name" is how the player will address this character, so it has to belong to
+one person. Any names already used in this world are listed for you; do not
+reuse one and do not vary on one, because a second character with the same
+first name is one the player cannot speak to. Reach past the first name that
+comes to mind: real places are full of ordinary names that are not the most
+typical one for the setting, and a hostel with four women called Yuna in it
+is not a place. A shared family name is fine — families exist.
+
 "description" is the character's BODY, and nothing else. It is shown again
 every single time anyone looks at them, for the rest of the character's life,
 so every word of it must still be true years later in another room wearing
@@ -398,11 +420,13 @@ Respond with a single JSON object — no other text — matching:
   "worn": [
     {"name": "item name", "description": "1-2 sentences",
      "clothing_type": "top", "wearstyle": "",
-     "affordances": ["wearable"], "states": []}
+     "affordances": ["wearable"], "states": [],
+     "trait_bonuses": {}, "bonus_when": ""}
   ],
   "carried": [
     {"name": "item name", "description": "1-2 sentences", "takeable": true,
-     "affordances": ["readable"], "states": []}
+     "affordances": ["readable"], "states": [],
+     "trait_bonuses": {}, "bonus_when": ""}
   ]
 }
 
@@ -443,6 +467,8 @@ readable, openable, container, surface, flammable, edible, drinkable, wearable,
 go ON it -- a table, a shelf, a counter, a desk. Many things are both.)
 breakable, wieldable. Every garment must include "wearable". states are
 conditions currently true of it (patched, bloodstained, damp), usually empty.
+
+{naming_rule}
 Return only the JSON object."""
 
 # ---------------------------------------------------------------------------
@@ -473,13 +499,127 @@ def _call_openrouter(api_key, model, messages, tools=None):
 
 
 def _parse_json(content):
-    try:
-        return json.loads(content) if isinstance(content, str) else content
-    except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", content, re.DOTALL)
-        if m:
-            return json.loads(m.group())
-        raise ValueError(f"No JSON in model response: {content!r}")
+    """
+    Parse a model response that should be a single JSON object.
+
+    Delegates to world.model_json, which repairs the near-misses models make
+    -- a trailing comma, a stray comment, an answer cut off mid-object --
+    rather than losing a whole generation over one character.
+    """
+    from world.model_json import parse_object
+
+    return parse_object(content)
+
+
+# ---------------------------------------------------------------------------
+# Telling one person from another
+#
+# Rooms already refuse to be named a variation on their neighbours. People
+# need the same guard and a stricter one, because the model is never shown
+# who else it has invented: asked four times over for somebody who belongs in
+# a Korean hostel, it answers "Yuna Choi" four times, each with a different
+# face and the same name. Nothing downstream can tell them apart, and neither
+# can the player.
+# ---------------------------------------------------------------------------
+
+def _name_words(name):
+    """
+    A person's name as comparable words, stations and particles dropped.
+
+    Hyphens are kept inside a word rather than split on. "Min-ji" and
+    "Min-seo" are two different given names that happen to share a syllable,
+    and a world drawing on Korean names would be almost unusable if that
+    counted as a collision.
+    """
+    cleaned = re.sub(r"[^a-z0-9'-]+", " ", (name or "").lower())
+    words = [w.strip("'-") for w in cleaned.split()]
+    return [w for w in words if len(w) > 1 and w not in TITLES]
+
+
+def _too_similar(name, existing):
+    """
+    True when `name` is close enough to somebody here to be confusing.
+
+    Stricter than the test a room gets, and deliberately. A room name is
+    scenery; a person's name is what the player types to speak to them, so
+    two women answering to "Yuna" are not a blemish on the map, they are two
+    characters neither of whom can be addressed.
+
+    A shared FAMILY name is allowed through. Worlds have families in them,
+    real naming pools are small -- a Korean one is four surnames wide in
+    practice -- and forbidding those would reject every honest answer until
+    the retries ran out. What is refused is a shared first name, or two names
+    made of the same words in any order.
+    """
+    words = _name_words(name)
+    if not words:
+        return True                 # nothing usable to be called
+    mine = set(words)
+    for other in existing:
+        theirs = _name_words(other)
+        if not theirs:
+            continue
+        if words[0] == theirs[0]:
+            return True             # both answer to the same first name
+        if mine <= set(theirs) or set(theirs) <= mine:
+            return True             # "Yuna Choi" against "Choi Yuna", or "Yuna"
+    return False
+
+
+def _people_in_world(room):
+    """
+    Every name already spoken for in this world.
+
+    World-wide, which is where this parts company with rooms: two identical
+    taverns at opposite ends of a map are a thin patch in the scenery, but
+    the player walks the whole world and meets everybody in it. The world's
+    coordinate index is the list of its rooms, so this is two queries however
+    large the world has grown.
+    """
+    from evennia.objects.models import ObjectDB
+
+    from world import coords
+
+    world_root = room.db.world_root if room is not None else None
+    room_ids = set(coords.get_index(world_root).values())
+    if room is not None and room.id:
+        room_ids.add(room.id)
+    if not room_ids:
+        return set()
+
+    from typeclasses.characters import Character
+    from typeclasses.npcs import NPC
+
+    names = set()
+    for typeclass in (NPC, Character):
+        names.update(
+            typeclass.objects.filter(db_location__id__in=room_ids)
+            .values_list("db_key", flat=True)
+        )
+    return {name for name in names if name}
+
+
+def _check_name(data, existing):
+    """
+    What is wrong with the name this character was given, if anything.
+
+    Phrased as an instruction rather than a verdict, and asking for the same
+    character back, because the model has already invented a face and a
+    manner worth keeping -- only the name has to change.
+    """
+    name = str(data.get("name", "")).strip()
+    if not name:
+        return "You returned no name. Give this character a name of 1-3 words."
+    if _too_similar(name, existing):
+        return (
+            f"'{name}' is the name of somebody already living in this world. "
+            f"Return the same character again -- the same description, manner, "
+            f"goal and traits -- under a different first name. Not a variation "
+            f"on this one: a different name. Already taken: "
+            f"{', '.join(sorted(existing))}"
+        )
+    return None
+
 
 
 def _room_context(room, npc):
@@ -738,6 +878,15 @@ def generate_npc(account, room, on_success, on_error):
     room_title = room.db.room_title or room.key
     room_desc = room.db.desc or ""
 
+    # Who is already here, so the model is not asked to invent a stranger in
+    # ignorance of everyone it has invented before. Listing them is most of
+    # the fix; the check below is what happens when the list is ignored.
+    existing = _people_in_world(room)
+    taken = (
+        f"Already living in this world, and not to be named again or "
+        f"varied on: {', '.join(sorted(existing))}\n\n" if existing else ""
+    )
+
     messages = [
         {"role": "system", "content": _NPC_GEN_SYSTEM},
         {
@@ -747,18 +896,44 @@ def generate_npc(account, room, on_success, on_error):
                 f"{lore.guidance_block(room, 'npcs')}"
                 f"{traits.vocabulary_block(room.db.world_root)}"
                 f"Room: [{room_title}]\n{room_desc}\n\n"
+                f"{taken}"
                 "Generate an NPC who would naturally be found here."
             ),
         },
     ]
 
-    def _fetch():
-        return _call_openrouter(api_key, model, messages)
+    def _attempt(remaining, convo):
+        """One try at a character, sending it back if the name is taken."""
+        def _answered(raw):
+            try:
+                content = raw["choices"][0]["message"].get("content") or ""
+                data = _parse_json(content)
+            except Exception as exc:
+                on_error(str(exc))
+                return
 
-    def _done(raw):
+            complaint = _check_name(data, existing)
+            if complaint and remaining > 1:
+                _attempt(remaining - 1, convo + [
+                    {"role": "assistant", "content": content},
+                    {"role": "user", "content": complaint},
+                ])
+                return
+            if complaint:
+                # Out of tries. Better a second Yuna than no character at
+                # all, but it is worth knowing the model would not budge.
+                logger.log_info(
+                    f"npc naming: kept '{data.get('name')}' after "
+                    f"{NAME_ATTEMPTS} tries; it clashes with somebody here"
+                )
+            _spawn(data)
+
+        threads.deferToThread(
+            _call_openrouter, api_key, model, convo
+        ).addCallbacks(_answered, _fail)
+
+    def _spawn(data):
         try:
-            content = raw["choices"][0]["message"].get("content") or ""
-            data = _parse_json(content)
             name = str(data.get("name", "Stranger")).strip()
             description = str(data.get("description", "")).strip()
             manner = str(data.get("manner", "")).strip()
@@ -804,7 +979,7 @@ def generate_npc(account, room, on_success, on_error):
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+    _attempt(NAME_ATTEMPTS, messages)
 
 
 def dress_npc(account, npc):
@@ -828,10 +1003,11 @@ def dress_npc(account, npc):
         return
     model = account.model_for("contents", "items", "npcs")
 
-    from world import goals, lore
+    from world import gear, goals, lore, verbs
 
     system = _NPC_OUTFIT_SYSTEM.replace(
-        "{garment_types}", ", ".join(clothing.GARMENT_TYPES))
+        "{garment_types}", ", ".join(clothing.GARMENT_TYPES)
+    ).replace("{naming_rule}", verbs.naming_rule())
     messages = [
         {"role": "system", "content": system},
         {
@@ -845,6 +1021,7 @@ def dress_npc(account, npc):
                 f"Their body: {npc.db.desc or '(not described)'}\n"
                 f"Who they are: {npc.db.manner or '(not described)'}\n"
                 f"What they want: {goals.describe(npc.db.goal)}\n\n"
+                f"{gear.prompt_block(room.db.world_root)}"
                 f"Dress {npc.key} and give them what they carry."
             ),
         },
@@ -957,8 +1134,11 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
                 if tc.get("type") == "function":
                     fn = tc["function"]
                     try:
-                        call_args = json.loads(fn.get("arguments", "{}"))
-                    except json.JSONDecodeError:
+                        # Repaired rather than parsed: a tool call whose
+                        # arguments will not parse used to arrive empty, and
+                        # an NPC saying nothing is worse than a stray comma.
+                        call_args = _parse_json(fn.get("arguments") or "{}")
+                    except ValueError:
                         call_args = {}
                     parsed.append({"name": fn["name"], "args": call_args})
             on_success(parsed)
@@ -1050,8 +1230,11 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
                 if tc.get("type") == "function":
                     fn = tc["function"]
                     try:
-                        call_args = json.loads(fn.get("arguments", "{}"))
-                    except json.JSONDecodeError:
+                        # Repaired rather than parsed: a tool call whose
+                        # arguments will not parse used to arrive empty, and
+                        # an NPC saying nothing is worse than a stray comma.
+                        call_args = _parse_json(fn.get("arguments") or "{}")
+                    except ValueError:
                         call_args = {}
                     parsed.append({"name": fn["name"], "args": call_args})
             on_success(parsed)

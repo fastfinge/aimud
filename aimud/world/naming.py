@@ -32,6 +32,12 @@ Neither measure is trusted far. A confident match is acted on; a merely
 plausible one is offered back to the player rather than guessed at, because
 looking at the wrong thing is a small annoyance and silently littering a world
 with near-duplicates is not.
+
+A third kind of mistake is not about spelling at all and is handled in
+`world.anatomy`: a phrase like "Samuel's shoulder" is spelled perfectly and
+still names no object, because a shoulder belongs to somebody rather than
+lying about. That question is asked first, since nothing here can answer it
+-- people are deliberately not among the things a name is compared against.
 """
 
 import re
@@ -282,6 +288,16 @@ def instead_of_creating(caller, phrase, fuzzy=False):
     the floor -- and they are naming things from memory in their own words,
     which is what the middle band is full of.
     """
+    from world import anatomy
+
+    # Asked first because it is the one question spelling cannot answer.
+    # Everything below compares the phrase against things, and a phrase like
+    # "Samuel's shoulder" names no thing at all -- it names Samuel, who is
+    # not in the search at all, people being excluded from what is reachable.
+    person, complaint = anatomy.instead_of_a_part(caller, phrase)
+    if person is not None or complaint:
+        return person, complaint
+
     obj, score = best_match(caller, phrase)
     if obj is None:
         return None, None

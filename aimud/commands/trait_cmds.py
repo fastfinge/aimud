@@ -65,6 +65,14 @@ class CmdScore(Command):
         lines = ["|wYour score|n\n"]
         for (slug, trait), label in zip(entries, labels):
             lines.append(_row(label, _value_text(trait), width))
+            # Where the difference came from. A defence of nine that is four
+            # breastplate reads as something you can take off; without this it
+            # reads as something you were born with.
+            from world import gear
+
+            granted = gear.describe(caller, slug)
+            if granted:
+                lines.append(f"  |x  from {granted}|n")
 
         world_root = traits._world_root(caller)
         described = traits.vocabulary(world_root)

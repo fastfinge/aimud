@@ -21,6 +21,8 @@ that wetting a burning thing puts it out.
 
 import re
 
+from evennia.utils import logger
+
 # Prepositions that introduce a second noun, mapped to the role that noun
 # plays.  "unlock door with key" -> direct=door, instrument=key.
 PREPOSITION_ROLES = {
@@ -75,6 +77,15 @@ VERB_SYNONYMS = {
     # its own and "remove" would go on meaning something else.
     "don": "wear", "wearing": "wear",
     "doff": "remove", "unwear": "remove",
+    # Wielding, for the same reason: world.gear takes these over when the noun
+    # really is something to hold, and hands them back when it is not, so
+    # "equip the winch" still reaches a model.
+    #
+    # Only words that can mean nothing else. "sheathe" and "stow" are left
+    # alone deliberately: a sword going into its scabbard is a placement, and
+    # the game already knows what putting a thing somewhere means.
+    "brandish": "wield", "equip": "wield",
+    "unequip": "unwield", "lower": "unwield",
 }
 
 
@@ -330,6 +341,46 @@ def rule_key(verb, bound):
 
 
 # ---------------------------------------------------------------------------
+# What belongs in a name, and what belongs in a state
+# ---------------------------------------------------------------------------
+
+#: The rule, for every generator that can name a thing.
+#:
+#: One text in one place because four of them can: a room's contents, a
+#: fixture reached for, a character's outfit, and a verb that conjures
+#: something. A name written by one of them and a state changed by another
+#: have to agree, and they only agree if all four were told the same rule.
+_NAMING_RULE = """\
+A name says what a thing IS. Its condition goes in "states", never in the
+name, and never in the description either.
+
+Both are written once and shown for the rest of the object's life, while what
+is true of the thing changes underneath them. Drink a "half-empty bottle" and
+the world marks it empty -- and it is still called a half-empty bottle, and
+still described as half full, and nothing can put either right. States are
+the part that is allowed to change, which is why every passing condition
+belongs there and nowhere else.
+
+The test is whether anything anybody could do here would make the word wrong.
+If it would, it is a state: how full, lit, clean, broken, wet, open, locked,
+worn or fresh a thing is -- half-empty, empty, full, lit, unlit, burning,
+dirty, dusty, muddy, wet, damp, dry, broken, cracked, torn, stained, locked,
+unlocked, open, shut, used, spoiled.
+
+What stays is what will still be true when all of that has changed: material,
+colour, shape, make, purpose, whose it is. "glass soju bottle", not
+"half-empty soju bottle". "canvas satchel", not "torn canvas satchel" -- put
+"torn" in states, where mending it can undo it. Describe the thing itself the
+same way: what it is made of and what it is for, not how much is left in it.
+"""
+
+
+def naming_rule():
+    """How to name a made thing, for any generator that makes one."""
+    return _NAMING_RULE
+
+
+# ---------------------------------------------------------------------------
 # The world's state vocabulary
 # ---------------------------------------------------------------------------
 
@@ -346,12 +397,28 @@ def _similar(a, b):
     return a.startswith(b) or b.startswith(a)
 
 
-#: Groups of states that behave as a set rather than as loose flags.
+#: What a group is taken to mean when nobody has said otherwise.
+#:
+#: Exclusive by default, and that default is the whole point: a group IS a set
+#: of states only one of which can hold at once -- it is what every prompt that
+#: can invent one is told a group is. A model that declares "openness" for open
+#: and closed has already said what it means, and treating an unrecognised name
+#: as a loose flag threw that away, so a thing could be open and closed at the
+#: same time and opening it cleared nothing.
+NEW_GROUP = {"exclusive": True, "ends_on_move": False}
+
+#: Groups every world starts with, and how they behave.
 #:
 #: exclusive    -- only one member can be true of a thing at a time, so
 #:                 sitting down stops you standing without any rule saying so.
 #: ends_on_move -- walking out of the room ends it. You cannot carry a chair
 #:                 away by remaining seated on it.
+#:
+#: These are seeds rather than the whole list. A world registers its own as it
+#: needs them -- see `register_group` -- and what is here is only what no world
+#: should have to discover for itself: `ends_on_move` in particular is not
+#: something a model reliably works out, and getting it wrong means a character
+#: who stays seated in every room they walk into.
 STATE_GROUPS = {
     "posture": {"exclusive": True, "ends_on_move": True},
     "wetness": {"exclusive": True, "ends_on_move": False},
@@ -363,6 +430,11 @@ STATE_GROUPS = {
 #: rather than from whenever a model happens to declare it -- left to itself
 #: it decided "seated" ruled out "following" and "mobile", neither of which
 #: anything sets, and said nothing about standing.
+#:
+#: A seeded slug keeps its seeded group even when a model declares another,
+#: which is what stops "wet" being filed under an invented "moisture" while
+#: "dry" sits in "wetness" -- two groups for one question, and neither
+#: cancelling the other.
 DEFAULT_STATE_GROUP = {
     slug: "posture" for slug in (
         "seated", "sitting", "sat", "standing", "stood", "upright",
@@ -378,14 +450,107 @@ DEFAULT_STATE_GROUP.update({
 })
 
 
+def _similar_group(name, other):
+    """
+    Whether two group names are the same question asked twice.
+
+    A prefix test catches "open" against "openness". It cannot catch
+    "openess", which is the commoner miss by far -- a model writing a group
+    name is writing prose, not choosing from a list -- so one edit counts as
+    the same name too. Short names are left alone: "fire" and "hire" are one
+    edit apart and are not the same question.
+    """
+    if _similar(name, other):
+        return True
+    from world.naming import edit_distance
+
+    return min(len(name), len(other)) >= 5 and edit_distance(name, other) <= 1
+
+
+def groups(world_root):
+    """Every group this world knows: the seeds, then whatever it has added."""
+    merged = {name: dict(rules) for name, rules in STATE_GROUPS.items()}
+    stored = (world_root.db.state_groups or {}) if world_root else {}
+    for name, rules in stored.items():
+        merged.setdefault(name, {}).update(dict(rules or {}))
+    return merged
+
+
+def group_rules(world_root, group):
+    """
+    How a group behaves.
+
+    A group nobody registered still behaves as a group. That is the safety
+    net under the register rather than a substitute for it: a rule can name a
+    group in an effect long before anything writes it down, and the answer to
+    "what does this unrecognised group do?" is what a group does.
+    """
+    if not group:
+        return {}
+    return groups(world_root).get(group) or dict(NEW_GROUP)
+
+
+def register_group(world_root, group, exclusive=None, ends_on_move=None):
+    """
+    Put a group in the world's register, or fold it onto one already there.
+
+    Returns the name actually in use, which may not be the one asked for --
+    and every caller must store what comes back, or the fold achieves nothing
+    and the world ends up with "openness" and "open_state" both half-working.
+
+    Only what is explicitly passed overrides what is already known, so
+    registering a group a second time to note a member does not silently
+    reset how it behaves.
+    """
+    group = re.sub(r"[^a-z0-9_]", "", str(group or "").lower().strip())
+    if not group:
+        return ""
+    if world_root is None:
+        return group
+
+    known = groups(world_root)
+    if group not in known:
+        for existing in known:
+            if _similar_group(group, existing):
+                group = existing
+                break
+
+    entry = dict(known.get(group) or NEW_GROUP)
+    if exclusive is not None:
+        entry["exclusive"] = bool(exclusive)
+    if ends_on_move is not None:
+        entry["ends_on_move"] = bool(ends_on_move)
+
+    stored = dict(world_root.db.state_groups or {})
+    if stored.get(group) != entry:
+        was_new = group not in known
+        stored[group] = entry
+        world_root.db.state_groups = stored
+        if was_new:
+            logger.log_info(
+                f"states: {world_root.key} learned group {group!r} "
+                f"({'exclusive' if entry['exclusive'] else 'loose'}"
+                f"{', ends on move' if entry['ends_on_move'] else ''})"
+            )
+    return group
+
+
 def group_of(world_root, slug):
-    """Which group a state belongs to, or None."""
+    """
+    Which group a state belongs to, or None.
+
+    The seed is consulted before what was declared, not after. A model naming
+    the group for "wet" is guessing at a question this file has already
+    answered, and the two answers disagreeing is worse than either.
+    """
+    seeded = DEFAULT_STATE_GROUP.get(slug)
+    if seeded:
+        return seeded
     entry = vocabulary(world_root).get(slug) or {}
     try:
-        declared = entry.get("group")
+        return entry.get("group") or None
     except AttributeError:
-        declared = None
-    return declared or DEFAULT_STATE_GROUP.get(slug)
+        return None
 
 
 def group_members(world_root, group):
@@ -399,7 +564,8 @@ def group_members(world_root, group):
     return known
 
 
-def register_state(world_root, slug, means="", conflicts=(), group=None):
+def register_state(world_root, slug, means="", conflicts=(), group=None,
+                   ends_on_move=None):
     """
     Add a state to the world's vocabulary, or fold it onto an existing one.
 
@@ -418,13 +584,105 @@ def register_state(world_root, slug, means="", conflicts=(), group=None):
         if _similar(slug, existing):
             return existing
 
+    # The group is registered before the state, so a state that names a new
+    # group leaves behind a group that behaves like one. A seeded slug keeps
+    # its seeded group whatever was declared -- see DEFAULT_STATE_GROUP.
+    seeded = DEFAULT_STATE_GROUP.get(slug)
+    if seeded:
+        group = register_group(world_root, seeded)
+    elif group:
+        group = register_group(world_root, group, ends_on_move=ends_on_move)
+
     vocab[slug] = {
         "means": means,
         "conflicts": [c for c in (conflicts or []) if c],
-        "group": group or DEFAULT_STATE_GROUP.get(slug, ""),
+        "group": group or "",
     }
     world_root.db.state_vocabulary = vocab
     return slug
+
+
+#: The category the state aliases are filed under, so they can be thrown away
+#: and rebuilt without touching the aliases something else put there -- an
+#: item conjured as a "Brass Orrery" answers to "astrolabe" because somebody
+#: asked for one, and that must survive the bottle being emptied.
+STATE_ALIAS = "state"
+
+
+def condition(obj, looker=None):
+    """
+    What is currently true of a thing, as a sentence, or "" if nothing is.
+
+    Says the slugs rather than what they mean, because these are also the
+    words the thing now answers to: a bottle that reads "It is empty" can be
+    taken with "get empty bottle", and one that read "It is drained dry"
+    could not. What you are shown and what you can type stay the same words.
+    """
+    current = sorted(states(obj))
+    if not current:
+        return ""
+    from evennia.utils.utils import iter_to_str
+
+    from world.quests import is_person
+
+    # People are named; things are "it". Every Evennia object carries an
+    # `account` attribute, so testing for one would call the bottle by name.
+    subject = "It"
+    if is_person(obj):
+        subject = obj.get_display_name(looker) if looker else obj.key
+    return f"{subject} is {iter_to_str(current)}."
+
+
+def state_aliases(state, key):
+    """
+    The names one state lets a thing answer to.
+
+    Three shapes, because there are three ways people type it. The state on
+    its own is "drop empty". With the head noun is "get empty bottle", which
+    is what anyone says who is not reading the full name off the screen. With
+    the whole name is the exact phrase, and the one this world's own fuzzy
+    matcher scores highest.
+    """
+    key = " ".join(str(key or "").split())
+    aliases = {state}
+    if key:
+        head = key.split()[-1]
+        aliases.add(f"{state} {head}")
+        aliases.add(f"{state} {key}")
+    return {a.lower() for a in aliases}
+
+
+def refresh_state_aliases(obj):
+    """
+    Rebuild the names a thing answers to on account of its condition.
+
+    Called wherever states change or a name does. Rebuilt wholesale rather
+    than patched, because a state that has just been removed must stop
+    matching: a bottle you have refilled should not still come when called
+    "empty bottle", or the world fills up with things answering to what they
+    used to be.
+    """
+    if obj is None:
+        return []
+
+    # Things only. People collect states faster than anything else -- damp,
+    # seated, tipsy, holding_hands, all at once -- and letting each one become
+    # a name would put a person into the running every time somebody reached
+    # for a wet rag. Their condition is still shown when they are looked at;
+    # it is only being addressable by it that does no good.
+    from world.quests import is_person
+
+    if is_person(obj):
+        obj.aliases.clear(category=STATE_ALIAS)
+        return []
+
+    obj.aliases.clear(category=STATE_ALIAS)
+    made = set()
+    for state in states(obj):
+        made |= state_aliases(state, obj.key)
+    for alias in sorted(made):
+        obj.aliases.add(alias, category=STATE_ALIAS)
+    return sorted(made)
 
 
 def apply_states(obj, add=(), remove=(), world_root=None):
@@ -447,11 +705,12 @@ def apply_states(obj, add=(), remove=(), world_root=None):
         # Everything in an exclusive group cancels everything else in it, so
         # sitting down ends standing whether or not anyone wrote that rule.
         group = group_of(world_root, slug)
-        if STATE_GROUPS.get(group, {}).get("exclusive"):
+        if group_rules(world_root, group).get("exclusive"):
             current -= (group_members(world_root, group) - {slug})
         current.add(slug)
 
     obj.db.states = sorted(current)
+    refresh_state_aliases(obj)
     return obj.db.states
 
 
@@ -471,11 +730,12 @@ def clear_on_move(obj, world_root=None):
         return []
     ending = {
         slug for slug in current
-        if STATE_GROUPS.get(group_of(world_root, slug), {}).get("ends_on_move")
+        if group_rules(world_root, group_of(world_root, slug)).get("ends_on_move")
     }
     if not ending:
         return sorted(current)
     obj.db.states = sorted(current - ending)
+    refresh_state_aliases(obj)
     return obj.db.states
 
 
@@ -483,34 +743,120 @@ def clear_on_move(obj, world_root=None):
 # Preconditions
 # ---------------------------------------------------------------------------
 
-def check(requirements, bound, actor):
+#: How many things to say are wrong at once. Every unmet requirement is worth
+#: knowing -- being told you need the key, then that the door is barred, then
+#: that your hands are full is three attempts to learn one thing -- but a rule
+#: with eight clauses would answer with a paragraph, so the tail is dropped.
+MAX_COMPLAINTS = 3
+
+
+def _cap(text):
+    """
+    Capitalise the first letter, leaving the rest alone.
+
+    `str.capitalize` lowercases everything after it, which turns a "Slate
+    Chalkboard" into a "Slate chalkboard". A leading colour code is stepped
+    over so the letter after it is the one raised.
+    """
+    text = str(text or "")
+    start = 2 if text[:1] == "|" and len(text) > 2 else 0
+    return text[:start] + text[start:start + 1].upper() + text[start + 1:]
+
+
+def _speak_of(obj, actor):
+    """(name, "is"/"are", "It"/"You") for saying something about a thing."""
+    if obj is actor:
+        return "you", "are", "You"
+    return obj.get_display_name(actor), "is", "It"
+
+
+def _as_quality(affordance):
+    """
+    An affordance as it fits into "X is not ___".
+
+    Almost every one a world invents is already an adjective -- readable,
+    sittable, breakable, flammable -- and the two that are not are things
+    rather than qualities, so they take an article instead.
+    """
+    word = str(affordance or "").replace("_", " ").strip()
+    if not word:
+        return ""
+    return word if word.endswith(("able", "ible")) else f"a {word}"
+
+
+def check(requirements, bound, actor, world_root=None):
     """
     Test a rule's preconditions. Returns None when met, else why not.
 
     requirements is {role: {"has": [affordance], "lacks": [state],
     "is": [state], "holds": [name]}} where role may also be "actor".
-    The message returned is shown to the player, so it says what is wrong in
-    the world's terms rather than the rule's.
+
+    The message is the point of this function as much as the verdict. It used
+    to say "X is not something you can do that to", which names neither what
+    was wanted nor what would have served -- so a player who tried to sit on a
+    bottle learned only that they could not, and an NPC told the same thing
+    asked for it again next turn. Every clause here now says which
+    requirement failed, and a missing affordance also says what the thing IS
+    good for, because that is the sentence that answers "then what can I do
+    with it?" without another attempt.
     """
+    complaints = []
+
+    def note(text):
+        if text and text not in complaints:
+            complaints.append(text)
+
     for role, needed in (requirements or {}).items():
         obj = actor if role == "actor" else bound.get(role)
         if obj is None:
-            return f"There is nothing here to do that {role and 'to' or ''}".strip() + "."
+            note("There is nothing here to do that to.")
+            continue
 
-        name = obj.get_display_name(actor) if obj is not actor else "you"
+        name, be, pronoun = _speak_of(obj, actor)
+        have = affordances(obj)
+        is_now = states(obj)
 
         for affordance in needed.get("has", []):
-            if affordance not in affordances(obj):
-                return f"{name.capitalize()} is not something you can do that to."
+            if affordance in have:
+                continue
+            quality = _as_quality(affordance)
+            said = f"{_cap(name)} {be} not {quality}."
+            # What it IS for. The hint the old message withheld: a bottle that
+            # cannot be sat on can still be drunk, broken and put things in.
+            if have:
+                from evennia.utils.utils import iter_to_str
+
+                # Qualities before things, so it reads "breakable, drinkable
+                # and a container" rather than opening on the odd one out.
+                qualities = sorted(_as_quality(a) for a in have)
+                qualities.sort(key=lambda q: q.startswith("a "))
+                said += f" {pronoun} {be} {iter_to_str(qualities)}."
+            note(said)
+
         for state in needed.get("is", []):
-            if state not in states(obj):
-                return f"{name.capitalize()} is not {state}."
+            if state in is_now:
+                continue
+            # The meaning as well as the word, because half these words the
+            # world invented for itself and "not charged" is only useful to
+            # somebody who knows what this world charges.
+            means = (vocabulary(world_root).get(state) or {}).get("means") \
+                if world_root is not None else ""
+            note(f"{_cap(name)} {be} not {state}"
+                 + (f" ({means})." if means else "."))
+
         for state in needed.get("lacks", []):
-            if state in states(obj):
-                return f"{name.capitalize()} is already {state}."
+            if state in is_now:
+                note(f"{_cap(name)} {be} already {state}.")
+
         for carried in needed.get("holds", []):
             if not any(carried.lower() in o.key.lower() for o in obj.contents):
-                return f"You would need {carried} for that."
+                # A rule writes the item as a bare noun phrase ("brass key"),
+                # which needs an article to be said aloud. Any it already has
+                # is dropped first, so "a brass key" does not become "the a
+                # brass key".
+                wanted = re.sub(r"^(?:an?|the|some)\s+", "", carried.strip(),
+                                flags=re.IGNORECASE)
+                note(f"{_cap(name)} {be} not holding the {wanted}.")
 
         # What is measurably true of a person, tested the same way as what is
         # true of a thing. This is what lets a rule say "you need 10 stamina
@@ -519,7 +865,8 @@ def check(requirements, bound, actor):
         if wanted_traits:
             from world import traits as traits_mod
 
-            complaint = traits_mod.meets(obj, wanted_traits)
-            if complaint:
-                return complaint
-    return None
+            note(traits_mod.meets(obj, wanted_traits))
+
+    if not complaints:
+        return None
+    return " ".join(complaints[:MAX_COMPLAINTS])

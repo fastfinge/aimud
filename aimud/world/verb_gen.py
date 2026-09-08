@@ -17,9 +17,9 @@ specific is stored on the specific thing, and neither is stored on the room.
 """
 
 import json
-import re
 import urllib.request
 
+from evennia.utils import logger
 from twisted.internet import threads
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -31,8 +31,9 @@ Respond with a single JSON object — no other text — matching:
   "valid": true,
   "reason": "if invalid, one sentence on why",
   "requires": {"<role>": {"has": ["affordance"], "is": ["state"], "lacks": ["state"], "holds": ["item name"], "trait": {"stamina": {"min": 10}}}},
+  "check": {"trait": "swordsmanship", "against": {"role": "direct", "trait": "swordsmanship"}},
   "effects": [ ... ],
-  "new_states": [{"slug": "burning", "means": "on fire", "group": "fire"}],
+  "new_states": [{"slug": "burning", "means": "on fire", "group": "fire", "group_ends_on_move": false}],
   "new_traits": [{"slug": "stamina", "name": "Stamina", "means": "how much effort is left in someone", "trait_type": "gauge", "base": 100, "min": 0}],
   "repeatable": true
 }
@@ -91,6 +92,37 @@ of something else -- pouring, posting, sheathing, burying.
 Prefer set_state over destroying and recreating things. Use an empty effects
 list for a verb that only produces a sensation.
 
+check is what makes a verb a gamble instead of a certainty, and is the one
+thing here that decides whether this is a game. Give a check ONLY when a
+capable person could plausibly fail and the failure would be interesting:
+fighting, forcing, climbing, sneaking, stealing, persuading, working a
+delicate craft under pressure. NEVER give one to a verb that simply works —
+reading a notice, opening an unlocked door, smelling bread, sitting down.
+Most verbs have no check at all; leave it out entirely for those.
+
+  trait      — the actor's figure that decides it. Reuse an existing one.
+  against    — for a contest against another person: the role they play and
+               the trait of theirs that opposes. Use this whenever the verb is
+               done TO somebody, so that a formidable opponent is genuinely
+               harder than a feeble one and the same rule covers both.
+  difficulty — a fixed number to beat instead, for a verb contested by the
+               world rather than by a person. 10 is even odds for someone
+               unpracticed, 15 is a real test, 20 is hard.
+
+When you give a check, "effects" MUST be an object keyed by outcome instead of
+a list:
+
+  "effects": {"success": [ ... ], "failure": [ ... ],
+              "critical_failure": [ ... ], "critical_success": [ ... ]}
+
+"failure" must not be empty. A failure that costs nothing means the player
+repeats the command until it works, which is worse than not rolling at all —
+so spend a gauge, take a wound, break the tool, drop the thing, make a noise
+somebody hears. "critical_failure" and "critical_success" are optional and
+fall back to "failure" and "success" when you leave them out.
+
+Without a check, "effects" stays a plain list and always happens, as before.
+
 new_states declares any state slug you used that may not exist yet: give its
 meaning, and its "group" if it belongs to one. Reuse the existing vocabulary
 when it already covers what you mean.
@@ -116,11 +148,32 @@ half the people they meet. If the register below already has a trait for what
 you mean, use that name exactly, even if you would have called it something
 better.
 
+{naming_rule}
 A group is a set of states only one of which can be true at once, so you do
-not have to list what a state cancels -- membership does it. "posture" holds
+not have to list what a state cancels -- membership does it. Give one whenever
+a state is one of a set that answers the same question: open and closed are an
+"openness", hot and cold a "temperature". That is the cheapest thing you can
+write, and without it a thing can be open and closed at the same moment.
+
+Add "group_ends_on_move": true only if standing up and walking away would end
+it, the way sitting down ends when you leave the room. Almost nothing does. "posture" holds
 seated, standing, lying, kneeling and the like, and ends when the character
 walks anywhere, so never write a rule that removes a posture on movement or
 requires the actor to not be standing before sitting; that is handled.
+
+Holding a thing in your hands is handled too, and is not a verb you define.
+The game knows what it means to wield, brandish or lower something, and tracks
+what each character has in hand. So never invent a "wielded", "equipped",
+"held" or "drawn" state and never write an effect that represents taking hold
+of something; if the verb you are given is only a way of saying "take this in
+hand", mark it invalid.
+
+Nor is a thing's own worth a verb's business. What a sword or a breastplate
+does for whoever has it is written on the item as a bonus and applies for
+exactly as long as they wear or hold it — so never write a rule where drawing
+a weapon or donning armour raises a trait, and never require the actor to be
+holding a particular thing in order to be good at something. That is already
+true of them while they hold it.
 
 Wearing is handled too, and is not a verb you define. The game already knows
 what it means to put a garment on, take it off, cover it or uncover it, and
@@ -151,7 +204,16 @@ entirely when this text is shown again later. Write a whole sentence, not a
 fragment: "{actor} unfolds a damp flyer and frowns at it." — not "unfolds a
 damp flyer".
 
-Both say what actually happened, including the outcome. Present tense."""
+Both say what actually happened, including the outcome. Present tense.
+
+You may be told the OUTCOME of the attempt. Write that outcome and no other.
+A failure must NOT quietly accomplish the thing anyway: if the swing missed,
+it missed, and the text says what went wrong instead. A critical failure went
+wrong and cost the actor something; a critical success went better than they
+had any right to expect. Say how close it was in the prose — a near miss and
+a hopeless one do not read alike — but never mention dice, rolls, chances,
+odds, numbers or traits, and never say the word "check". The character does
+not know they were measured; they know the blade turned on a rivet."""
 
 
 def _call_openrouter(api_key, model, messages):
@@ -172,13 +234,16 @@ def _call_openrouter(api_key, model, messages):
 
 
 def _parse_json_object(content):
-    try:
-        return json.loads(content) if isinstance(content, str) else content
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", content, re.DOTALL)
-        if not match:
-            raise ValueError(f"No JSON in model response: {content!r}")
-        return json.loads(match.group())
+    """
+    Parse a model response that should be a single JSON object.
+
+    Delegates to world.model_json, which repairs the near-misses models make
+    -- a trailing comma, a stray comment, an answer cut off mid-object --
+    rather than losing a whole generation over one character.
+    """
+    from world.model_json import parse_object
+
+    return parse_object(content)
 
 
 # ---------------------------------------------------------------------------
@@ -252,13 +317,28 @@ def _apply_renames(data, renames):
     if not renames:
         return data
 
-    for effect in data.get("effects") or []:
+    from world import checks
+
+    # Every branch, not only the successful one: a failure that costs stamina
+    # has to spend the same stamina everything else measures.
+    for effect in checks.every_effect(data.get("effects")):
         try:
             slug = effect.get("trait")
         except AttributeError:
             continue
         if slug in renames:
             effect["trait"] = renames[slug]
+
+    # The trait a check rolls has to be renamed too, or the verb would be
+    # contested by a figure nobody in this world has and every attempt would
+    # roll from zero.
+    check = data.get("check")
+    if isinstance(check, dict):
+        for holder in (check, check.get("against")):
+            if not isinstance(holder, dict):
+                continue
+            if holder.get("trait") in renames:
+                holder["trait"] = renames[holder["trait"]]
 
     for needed in (data.get("requires") or {}).values():
         try:
@@ -282,16 +362,26 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
         on_error(str(e))
         return
 
-    from world import traits, verbs
+    from world import checks, traits, verbs
 
     vocab = verbs.vocabulary(world_root)
+    # Each state is shown with the group it belongs to, and the groups are
+    # listed again on their own, because a group can only be reused if it can
+    # be seen. Left to guess, one rule called a group "power_state" and the
+    # next "charge_status" -- so a thing could be active and uncharged at the
+    # same moment, neither name knowing the other existed.
     vocab_text = "\n".join(
-        f"  {slug}: {info.get('means','')} (cancels: {', '.join(info.get('conflicts') or []) or 'nothing'})"
+        f"  {slug}: {info.get('means','')}"
+        f" (group: {verbs.group_of(world_root, slug) or 'none'};"
+        f" cancels: {', '.join(info.get('conflicts') or []) or 'nothing'})"
         for slug, info in sorted(vocab.items())
     ) or "  (none yet)"
+    group_text = ", ".join(sorted(verbs.groups(world_root))) or "(none yet)"
 
     messages = [
-        {"role": "system", "content": _RULE_SYSTEM},
+        {"role": "system",
+         "content": _RULE_SYSTEM.replace(
+             "{naming_rule}", verbs.naming_rule())},
         {
             "role": "user",
             "content": (
@@ -300,6 +390,8 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
                 f"Verb: {verb}\n\n"
                 f"Things involved:\n{_describe_objects(bound, actor)}\n\n"
                 f"State vocabulary already in use:\n{vocab_text}\n\n"
+                f"State groups already in use, to be reused rather than "
+                f"renamed: {group_text}\n\n"
                 f"{traits.vocabulary_block(world_root)}"
                 f"Define '{verb}' as a rule for objects like these."
             ),
@@ -316,6 +408,7 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
                     means=str(state.get("means", "")),
                     conflicts=[str(c) for c in state.get("conflicts", [])],
                     group=str(state.get("group", "")).strip().lower() or None,
+                    ends_on_move=state.get("group_ends_on_move"),
                 )
             # Registered before the rule is stored, so that a trait the rule
             # goes on to change is one the world knows about -- and so that
@@ -336,13 +429,24 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
                 if settled and settled != asked:
                     renames[asked] = settled
             data = _apply_renames(data, renames)
-            on_success({
+            rule = {
                 "valid": bool(data.get("valid", True)),
                 "reason": str(data.get("reason", "")).strip(),
                 "requires": data.get("requires") or {},
+                "check": checks.clean(data.get("check")),
                 "effects": data.get("effects") or [],
                 "repeatable": bool(data.get("repeatable", False)),
-            })
+            }
+            # A contest the player can lose for free is one they will simply
+            # retype until they win. Nothing is invented to fix it -- a
+            # penalty no rule asked for is a mechanic nobody wrote -- but a
+            # world quietly accumulating them is worth being able to find.
+            if checks.free_to_fail(rule):
+                logger.log_info(
+                    f"verb rule {verb!r} is contested but failing it costs "
+                    f"nothing; players can retry it for free"
+                )
+            on_success(rule)
         except Exception as exc:
             on_error(str(exc))
 
@@ -351,8 +455,17 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
     ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
 
 
-def narrate(account, verb, bound, actor, raw, on_success, on_error):
-    """Async. Describe this action on these particular objects."""
+def narrate(account, verb, bound, actor, raw, on_success, on_error, result=None):
+    """
+    Async. Describe this action on these particular objects.
+
+    `result` is the roll, when the verb was contested, and decides what the
+    text has to say happened. The caller files the answer under that outcome,
+    so one lock keeps a description of being picked and a separate one of
+    being snapped off in the barrel.
+    """
+    from world import checks
+
     model = account.model_for("commands")
     try:
         api_key = account.get_openrouter_key()
@@ -360,6 +473,7 @@ def narrate(account, verb, bound, actor, raw, on_success, on_error):
         on_error(str(e))
         return
 
+    hint = checks.narration_hint(result)
     messages = [
         {"role": "system", "content": _NARRATION_SYSTEM},
         {
@@ -367,7 +481,8 @@ def narrate(account, verb, bound, actor, raw, on_success, on_error):
             "content": (
                 f"Action: '{raw}' (verb: {verb})\n\n"
                 f"Things involved:\n{_describe_objects(bound, actor)}\n\n"
-                f"Narrate the result."
+                + (f"Outcome: {hint}\n\n" if hint else "")
+                + "Narrate the result."
             ),
         },
     ]

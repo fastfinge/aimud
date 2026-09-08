@@ -22,6 +22,24 @@ class ObjectParent:
 
     """
 
+    def get_display_desc(self, looker, **kwargs):
+        """
+        What a look shows: the thing as written, then how it is right now.
+
+        The description is fixed when the thing is made and cannot know that
+        the bottle has since been drunk, so the condition is read off the
+        states and added underneath rather than written into the text. That
+        also lets a thing be several things at once -- empty and sticky and
+        scorched -- which is exactly what a name has no room for.
+        """
+        from world import verbs
+
+        base = super().get_display_desc(looker, **kwargs) or ""
+        line = verbs.condition(self, looker)
+        if not line:
+            return base
+        return f"{base}\n\n{line}" if base.strip() else line
+
     def get_display_things(self, looker, **kwargs):
         """
         What is on, in, under or behind this thing when you look at it.
@@ -53,11 +71,39 @@ class ObjectParent:
         relations.displace(self)
 
     def at_drop(self, dropper, **kwargs):
-        """Put down on the floor: likewise."""
+        """Put down on the floor: likewise, and out of the hand that held it."""
         super().at_drop(dropper, **kwargs)
-        from world import relations
+        from world import gear, relations
 
         relations.displace(self)
+        gear.release(self, dropper)
+
+    def at_object_receive(self, moved_obj, source_location, **kwargs):
+        """
+        Something arrived. If it is worth anything to us, it is now.
+
+        Every way a thing can change hands ends up here -- taken, given, put
+        there by an effect -- which is why the total is recomputed from what
+        is actually present rather than adjusted at each of those call sites.
+        """
+        super().at_object_receive(moved_obj, source_location, **kwargs)
+        from world import gear
+
+        gear.recompute(self)
+
+    def at_object_leave(self, moved_obj, target_location, **kwargs):
+        """
+        Something is going. Stop counting it before it does.
+
+        Evennia announces a departure before it happens, so the item is still
+        in `contents` when we are told -- hence `ignoring`, rather than a
+        recount that would still find what is halfway out the door.
+        """
+        super().at_object_leave(moved_obj, target_location, **kwargs)
+        from world import gear
+
+        gear.release(moved_obj)
+        gear.recompute(self, ignoring=moved_obj)
 
 
 class Object(ObjectParent, DefaultObject):

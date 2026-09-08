@@ -119,7 +119,8 @@ Respond with a single JSON object — no other text — matching:
 {
   "items": [
     {"name": "item name", "description": "1-2 sentences", "takeable": true,
-     "affordances": ["readable"], "states": [], "clothing_type": ""}
+     "affordances": ["readable"], "states": [], "clothing_type": "",
+     "trait_bonuses": {}, "bonus_when": ""}
   ],
   "wants_npc": <true or false>
 }
@@ -135,6 +136,8 @@ go ON it -- a table, a shelf, a counter, a desk. Many things are both.)
 breakable, wieldable, and so on. They decide which verbs work on it, so give
 every one that genuinely applies. states are conditions currently true of it
 (dusty, wet, broken), usually empty.
+
+{naming_rule}
 
 clothing_type goes with "wearable" and says what kind of garment it is: hat,
 jewelry, top, undershirt, gloves, fullbody, bottom, underpants, socks, shoes,
@@ -180,14 +183,16 @@ def _call_openrouter(api_key, model, messages):
 # ---------------------------------------------------------------------------
 
 def _parse_json_object(content):
-    """Parse a model response that should be a single JSON object."""
-    try:
-        return json.loads(content) if isinstance(content, str) else content
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", content, re.DOTALL)
-        if not match:
-            raise ValueError(f"No JSON in model response: {content!r}")
-        return json.loads(match.group())
+    """
+    Parse a model response that should be a single JSON object.
+
+    Delegates to world.model_json, which repairs the near-misses models make
+    -- a trailing comma, a stray comment, an answer cut off mid-object --
+    rather than losing a whole generation over one character.
+    """
+    from world.model_json import parse_object
+
+    return parse_object(content)
 
 
 # ---------------------------------------------------------------------------
@@ -819,10 +824,12 @@ def populate_room(account, room):
         return
     model = account.model_for("contents", "items")
 
-    from world import lore
+    from world import gear, lore, verbs
 
     messages = [
-        {"role": "system", "content": _CONTENTS_SYSTEM_PROMPT},
+        {"role": "system",
+         "content": _CONTENTS_SYSTEM_PROMPT.replace(
+             "{naming_rule}", verbs.naming_rule())},
         {
             "role": "user",
             "content": (
@@ -832,6 +839,7 @@ def populate_room(account, room):
                 f"Kind: {room.db.room_type or 'unspecified'} "
                 f"({room.db.room_category or 'unspecified'})\n\n"
                 f"Description: {room.db.desc}\n\n"
+                f"{gear.prompt_block(room.db.world_root)}"
                 f"What loose items are here?"
             ),
         },

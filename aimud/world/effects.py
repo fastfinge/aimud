@@ -108,7 +108,13 @@ def _apply_one(actor, room, effect, bound, world_root):
         if _protected(obj, room):
             return None
         label = obj.get_numbered_name(1, None, return_string=True)
+        holder = obj.location
         obj.delete()
+        # A shattered shield protects nobody. Deletion is not a move, so the
+        # hooks that keep gear honest do not fire for it.
+        from world import gear
+
+        gear.recompute(holder)
         return f"{label.capitalize()} is gone."
 
     if etype == "move_object":
@@ -155,6 +161,10 @@ def _apply_one(actor, room, effect, bound, world_root):
             obj.db.affordances = sorted(
                 {str(a).lower().strip() for a in effect["affordances"] if a}
             )
+        if effect.get("new_name"):
+            # The aliases its condition earns it spell out its name, so they
+            # are stale the moment the name changes.
+            verbs.refresh_state_aliases(obj)
         if changed:
             # Narrations were written about what this object was. A charred
             # stub is not the candle whose description was cached, so the
