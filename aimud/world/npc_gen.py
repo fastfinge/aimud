@@ -264,18 +264,28 @@ NPC_TOOLS = [
         "type": "function",
         "function": {
             "name": "create",
-            "description": "Create a new object in the room.",
+            "description": (
+                "Make real something this room already implies but that "
+                "nothing in the game has yet -- the notice board the "
+                "description mentions, the row of hooks by the door, the "
+                "bottle behind the bar. Name it; the world decides whether "
+                "it belongs here and works out what it is, so it comes back "
+                "as a thing that can actually be handled rather than a name "
+                "on nothing. This is not for furnishing: something nobody "
+                "has any reason to reach for is better left unmade."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string"},
-                    "description": {"type": "string"},
-                    "takeable": {
-                        "type": "boolean",
-                        "description": "Whether the object can be picked up by players",
+                    "name": {
+                        "type": "string",
+                        "description": (
+                            "What it is called, as you would name it: "
+                            "'notice board', 'brass hooks'"
+                        ),
                     },
                 },
-                "required": ["name", "description"],
+                "required": ["name"],
             },
         },
     },

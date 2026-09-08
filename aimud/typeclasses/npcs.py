@@ -928,6 +928,46 @@ class NPC(ObjectParent, DefaultObject):
         attempt(self, action, account, deliver, allow_effects=allowed,
                 fuzzy=True)
 
+    def _conjure(self, name, room):
+        """
+        Make real something this room already implies.
+
+        Through the same pipeline a player's reach for a described fixture
+        goes through: does something here already answer to a near-enough
+        name, is one already being made, could it be here at all, and only
+        then what it is.
+
+        This used to call create_object directly and ask nothing. What it
+        made had no affordances and no states, so no verb rule could ever
+        match it -- the character produced a thing and then nobody, itself
+        included, could do anything with it. Anything already here under a
+        near name is used instead of a second one being made beside it.
+        """
+        if not name:
+            return
+        account = self._find_account(room)
+        if not account:
+            return
+
+        from world.item_gen import conjure
+
+        def ready(obj, created):
+            if not created:
+                # Already here. Worth knowing, and worth not announcing: a
+                # character that says it produced the thing it just found is
+                # telling the room something that did not happen.
+                self._note_to_self(
+                    f"{obj.get_display_name(self)} is already here")
+                return
+            said = f"{self.key} produces {obj.get_display_name(self)}."
+            room.msg_contents(said)
+            self._add_to_history("action", self.key, said)
+            self._notify_other_npcs(room, "action", said, 0)
+
+        conjure(self, room, account, name, ready,
+                lambda message: self._note_to_self(_as_noticed(message)),
+                fuzzy=True)
+
     def _execute_one(self, tool_name, args, room, _depth=0):
         from commands.look_take_cmds import _find_one
 
@@ -999,19 +1039,7 @@ class NPC(ObjectParent, DefaultObject):
                         )
 
         elif tool_name == "create":
-            from evennia import create_object
-            from typeclasses.objects import Object
-            name = str(args.get("name", "")).strip()
-            description = str(args.get("description", "")).strip()
-            takeable = bool(args.get("takeable", True))
-            if name:
-                obj = create_object(Object, key=name, location=room)
-                obj.db.desc = description
-                obj.db.ai_takeable = takeable
-                obj.db.is_ai_item = True
-                room.msg_contents(
-                    f"{self.key} produces {obj.get_display_name(self)}."
-                )
+            self._conjure(str(args.get("name", "")).strip(), room)
 
         elif tool_name == "destroy":
             # Routed through the effect layer so the same guards apply as to a
