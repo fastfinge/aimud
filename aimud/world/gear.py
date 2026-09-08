@@ -50,7 +50,13 @@ WIELDABLE = "wieldable"
 WIELD_LIMIT = 2
 
 #: The verbs this module owns, when the noun really is something to wield.
-VERBS = ("wield", "unwield")
+#:
+#: "hold" is here because it means both things at once and only one of them is
+#: a mechanic. Holding a sword is wielding it; holding somebody's hand is not,
+#: and `handle` below tells them apart by the noun rather than the verb -- a
+#: person is not wieldable, so that attempt declines and goes on to be learned
+#: as the social verb it is.
+VERBS = ("wield", "unwield", "hold")
 
 
 def prompt_block(world_root):
