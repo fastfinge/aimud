@@ -766,23 +766,53 @@ class NPC(ObjectParent, DefaultObject):
         if not action:
             self._give_up_eventually(goal, world_root)
             return False
-        self.db.goal_stalls = 0
 
         from world.worldgen import canonical_direction
 
         if canonical_direction(action):
-            # The step is a way out; walking is not a verb attempt.
+            # The step is a way out; walking is not a verb attempt, and
+            # arriving somewhere else is progress in its own right.
+            self.db.goal_stalls = 0
             return self._walk(action, room)
 
+        # A step counts against the goal the moment it is dispatched, and the
+        # count is cleared below only when one actually brings its condition
+        # about.
+        #
+        # It used to be cleared here, on the strength of the planner having
+        # found anything at all to try. But a verb the world has already
+        # settled as invalid -- "the engine already handles giving items" --
+        # is refused with a reason that goes only to this character's own
+        # working memory and nothing at all to the room. The planner offers
+        # the same step again next turn, because nothing about the world
+        # changed, and the count went back to zero for having tried. So the
+        # goal was never given up on, `_give_up_eventually` never fired, and
+        # every idle turn ended here -- never reaching the dialogue model
+        # below, which is the only thing that would have had the character say
+        # something instead. From outside the room it looks exactly like an
+        # NPC that has stopped working, and nothing is written down anywhere.
+        if goal:
+            self._give_up_eventually(goal, world_root)
+            if not self.db.goal:
+                # That was the last straw. There is nothing to work at now, so
+                # let the caller go on and give this character its own turn.
+                return False
+
+        def _judge():
+            # Progress is the condition being true afterwards, not the attempt
+            # having been made. Anything less leaves the count where it is, so
+            # a step that achieves nothing is spent rather than free.
+            from world import goals as _goals
+
+            check_outcome(self, world_root, condition, rule_key)
+            if condition and _goals._test(condition, self, world_root)[0]:
+                self.db.goal_stalls = 0
+
         # Judged when the attempt is finished, not when it is started. A verb
-        # the world has never seen goes to a model to be learned, so the line
-        # after this one used to run before the rule existed, let alone did
-        # anything -- and every newly learned rule collected a failure it had
-        # not earned.
-        self._attempt_verb(
-            action, room,
-            on_done=lambda: check_outcome(self, world_root, condition, rule_key),
-        )
+        # the world has never seen goes to a model to be learned, so this used
+        # to run before the rule existed, let alone did anything -- and every
+        # newly learned rule collected a failure it had not earned.
+        self._attempt_verb(action, room, on_done=_judge)
         return True
 
     def _give_up_eventually(self, goal, world_root):
