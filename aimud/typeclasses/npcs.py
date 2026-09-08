@@ -420,8 +420,21 @@ class NPC(ObjectParent, DefaultObject):
             on_error=self._on_react_error,
         )
 
-    def _on_react_error(self, _err):
+    def _on_react_error(self, err):
+        """
+        A model call that failed, and the one place anybody could hear about it.
+
+        Nothing is said to the room: a character that cannot think should go
+        quiet, not announce that it could not think. But swallowing the reason
+        entirely makes every cause look the same from the outside -- a retired
+        model id, a rejected key, a provider that timed out -- and the symptom
+        they share is a world where nothing happens and nothing is written
+        down. It goes to the log, which is where the answer should have been.
+        """
+        from evennia.utils import logger
+
         self.ndb.reacting = False
+        logger.log_info(f"{self.key}: no reaction; the model call failed: {err}")
 
     def _find_account(self, room):
         """Return an account with an API key — prefer players currently in the room."""
