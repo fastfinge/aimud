@@ -159,7 +159,7 @@ NPC_TOOLS = [
                 "properties": {
                     "person": {
                         "type": "string",
-                        "description": "Who to size up. Leave empty for yourself.",
+                        "description": "Which of the people here to size up.",
                     },
                 },
                 "required": [],
@@ -760,27 +760,144 @@ def _want_line(npc):
     )
 
 
+#: Which tool arguments have to name something already here, and where the
+#: names come from. Anything not listed stays free text on purpose: `attempt`
+#: and `create` are how a thing the room only describes becomes real, and a
+#: closed list would be exactly the wrong shape for either.
+_TOOL_CHOICES = {
+    "move":         {"direction": "exits"},
+    "get":          {"object_name": "objects"},
+    "give":         {"object_name": "carried", "recipient": "people"},
+    "check_traits": {"person": "people"},
+    "destroy":      {"object_name": "reachable"},
+    "modify":       {"object_name": "reachable"},
+}
+
+
+def _distinct(names):
+    """
+    Names in the order first seen, blanks and repeats dropped.
+
+    Three brass tuning forks on one floor are three identical rows in a list
+    somebody has to choose from, and every one of them means the same thing.
+    """
+    seen, kept = set(), []
+    for name in names:
+        name = str(name or "").strip()
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            kept.append(name)
+    return kept
+
+
+def _nameable(npc, room):
+    """
+    What is here, under the names anything looking for them will accept.
+
+    People are named the way the rest of the prompt names them. That is safe
+    because setting a world name adds it as an alias, so the name a character
+    is known by finds them again -- "Samuel" reaches the character whose key
+    is something else entirely.
+    """
+    from evennia.objects.objects import DefaultCharacter
+
+    people, objects, exits = [], [], []
+    for obj in (room.contents if room else ()):
+        if obj is npc:
+            continue
+        if getattr(obj, "destination", None) is not None:
+            exits.append(obj.key)
+        elif obj.db.is_npc or isinstance(obj, DefaultCharacter):
+            people.append(obj.get_display_name(npc))
+        else:
+            objects.append(obj.key)
+
+    # What it is wearing is not what it can hand over.
+    carried = [obj.key for obj in npc.contents if not obj.db.worn]
+
+    here = {
+        "people": _distinct(people),
+        "objects": _distinct(objects),
+        "exits": _distinct(exits),
+        "carried": _distinct(carried),
+    }
+    here["reachable"] = _distinct(here["objects"] + here["carried"])
+    return here
+
+
 def _tools_for(npc, room):
     """
-    The tools this character may use at this moment.
+    The tools this character may use at this moment, and what they may name.
 
     A tool that cannot be used is worse than a missing one: offered every
     turn, it gets chosen every turn and refused every turn. Both quest tools
     are usable only in one specific situation, so they are only offered in
     it -- which is most of why players were being buried in requests, and why
     the world read as though it revolved around them.
+
+    The same reasoning runs down into the arguments. A parameter typed only
+    as a string is a blank filled from prose read further up the prompt, and
+    it gets filled with whatever was remembered: an object somebody else is
+    carrying, an exit from the room before this one. Nothing said so. `get`
+    looked the name up, missed, and returned without a word to anybody --
+    the character had taken its turn and visibly done nothing.
+
+    So every argument that must name something already here is given the
+    list of what that is, and a tool whose list would be empty is dropped
+    beside the situational ones. Naming a thing that is not there stops
+    being a silent miss and becomes impossible.
+
+    What is deliberately NOT listed: `attempt` and `create`. Those are how
+    something the room merely describes becomes real, and a closed list is
+    the one thing that would take that away.
     """
     from world import quests
 
-    drop = set()
-    if quests.offered_to(npc) is None:
-        drop.add("answer_quest")
-    if not quests.candidates(room, exclude=npc):
-        drop.add("offer_quest")
-    if not drop:
-        return NPC_TOOLS
-    return [tool for tool in NPC_TOOLS if tool["function"]["name"] not in drop]
+    here = _nameable(npc, room)
+    askable = _distinct(person.get_display_name(npc)
+                        for person in quests.candidates(room, exclude=npc))
 
+    offered = []
+    for tool in NPC_TOOLS:
+        name = tool["function"]["name"]
+
+        if name == "answer_quest":
+            if quests.offered_to(npc) is None:
+                continue
+            offered.append(tool)
+            continue
+
+        if name == "offer_quest":
+            if not askable:
+                continue
+            offered.append(_with_choices(tool, {"person": askable}))
+            continue
+
+        wanted = _TOOL_CHOICES.get(name)
+        if not wanted:
+            offered.append(tool)
+            continue
+
+        choices = {argument: here.get(source) or []
+                   for argument, source in wanted.items()}
+        # Every one of them, not any: `give` with something to give and
+        # nobody to give it to is as useless as `give` with neither.
+        if not all(choices.values()):
+            continue
+        offered.append(_with_choices(tool, choices))
+
+    return offered
+
+
+def _with_choices(tool, choices):
+    """A copy of `tool` whose named arguments are closed to these values."""
+    from copy import deepcopy
+
+    tool = deepcopy(tool)
+    properties = tool["function"]["parameters"]["properties"]
+    for argument, values in choices.items():
+        properties[argument]["enum"] = list(values)
+    return tool
 
 def _known_verbs(room):
     """
