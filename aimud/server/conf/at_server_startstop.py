@@ -30,6 +30,7 @@ def at_server_start():
     This is called every time the server starts up, regardless of
     how it was shut down.
     """
+    _collect_orphan_rows()
     _start_npc_idle_scripts()
     _place_unmapped_worlds()
     _ensure_quest_deadline_script()
@@ -58,6 +59,26 @@ def at_server_start():
     # often than the sleep interval would otherwise never consolidate at all,
     # and unconsolidated memories are the ones that get deleted.
     consolidate()
+
+
+def _collect_orphan_rows():
+    """
+    Delete the tag and attribute rows left behind by deleted things.
+
+    First, before anything else here has had a chance to make one: a tag is
+    created and then attached, and a sweep that runs while something else is
+    between those two steps would delete a row that is about to be used. See
+    world.housekeeping.
+    """
+    from evennia.utils import logger
+    from world.housekeeping import collect_orphans
+
+    tags, attributes = collect_orphans()
+    if tags or attributes:
+        logger.log_info(
+            f"housekeeping: cleared {tags} tag row(s) and {attributes} "
+            f"attribute row(s) that nothing refers to"
+        )
 
 
 def _ensure_memory_sleep_script():
