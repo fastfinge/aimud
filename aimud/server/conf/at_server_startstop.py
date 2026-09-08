@@ -33,12 +33,52 @@ def at_server_start():
     _start_npc_idle_scripts()
     _place_unmapped_worlds()
     _ensure_quest_deadline_script()
+    _ensure_memory_sleep_script()
+
+    from world.memory import consolidate, sweep_orphans, warm_up
+
+    # Sweep first, before anything has opened a bank. A bank is a directory of
+    # SQLite files, and an open file cannot be deleted on Windows -- so this is
+    # the one moment in a server's life when every dead character's memories
+    # are certain to come away cleanly.
+    stranded = sweep_orphans()
+    if stranded:
+        from evennia.utils import logger
+
+        logger.log_info(
+            f"memory: {len(stranded)} bank(s) belong to characters that no "
+            f"longer exist; clearing them up"
+        )
 
     # Load the memory backend off the reactor now, rather than making the
     # first remembered event wait seconds for the embedding stack to import.
-    from world.memory import warm_up
-
     warm_up()
+
+    # Worth doing once a run as well as on the clock: a server restarted more
+    # often than the sleep interval would otherwise never consolidate at all,
+    # and unconsolidated memories are the ones that get deleted.
+    consolidate()
+
+
+def _ensure_memory_sleep_script():
+    """
+    Make sure the one global consolidation clock is running.
+
+    Without it, memories that are never consolidated are deleted once they
+    pass mnemosyne's retention window. See MemorySleepScript.
+    """
+    from evennia import ScriptDB, create_script
+    from evennia.utils import logger
+
+    existing = ScriptDB.objects.filter(db_key="memory_sleep")
+    running = [s for s in existing if s.db_is_active and s.interval > 0]
+    if running:
+        return
+    for stale in existing:
+        stale.stop()
+        stale.delete()
+    create_script("typeclasses.scripts.MemorySleepScript")
+    logger.log_info("Started the memory consolidation clock.")
 
 
 def _ensure_quest_deadline_script():

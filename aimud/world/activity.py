@@ -94,6 +94,45 @@ def world_has_active_player(world_root):
     return False
 
 
+#: How long the game must have been quiet before heavy background work runs.
+#:
+#: Longer than IDLE_LIMIT on purpose. A player who has stopped typing for five
+#: minutes has stopped being an audience, which is reason enough to let the
+#: NPCs around them go still -- but it is not reason to start a job that will
+#: hold the memory lock and run a model over every character in the game. That
+#: waits until somebody has plainly put the game down.
+QUIET_FOR_HEAVY_WORK = 900
+
+
+def quiet_seconds():
+    """
+    How long since anybody last typed anything, across every session.
+
+    Returns a very large number when nobody is connected at all, which is the
+    quietest the game ever gets and should count as such.
+    """
+    from evennia.server.sessionhandler import SESSIONS
+
+    sessions = SESSIONS.get_sessions()
+    if not sessions:
+        return float("inf")
+    return time.time() - max(
+        session.cmd_last_visible for session in sessions
+    )
+
+
+def quiet_enough_for_heavy_work(threshold=None):
+    """
+    True when background work may run without anybody noticing the pause.
+
+    This is a single-player game: there is no moment that is convenient for
+    everyone, only a moment that is convenient for the one person playing. So
+    the question is simply whether they are still at the keyboard.
+    """
+    limit = QUIET_FOR_HEAVY_WORK if threshold is None else threshold
+    return quiet_seconds() >= limit
+
+
 def note_player_nearby(npc, now=None):
     """Record that an active player is with this NPC right now."""
     now = now or time.time()
