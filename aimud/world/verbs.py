@@ -861,6 +861,29 @@ MAX_COMPLAINTS = 3
 _LISTED = ("has", "is", "lacks", "holds")
 
 
+def _listed(value):
+    """
+    True for something that behaves like a list of names.
+
+    Not `isinstance(value, (list, tuple))`. Everything read back out of an
+    Evennia attribute is a _SaverList, which is a MutableSequence and NOT a
+    list subclass -- so a concrete test misses every clause a world has
+    actually stored, and the value falls through to str() below. That turned
+    ["drinkable"] into the single condition "['drinkable']", which nothing
+    is and nothing can ever be, so every rule with any precondition at all
+    was unsatisfiable and players were told they were "not a ['drinkable']".
+
+    The same trap as checks._mapping, which is where this was learned the
+    first time. Stored data was never the problem in either case; reading it
+    was.
+
+    A mapping is excluded deliberately: it has __iter__ too, and iterating
+    one yields its keys, which are not the names anybody meant.
+    """
+    return (hasattr(value, "__iter__")
+            and not isinstance(value, (str, bytes))
+            and not hasattr(value, "items"))
+
 def _named(value):
     """
     Every name a requirement clause holds, however it was written.
@@ -874,7 +897,7 @@ def _named(value):
         return []
     if isinstance(value, str):
         return [value] if value.strip() else []
-    if isinstance(value, (list, tuple, set, frozenset)):
+    if _listed(value):
         found = []
         for item in value:
             found.extend(_named(item))
