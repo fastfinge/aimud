@@ -37,6 +37,7 @@ from commands.unknown_cmd import CmdAIUnknown
 from commands.world_cmds import (
     CmdNPCGen,
     CmdWorldEdit,
+    CmdWorldMode,
     CmdWorldOpen,
     CmdWorldRemove,
     CmdWorldReset,
@@ -82,6 +83,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdWorldReset())
         self.add(CmdWorldEdit())
         self.add(CmdMemoryMaintenance())
+        self.add(CmdWorldMode())
         self.add(CmdWorldOpen())
         self.add(CmdZones())
         self.add(CmdNPCGen())

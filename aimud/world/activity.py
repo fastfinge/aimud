@@ -19,6 +19,12 @@ everything that wakes an NPC goes through them so they cannot disagree:
 
 Idle is measured with `cmd_last_visible`, the same field Evennia's own `who`
 uses, so keepalives and other invisible traffic do not count as activity.
+
+The second and third rules have a release: a world put into `always` mode
+keeps thinking wherever its player is standing and however long since they
+typed. The first does not, and cannot -- a world with nobody logged in goes
+back to normal on its own, because that brake is the one stopping an
+unattended game spending money forever.
 """
 
 import time
@@ -147,6 +153,82 @@ def recently_near_player(npc):
     return (time.time() - last) < NEAR_PLAYER_WINDOW
 
 
+# ---------------------------------------------------------------------------
+# What a world does about all of that
+# ---------------------------------------------------------------------------
+
+#: normal -- every rule above applies. A world thinks while it is watched.
+#: always -- the world keeps thinking as long as anybody is logged in, wherever
+#:           they are standing and however long since they last typed. Both
+#:           brakes come off: the idle limit and the near-a-player window.
+NORMAL = "normal"
+ALWAYS = "always"
+MODES = (NORMAL, ALWAYS)
+
+
+def anybody_logged_in():
+    """True while at least one session is connected and logged in."""
+    from evennia.server.sessionhandler import SESSIONS
+
+    return bool(SESSIONS.get_sessions())
+
+
+def mode(world_root):
+    """This world's mode. A world with no say in the matter runs normally."""
+    if world_root is None:
+        return NORMAL
+    stored = str(world_root.db.world_mode or NORMAL).strip().lower()
+    return stored if stored in MODES else NORMAL
+
+
+def set_mode(world_root, wanted):
+    """Put a world into a mode. Returns the mode it is in afterwards."""
+    if world_root is None:
+        return NORMAL
+    wanted = str(wanted or "").strip().lower()
+    if wanted not in MODES:
+        return mode(world_root)
+    world_root.db.world_mode = wanted
+    return wanted
+
+
+def normalise_unwatched():
+    """
+    Put every world back to normal, because nobody is logged in to watch.
+
+    `always` is the one setting here that can spend money with nobody in the
+    room, so it is not allowed to outlive the session that asked for it.
+
+    The flag lives on the world and survives a restart, which is exactly why
+    this is checked rather than left to a disconnect hook: a crash, a reload
+    or a dropped connection would otherwise leave a world talking to itself
+    all night. Called at server start, and again by the gate below the moment
+    a world in always is asked to act with nobody there.
+
+    Returns the worlds it changed.
+    """
+    from evennia.objects.models import ObjectDB
+
+    changed = []
+    for root in ObjectDB.objects.get_by_attribute(key="world_mode",
+                                                  value=ALWAYS):
+        root.db.world_mode = NORMAL
+        changed.append(root)
+    return changed
+
+
+def always_on(world_root):
+    """
+    True when this world runs regardless of who is watching -- and somebody
+    is still logged in to have asked it to.
+    """
+    if mode(world_root) != ALWAYS:
+        return False
+    if anybody_logged_in():
+        return True
+    normalise_unwatched()
+    return False
+
 def npc_may_act(npc):
     """
     The single question every NPC wake-up has to pass.
@@ -158,7 +240,19 @@ def npc_may_act(npc):
     room = npc.location
     if room is None:
         return False
-    if not world_has_active_player(room.db.world_root):
+
+    world_root = room.db.world_root
+
+    # A world set to always skips both brakes at once: how long since anybody
+    # typed, and whether anybody is anywhere near this character. The window
+    # is still stamped, so that turning the mode off afterwards leaves
+    # everybody live for the usual few minutes and the world winds down
+    # rather than stopping mid-sentence.
+    if always_on(world_root):
+        note_player_nearby(npc)
+        return True
+
+    if not world_has_active_player(world_root):
         return False
     if active_players_in(room):
         note_player_nearby(npc)
