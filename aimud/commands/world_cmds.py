@@ -607,6 +607,96 @@ class CmdZones(Command):
         return "\n".join(out)
 
 
+class CmdWorldMode(Command):
+    """
+    Whether this world thinks only when watched, or all the time.
+
+    Usage:
+      worldmode
+      worldmode normal
+      worldmode always
+
+    |wnormal|n is how a world runs by default, and it is careful with your
+    money. Characters act while somebody is in the room with them, keep going
+    for a few minutes after that somebody leaves, and go still altogether once
+    five minutes pass with nobody typing. A world nobody is watching thinks
+    nothing and costs nothing.
+
+    |walways|n takes both of those off. Every character in this world acts on
+    every turn, wherever you are standing and however long since you last
+    typed -- so the far side of the map goes on living while you are on this
+    side of it, and a room you have never visited is busy before you arrive.
+
+    That is what it is for, and it is not free: every character acting is a
+    model call, and in |walways|n they all act, all the time, whether or not
+    anything you see is affected by it. Turn it on to watch a world run;
+    leave it on and it will run up a bill while you make a sandwich.
+
+    It puts itself away. The moment the last player logs out, every world
+    goes back to |wnormal|n -- checked at server start as well, so a crash or
+    a dropped connection cannot leave a world talking to itself all night.
+    Nothing switches it back on by itself; that is always your decision.
+    """
+
+    key = "worldmode"
+    locks = "cmd:all()"
+    help_category = "World"
+
+    def func(self):
+        from world import activity
+
+        root = _current_world_root(self.caller)
+        if root is None:
+            self.caller.msg("You are not in a generated world.")
+            return
+
+        name = lore.title(root)
+        wanted = self.args.strip().lower()
+
+        if not wanted:
+            self.caller.msg(self._standing(activity, root, name))
+            return
+
+        if wanted not in activity.MODES:
+            self.caller.msg(
+                f"There is no |w{wanted}|n mode. Choose |wnormal|n or "
+                f"|walways|n, or type |wworldmode|n on its own to see which "
+                f"one |w{name}|n is in."
+            )
+            return
+
+        was = activity.mode(root)
+        if wanted == was:
+            self.caller.msg(self._standing(activity, root, name))
+            return
+
+        activity.set_mode(root, wanted)
+        if wanted == activity.ALWAYS:
+            self.caller.msg(
+                f"|w{name}|n is now running |walways|n. Everybody in it acts "
+                f"from now on, wherever you are and whether or not you are "
+                f"typing. It costs a model call every time any of them does, "
+                f"so put it back to |wnormal|n when you have seen enough -- "
+                f"and it does that itself when you log out."
+            )
+        else:
+            self.caller.msg(
+                f"|w{name}|n is back to |wnormal|n. Characters you have just "
+                f"been with stay live for a few more minutes, and then the "
+                f"world goes quiet until you are watching it again."
+            )
+
+    def _standing(self, activity, root, name):
+        """How the world is running now, said plainly."""
+        if activity.mode(root) == activity.ALWAYS:
+            return (f"|w{name}|n is running |walways|n: everybody in it acts "
+                    f"on every turn, watched or not. Type |wworldmode "
+                    f"normal|n to stop that.")
+        return (f"|w{name}|n is running |wnormal|n: characters act while you "
+                f"are with them and for a few minutes after, and the world "
+                f"goes still when nobody is typing. Type |wworldmode always|n "
+                f"to have all of it act all the time.")
+
 class CmdWorldOpen(Command):
     """
     Open a way on, in a world that has nowhere left to go.

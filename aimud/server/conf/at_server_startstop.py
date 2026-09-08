@@ -35,6 +35,7 @@ def at_server_start():
     _place_unmapped_worlds()
     _ensure_quest_deadline_script()
     _ensure_memory_sleep_script()
+    _normalise_world_modes()
 
     from world.memory import consolidate, sweep_orphans, warm_up
 
@@ -60,6 +61,26 @@ def at_server_start():
     # and unconsolidated memories are the ones that get deleted.
     consolidate()
 
+
+def _normalise_world_modes():
+    """
+    Take every world out of `always`, because nobody is logged in yet.
+
+    The mode is stored on the world and so outlives the session that asked
+    for it. It is meant to: a reload should not interrupt somebody watching a
+    world run. But a server coming up has nobody in it by definition, and a
+    world left in always would start spending money before anyone connected.
+    """
+    from world.activity import normalise_unwatched
+
+    changed = normalise_unwatched()
+    if changed:
+        from evennia.utils import logger
+
+        logger.log_info(
+            f"activity: {len(changed)} world(s) were left running always; "
+            f"back to normal until somebody asks again"
+        )
 
 def _collect_orphan_rows():
     """

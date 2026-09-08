@@ -236,72 +236,34 @@ def _promote(caller, room, account, parsed, bound, unbound, resume, on_message,
     Rather than refuse the verb or weld its result to this room, the fixture is
     created as a real object, after which the verb behaves exactly as it would
     for anything else.
+
+    The making itself is item_gen.conjure, which is also how a character that
+    sets out to produce something gets there. One pipeline and one set of
+    guards, whichever end it is entered from.
     """
+    from world.item_gen import conjure
+
     role = unbound[0]
-    phrase = parsed["roles"][role]
 
-    from commands.look_take_cmds import _acquire_gen_lock, _release_gen_lock
-    from world.item_gen import generate_item, validate_object_existence
-    from world.naming import instead_of_creating
-
-    # A typo and an invention are the same thing to this game, so the last
-    # question before making anything is whether something here already
-    # answers to a near-enough name. An NPC takes a near miss as good enough:
-    # it is naming things from memory in its own words, and there is nobody
-    # to put the question to.
-    existing, complaint = instead_of_creating(caller, phrase, fuzzy=fuzzy)
-    if existing is not None:
-        bound[role] = existing
+    def ready(obj, created):
+        bound[role] = obj
         remaining = unbound[1:]
         if not remaining:
             resume()
             return
-        unbound = remaining
-        phrase = parsed["roles"][unbound[0]]
-        role = unbound[0]
-    elif complaint:
-        on_message(complaint, "")
-        return
+        if created:
+            # Only one fixture is conjured per attempt; asking for two things
+            # that both need inventing is a sign the parse was wrong.
+            on_message("You cannot make sense of that here.", "")
+            return
+        # Finding something that was already there costs nothing, so the next
+        # noun still gets its turn -- and gets the near-name check too, which
+        # it did not when this walked the roles itself.
+        _promote(caller, room, account, parsed, bound, remaining, resume,
+                 on_message, fuzzy=fuzzy)
 
-    # Creating a fixture takes two round trips, and a second attempt arriving
-    # in that window would create a second one. The lock is per room and
-    # phrase, the same guard `look` uses for the same reason.
-    if not _acquire_gen_lock(room, phrase.lower()):
-        on_message("Something is already appearing there.", "")
-        return
-
-    def done(actor_text, room_text=""):
-        _release_gen_lock(room, phrase.lower())
-        on_message(actor_text, room_text)
-
-    def on_valid(_reason):
-        generate_item(
-            account, room, phrase,
-            on_success=lambda item: _promoted(item, role, bound, unbound,
-                                              resume, done, room, phrase),
-            on_error=lambda err: done(f"|rCould not resolve {phrase}: {err}|n", ""),
-        )
-
-    def on_invalid(_reason):
-        done(f"You see no {phrase} here.", "")
-
-    validate_object_existence(account, room, phrase, on_valid, on_invalid,
-                              lambda err: done(f"|rError: {err}|n", ""))
-
-
-def _promoted(item, role, bound, unbound, resume, done, room, phrase):
-    from commands.look_take_cmds import _release_gen_lock
-
-    bound[role] = item
-    remaining = unbound[1:]
-    if remaining:
-        # Only one fixture is conjured per attempt; asking for two things that
-        # both need inventing is a sign the parse was wrong.
-        done("You cannot make sense of that here.", "")
-        return
-    _release_gen_lock(room, phrase.lower())
-    resume()
-
+    conjure(caller, room, account, parsed["roles"][role], ready,
+            lambda message: on_message(message, ""), fuzzy=fuzzy)
 
 def _busy(obj, verb):
     """True if this verb is already in flight against this object."""

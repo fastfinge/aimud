@@ -286,3 +286,76 @@ def generate_item(account, room, object_name, on_success, on_error):
         on_error(failure.getErrorMessage())
 
     threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+
+
+# ---------------------------------------------------------------------------
+# The one way a thing comes into being
+# ---------------------------------------------------------------------------
+
+def conjure(caller, room, account, phrase, on_ready, on_refused, fuzzy=False):
+    """
+    Async. Settle what `phrase` names, making it real if nothing answers to it.
+
+    on_ready(obj, created) -- what to use, and whether it had to be made.
+    on_refused(message)    -- nothing should be made, and what to say instead.
+
+    Every route into existence comes through here: a player reaching for a
+    fixture the room describes, an NPC doing the same, and a character
+    deliberately producing something. There used to be two routes and only one
+    of them asked anything -- a character could name whatever it liked into
+    being, and what it got had no affordances and no states, so no verb rule
+    could ever match it and nothing could be done to the thing afterwards.
+
+    Four questions, in this order, because each is cheaper than the next:
+
+      * does something here already answer to a near-enough name. A typo and
+        an invention are the same thing to this game, so this is asked first
+        and answers most of it.
+      * is one already being made under this name in this room, two round
+        trips being long enough for a second attempt to arrive.
+      * could it plausibly be here at all, given the world and this room.
+      * and only then, what exactly is it.
+
+    `fuzzy` loosens the first question, and is for characters rather than
+    players: an NPC names things from memory in its own words and there is
+    nobody to put a disambiguation to, so a near miss is good enough.
+    """
+    from commands.look_take_cmds import _acquire_gen_lock, _release_gen_lock
+    from world.naming import instead_of_creating
+
+    existing, complaint = instead_of_creating(caller, phrase, fuzzy=fuzzy)
+    if existing is not None:
+        on_ready(existing, False)
+        return
+    if complaint:
+        on_refused(complaint)
+        return
+
+    if not _acquire_gen_lock(room, phrase.lower()):
+        on_refused("Something is already appearing there.")
+        return
+
+    def release():
+        _release_gen_lock(room, phrase.lower())
+
+    def made(item):
+        release()
+        on_ready(item, True)
+
+    def failed(err):
+        release()
+        on_refused(f"|rCould not resolve {phrase}: {err}|n")
+
+    def on_valid(_reason):
+        generate_item(account, room, phrase, on_success=made, on_error=failed)
+
+    def on_invalid(_reason):
+        release()
+        on_refused(f"You see no {phrase} here.")
+
+    def on_error(err):
+        release()
+        on_refused(f"|rError: {err}|n")
+
+    validate_object_existence(account, room, phrase, on_valid, on_invalid,
+                              on_error)
