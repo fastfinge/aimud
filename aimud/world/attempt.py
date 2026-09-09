@@ -299,6 +299,24 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
                    allow_effects, waiter=None):
     world_root = _world_root(room)
 
+    # A verb the game already answers is never learned, however it got here.
+    #
+    # Players cannot reach this: their `get` is caught by the command set long
+    # before an attempt is made. Characters can, because they act by calling
+    # this function directly with a sentence rather than by typing into a
+    # command set -- so an NPC deciding to fetch a bucket walked straight past
+    # the engine and taught its world what "get" means. That was 137 rules
+    # across five worlds, a fifth of everything they had learned, for ten
+    # verbs the game answers for itself: `get` alone had seventy-six.
+    #
+    # Handed to the command set rather than refused, so the NPC actually picks
+    # the bucket up. Anything the engine declines it declines in its own
+    # words, which is the right answer and costs nothing.
+    if verb in verbs.engine_verbs():
+        caller.execute_cmd(raw)
+        on_message("", "")
+        return
+
     # Learning a rule and writing a narration are network round trips, and the
     # effects land only once they return. Without a hold on the object itself,
     # two people pulling the same lever in that window both apply its effects.
@@ -317,18 +335,21 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
         _release(caller, on_message, actor_text, room_text)
 
     waiter = waiter or _once(None)
-    key = verbs.rule_key(verb, bound)
+    key = verbs.rule_key(verb)
     rule = verb_gen.get_rule(world_root, key)
 
+    def with_rule(known_rule):
+        """Once the verb's meaning is settled, ask whether this sort admits it."""
+        _admitted(caller, room, account, raw, verb, bound, known_rule,
+                  release, allow_effects, world_root, waiter)
+
     if rule is not None:
-        _with_rule(caller, room, account, raw, verb, bound, rule, release,
-                   allow_effects, world_root, waiter)
+        with_rule(rule)
         return
 
     def learned(new_rule):
         verb_gen.store_rule(world_root, key, new_rule)
-        _with_rule(caller, room, account, raw, verb, bound, new_rule, release,
-                   allow_effects, world_root, waiter)
+        with_rule(new_rule)
 
     waiter()
     verb_gen.learn_rule(
@@ -336,6 +357,116 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
         on_success=learned,
         on_error=lambda err: release(f"|r{err}|n"),
     )
+
+
+def _admitted(caller, room, account, raw, verb, bound, rule, release,
+              allow_effects, world_root, waiter):
+    """
+    Whether this sort of thing can be verbed at all, and then get on with it.
+
+    The question the old design answered by inventing a whole rule. An object
+    that said nothing about the verb being tried used to buy another copy of
+    what the verb means -- 86% of every rule five worlds had learned came from
+    exactly that silence, and none of it was about the verb.
+
+    So the silence is filled in where it belongs: one bit, on the kind, true
+    for every bottle the world will ever hold. A no ends the attempt here,
+    without a rule, a roll or a narration.
+    """
+    from world import kinds
+
+    anchor = _anchor(bound)
+    obj_kinds = list(getattr(anchor.db, "kinds", None) or []) if anchor else []
+
+    def proceed():
+        _with_rule(caller, room, account, raw, verb, bound, rule, release,
+                   allow_effects, world_root, waiter)
+
+    def refuse():
+        name = (anchor.get_numbered_name(1, None, return_string=True)
+                if anchor is not None else "that")
+        release(f"You cannot {verb} {name}.")
+
+    if not obj_kinds:
+        proceed()            # nothing to ask about; the rule's own checks stand
+        return
+
+    settled = kinds.admits(world_root, obj_kinds, verb)
+    if settled is True:
+        proceed()
+        return
+    if settled is False:
+        refuse()
+        return
+
+    def answered(allowed, _reason):
+        kinds.admit(world_root, obj_kinds, verb, allowed)
+        proceed() if allowed else refuse()
+
+    waiter()
+    verb_gen.ask_admission(
+        account, world_root, verb, rule, obj_kinds[0],
+        on_answer=answered,
+        on_error=lambda err: release(f"|r{err}|n"),
+    )
+
+
+def _specifics_of(bound, verb):
+    """What was learned about this verb on these particular objects, if any."""
+    anchor = _anchor(bound)
+    if anchor is None:
+        return {}
+    try:
+        return dict((anchor.db.verb_specifics or {}).get(verb) or {})
+    except (AttributeError, TypeError, ValueError):
+        return {}
+
+
+def _store_specifics(bound, verb, specifics):
+    """
+    Keep what this object does under this verb, beside its narration.
+
+    Written once, the first time the verb reaches this object, and only where
+    the object actually differs -- an empty answer is stored as an empty
+    answer so the question is not asked twice.
+    """
+    anchor = _anchor(bound)
+    if anchor is None:
+        return
+    store = dict(anchor.db.verb_specifics or {})
+    if verb in store:
+        return
+    store[verb] = dict(specifics or {})
+    anchor.db.verb_specifics = store
+
+
+def _with_specifics(rule, bound, verb):
+    """
+    The rule as it applies to these objects.
+
+    A shallow overlay and nothing cleverer: this object's own effects replace
+    the rule's, and its difficulty replaces the rule's, and everything else --
+    what the verb requires, whether it is contested at all, whether it repeats
+    -- stays the verb's business. The rule decides that prying is a strength
+    contest; the crate decides that this one is a 12.
+    """
+    specifics = _specifics_of(bound, verb)
+    if not specifics:
+        return rule
+
+    merged = dict(rule)
+    if specifics.get("effects") is not None:
+        merged["effects"] = specifics["effects"]
+    if specifics.get("difficulty"):
+        contest = dict(merged.get("check") or {})
+        if contest:
+            contest["difficulty"] = specifics["difficulty"]
+            # A fixed number and an opposed trait are two different contests,
+            # and a thing cannot be both. Naming a difficulty for this object
+            # settles it as the first.
+            contest.pop("against", None)
+            merged["check"] = contest
+    return merged
 
 
 def _with_rule(caller, room, account, raw, verb, bound, rule, release,
@@ -349,6 +480,13 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
     if complaint:
         release(complaint)
         return
+
+    # What this particular thing does, and how hard it is on this particular
+    # thing. The rule says what the verb means for everything of its sort; the
+    # specifics say how this door differs from that door, and were written by
+    # the same call that wrote what the player reads. Absent for almost
+    # everything, which means the rule's own answer stands.
+    rule = _with_specifics(rule, bound, verb)
 
     # Preconditions say whether the attempt was allowed; the check says
     # whether it worked. That order is the whole point: you are told you have
@@ -371,14 +509,20 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
                 _for_room(cached.get("room", ""), caller, raw))
         return
 
-    def _finish(actor_text, room_text):
+    def _finish(actor_text, room_text, specifics=None):
         # The template is cached, not the finished line: the room text names
         # the actor as {actor}, so the same narration reads correctly when
         # somebody else does the same thing to the same object later.
         _store_narration(bound, verb, outcome,
                          {"actor": actor_text, "room": room_text})
+        # Whatever the same reply said this thing does differently, kept
+        # beside it. Stored even when empty, so a thing that turned out to be
+        # perfectly ordinary is not asked about a second time.
+        if specifics is not None:
+            _store_specifics(bound, verb, specifics)
+        effective = _with_specifics(rule, bound, verb)
         allowed = [
-            e for e in checks.effects_for(rule, outcome)
+            e for e in checks.effects_for(effective, outcome)
             if allow_effects is None or e.get("type") in allow_effects
         ]
         extra = effects_mod.apply(caller, room, allowed, bound=bound,

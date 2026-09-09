@@ -35,7 +35,11 @@ from evennia.utils import inherits_from, iter_to_str
 #: The affordance that makes an item a garment. Every generator that can
 #: produce an object offers it, so a coat found in a wardrobe is as wearable
 #: as one a character was born in.
-WEARABLE = "wearable"
+#:
+#: A verb rather than an adjective, since `world.affordances` folded the two
+#: vocabularies together: "wearable" and "wear" were the same idea kept in two
+#: namespaces that could not see each other.
+WEARABLE = "wear"
 
 #: The kinds of garment the contrib knows how to order and limit. Given to the
 #: models so what they invent lands in a slot the game understands; anything
@@ -63,8 +67,9 @@ def wearable(obj):
     """
     if obj is None:
         return False
-    return is_garment(obj) or WEARABLE in {str(a).lower()
-                                           for a in (obj.db.affordances or [])}
+    from world import verbs
+
+    return is_garment(obj) or WEARABLE in verbs.affordances(obj)
 
 
 def as_garment(obj):
@@ -407,42 +412,108 @@ def _deliver(on_message, outcome):
 # Making clothes
 # ---------------------------------------------------------------------------
 
+def _root_of(location):
+    """The world an object is being made in, found from where it is going."""
+    where = location
+    while where is not None:
+        root = getattr(getattr(where, "db", None), "world_root", None)
+        if root is not None:
+            return root
+        where = getattr(where, "location", None)
+    return None
+
+
 def create(spec, location, worn_on=None):
     """
     Build one item from a generator's description of it, and wear it if asked.
 
     `spec` is the JSON a model returned: name, description, affordances,
-    states, and for a garment its clothing_type and wearstyle. Returns the
-    object, or None when there was not enough to make one.
+    states, what sort of thing it is, and for a garment its clothing_type and
+    wearstyle. Returns the object, or None when there was not enough to make
+    one.
     """
     from evennia import create_object
+    from world import affordances as af, kinds as kinds_mod, lexicon
 
     name = str(spec.get("name", "")).strip()
     if not name:
         return None
 
-    affordances = sorted({str(a).lower().strip()
-                          for a in (spec.get("affordances") or []) if a})
-    kind = str(spec.get("clothing_type", "")).strip().lower()
-    if worn_on is not None and WEARABLE not in affordances:
+    garment_type = str(spec.get("clothing_type", "")).strip().lower()
+
+    # What sort of thing this is, kept apart from what this particular one is
+    # like -- the same split as name and states, one level down. The kind is
+    # what a blue cup and a red cup have in common; the qualifiers are what
+    # they do not.
+    #
+    # The primary kind comes from the sense where the generator picked one and
+    # from the head noun otherwise, because English noun phrases are head-final
+    # and a generator that forgot the field still made something that is a cup.
+    # Secondary kinds are for a thing that is genuinely two things -- a sword
+    # with an inscription on the blade -- and `prune` drops any that the
+    # taxonomy already implies, so "sword, weapon" comes back as "sword".
+    declared_kinds = [str(k) for k in (spec.get("kinds") or []) if k]
+    sense = str(spec.get("sense", "")).strip()
+    if sense and not lexicon.ancestors(sense):
+        sense = ""
+    primary = sense or str(spec.get("kind", "")).strip() or lexicon.head_noun(name)
+    the_kinds = kinds_mod.prune([primary] + declared_kinds)
+
+    qualifiers = sorted({str(q).lower().strip()
+                         for q in (spec.get("qualifiers") or []) if q})
+
+    # Read through the kind, so that every bottle in a world affords what
+    # bottles afford. What the generator said only settles a kind this world
+    # has never made before; after that it is the kind's answer, and seventy
+    # bottles cannot drift into twenty-five different cache keys.
+    declared = spec.get("affordances")
+    granted = kinds_mod.resolve(
+        location and _root_of(location), the_kinds, declared,
+        accepts=spec.get("holds") or (),
+    )
+    if worn_on is not None and not af.afforded(granted).intersection({WEARABLE}):
         # It is being put on somebody, so it is wearable whatever the model
         # remembered to say.
-        affordances = sorted(set(affordances) | {WEARABLE})
+        granted = af.merge(granted, {WEARABLE: True})
 
-    obj = create_object(typeclass_for(affordances), key=name, location=location)
+    afforded = sorted(af.afforded(granted))
+    obj = create_object(typeclass_for(afforded), key=name, location=location)
     obj.db.desc = str(spec.get("description", "")).strip()
     obj.db.is_ai_item = True
     obj.db.ai_takeable = bool(spec.get("takeable", True))
-    obj.db.affordances = affordances
+    obj.db.affordances = granted
+    obj.db.kinds = the_kinds
+    obj.db.kind = the_kinds[0] if the_kinds else ""
+    obj.db.qualifiers = qualifiers
     obj.db.states = sorted({str(s).lower().strip()
                             for s in (spec.get("states") or []) if s})
+
+    # The naming rule, checked rather than only asked for. Reported and not
+    # repaired: a name is what everything else has learned to call the thing,
+    # and rewriting one here would cost more than the contradiction does.
+    # What this is for is seeing that a prototype has begun to drift, in the
+    # log, while it is still one object rather than a world of them.
+    from evennia.utils import logger
+    from world import verbs
+
+    welded = verbs.name_contradicts_states(
+        name, obj.db.states,
+        getattr(getattr(location, "db", None), "world_root", None),
+    )
+    if welded:
+        logger.log_info(
+            f"naming: {name!r} has {', '.join(welded)} in its name, which "
+            f"this world treats as a condition -- changing it will leave the "
+            f"name saying otherwise"
+        )
+
     # Answerable to its condition from the first moment: a bottle created
     # half full is gettable as "full bottle" without waiting for a verb.
     from world import verbs
 
     verbs.refresh_state_aliases(obj)
-    if kind in GARMENT_TYPES:
-        obj.db.clothing_type = kind
+    if garment_type in GARMENT_TYPES:
+        obj.db.clothing_type = garment_type
 
     # What the thing is worth to whoever has it. Every generator that can make
     # an object comes through here, so a breastplate found in a chest protects

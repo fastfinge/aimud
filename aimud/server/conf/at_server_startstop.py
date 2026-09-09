@@ -36,6 +36,7 @@ def at_server_start():
     _ensure_quest_deadline_script()
     _ensure_memory_sleep_script()
     _normalise_world_modes()
+    _warm_lexicon()
 
     from world.memory import consolidate, sweep_orphans, warm_up
 
@@ -60,6 +61,31 @@ def at_server_start():
     # often than the sleep interval would otherwise never consolidate at all,
     # and unconsolidated memories are the ones that get deleted.
     consolidate()
+
+
+def _warm_lexicon():
+    """
+    Read the dictionary in before anybody needs a word from it.
+
+    Two reasons, and neither is about the second and a half it takes. The
+    corpus builds its indices on first use, and does it without a lock: two
+    players typing at once on the threadpool would build them twice, over each
+    other. And the command that paid for the loading would be some player's
+    first, which is the worst moment in the game to spend it.
+
+    A world without a dictionary still runs -- `world.lexicon` answers
+    neutrally and every caller is written for that answer -- so this reports
+    what happened and never stands in the way of a server starting.
+    """
+    from world import lexicon
+
+    if not lexicon.warm():
+        from evennia.utils import logger
+
+        logger.log_info(
+            "lexicon: no WordNet corpus; word endings, kinds and senses will "
+            "be guessed rather than looked up"
+        )
 
 
 def _normalise_world_modes():

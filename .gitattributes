@@ -1,0 +1,3 @@
+# The vendored WordNet corpus is a zip. Git must never touch its line
+# endings: on Windows an autocrlf pass through a binary file corrupts it.
+*.zip binary

@@ -197,11 +197,31 @@ the verb you are given is only a way of saying "put this on", mark it invalid.
 {engine_commands}
 Return only the JSON object."""
 
-_NARRATION_SYSTEM = """You narrate the result of an action in a text MUD.
+_NARRATION_SYSTEM = """You narrate the result of an action in a text MUD, and say what it changed.
 
 Respond with a single JSON object — no other text — matching:
 {"actor": "what the acting character experiences, 1-3 sentences",
- "room": "one full sentence others in the room see, beginning {actor}"}
+ "room": "one full sentence others in the room see, beginning {actor}",
+ "effects": [ ... ],
+ "difficulty": 0}
+
+You are writing about THESE things, not about their sort. The verb's rule
+already says what the action means in general; what you add is what it does
+to this particular thing, and how hard it is on this particular thing.
+
+"effects" is what changes here, in the same form the rule uses. Leave it out
+entirely to accept the rule's own effects unchanged, which is the ordinary
+case and the right answer whenever nothing about this thing is special. Give
+it only where this thing genuinely differs — opening this door reveals the
+stairs, opening that one is barred from the far side.
+
+"difficulty" is the number to beat for THIS thing, when the rule says the verb
+is contested. A flimsy crate and a bank vault are both pried, and they are not
+both a 15. Leave it 0 to accept whatever the rule set. 10 is even odds for
+someone unpracticed, 15 a real test, 20 hard.
+
+Never invent an effect that contradicts the rule, and never add a check to a
+verb the rule left uncontested.
 
 Write only from the character and the objects involved. Do NOT mention the
 room, the location, the surroundings, the weather, or anything you were not
@@ -276,6 +296,53 @@ def store_rule(world_root, key, rule):
     rules = dict(world_root.db.verb_rules or {})
     rules[key] = rule
     world_root.db.verb_rules = rules
+
+
+def _kindred_block(world_root, verb, bound):
+    """
+    What this world already knows about the verb this one is a way of doing.
+
+    Prying is a way of opening; dousing is a way of snuffing out. So a world
+    that has worked out what `open` does to a chest knows most of what `pry`
+    does to it, and asking a model to invent the second from nothing is both a
+    call it has already paid for and a chance for the two to disagree -- one
+    rule leaving a chest `open`, its near-twin leaving it `unlocked`, and
+    nothing afterwards able to tell that the same thing happened.
+
+    Looked up under the ancestor verb, which is now the whole of a rule's key
+    -- a verb means one thing per world, and what differs between a chest and
+    a letter is kept on the chest and the letter. Nothing is found for most
+    verbs, and nothing is what the prompt then carries.
+
+    Offered as a starting point and never as an answer, which is the whole
+    reason this is a prompt and not a cache hit. Troponymy says prying is a
+    kind of opening; it does not say that prying wants something to lever
+    with, and a rule that inherited `open` wholesale would quietly lose the
+    crowbar.
+    """
+    from world import lexicon, verbs
+
+    found = []
+    for ancestor in lexicon.verb_ancestors(verb):
+        rule = get_rule(world_root, verbs.rule_key(ancestor, bound))
+        if rule:
+            found.append((ancestor, rule))
+    if not found:
+        return ""
+
+    listed = "\n\n".join(
+        f"'{ancestor}':\n{json.dumps(dict(rule), indent=2)}"
+        for ancestor, rule in found[:2]
+    )
+    return (
+        f"'{verb}' is a way of doing something this world has already worked "
+        f"out for things exactly like these:\n\n{listed}\n\n"
+        f"Start from that. Keep whatever is still true -- the states it "
+        f"changes, the traits it spends -- and change what genuinely differs, "
+        f"which is usually what the action needs before it can happen at all. "
+        f"Do not copy it wholesale: these are different verbs, and a player "
+        f"who typed this one meant it.\n\n"
+    )
 
 
 def _lore(world_root, actor):
@@ -408,6 +475,7 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
                 f"State groups already in use, to be reused rather than "
                 f"renamed: {group_text}\n\n"
                 f"{traits.vocabulary_block(world_root)}"
+                f"{_kindred_block(world_root, verb, bound)}"
                 f"Define '{verb}' as a rule for objects like these."
             ),
         },
@@ -470,6 +538,77 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
     ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
 
 
+_ADMISSION_SYSTEM = """You decide whether a sort of thing can be acted on at all.
+
+Respond with a single JSON object — no other text:
+{"allowed": true|false, "reason": "a few words"}
+
+You are told what a verb means in this world and asked about a KIND of thing,
+not a particular one. So the question is never whether this bottle happens to
+be burnable — it is whether a bottle, any bottle, is the sort of thing that
+verb can be done to.
+
+Be generous about what is possible and strict about what is meaningless.
+A bottle can be burned (glass melts, labels char), a bottle can be thrown, a
+bottle can be smelled. A bottle cannot be read, cannot be worn, cannot be
+persuaded. If a player would expect something to happen, allow it.
+
+Answer for the ordinary case. A locked door is still the sort of thing that
+opens; being locked is a condition, and the game handles conditions."""
+
+
+def ask_admission(account, world_root, verb, rule, kind, on_answer, on_error):
+    """
+    Async. Ask whether a kind of thing can be verbed at all, and remember it.
+
+    One bit, once, per kind and verb. This is what replaced generating a whole
+    rule every time an object said nothing about the verb being tried -- which
+    was 86% of every rule five worlds had learned, each one a large JSON
+    invented to answer a yes-or-no question.
+
+    The verb's own rule goes into the prompt, which is what keeps the answer
+    about mechanism rather than about vibes: "can a bottle be burned" is a
+    different question depending on whether burning, in this world, means
+    catching fire or means being consumed utterly.
+    """
+    model = account.model_for("commands")
+    try:
+        api_key = account.get_openrouter_key()
+    except ValueError as e:
+        on_error(str(e))
+        return
+
+    means = ""
+    if rule:
+        try:
+            means = json.dumps(dict(rule), indent=2)
+        except Exception:
+            means = ""
+
+    messages = [
+        {"role": "system", "content": _ADMISSION_SYSTEM},
+        {
+            "role": "user",
+            "content": (
+                (f"In this world, '{verb}' means:\n{means}\n\n"
+                 if means else "")
+                + f"Can a {kind} be {verb}ed?"
+            ),
+        },
+    ]
+
+    def _done(content):
+        try:
+            data = _parse_json_object(content)
+            on_answer(bool(data.get("allowed")), str(data.get("reason", "")))
+        except Exception as exc:
+            on_error(str(exc))
+
+    threads.deferToThread(
+        lambda: _call_openrouter(api_key, model, messages)
+    ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
+
+
 def narrate(account, verb, bound, actor, raw, on_success, on_error, result=None):
     """
     Async. Describe this action on these particular objects.
@@ -508,7 +647,22 @@ def narrate(account, verb, bound, actor, raw, on_success, on_error, result=None)
             actor_text = str(data.get("actor", "")).strip()
             if not actor_text:
                 raise ValueError("empty narration")
-            on_success(actor_text, str(data.get("room", "")).strip())
+            # What this thing in particular does, riding the call that was
+            # being made anyway. A narration is already written per object and
+            # per outcome; asking the same reply what it changed here is not a
+            # second round trip, and it is the only place a difference between
+            # two doors can honestly live.
+            specifics = {}
+            if data.get("effects") is not None:
+                specifics["effects"] = data.get("effects")
+            try:
+                difficulty = int(data.get("difficulty") or 0)
+            except (TypeError, ValueError):
+                difficulty = 0
+            if difficulty > 0:
+                specifics["difficulty"] = difficulty
+            on_success(actor_text, str(data.get("room", "")).strip(),
+                       specifics)
         except Exception as exc:
             on_error(str(exc))
 

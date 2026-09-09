@@ -158,9 +158,13 @@ def _apply_one(actor, room, effect, bound, world_root):
             obj.db.desc = str(effect["new_description"]).strip()
             changed = True
         if effect.get("affordances") is not None:
-            obj.db.affordances = sorted(
-                {str(a).lower().strip() for a in effect["affordances"] if a}
-            )
+            # An object's affordances come from its kind, and this is the one
+            # thing that may overrule them -- because a rule changing what a
+            # particular thing can do is a deliberate act rather than drift.
+            # Burning one book does not stop books being readable.
+            from world import affordances as af
+
+            obj.db.affordances = af.normalise(effect["affordances"])
         if effect.get("new_name"):
             # The aliases its condition earns it spell out its name, so they
             # are stale the moment the name changes.

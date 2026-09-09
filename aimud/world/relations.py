@@ -34,15 +34,9 @@ from evennia.utils import iter_to_str
 #: may have to choose between correctly.
 PREPOSITIONS = ("in", "on", "under", "behind")
 
-#: What a thing must be for something to go there. "under" and "behind" ask
-#: nothing -- everything has an underneath -- but you cannot put a book inside
-#: something that is not hollow, or on something with no top.
-REQUIRED_AFFORDANCE = {"in": "container", "on": "surface"}
-
-#: The affordance that makes something a place to put things on. Offered by
-#: every generator alongside "container", so tables, shelves, counters and
-#: desks are surfaces from the moment they are made.
-SURFACE = "surface"
+#: Where things go is now a fact about a kind rather than an affordance --
+#: see `world.kinds.PLACEMENT` and the note in `accepts` below. "under" and
+#: "behind" ask nothing of the host: everything has an underneath.
 
 #: What an unmarked thing inside another is taken to be. Everything that
 #: existed before placement did reads as "in", which is what it always meant.
@@ -54,6 +48,17 @@ MAX_DEPTH = 3
 
 #: States that shut a container. A closed box keeps its contents to itself.
 SHUT = frozenset(["closed", "shut", "locked", "sealed", "fastened"])
+
+
+def _world_root(obj):
+    """The world an object belongs to, by way of the room it is in."""
+    room = getattr(obj, "location", None)
+    while room is not None:
+        root = getattr(room.db, "world_root", None)
+        if root is not None:
+            return root
+        room = getattr(room, "location", None)
+    return None
 
 
 def _is_thing(obj):
@@ -103,17 +108,21 @@ def accepts(host, preposition):
     """
     (ok, why not) for putting something at `host` this way.
 
-    The affordances are the world's own word for what a thing is, so a table
-    the generators called a surface takes things on it and a sealed lump of
-    rock does not.
+    Whether a thing is hollow or has a top is a fact about its kind -- every
+    bottle is hollow -- so it is asked of the kind, which settles it once for
+    all bottles. It used to be an entry in the affordance list, back when that
+    list was the only place to keep a fact about an object, and being there
+    made it part of the verb cache key: a table and a shelf would fail to
+    share a single learned rule because one of them had been called a surface
+    and the other had not.
     """
-    from world import verbs
+    from world import kinds
 
     if not _is_thing(host):
         return False, "You cannot put anything there."
-    needed = REQUIRED_AFFORDANCE.get(preposition)
+    needed = preposition if preposition in kinds.PLACEMENT else None
     name = host.get_numbered_name(1, None, return_string=True)
-    if needed and needed not in verbs.affordances(host):
+    if needed and needed not in kinds.holds(_world_root(host), host.db.kinds):
         if preposition == "in":
             return False, f"{name.capitalize()} does not hold things."
         return False, f"There is no room on {name}."
