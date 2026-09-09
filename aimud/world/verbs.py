@@ -792,6 +792,44 @@ def group_members(world_root, group):
     return known
 
 
+#: How English spells "not this". Ordered longest first so "non" is tried
+#: before "no" would be, and kept short: these are the four that actually turn
+#: a condition into its opposite rather than merely starting a word with them.
+_NEGATING = ("non", "dis", "un", "in", "im")
+
+
+def _opposite_group(world_root, slug, vocab):
+    """
+    The group of a state this one is the plain negation of, if there is one.
+
+    Only when the other half is ALREADY registered, which is what makes this
+    safe to act on without a dictionary: "unfolded" is only read as the
+    opposite of "folded" in a world that has met a folded thing. Nothing is
+    inferred about English, so "inert" cannot become "not ert" and "impassive"
+    cannot become "not passive" -- there is no state called ert or passive to
+    be the other half of.
+
+    WordNet is deliberately not consulted here, and it is worth saying why,
+    because antonymy looks like exactly the right relation. Its antonyms run
+    lemma to lemma, and the participles these states are made of are not their
+    own lemmas: it gives "fold" for "unfolded", "lighted" for "unlit", "tune"
+    for "untuned" and nothing at all for "untransformed". It knows the pairs
+    this cannot reach -- open and closed, wet and dry -- and misses every pair
+    this catches, while cheerfully reporting that the opposite of "broken" is
+    "promote".
+    """
+    for prefix in _NEGATING:
+        if not slug.startswith(prefix):
+            continue
+        positive = slug[len(prefix):]
+        if len(positive) < 3 or positive not in vocab:
+            continue
+        found = group_of(world_root, positive)
+        if found:
+            return found
+    return None
+
+
 def register_state(world_root, slug, means="", conflicts=(), group=None,
                    ends_on_move=None):
     """
@@ -816,8 +854,17 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
     # group leaves behind a group that behaves like one. A seeded slug keeps
     # its seeded group whatever was declared -- see DEFAULT_STATE_GROUP.
     seeded = DEFAULT_STATE_GROUP.get(slug)
+    opposite = _opposite_group(world_root, slug, vocab)
     if seeded:
         group = register_group(world_root, seeded)
+    elif opposite:
+        # A state spelled as the negation of one this world already keeps
+        # belongs with it, whatever group was declared -- because the declared
+        # group is the thing that goes wrong. Five worlds registered five such
+        # pairs and put four of them together; the fifth had "folded" under
+        # openness and "unfolded" under foldedness, which let a paper be both
+        # at once with nothing able to put it right.
+        group = register_group(world_root, opposite)
     elif group:
         group = register_group(world_root, group, ends_on_move=ends_on_move)
 
