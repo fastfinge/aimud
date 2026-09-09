@@ -171,7 +171,8 @@ Respond with a single JSON object — no other text — matching:
 {
   "items": [
     {"name": "item name", "description": "1-2 sentences", "takeable": true,
-     "affordances": ["readable"], "states": [], "clothing_type": "",
+     "kind": "flyer", "holds": [],
+     "affordances": {"read": true}, "states": [], "clothing_type": "",
      "trait_bonuses": {}, "bonus_when": ""}
   ],
   "wants_npc": <true or false>
@@ -181,17 +182,18 @@ items are the portable, removable things that happen to be here — never the
 room's fixtures, which are already in its description. Give 0 to 3, and prefer
 0 for a bare corridor. Do not repeat anything already named in the description.
 
-affordances are what can be done with each item, as lowercase single words:
-readable, openable, container, surface, flammable, edible, drinkable, wearable,
-(a "container" is hollow and things go IN it; a "surface" has a top and things
-go ON it -- a table, a shelf, a counter, a desk. Many things are both.)
-breakable, wieldable, and so on. They decide which verbs work on it, so give
-every one that genuinely applies. states are conditions currently true of it
-(dusty, wet, broken), usually empty.
+{affordance_rule}
+
+kind is the one common noun the item IS, singular and lowercase, with the
+describing words stripped off: a "Stained Slate Chalkboard" is a chalkboard.
+holds says where things go: ["in"] for anything hollow, ["on"] for anything
+with a top, [] for anything solid.
+
+states are conditions currently true of it (dusty, wet, broken), usually empty.
 
 {naming_rule}
 
-clothing_type goes with "wearable" and says what kind of garment it is: hat,
+clothing_type goes with the "wear" affordance and says what kind of garment it is: hat,
 jewelry, top, undershirt, gloves, fullbody, bottom, underpants, socks, shoes,
 accessory. A coat left over a chair can be picked up and put on by anyone who
 finds it. Leave it "" for everything that is not clothing.
@@ -208,6 +210,12 @@ Return only the JSON object."""
 # ---------------------------------------------------------------------------
 # Network (runs in thread)
 # ---------------------------------------------------------------------------
+
+def _affordance_rule():
+    """How to declare what can be done to a thing, shared by every generator."""
+    from world import affordances
+
+    return affordances.PROMPT
 
 def _call_openrouter(api_key, model, messages):
     payload = {"model": model, "messages": messages}
@@ -1341,7 +1349,8 @@ def populate_room(account, room):
     messages = [
         {"role": "system",
          "content": _CONTENTS_SYSTEM_PROMPT.replace(
-             "{naming_rule}", verbs.naming_rule())},
+             "{naming_rule}", verbs.naming_rule()).replace(
+             "{affordance_rule}", _affordance_rule())},
         {
             "role": "user",
             "content": (

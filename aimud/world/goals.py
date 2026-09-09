@@ -54,6 +54,54 @@ def _world_objects(world_root, actor):
     return out
 
 
+def find_of_kind(world_root, actor, kind, actor_only=False):
+    """
+    Anything in this world that is the sort of thing wanted, nearest first.
+
+    What lets a want be general. A character can want the chocolate cake, and
+    a character can want *a* cake, and until kinds existed only the first of
+    those could be written down -- every condition had to name one object, so
+    "I am hungry" had to be forged into a demand for one particular bun that
+    might be eaten by somebody else before they got there.
+
+    Nearest first for the same reason `_world_objects` is: a goal satisfied by
+    any cake should be satisfied by the cake in the room rather than sending
+    somebody across the world for an identical one.
+    """
+    from world import kinds as kinds_mod
+
+    wanted = kinds_mod.canonical(kind)
+    if not wanted:
+        return None
+    for obj in (actor.contents if actor_only else
+                _world_objects(world_root, actor)):
+        for owned in (obj.db.kinds or []):
+            if kinds_mod.canonical(owned) == wanted:
+                return obj
+    return None
+
+
+def _subject(condition, world_root, actor, actor_only=False):
+    """
+    What a condition is about: a named thing, or anything of a kind.
+
+    A condition may say `object` and mean that one, or say `kind` and mean any
+    of them. Returns (object, how to say it) so the label a player is shown
+    reads the way the want was made -- "be carrying the brass key" for one,
+    "be carrying a cake" for the other.
+    """
+    name = str(condition.get("object", "") or "").strip()
+    if name:
+        return find_object(world_root, actor, name), f"the {name}"
+
+    kind = str(condition.get("kind", "") or "").strip()
+    if kind:
+        article = "an" if kind[:1].lower() in "aeiou" else "a"
+        return (find_of_kind(world_root, actor, kind, actor_only),
+                f"{article} {kind}")
+    return None, "it"
+
+
 def find_object(world_root, actor, name):
     """
     Resolve a name a goal mentions to a real object anywhere in the world.
@@ -90,7 +138,8 @@ def sanitise(conditions):
         if ctype not in CONDITION_TYPES:
             continue
         entry = {"type": ctype}
-        for field in ("object", "room", "to", "trait", "host", "preposition"):
+        for field in ("object", "kind", "room", "to", "trait", "host",
+                      "preposition"):
             if raw.get(field):
                 entry[field] = str(raw[field]).strip()
         for field in ("is", "lacks"):
@@ -123,8 +172,11 @@ def _test(condition, actor, world_root):
         return met, f"be in {room_name}"
 
     if ctype == "gone":
-        met = find_object(world_root, actor, name) is None
-        return met, f"get rid of {name}"
+        # True when nothing answers to it -- which for a kind means none of
+        # them are left anywhere, so "clear out the rats" ends when the last
+        # rat does rather than when one named rat does.
+        found, said = _subject(condition, world_root, actor)
+        return found is None, f"get rid of {said}"
 
     if ctype == "trait":
         # A want about the character rather than about the world. The same
@@ -147,14 +199,18 @@ def _test(condition, actor, world_root):
             return met, f"get {label} down to {traits._round(high)}"
         return met, f"have some {label}"
 
-    obj = find_object(world_root, actor, name)
+    # A condition may name one thing or describe a sort of thing. "Holds" is
+    # the one that has to look in the actor's own hands rather than across the
+    # world, or wanting a cake would be satisfied by a cake on a far shelf.
+    obj, said = _subject(condition, world_root, actor,
+                         actor_only=(ctype == "holds"))
 
     if ctype == "exists":
-        return obj is not None, f"bring {name} into being"
+        return obj is not None, f"bring {said} into being"
 
     if ctype == "holds":
         met = obj is not None and obj.location is actor
-        return met, f"be carrying {name}"
+        return met, f"be carrying {said}"
 
     if ctype == "placed":
         # Where a thing has been put, which is a different question from who
@@ -163,29 +219,28 @@ def _test(condition, actor, world_root):
 
         host_name = condition.get("host", "")
         preposition = condition.get("preposition") or relations.DEFAULT
-        obj = find_object(world_root, actor, name)
         host = find_object(world_root, actor, host_name)
         met = relations.test(obj, preposition, host)
-        return met, f"get {name} {preposition} {host_name}"
+        return met, f"get {said} {preposition} {host_name}"
 
     if ctype == "worn":
         # Carrying a coat and having it on are different things, and a
         # character who wants to look like somebody has to do the second.
         met = obj is not None and obj.location is actor and bool(obj.db.worn)
-        return met, f"be wearing {name}"
+        return met, f"be wearing {said}"
 
     if ctype == "delivered":
         recipient_name = condition.get("to", "")
         recipient = find_object(world_root, actor, recipient_name)
         met = (obj is not None and recipient is not None
                and obj.location is recipient)
-        return met, f"give {name} to {recipient_name}"
+        return met, f"give {said} to {recipient_name}"
 
     if ctype == "state":
         wanted = condition.get("is") or []
         unwanted = condition.get("lacks") or []
         if obj is None:
-            return False, f"find {name}"
+            return False, f"find {said}"
         current = verbs.states(obj)
         met = (all(s in current for s in wanted)
                and not any(s in current for s in unwanted))
@@ -194,7 +249,7 @@ def _test(condition, actor, world_root):
             parts.append(" and ".join(wanted))
         if unwanted:
             parts.append("not " + " or ".join(unwanted))
-        return met, f"make {name} {', '.join(parts)}"
+        return met, f"make {said} {', '.join(parts)}"
 
     return False, "do something impossible"
 

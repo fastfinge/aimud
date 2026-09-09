@@ -388,6 +388,14 @@ Each entry is one of:
 {"type": "in_room",   "room": "Kitchen"}               they want to get there
 {"type": "delivered", "object": "letter", "to": "Clerk"}
 {"type": "gone",      "object": "rats"}
+Any condition that names an "object" may instead name a "kind" -- the sort of
+thing rather than one particular thing. {"type": "holds", "kind": "cake"} is
+satisfied by any cake; {"type": "holds", "object": "chocolate cake"} only by
+that one. Prefer "kind" whenever any of them would genuinely do, because a
+want pinned to one object fails for good the moment somebody else takes it.
+Use "object" when it really must be that one -- a letter addressed to them,
+the key to this door.
+
 Name only things that plausibly exist in this world. Give an empty list for a
 character with nothing in particular to pursue.
 
@@ -430,12 +438,14 @@ Respond with a single JSON object — no other text — matching:
   "worn": [
     {"name": "item name", "description": "1-2 sentences",
      "clothing_type": "top", "wearstyle": "",
-     "affordances": ["wearable"], "states": [],
+     "kind": "coat", "holds": [],
+     "affordances": {"wear": true}, "states": [],
      "trait_bonuses": {}, "bonus_when": ""}
   ],
   "carried": [
     {"name": "item name", "description": "1-2 sentences", "takeable": true,
-     "affordances": ["readable"], "states": [],
+     "kind": "letter", "holds": [],
+     "affordances": {"read": true}, "states": [],
      "trait_bonuses": {}, "bonus_when": ""}
   ]
 }
@@ -471,12 +481,14 @@ boots", "pair of wool gloves". Never a bare plural on its own.
 descriptions are what a player sees on looking at that item alone, so they
 must not mention the character, the room, or anything else.
 
-affordances are what can be done with a thing, as lowercase single words:
-readable, openable, container, surface, flammable, edible, drinkable, wearable,
-(a "container" is hollow and things go IN it; a "surface" has a top and things
-go ON it -- a table, a shelf, a counter, a desk. Many things are both.)
-breakable, wieldable. Every garment must include "wearable". states are
-conditions currently true of it (patched, bloodstained, damp), usually empty.
+{affordance_rule}
+Every garment must afford "wear".
+
+kind is the one common noun the thing IS, singular and lowercase, with the
+describing words stripped off: a "Patched Wool Coat" is a coat. holds says
+where things go: ["in"] for a pouch, [] for anything solid.
+
+states are conditions currently true of it (patched, bloodstained, damp), usually empty.
 
 {naming_rule}
 Return only the JSON object."""
@@ -484,6 +496,12 @@ Return only the JSON object."""
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _affordance_rule():
+    """How to declare what can be done to a thing, shared by every generator."""
+    from world import affordances
+
+    return affordances.PROMPT
 
 def _call_openrouter(api_key, model, messages, tools=None):
     payload = {"model": model, "messages": messages}
@@ -666,7 +684,9 @@ def _room_context(room, npc):
         elif isinstance(obj, DefaultCharacter):
             people.append(person(obj, obj.get_display_name(npc)))
         else:
-            marks = list(obj.db.affordances or [])
+            from world import verbs as _verbs
+
+            marks = sorted(_verbs.affordances(obj))
             condition = list(obj.db.states or [])
             detail = ", ".join(marks) or "nothing special"
             if condition:
@@ -1200,7 +1220,8 @@ def dress_npc(account, npc):
 
     system = _NPC_OUTFIT_SYSTEM.replace(
         "{garment_types}", ", ".join(clothing.GARMENT_TYPES)
-    ).replace("{naming_rule}", verbs.naming_rule())
+    ).replace("{naming_rule}", verbs.naming_rule()
+    ).replace("{affordance_rule}", _affordance_rule())
     messages = [
         {"role": "system", "content": system},
         {

@@ -41,9 +41,10 @@ CONDITIONS = ("worn", "wielded", "carried")
 
 DEFAULT_CONDITION = "carried"
 
-#: The affordance that makes something wieldable, matching the word every
-#: generator has been offering all along.
-WIELDABLE = "wieldable"
+#: The affordance that makes something wieldable: the verb itself, since
+#: `world.affordances` made affordances and verbs one vocabulary. "wieldable"
+#: and "wield" had been the same idea in two namespaces that never met.
+WIELDABLE = "wield"
 
 #: How many things can be in hand at once. Two, because there are two hands;
 #: a sword and a shield is the case this exists for.
@@ -126,7 +127,9 @@ def wieldable(obj):
     """True for something that can be taken in hand."""
     if obj is None:
         return False
-    return WIELDABLE in {str(a).lower() for a in (obj.db.affordances or [])}
+    from world import verbs
+
+    return WIELDABLE in verbs.affordances(obj)
 
 
 def condition(obj):

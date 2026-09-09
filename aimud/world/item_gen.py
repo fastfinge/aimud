@@ -36,27 +36,43 @@ Respond with a single JSON object — no other text:
   "name": "Item Name (2-4 words, title case)",
   "description": "2-3 sentence atmospheric description of the item.",
   "takeable": true|false,
-  "affordances": ["readable", "flammable"],
+  "kind": "cup",
+  "kinds": [],
+  "qualifiers": ["blue", "ceramic"],
+  "sense": "",
+  "holds": ["in"],
+  "affordances": {"read": true, "burn": true},
   "states": ["dusty"],
   "clothing_type": "",
   "trait_bonuses": {"defence": 2},
   "bonus_when": "worn"
 }
+kind is the one common noun this thing IS, singular and lowercase, with every
+describing word stripped off: a "Blue Ceramic Cup" is a cup, a "Stained Slate
+Chalkboard" is a chalkboard, an "Iron Storm Lantern" is a lantern. It is what
+the thing has in common with every other one of its sort, and it is how the
+game knows that the blue cup and the red cup are two cups.
+
+qualifiers are the describing words you took off it — what makes this one
+different from the others of its kind. Colour, material, make, whose it is.
+Not its condition: that is what states are for.
+
+kinds is for a thing that is genuinely two things at once — a sword with an
+inscription along the blade is a sword AND an inscription, and can be read as
+well as swung. Leave it empty, which is the ordinary case. Never list what the
+kind already is: a sword is obviously a weapon, and saying so adds nothing.
+
+holds says where things can be put: ["in"] for anything hollow, ["on"] for
+anything with a top, both for something like an open crate, and [] for
+anything solid. This is not a verb and does not go in affordances.
 takeable should be false for fixed features (bolted or structural) and true for portable objects.
 
 clothing_type is only for something that can be worn, and goes with the
-"wearable" affordance. Use one of: hat, jewelry, top, undershirt, gloves,
+"wear" affordance. Use one of: hat, jewelry, top, undershirt, gloves,
 fullbody, bottom, underpants, socks, shoes, accessory. Leave it "" for
 anything that is not clothing.
 
-affordances are what can be done with this thing, as lowercase single words:
-readable, openable, container, surface, flammable, edible, drinkable, wearable,
-(a "container" is hollow and things go IN it; a "surface" has a top and things
-go ON it -- a table, a shelf, a counter, a desk. Many things are both.)
-sittable, climbable, breakable, wet_able, movable, lockable, wieldable...
-Use as many as genuinely apply and invent others where they fit — these decide
-which verbs work on it, so a poster that cannot be read is a poster nobody can
-read. Give an empty list only for something truly inert.
+{affordance_rule}
 
 states are conditions currently true of it (locked, lit, wet, dirty, broken),
 usually empty for a new object.
@@ -231,17 +247,24 @@ def generate_item(account, room, object_name, on_success, on_error):
         on_error(str(e))
         return
 
-    from world import gear, verbs
+    from world import affordances as af, gear, lexicon, verbs
+
+    # Only for a word whose senses disagree about what kind of thing it is --
+    # a chest, a board, a bar. Empty for almost everything, and a sword or a
+    # bottle never costs a token for it.
+    which_sense = lexicon.sense_prompt(object_name)
 
     messages = [
         {"role": "system",
          "content": _ITEM_SYSTEM_PROMPT.replace(
-             "{naming_rule}", verbs.naming_rule())},
+             "{naming_rule}", verbs.naming_rule()).replace(
+             "{affordance_rule}", af.PROMPT)},
         {
             "role": "user",
             "content": (
                 f"{_world_and_room(room, 'items')}\n\n"
                 f"{gear.prompt_block(room.db.world_root if room else None)}"
+                f"{which_sense}"
                 f"Generate the item the player is examining: '{object_name}'"
             ),
         },

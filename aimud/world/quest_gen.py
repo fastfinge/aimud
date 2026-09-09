@@ -36,7 +36,7 @@ Respond with a single JSON object — no other text — matching:
 }
 
 goal is what must become true for the errand to be done. Each entry is one of:
-{"type": "holds",     "object": "brass key"}                  they are carrying it
+{"type": "holds",     "object": "brass key"}   (or "kind": "key" for any)                  they are carrying it
 {"type": "worn",      "object": "grey habit"}                 they have it on
 {"type": "trait",     "trait": "standing", "min": 10}         a figure about them
 {"type": "placed",    "object": "ledger", "preposition": "in", "host": "safe"}
@@ -234,7 +234,7 @@ Respond with a single JSON object — no other text — matching:
 {"goal": [ ... ]}
 
 Each entry is one of:
-{"type": "holds",     "object": "brass key"}                   they are carrying it
+{"type": "holds",     "object": "brass key"}   (or "kind": "key" for any)                   they are carrying it
 {"type": "worn",      "object": "grey habit"}                  they have it on
 {"type": "trait",     "trait": "standing", "min": 10}          a figure about them
 {"type": "placed",    "object": "ledger", "preposition": "in", "host": "safe"}

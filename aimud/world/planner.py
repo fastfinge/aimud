@@ -200,7 +200,9 @@ def _burns_itself_down(rule):
             if removed & {str(s) for s in needed.get("is") or []}:
                 return True
         if etype == "modify_object" and effect.get("affordances") is not None:
-            kept = {str(a).lower() for a in effect["affordances"] or []}
+            from world import affordances as af
+
+            kept = af.afforded(af.normalise(effect["affordances"]))
             if {str(a).lower() for a in needed.get("has") or []} - kept:
                 return True
     return False
@@ -355,24 +357,65 @@ def _for_condition(actor, world_root, condition):
     return None, None
 
 
-def _needed_affordances(key):
+def _needed_affordances(key, rule=None):
     """
-    What the direct object of a cached rule has to be, read off its key.
+    What the direct object of a rule has to be able to do.
 
-    A rule is stored under "eat#direct:edible", which says the rule applies to
-    anything edible. That is exactly the question a planner has when it wants
-    a trait raised and needs something to do it with -- so the answer is read
-    back out of the key rather than stored twice.
+    Read off the rule rather than off the key. A rule used to be stored under
+    "eat#direct:edible", so the key carried the answer; now a rule is stored
+    under "eat" and nothing else, because what a verb means stopped depending
+    on what it was first tried on. What remains is the rule's own `requires`,
+    which is where the condition was always stated.
+
+    None still means the rule acts on nothing in particular -- "rest", "pray"
+    -- and an empty set still means it acts on a direct object that need not
+    be anything special.
     """
-    _verb, _, signature = key.partition("#")
-    for part in signature.split("|"):
-        role, _, marks = part.partition(":")
-        if role != "direct":
+    try:
+        needed = dict((rule or {}).get("requires") or {})
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if "direct" not in needed:
+        return None
+    try:
+        return {str(a) for a in (dict(needed["direct"]).get("has") or [])}
+    except (AttributeError, TypeError, ValueError):
+        return set()
+
+
+def _kinds_admitting(world_root, verb):
+    """
+    Every kind this world has decided can be verbed this way.
+
+    The planner's other way of finding something to act on, now that a rule
+    no longer carries an affordance in its key. A verb with no affordance
+    requirement at all -- and most have none -- used to leave the planner
+    nothing to search for; the kind table knows which sorts of thing admit it.
+    """
+    from world import kinds as kinds_mod
+
+    found = set()
+    if not world_root:
+        return found
+    for kind in kinds_mod.vocabulary(world_root):
+        entry = kinds_mod.spec(world_root, kind) or {}
+        try:
+            if dict(entry.get("affordances") or {}).get(verb):
+                found.add(kind)
+        except (AttributeError, TypeError, ValueError):
             continue
-        if marks in ("", "plain"):
-            return set()
-        return {m for m in marks.split(",") if m}
-    return None      # the rule takes no direct object at all
+    return found
+
+
+def _thing_of_kind(actor, wanted_kinds):
+    """Something in reach whose kind admits the verb, nearest first."""
+    for location in (actor, actor.location):
+        for obj in (location.contents if location else []):
+            if getattr(obj, "destination", None) is not None or obj is actor:
+                continue
+            if set(obj.db.kinds or []) & wanted_kinds:
+                return obj
+    return None
 
 
 def _thing_matching(actor, wanted):
@@ -414,19 +457,72 @@ def _trait_step(actor, world_root, condition):
                 continue
 
             verb = key.split("#", 1)[0]
-            wanted = _needed_affordances(key)
+            wanted = _needed_affordances(key, rule)
             if wanted is None:
                 # A verb that acts on nothing in particular -- "rest", "pray".
                 if verbs.check(rule.get("requires"), {}, actor) is None:
                     return verb, key
                 continue
 
-            obj = _thing_matching(actor, wanted)
+            obj = _thing_matching(actor, wanted) if wanted else None
+            if obj is None:
+                # Nothing declares the capability, which is the ordinary case:
+                # most rules require no affordance at all. The kinds this
+                # world has decided admit the verb are the other way in.
+                obj = _thing_of_kind(actor, _kinds_admitting(world_root, verb))
             if obj is None:
                 continue
             if verbs.check(rule.get("requires"), {"direct": obj}, actor) is not None:
                 continue
             return f"{verb} {obj.key}", key
+
+    return _trait_step_by_object(actor, world_root, condition, slug)
+
+
+def _trait_step_by_object(actor, world_root, condition, slug):
+    """
+    The same search, asked of particular things rather than of rules.
+
+    A rule says what a verb does to everything of its sort, and that is what
+    the scan above reads. But an object may carry its own effects -- what
+    happens when *this* pie is eaten -- and one of them may move a figure the
+    verb's own rule never mentions. A rule-only scan cannot see that, so an
+    NPC would never think to eat the one thing in the room that would restore
+    it, and would spend the goal's patience finding out.
+
+    Second rather than first because it is the narrow case and the expensive
+    one: it looks at things in reach instead of at what the world knows. Most
+    objects carry specifics for one verb and most carry none at all, so in
+    practice this is a short loop over a short list.
+    """
+    rules = (world_root.db.verb_rules or {}) if world_root else {}
+    for location in (actor, actor.location):
+        for obj in (location.contents if location else []):
+            if getattr(obj, "destination", None) is not None or obj is actor:
+                continue
+            try:
+                specifics = dict(obj.db.verb_specifics or {})
+            except (TypeError, ValueError):
+                continue
+            for verb, entry in specifics.items():
+                rule = rules.get(verb)
+                if not rule or unreliable(world_root, verb):
+                    continue
+                merged = dict(rule)
+                try:
+                    if dict(entry).get("effects") is not None:
+                        merged["effects"] = dict(entry)["effects"]
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                for outcome in PLAN_OUTCOMES:
+                    if not _rule_would_achieve(merged, condition, slug, outcome):
+                        continue
+                    if outcome == "failure" and _burns_itself_down(merged):
+                        continue
+                    if verbs.check(merged.get("requires"), {"direct": obj},
+                                   actor) is not None:
+                        continue
+                    return f"{verb} {obj.key}", verb
     return None, None
 
 

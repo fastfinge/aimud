@@ -38,6 +38,8 @@ where somebody is being butchered still works.
 
 import re
 
+from world import lexicon
+
 #: Parts, as head nouns and singular. Not only human ones: a world with
 #: beetles and birds in it has mandibles and wings, and they are no more
 #: separate objects than a shoulder is.
@@ -113,16 +115,20 @@ def _words(text):
 
 
 def _singular(word):
-    """Enough of a singulariser for a word list to be looked up with."""
+    """
+    A word reduced to the form the list above is written in.
+
+    The table first, because half of it is not singularising at all: viscera
+    and bowels are folded onto "gut" because this vocabulary keeps one word
+    for the place they name, and no dictionary is going to volunteer that.
+    The rest is ordinary English and is left to one -- teeth, feet, calves,
+    hooves and wolves are all handled, along with the antennae and vertebrae
+    of a world with beetles in it, which a suffix rule would have had to grow
+    a case for and which the table above never listed.
+    """
     if word in IRREGULAR:
         return IRREGULAR[word]
-    for suffix, stem in (("ies", "y"), ("ses", "s"), ("xes", "x"),
-                         ("zes", "z"), ("ches", "ch"), ("shes", "sh")):
-        if word.endswith(suffix) and len(word) > len(suffix) + 1:
-            return word[: -len(suffix)] + stem
-    if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
-        return word[:-1]
-    return word
+    return lexicon.lemma(word, "n")
 
 
 def head_noun(phrase):

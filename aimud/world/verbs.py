@@ -23,6 +23,8 @@ import re
 
 from evennia.utils import logger
 
+from world import lexicon
+
 # Prepositions that introduce a second noun, mapped to the role that noun
 # plays.  "unlock door with key" -> direct=door, instrument=key.
 PREPOSITION_ROLES = {
@@ -90,30 +92,70 @@ VERB_SYNONYMS = {
 
 
 def canonical_verb(word):
-    """Fold a verb onto its canonical form."""
+    """
+    Fold a verb onto its canonical form.
+
+    Two foldings, and the order matters.  The table above is consulted first
+    and exactly as it always was, so nothing a previous world learned can move
+    underneath it.  Only a word the table does not know is put through the
+    dictionary, which reduces it to its infinitive -- "lit" is light, "broke"
+    is break, "held" is hold, "ate" is eat -- and then offered to the table
+    again, because the infinitive may be a synonym even where the tense was
+    not.
+
+    That second pass is why "wearing" no longer has to be written down.  It
+    was never a synonym of "wear"; it is "wear", and a suffix table that knew
+    as much would also have to know about "ate".
+    """
     word = word.lower().strip()
-    return VERB_SYNONYMS.get(word, word)
+    folded = VERB_SYNONYMS.get(word)
+    if folded is not None:
+        return folded
+
+    root = lexicon.lemma(word, "v")
+    if root != word:
+        return VERB_SYNONYMS.get(root, root)
+    return word
 
 
 def parse(raw):
     """
-    Split raw input into a verb and its noun phrases by role.
+    Split raw input into a verb, its noun phrases by role, and how it was done.
 
     Returns {"verb": str, "roles": {role: phrase},
-             "prepositions": {role: word}} where "direct" is the thing acted
-    on and the rest are named by the preposition that introduced them.  Word
-    order is preserved, so "tie rope to tree" and "tie tree to tree" parse
-    differently, which is the whole point of tracking roles rather than
-    collecting a bag of nouns.
+             "prepositions": {role: word}, "manner": [word, ...]} where
+    "direct" is the thing acted on and the rest are named by the preposition
+    that introduced them.  Word order is preserved, so "tie rope to tree" and
+    "tie tree to tree" parse differently, which is the whole point of tracking
+    roles rather than collecting a bag of nouns.
 
     The preposition itself is kept as well as the role it implies, because
     several of them share a role and do not share a meaning: "on the table"
     and "under the table" are both `target`, and putting a book in one place
     rather than the other is the whole of what the player asked for.
+
+    Manner is lifted out of the phrase rather than left in it.  "Drink the cup
+    quickly" used to bind nothing at all -- the noun phrase came out as "cup
+    quickly", which resembles a cup too little to match one and so conjured a
+    second cup with an adverb in its name, at the cost of two model calls.
+    Every adverb would do this, and the point of asking a dictionary rather
+    than keeping a list is that nobody has to write down what the adverbs of
+    English are.  Manner is handed back rather than thrown away, because
+    drinking something quickly and drinking it slowly are allowed to differ.
     """
     words = [w for w in re.findall(r"[\w'-]+", raw.lower()) if w]
     if not words:
-        return {"verb": "", "roles": {}, "prepositions": {}}
+        return {"verb": "", "roles": {}, "prepositions": {}, "manner": []}
+
+    manner = []
+
+    # A command may open with its manner -- "carefully open the gate" -- and
+    # the first word is otherwise taken for the verb, which would leave the
+    # world learning a verb called "carefully".  Only leading words are taken
+    # this way, and never the last word standing, so "quickly" alone is still
+    # somebody typing a verb this world has not met yet.
+    while len(words) > 1 and lexicon.is_only_adverb(words[0]):
+        manner.append(words.pop(0))
 
     verb = canonical_verb(words[0])
     roles, prepositions = {}, {}
@@ -139,10 +181,17 @@ def parse(raw):
             continue
         if word in _NOISE:
             continue
+        if lexicon.is_only_adverb(word):
+            # Wherever it fell.  An adverb belongs to the verb no matter which
+            # noun phrase it landed in the middle of: "put the lamp down
+            # gently" and "gently put the lamp down" are the same request.
+            manner.append(word)
+            continue
         current.append(word)
 
     flush()
-    return {"verb": verb, "roles": roles, "prepositions": prepositions}
+    return {"verb": verb, "roles": roles, "prepositions": prepositions,
+            "manner": manner}
 
 
 # ---------------------------------------------------------------------------
@@ -160,14 +209,21 @@ FUZZY_SIMILARITY = 0.6
 
 def _words(text):
     """
-    Meaningful words of a name or phrase.
+    Meaningful words of a name or phrase, singular.
 
     Noise words are dropped here as well as in parse(), because they drag a
     score down for saying nothing: "the board" against "Slate Chalkboard"
     should be judged on "board" alone.
+
+    Both sides are reduced to the singular, so "take the knives" finds the
+    knife and "wipe the boards" finds the board.  A suffix rule gets most of
+    this and then falls over on exactly the words a world is full of -- knives,
+    leaves, mice, geese, shelves -- which is the sort of thing a dictionary
+    already knows and nobody should be writing down again.
     """
     return [
-        w for w in re.findall(r"[a-z0-9]+", (text or "").lower())
+        lexicon.lemma(w, "n")
+        for w in re.findall(r"[a-z0-9]+", (text or "").lower())
         if w and w not in _NOISE
     ]
 
@@ -312,8 +368,24 @@ def bind_all(caller, roles, fuzzy=False):
 # ---------------------------------------------------------------------------
 
 def affordances(obj):
-    """The stable capabilities of an object ("readable", "flammable")."""
-    return set(obj.db.affordances or [])
+    """
+    What can be done to an object, as a set of verbs ("read", "burn").
+
+    The one way anything asks. Every caller sees a set of words, which is what
+    they have always seen -- what changed underneath is where the words come
+    from and what they are. They are verbs now rather than adjectives made out
+    of verbs, and they belong to the object's kind rather than to the object,
+    so seventy-three bottles cannot arrive at twenty-five answers between
+    them. See `world.affordances` and `world.kinds`.
+
+    A map is stored, because a map can say no and a set can only fail to say
+    yes. What is returned here is the yes half, since that is what a cache key
+    and a precondition both want; `world.affordances.refused()` is the other
+    half, for the one caller that needs to tell "cannot" from "nobody said".
+    """
+    from world import affordances as af
+
+    return af.afforded(obj.db.affordances)
 
 
 def states(obj):
@@ -321,23 +393,31 @@ def states(obj):
     return set(obj.db.states or [])
 
 
-def signature(bound):
+def rule_key(verb, bound=None):
     """
-    A cache key describing the *kind* of situation, not the specific objects.
+    The key a learned verb rule is cached under: the verb, and nothing else.
 
-    "read" applied to anything readable is one rule, so a rule learned for a
-    flyer applies to a poster without asking the model again.
+    This used to be the verb plus every affordance of every object involved,
+    on the reasoning that a verb's meaning belongs to the things it acts on.
+    The reasoning was right and the key was the wrong way to act on it. Across
+    five worlds it produced 664 rules for 151 verbs -- `drink` thirty times
+    over, forked on `breakable` and `flammable` and eight other marks that no
+    drink rule has ever mentioned. Eighty-six percent of those rules existed
+    because the object said nothing at all about the verb being tried, so
+    every new sort of thing somebody drank from bought another copy of what
+    drinking means.
+
+    What a verb means is now stored once, here. What a *kind* of thing admits
+    -- whether a bottle can be burned at all -- is a yes or no on the kind,
+    in `world.kinds`. What happens to *this* bottle when it burns is written
+    on the bottle, in the same call that writes what the player reads, which
+    was always per-object and always had to be. Three questions that were
+    being answered by one overloaded cache key, and only the first of them is
+    about the verb alone.
+
+    `bound` is still accepted so that callers need not change, and ignored.
     """
-    parts = []
-    for role in sorted(bound):
-        marks = ",".join(sorted(affordances(bound[role]))) or "plain"
-        parts.append(f"{role}:{marks}")
-    return "|".join(parts) or "none"
-
-
-def rule_key(verb, bound):
-    """The key a learned verb rule is cached under."""
-    return f"{verb}#{signature(bound)}"
+    return verb
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +458,46 @@ same way: what it is made of and what it is for, not how much is left in it.
 def naming_rule():
     """How to name a made thing, for any generator that makes one."""
     return _NAMING_RULE
+
+
+def name_contradicts_states(name, states, world_root=None):
+    """
+    Words in a name that the rule above says belong in states instead.
+
+    The rule is easy to state and easy for a generator to drift away from, and
+    the damage is silent: a "Stained Slate Chalkboard" can be wiped clean and
+    goes on being called stained forever, because a name is written once and
+    shown for the rest of the object's life. Nothing here can repair that --
+    renaming a thing after the fact breaks every alias anybody has learned for
+    it -- so this reports rather than corrects, and what it is for is noticing
+    that a prompt has started to slip.
+
+    Two things count, and neither is a guess:
+
+    * A word in both the name and this object's own states. That is the model
+      contradicting itself inside one reply, and needs no world to detect.
+
+    * A word in the name that this world has already registered as a state.
+      By then some verb is able to change the condition, and the name is
+      welded against it.
+
+    Note what is deliberately NOT consulted: whether the word is an adjective.
+    It sounds like the test and it is the wrong one in both directions. Half
+    the words it catches are perfectly good names -- "wooden", "ornate",
+    "sturdy" and "tiny" are adjectives and can be nothing else -- while half
+    the conditions this rule exists to catch are ordinary nouns, "wet",
+    "burning" and "open" among them, which is to say most of the list the rule
+    itself prints. What makes a word wrong here is that it names something
+    changeable, and the state vocabulary is the only place this game says
+    which words those are.
+    """
+    words = {w for w in re.findall(r"[a-z0-9]+", (name or "").lower())}
+    if not words:
+        return []
+
+    own = {str(s).lower().strip() for s in (states or []) if s}
+    registered = set(DEFAULT_STATE_GROUP) | set(vocabulary(world_root))
+    return sorted(words & (own | registered))
 
 
 # ---------------------------------------------------------------------------
