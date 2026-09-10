@@ -39,11 +39,14 @@ become one language shared by rules, goals, quests and the planner.
    9. effect vocabulary (standing, ordered by need)
             │
   12. commonsense.py (independent; last)
+            │
+  13. instrumented soak: better data, and every baseline re-measured
 ```
 
 Phases 1, 2, 4 and 9 are useful on their own and improve the game whether or not
 the rest lands. Phase 7 is the only irreversible-feeling step, and §7.4 below is
-its rollback.
+its rollback. Phase 13 is the only one that deliberately costs money, and the
+thing it buys is the evidence that any of this worked.
 
 ---
 
@@ -154,6 +157,30 @@ up, so they proved nothing about a real world.
 corpus is not: it is the only generated rule data that exists, it is what every
 measurement in all three of these documents was taken from, and a reset ends it.
 An afternoon's export, and irreplaceable afterwards.
+
+**And it is interim.** It was produced by the engine this plan replaces, so it
+describes rules nobody would write again. It is scaffolding: good enough to build
+against, due to be replaced by a corpus from the new engine (phase 13). Which
+means the way tests use it decides how expensive that replacement is, and there
+are two kinds of fixture with two different futures:
+
+* **Shape fixtures -- assert properties over the corpus, never facts about one
+  record.** "Every `requires` block converts and evaluates", "every kind resolves
+  to something closed", "no rule references an unknown effect type". These
+  survive a data swap untouched, because they are about the code. A test that
+  asserts rule 47 requires `powered` does not survive, and rewriting forty of
+  those is how a fixture replacement turns into a week.
+* **Baselines -- recorded observations, not invariants.** 72% one-way states, 85
+  refusals, 10% causative coverage. These are facts about *those* worlds, and the
+  whole point of the work is to change them. Assert them as a **ratchet** with a
+  direction of travel -- refusals must not rise, one-way states must not rise,
+  coverage must not fall -- and keep the numbers in one file that is expected to
+  be rewritten rather than scattered through assertions that will look like
+  failures the moment the design works.
+
+The second bullet is the trap worth naming twice: an `assertEqual(one_way, 45)`
+somewhere will fail on the day phase 4 starts helping, and whoever sees it fail
+will "fix" the test.
 
 **Done when:** `evennia test --exclude-tag=llm .` runs green from a clean
 checkout with no API key, in CI, in under a minute; one model-call seam exists;
@@ -432,6 +459,59 @@ dropped on licence grounds. SQLite index, stdlib only, gated behind
 **Tests:** `[A]` every lookup returns neutrally with no corpus present — the
 ground rule; `[A]` the index builder against a small committed sample of edges;
 `[B]` a group seeded from antonyms registers correctly.
+
+### Phase 13 — The instrumented soak, and better data
+
+*Depends on everything. The only phase that costs real money on purpose.*
+
+Fresh worlds, run in `worldmode always` for a while, to produce a corpus from the
+new engine and replace the interim fixtures of §3, 0.6. This is the one deliberate
+spend in the plan, so it is worth setting up rather than just leaving running.
+
+**What must already be in place, or the run is worth less than it costs.** Every
+one of these is cheap, and each one turns calls that were going to happen anyway
+into data:
+
+| Needed first | Why the run is wasted without it |
+|---|---|
+| Attempt counters (phase 10) | The refusals are the point. Without counts there is no evidence for any `instead` suggestion, and the redirect case -- `power` aboard a ship -- cannot be detected at all |
+| `cannot_say` logging (phase 8) | The only measurement of what the effect vocabulary is missing |
+| The kind-settling log (phase 1) | Whether anchors and senses are being chosen well, which is unknowable from the rules alone |
+| `worldcheck` (phase 4) | So faults are found during the run rather than read out of the wreckage |
+
+**What `worldmode always` is good for, and what it is not.** It buys volume
+without a human typing for weeks, and it exercises the planner and NPC-initiated
+attempts hard. But the distribution is biased: NPCs act through the planner, so
+they reach for verbs the world already knows and rules that already exist. **They
+will not invent vocabulary.** The verbs that stress this design -- the ones nobody
+anticipated, typed at a thing nobody expected -- come from a person playing. So
+the corpus wants both: always-mode for depth and volume, and human play for
+breadth. Recorded separately, because they answer different questions.
+
+**What to re-measure, and which way each should move.** Every number below is
+taken from the old corpus and quoted in these three documents; each one is a
+claim this design makes about itself.
+
+| Measurement | Old corpus | Expected |
+|---|---|---|
+| Rules refused as invalid | 85 of 326 (26%) | **down** -- context is expressible now, so `fill`, `order` and `search` should succeed |
+| Refused for needing a place | 7 | **to zero** -- this is the failure the whole change exists to fix |
+| Accepted rules with no effects | 32% | **down** |
+| One-way states (set, never unset) | 45 of 62 (72%) | **down** -- phase 10's inverse proposals target exactly this |
+| States required but never settable | 7 | **to zero** |
+| Rules per verb | 3.26 | **down**, and near 1 per action-and-scope |
+| Troponymy parents already known | 3% (4/113) | **up** -- and re-measure it properly, since the old figure came from `verb_ancestors` guessing senses wrongly |
+| Per-object specifics that differ | 0 of 65 | **anything but zero** -- if it is still zero the mechanism should be retired rather than kept paying for a field in every narration prompt |
+| Verbs with a WordNet sense | 98 of 100 | **watch it** -- a genre-heavy world is where this should break if it breaks |
+| ConceptNet affordance replay | not yet run | coverage, precision, novelty against the 12-bucket floor (§7.1) |
+
+**Done when:** the fixtures are replaced, every baseline is re-recorded with its
+new value, and each number that moved the wrong way has an explanation or a bug
+attached to it.
+
+A number going the wrong way is the most valuable thing this run can produce, so
+it should be easy to see. `worldcheck` reporting a ratchet break is better than a
+test failing silently in CI weeks later.
 
 ---
 
