@@ -1436,108 +1436,23 @@ def check(requires, bound, actor, world_root=None):
     """
     Test a rule's preconditions. Returns None when met, else why not.
 
-    requires is {role: {"has": [affordance], "lacks": [state],
-    "is": [state], "holds": [name]}} where role may also be "actor".
+    The testing and the wording both live in `world.conditions` now. This is
+    the shape the attempt pipeline still calls it by: role-keyed `requires`
+    in, one sentence out, `None` when nothing is wrong.
 
-    The message is the point of this function as much as the verdict. It used
-    to say "X is not something you can do that to", which names neither what
-    was wanted nor what would have served -- so a player who tried to sit on a
-    bottle learned only that they could not, and an NPC told the same thing
-    asked for it again next turn. Every clause here now says which
-    requirement failed, and a missing affordance also says what the thing IS
-    good for, because that is the sentence that answers "then what can I do
-    with it?" without another attempt.
+    The message was always as much the point of this function as the verdict.
+    It used to say "X is not something you can do that to", which names
+    neither what was wanted nor what would have served, so a player who tried
+    to sit on a bottle learned only that they could not. Every clause now says
+    which requirement failed, and a missing affordance also says what the
+    thing IS good for -- the sentence that answers "then what can I do with
+    it?" without another attempt.
     """
-    complaints = []
+    from world import conditions
 
-    def note(text):
-        if text and text not in complaints:
-            complaints.append(text)
-
-    for role, needed in requirements(requires).items():
-        obj = actor if role == "actor" else bound.get(role)
-        if obj is None:
-            note("There is nothing here to do that to.")
-            continue
-
-        name, be, pronoun = _speak_of(obj, actor)
-        have = affordances(obj)
-        is_now = states(obj)
-
-        wanted, placement = _wanted_affordances(needed.get("has", []))
-
-        for affordance in wanted:
-            if affordance in have:
-                continue
-            # An affordance is a verb now, so the refusal is a verb too:
-            # "you cannot spray the can" rather than "the can is not
-            # sprayable", which was fine while affordances were adjectives
-            # and turned into "it is a buy, a crush and a open" the moment
-            # they stopped being.
-            said = f"You cannot {affordance} {_in_a_sentence(obj, actor)}."
-            # What it IS for. The hint the old message withheld: a bottle that
-            # cannot be sat on can still be drunk, broken and put things in.
-            if have:
-                from evennia.utils.utils import iter_to_str
-
-                said += f" You can {iter_to_str(sorted(have))} {pronoun.lower()}."
-            note(said)
-
-        for preposition in placement:
-            from world import kinds
-
-            if preposition in kinds.holds(world_root, obj.db.kinds):
-                continue
-            note(f"{_cap(name)} {be} not something things go {preposition}.")
-
-        for state in needed.get("is", []):
-            if state in is_now:
-                continue
-            # The meaning as well as the word, because half these words the
-            # world invented for itself and "not charged" is only useful to
-            # somebody who knows what this world charges.
-            means = (vocabulary(world_root).get(state) or {}).get("means") \
-                if world_root is not None else ""
-            note(f"{_cap(name)} {be} not {state}"
-                 + (f" ({means})." if means else "."))
-
-        for state in needed.get("lacks", []):
-            if state in is_now:
-                note(f"{_cap(name)} {be} already {state}.")
-
-        for carried in needed.get("holds", []):
-            # A rule may name another role here rather than an item, and for
-            # the verbs where holding matters it almost always does: "to throw
-            # it you must be holding it" is a condition about whatever is being
-            # thrown, which has no name until somebody throws something. Read
-            # literally it asks the player to carry an object called "direct",
-            # which nothing is and nothing can be -- so the rule could never be
-            # satisfied, and picking the thing up changed nothing.
-            role_wanted = bound.get(str(carried).strip().lower())
-            if role_wanted is not None:
-                if role_wanted not in obj.contents:
-                    held_name, _be, _pronoun = _speak_of(role_wanted, actor)
-                    note(f"{_cap(name)} {be} not holding {held_name}.")
-                continue
-
-            if not any(carried.lower() in o.key.lower() for o in obj.contents):
-                # A rule writes the item as a bare noun phrase ("brass key"),
-                # which needs an article to be said aloud. Any it already has
-                # is dropped first, so "a brass key" does not become "the a
-                # brass key".
-                wanted = re.sub(r"^(?:an?|the|some)\s+", "", carried.strip(),
-                                flags=re.IGNORECASE)
-                note(f"{_cap(name)} {be} not holding the {wanted}.")
-
-        # What is measurably true of a person, tested the same way as what is
-        # true of a thing. This is what lets a rule say "you need 10 stamina
-        # for that" rather than only "the door must be unlocked".
-        wanted_traits = needed.get("trait") or needed.get("traits")
-        if wanted_traits:
-            from world import traits as traits_mod
-
-            note(traits_mod.meets(obj, wanted_traits))
-
-    if not complaints:
-        return None
-    return " ".join(complaints[:MAX_COMPLAINTS])
+    said = conditions.complaints(
+        conditions.from_requires(requires),
+        conditions.context(bound, actor, world_root),
+        limit=MAX_COMPLAINTS,
+    )
+    return " ".join(said) if said else None

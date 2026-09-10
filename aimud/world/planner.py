@@ -66,53 +66,21 @@ def note_failure(world_root, key):
 # ---------------------------------------------------------------------------
 
 def _effect_achieves(effect, condition, obj_name):
-    """Whether one effect would satisfy one goal condition about `obj_name`."""
-    etype = effect.get("type")
-    ctype = condition.get("type")
+    """
+    Whether one effect would satisfy one goal condition about `obj_name`.
 
-    if ctype == "state" and etype == "set_state":
-        wanted = {s.lower() for s in (condition.get("is") or [])}
-        added = {str(s).lower() for s in (effect.get("add") or [])}
-        if wanted and wanted <= added:
+    `world.conditions.achieves` does the reading. What stays here is the one
+    thing it cannot know: the planner may have resolved a condition that named
+    a *sort* of thing down to a particular one -- "a cake" to the nearest cake
+    -- and it is that name a `create_object` effect has to match.
+    """
+    from world import conditions as C
+
+    for part in C.from_goal(condition):
+        if obj_name and isinstance(part.get("subject"), dict):
+            part = dict(part, subject={"named": obj_name})
+        if C.achieves(effect, part):
             return True
-        unwanted = {s.lower() for s in (condition.get("lacks") or [])}
-        removed = {str(s).lower() for s in (effect.get("remove") or [])}
-        return bool(unwanted) and unwanted <= removed
-
-    if ctype == "trait" and etype == "set_trait":
-        if str(effect.get("trait", "")) != str(condition.get("trait", "")):
-            return False
-        # Which way the goal wants it to move, and which way this effect moves
-        # it. A rate counts: an effect that starts something draining is how a
-        # goal about a falling figure gets met, just not immediately.
-        low, high = condition.get("min"), condition.get("max")
-        wants_up = low is not None
-        change = effect.get("change")
-        rate = effect.get("rate")
-        if effect.get("set_to") is not None:
-            target = float(effect["set_to"])
-            return (low is None or target >= low) and (high is None or target <= high)
-        for amount in (change, rate):
-            if amount is None:
-                continue
-            try:
-                amount = float(amount)
-            except (TypeError, ValueError):
-                continue
-            if amount > 0 and wants_up:
-                return True
-            if amount < 0 and high is not None:
-                return True
-        return False
-
-    if ctype == "holds" and etype == "move_object":
-        return effect.get("to") == "actor"
-
-    if ctype == "gone" and etype == "destroy_object":
-        return True
-
-    if ctype == "exists" and etype == "create_object":
-        return obj_name.lower() in str(effect.get("name", "")).lower()
     return False
 
 

@@ -288,6 +288,25 @@ def satisfied(conditions, ctx):
     return all(met for met, _ in progress(conditions, ctx))
 
 
+def complaints(conditions, ctx, limit=None):
+    """
+    Every condition that does not hold, said as a complaint.
+
+    All of them rather than the first, because a refusal that names one
+    missing thing at a time is a conversation: a player fixes it, tries again,
+    and is told the next. `verbs.check` capped the list for the same reason it
+    is capped here -- past two or three, a refusal stops being read.
+    """
+    said = []
+    for condition in (conditions or []):
+        met, complaint = _judge(condition, ctx, UNMET)
+        if not met and complaint and complaint not in said:
+            said.append(complaint)
+        if limit and len(said) >= limit:
+            break
+    return said
+
+
 def unmet(conditions, ctx):
     """The first condition that does not hold, as a complaint, or ""."""
     for condition in (conditions or []):
@@ -410,6 +429,18 @@ def _missing(subject, condition, mood):
     return False, "There is nothing here to do that to."
 
 
+def _subject_name(condition):
+    """The name a condition's subject was written with, or "".
+
+    For reading an effect backwards, where there is nothing to resolve
+    against and the written name is all there is to compare.
+    """
+    subject = condition.get("subject")
+    if isinstance(subject, dict):
+        return str(subject.get("named") or subject.get("of_kind") or "")
+    return ""
+
+
 def _subject_words(condition):
     """How to name a subject with nothing to look it up by."""
     subject = condition.get("subject")
@@ -474,6 +505,9 @@ def _p_affords(subject, value, condition, ctx, mood):
             return False, (f"{_cap(subject.name())} is not something things "
                            f"go {preposition}.")
     if not lacking:
+        if mood == WANT:
+            return True, f"find something you can {wanted[0]}" if wanted \
+                else ""
         return True, ""
     if mood == WANT:
         return False, f"find something you can {lacking[0]}"
@@ -519,18 +553,27 @@ def _p_kind(subject, value, condition, ctx, mood):
 
 
 def _p_holds(subject, value, condition, ctx, mood):
-    """Whether the subject is carrying something."""
+    """
+    Whether the subject is carrying something.
+
+    Says what it wants whether or not it has it: a quest listing shows every
+    condition, ticked or not, and a met one printing nothing leaves a blank
+    line where "be carrying the brass key" belongs.
+    """
     if not subject.found:
         return _missing(subject, condition, mood)
+    missing = []
+    names = []
     for wanted in _listed(value):
         held, said = _held(subject, wanted, ctx)
-        if held:
-            continue
-        if mood == WANT:
-            return False, f"be carrying {said}"
-        return False, _plainly(subject, f"not holding {said}", ctx,
-                               verb="is")
-    return True, ""
+        names.append(said)
+        if not held:
+            missing.append(said)
+    listed = " and ".join(missing or names) or "it"
+    if mood == WANT:
+        return not missing, f"be carrying {listed}"
+    return not missing, _plainly(subject, f"not holding {listed}", ctx,
+                                 verb="is")
 
 
 def _held(subject, wanted, ctx):
@@ -557,18 +600,17 @@ def _held(subject, wanted, ctx):
 def _p_wears(subject, value, condition, ctx, mood):
     if not subject.found:
         return _missing(subject, condition, mood)
+    missing = []
     for wanted in _listed(value):
-        worn = False
-        for obj in (getattr(subject.obj, "contents", []) or []):
-            if str(wanted).lower() in str(obj.key).lower() and obj.db.worn:
-                worn = True
-                break
+        worn = any(str(wanted).lower() in str(obj.key).lower() and obj.db.worn
+                   for obj in (getattr(subject.obj, "contents", []) or []))
         if not worn:
-            if mood == WANT:
-                return False, f"be wearing {wanted}"
-            return False, _plainly(subject, f"not wearing {wanted}", ctx,
-                                   verb="is")
-    return True, ""
+            missing.append(str(wanted))
+    listed = " and ".join(missing or [str(v) for v in _listed(value)]) or "it"
+    if mood == WANT:
+        return not missing, f"be wearing {listed}"
+    return not missing, _plainly(subject, f"not wearing {listed}", ctx,
+                                 verb="is")
 
 
 def _p_placed(subject, value, condition, ctx, mood):
@@ -735,7 +777,11 @@ def achieves(effect, condition):
         return str(effect.get("preposition") or "") == preposition
 
     if name == "exists" and etype == "create_object":
-        return True
+        # What it makes has to be the thing that was wanted. A rule that
+        # conjures a candle does not satisfy a goal about a key.
+        wanted = _subject_name(condition)
+        made = str(effect.get("name") or "")
+        return not wanted or wanted.lower() in made.lower()
 
     if name == "gone" and etype == "destroy_object":
         return True
@@ -743,14 +789,32 @@ def achieves(effect, condition):
     if name == "trait" and etype == "set_trait":
         if str(effect.get("trait") or "") != str(value):
             return False
-        low = condition.get("min")
-        change = effect.get("change")
-        if low is not None and change is not None:
-            return change > 0
-        high = condition.get("max")
-        if high is not None and change is not None:
-            return change < 0
-        return True
+        low, high = condition.get("min"), condition.get("max")
+        # Set outright: the question is whether where it lands is where the
+        # goal wanted it.
+        if effect.get("set_to") is not None:
+            try:
+                target = float(effect["set_to"])
+            except (TypeError, ValueError):
+                return False
+            return ((low is None or target >= low)
+                    and (high is None or target <= high))
+        # Otherwise, which way the goal wants it to move against which way
+        # this moves it. A rate counts: an effect that starts something
+        # draining is how a goal about a falling figure is met, just not at
+        # once.
+        for amount in (effect.get("change"), effect.get("rate")):
+            if amount is None:
+                continue
+            try:
+                amount = float(amount)
+            except (TypeError, ValueError):
+                continue
+            if amount > 0 and low is not None:
+                return True
+            if amount < 0 and high is not None:
+                return True
+        return False
 
     if name == "in_room" and etype == "move_actor":
         return True
