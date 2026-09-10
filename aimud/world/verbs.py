@@ -830,6 +830,51 @@ def _opposite_group(world_root, slug, vocab):
     return None
 
 
+def _synonym_group(world_root, slug, vocab):
+    """
+    The group of a state that means the same thing as this one.
+
+    Five worlds coined "shut" while already keeping "closed", and "dormant"
+    while already keeping "inactive". Nothing noticed, because folding on the
+    way in compares spellings -- "emptied" collapses onto "empty" and "shut"
+    does not collapse onto anything.
+
+    The slugs are NOT merged, which is the important part. WordNet also calls
+    "broken" and "crushed" synonyms, and a world where a crushed thing is
+    simply a broken one has lost a distinction worth having; sense overlap
+    does not separate the good pairs from that one, since "closed" and "shut"
+    share as little as "broken" and "crushed" do.
+
+    What is safe is the weaker claim: two states that mean the same thing must
+    at least rule each other out. So a synonym joins the group rather than the
+    slug -- which fixes dormant against inactive, leaves shut and closed where
+    they already were, and does the right thing by broken and crushed, since
+    those genuinely are two ways for one thing to be damaged.
+    """
+    from world import lexicon
+
+    wordnet = lexicon._wordnet()
+    if wordnet is None:
+        return None
+    try:
+        senses = [s for s in wordnet.synsets(slug) if s.pos() in ("a", "s")]
+    except Exception:
+        return None
+
+    kin = set()
+    for sense in senses:
+        try:
+            kin |= {name.lower() for name in sense.lemma_names()}
+        except Exception:
+            continue
+    kin.discard(slug)
+    for other in kin & set(vocab):
+        found = group_of(world_root, other)
+        if found:
+            return found
+    return None
+
+
 def register_state(world_root, slug, means="", conflicts=(), group=None,
                    ends_on_move=None):
     """
@@ -854,7 +899,8 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
     # group leaves behind a group that behaves like one. A seeded slug keeps
     # its seeded group whatever was declared -- see DEFAULT_STATE_GROUP.
     seeded = DEFAULT_STATE_GROUP.get(slug)
-    opposite = _opposite_group(world_root, slug, vocab)
+    opposite = (_opposite_group(world_root, slug, vocab)
+                or _synonym_group(world_root, slug, vocab))
     if seeded:
         group = register_group(world_root, seeded)
     elif opposite:

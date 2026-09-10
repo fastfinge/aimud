@@ -298,6 +298,16 @@ def store_rule(world_root, key, rule):
     world_root.db.verb_rules = rules
 
 
+def _states_of_kinds(world_root, bound):
+    """Conditions things of the sorts involved here have been in before."""
+    from world import kinds
+
+    seen = set()
+    for obj in (bound or {}).values():
+        seen |= kinds.states_of(world_root, getattr(obj.db, "kinds", None))
+    return seen
+
+
 def _kindred_block(world_root, verb, bound):
     """
     What this world already knows about the verb this one is a way of doing.
@@ -451,11 +461,22 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
     # be seen. Left to guess, one rule called a group "power_state" and the
     # next "charge_status" -- so a thing could be active and uncharged at the
     # same moment, neither name knowing the other existed.
+    def _line(slug, info):
+        return (f"  {slug}: {info.get('means','')}"
+                f" (group: {verbs.group_of(world_root, slug) or 'none'};"
+                f" cancels: {', '.join(info.get('conflicts') or []) or 'nothing'})")
+
+    # The conditions things of this sort have actually been in, shown first
+    # and separately. A world's vocabulary runs to sixty states before long,
+    # and sixty undifferentiated lines are not read -- which is how "shut" got
+    # coined beside "closed" and "dormant" beside "inactive". The handful that
+    # have ever been true of a bottle are worth putting in front of the rest.
+    familiar = _states_of_kinds(world_root, bound)
+    near_text = "\n".join(_line(slug, vocab[slug])
+                          for slug in sorted(familiar & set(vocab)))
     vocab_text = "\n".join(
-        f"  {slug}: {info.get('means','')}"
-        f" (group: {verbs.group_of(world_root, slug) or 'none'};"
-        f" cancels: {', '.join(info.get('conflicts') or []) or 'nothing'})"
-        for slug, info in sorted(vocab.items())
+        _line(slug, info) for slug, info in sorted(vocab.items())
+        if slug not in familiar
     ) or "  (none yet)"
     group_text = ", ".join(sorted(verbs.groups(world_root))) or "(none yet)"
 
@@ -471,7 +492,10 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
                 f"The player typed: '{raw}'\n"
                 f"Verb: {verb}\n\n"
                 f"Things involved:\n{_describe_objects(bound, actor)}\n\n"
-                f"State vocabulary already in use:\n{vocab_text}\n\n"
+                + (f"Conditions things of this sort have been in before, and "
+                   f"the ones to reuse if any of them fit:\n{near_text}\n\n"
+                   if near_text else "")
+                + f"Every other state this world uses:\n{vocab_text}\n\n"
                 f"State groups already in use, to be reused rather than "
                 f"renamed: {group_text}\n\n"
                 f"{traits.vocabulary_block(world_root)}"

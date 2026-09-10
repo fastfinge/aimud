@@ -289,6 +289,52 @@ def admit(world_root, obj_kinds, verb, allowed):
     )
 
 
+def note_state(world_root, obj_kinds, slugs):
+    """
+    Remember that things of this sort have been in these conditions.
+
+    Not a declaration and not a restriction -- an observation. A bottle that
+    has been full and empty and cracked says something true about bottles, and
+    the next rule written about a bottle would rather be shown those six words
+    than the world's whole vocabulary of sixty.
+
+    Kept on the kind because that is the level it generalises at. Which states
+    a thing may hold is not worth constraining -- the same looseness that lets
+    `pry` leave a chest `open` is the looseness that would have to go -- but it
+    is very much worth *recalling*, since a model shown "empty" does not go on
+    to coin "drained".
+    """
+    ordered = prune(obj_kinds)
+    if not world_root or not ordered:
+        return
+    wanted = {str(s).lower().strip() for s in (slugs or []) if s}
+    if not wanted:
+        return
+    kind = ordered[0]
+    store = dict(getattr(world_root.db, ATTR, None) or {})
+    entry = dict(store.get(kind) or {})
+    seen = set(entry.get("states") or []) | wanted
+    if seen == set(entry.get("states") or []):
+        return
+    entry["states"] = sorted(seen)
+    entry.setdefault("affordances", {})
+    entry.setdefault("holds", [])
+    store[kind] = entry
+    setattr(world_root.db, ATTR, store)
+
+
+def states_of(world_root, obj_kinds):
+    """Every condition things of these kinds have been in."""
+    seen = set()
+    for kind in prune(obj_kinds):
+        entry = spec(world_root, kind) or {}
+        try:
+            seen |= {str(s) for s in (entry.get("states") or [])}
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return seen
+
+
 def vocabulary(world_root):
     """Every kind this world has settled, for a prompt that should reuse one."""
     return sorted((getattr(world_root.db, ATTR, None) or {}) if world_root else {})

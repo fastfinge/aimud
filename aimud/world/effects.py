@@ -214,6 +214,13 @@ def _apply_one(actor, room, effect, bound, world_root):
         for slug in effect.get("remove", []):
             remove.append(str(slug).lower().strip())
         verbs.apply_states(obj, add=add, remove=remove, world_root=world_root)
+        # What this sort of thing turns out to get up to. Both halves: a
+        # bottle that can be emptied is a bottle that can be full, and a rule
+        # written about bottles later should be shown both words rather than
+        # left to coin "drained" beside them.
+        from world import kinds
+
+        kinds.note_state(world_root, obj.db.kinds, add + remove)
         return None
 
     if etype == "modify_room":
