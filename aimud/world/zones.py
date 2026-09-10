@@ -112,6 +112,12 @@ def _blank(name, purpose="", room_types=(), budget=DEFAULT_BUDGET,
         "types_used": {},
         "bounds": None,
         "planned": bool(planned),
+        # What sort of place this is, and what is true of it just now. A zone
+        # is where a multi-room thing lives -- a ship with a bridge and an
+        # engine room, a planet with a spaceport -- so it is the level at which
+        # "the ship is powered" and "this planet forbids launches" are facts.
+        "kind": "",
+        "states": [],
     }
 
 
@@ -717,3 +723,76 @@ def full_names(world_root, coord=None):
         name_of(world_root, zone_id) for zone_id in around(world_root, coord)
         if full(world_root, zone_id)
     ]
+
+# ---------------------------------------------------------------------------
+# What sort of place a zone is, and what is true of it
+# ---------------------------------------------------------------------------
+
+def kind_of(world_root, zone_id):
+    """What sort of place this zone is, or ""."""
+    record = get(world_root, zone_id)
+    try:
+        return str(record.get("kind") or "")
+    except AttributeError:
+        return ""
+
+
+def set_kind(world_root, zone_id, kind):
+    """
+    Settle what sort of place a zone is. First answer stands, as for a kind.
+
+    Asked rather than guessed from the name, because a zone's name is as often
+    a proper noun as a common one: "Kepler Nine" and "The Wandering Albatross"
+    would ground as a number and a seabird. A wrong kind is worse than none --
+    every rule filed against it would be about the wrong sort of thing.
+    """
+    from world import kinds
+
+    zone_id = slugify(zone_id)
+    settled = kinds.canonical(kind)
+    zones = all_zones(world_root)
+    if not settled or zone_id not in zones or zones[zone_id].get("kind"):
+        return kind_of(world_root, zone_id)
+    zones[zone_id]["kind"] = settled
+    world_root.db.zones = zones
+    logger.log_info(f"zones: {zones[zone_id]['name']!r} is a {settled}")
+    return settled
+
+
+def states(world_root, zone_id):
+    """The conditions true of this zone just now."""
+    record = get(world_root, zone_id)
+    try:
+        return {str(s) for s in (record.get("states") or [])}
+    except AttributeError:
+        return set()
+
+
+def apply_states(world_root, zone_id, add=(), remove=()):
+    """
+    Change a zone's condition, through the world's own state vocabulary.
+
+    A place can be `under_curfew` or `depressurised` the same way a bottle can
+    be `empty`, and for the same reasons: `register_state` gives the word a
+    meaning, a group and a help entry, and none of that machinery cares whether
+    the thing it is applied to is a bottle or a planet.
+    """
+    from world import verbs
+
+    zone_id = slugify(zone_id)
+    zones = all_zones(world_root)
+    if zone_id not in zones:
+        return set()
+    current = states(world_root, zone_id)
+    current -= {str(s).lower().strip() for s in (remove or ())}
+    for slug in (add or ()):
+        settled = verbs.register_state(world_root, str(slug))
+        if not settled:
+            continue
+        group = verbs.group_of(world_root, settled)
+        if verbs.group_rules(world_root, group).get("exclusive"):
+            current -= (verbs.group_members(world_root, group) - {settled})
+        current.add(settled)
+    zones[zone_id]["states"] = sorted(current)
+    world_root.db.zones = zones
+    return set(zones[zone_id]["states"])

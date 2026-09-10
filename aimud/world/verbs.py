@@ -1212,13 +1212,19 @@ def apply_states(obj, add=(), remove=(), world_root=None):
     down here, because the conflict was declared when "wet" was registered.
     """
     current = states(obj)
-    vocab = vocabulary(world_root)
 
     for slug in remove:
         current.discard(slug)
     for slug in add:
+        # Registered on the way in, so that every caller gets the same
+        # guarantees rather than only the ones that remembered: a meaning, a
+        # group, a help entry, and the fold that turns "soaked" into the "wet"
+        # this world already has. Idempotent for a word already known, which
+        # is why `effects.py` registering first as well costs nothing.
+        slug = register_state(world_root, str(slug)) if world_root else slug
         if not slug:
             continue
+        vocab = vocabulary(world_root)
         for conflict in vocab.get(slug, {}).get("conflicts", []):
             current.discard(conflict)
         # Everything in an exclusive group cancels everything else in it, so

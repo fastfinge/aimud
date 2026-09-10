@@ -483,3 +483,90 @@ def states_of(world_root, obj_kinds):
 def vocabulary(world_root):
     """Every kind this world has settled, for a prompt that should reuse one."""
     return sorted((getattr(world_root.db, ATTR, None) or {}) if world_root else {})
+
+# ---------------------------------------------------------------------------
+# Is this thing one of those?
+# ---------------------------------------------------------------------------
+
+def of(obj):
+    """
+    Every kind a thing is, as stored. Works for objects, rooms and zones alike.
+
+    One reader, because from here on the answer is asked of places as well as
+    of things: a rule filed against `spacecraft.n.01` has to be able to match
+    the room somebody is standing in.
+    """
+    try:
+        return [str(k) for k in (obj.db.kinds or []) if k]
+    except AttributeError:
+        return []
+
+
+def is_a(world_root, kind, wanted):
+    """
+    Whether `kind` is `wanted`, or a sort of it.
+
+    The test a scope will be matched by: a rule about `vehicle.n.01` applies to
+    a spacecraft because a spacecraft is a vehicle. Through the anchored chain,
+    so an invented noun hanging under `device.n.01` is a device too.
+    """
+    kind, wanted = canonical(kind), canonical(wanted)
+    if not kind or not wanted:
+        return False
+    return kind == wanted or wanted in ancestors(world_root, kind)
+
+
+def any_is_a(world_root, obj_kinds, wanted):
+    """Whether any of these kinds is `wanted`, or a sort of it."""
+    return any(is_a(world_root, kind, wanted) for kind in (obj_kinds or []))
+
+
+#: What an enclosure turned out to be. A room is an object and carries its own
+#: states; a zone is a record in the world and does not, so the two cannot be
+#: handed back as the same thing. Naming which it is beats making the caller
+#: guess from the type.
+ROOM, ZONE = "room", "zone"
+
+
+def enclosure(obj, wanted, world_root=None):
+    """
+    The nearest place around `obj` that is a `wanted`, as (what, handle).
+
+    `(ROOM, room)` or `(ZONE, zone_id)`, or `(None, None)`. Outward from where
+    the thing is: the room first, then the zone the room is in, then that
+    zone's parent, and so on to the world.
+
+    This is what makes "the ship I am in" sayable. A one-room ship is a room of
+    kind `spacecraft.n.01`; a ship with a bridge and an engine room is a zone
+    of that kind; both answer here, and a caller asking for its condition does
+    not have to know which it was. See docs/rulebooks-from-inform.md 5.4.
+    """
+    from world import zones
+
+    room = obj if getattr(obj, "destination", None) is None and _is_room(obj) \
+        else getattr(obj, "location", None)
+    if room is None:
+        return None, None
+    if world_root is None:
+        world_root = getattr(room.db, "world_root", None)
+
+    if any_is_a(world_root, of(room), wanted):
+        return ROOM, room
+
+    zone_id = zones.slugify(getattr(room.db, "zone", "") or "")
+    while zone_id and zone_id != zones.ROOT:
+        if is_a(world_root, zones.kind_of(world_root, zone_id), wanted):
+            return ZONE, zone_id
+        zone_id = zones.parent_of(world_root, zone_id)
+    return None, None
+
+
+def _is_room(obj):
+    """
+    True for a place rather than a thing in one.
+
+    Duck-typed on having nowhere to be: a room is the thing at the top. An
+    exit, a character and an object all have a location and fall through to it,
+    which is what the walk wants anyway.
+    """
+    return obj is not None and getattr(obj, "location", None) is None

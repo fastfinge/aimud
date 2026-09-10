@@ -416,6 +416,17 @@ def _create_room(title, description, exits, world_description, source_room, arri
     room.db.is_ai_room = True
     room.db.room_type = room_type
     room.db.room_category = category
+    # What sort of place it is, so a rule can be about it. `room_type` is a
+    # planner's slug -- "carousel_boutique_showroom", "spore_hollow" -- and its
+    # head noun is what the dictionary can settle: a showroom, a hollow. All 64
+    # distinct types in the exported worlds have a head noun WordNet knows.
+    # Nobody is asked: the title is written by a call that had the world in
+    # front of it, and a room is a cheaper thing to be slightly wrong about
+    # than an object, which anchors a cache key.
+    from world import kinds
+
+    settled = kinds.canonical(room_type) or kinds.canonical(title)
+    room.db.kinds = [settled] if settled else []
 
     # world_root is passed in for connected rooms; the first room sets itself as root.
     actual_root = world_root if world_root is not None else room
