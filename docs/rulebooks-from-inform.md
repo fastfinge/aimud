@@ -1435,9 +1435,11 @@ Revised from the previous note, now that actions are declared separately.
 5. **The standard rules**, §8, written by hand. This is where the composition
    win shows up as deleted code: `prevents_acting`, the `holds` clauses, the
    reach checks.
-6. **`attempt.py` runs the phases.** Old rules read as world-scope carry-out
-   plus world-scope check rules -- a ten-line adapter, so existing worlds keep
-   working.
+6. **`attempt.py` runs the phases.** The old `verb_rules` path goes: there is
+   one player and one tester, worlds are reset for this as they were for kinds,
+   and a fresh world is a better test bed than a converted one. The old corpus
+   is kept as test fixtures rather than as a migration target -- see
+   development-plan.md §2.
 7. **`rules` and `help <action>`.** Same sitting as step 6. Not later.
 8. **The generation prompts**, §9. Last, when there is an engine to write into.
 9. **Effect vocabulary, as the rulebooks demand it**, §11.1: `set_exit` and

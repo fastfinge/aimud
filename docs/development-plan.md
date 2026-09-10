@@ -71,8 +71,18 @@ code's own contracts, and each one is a test in tier A or B.
 6. **Scopes are closed identifiers.** No free text in a scope, ever.
 7. **Determinism.** Same world, same attempt, same rule order. Every tie in the
    specificity sort is broken, down to the id.
-8. **Old worlds keep working.** Existing monolithic rules read as world-scope
-   rules; nobody has to reset to keep playing.
+8. **No migration.** Worlds are reset for this, which is the practice
+   `kinds-and-affordances.md` already set: "worlds are reset for this. There is
+   no migration." There is one player and one tester, and a fresh world is a
+   better test bed than a converted one. Accounts, API keys, model settings and
+   memory banks live outside a world and are untouched by `worldreset`, so
+   nothing has to be re-entered.
+
+   The distinction that matters: **the existing rule corpus stays valuable as
+   test data even though the worlds do not.** 326 rules, 307 kinds and seven
+   state vocabularies are the best regression and measurement material
+   available, and reading them as fixtures asks nothing of the worlds that
+   produced them (§3, 0.6).
 
 ---
 
@@ -139,6 +149,11 @@ database's rules, kinds and state vocabularies to
 then assert against real generated data rather than invented examples, which is
 the other half of why tests keep being reinvented: the examples in them were made
 up, so they proved nothing about a real world.
+
+**Do this before the first `worldreset`.** Worlds are disposable (§2.8) and this
+corpus is not: it is the only generated rule data that exists, it is what every
+measurement in all three of these documents was taken from, and a reset ends it.
+An afternoon's export, and irreplaceable afterwards.
 
 **Done when:** `evennia test --exclude-tag=llm .` runs green from a clean
 checkout with no API key, in CI, in under a minute; one model-call seam exists;
@@ -215,8 +230,9 @@ they have drifted anyway.
 - Three operations: `evaluate`, `describe`, `achieves`.
 - `verbs.check`, `goals._test`, `quest_gen`'s validation and
   `planner._effect_achieves` all become callers.
-- Old stored shapes read through an adapter, both directions, so existing worlds
-  and quests keep working.
+- Conversion is one-way and for fixtures only: enough to read the old corpus
+  into the new form so tests can assert against real data. No runtime adapter,
+  no writing the old shape back.
 
 **Done when:** one implementation answers for verb preconditions, goals, quests
 and the planner; every refusal message is produced by `describe`.
@@ -309,10 +325,12 @@ These land together or not at all.
 - **7.3 `rules`, `rules <action>`, `help <action>`.** Not later. Inform's hardest
   bug class is rule ordering and its answer is `RULES ON`; a world nobody can
   debug is worse than a world that cannot launch a spaceship.
-- **7.4 Rollback.** Old rules read as world-scope carry-out plus world-scope
-  check rules, by a ten-line adapter. Keep it behind a setting
-  (`RULEBOOKS_ENABLED`) for one release so a bad cutover is one line to revert,
-  and so the old and new paths can be diffed on the same world.
+- **7.4 Rollback.** The branch, and `worldreset`. With no world to preserve
+  there is nothing to migrate and nothing to keep compatible, so the old
+  `verb_rules` path is deleted in this phase rather than kept behind a setting.
+  A bad cutover is a checkout away, and the replacement for "diff the old and
+  new paths on the same world" is the behaviour corpus in §3, 0.6 -- recorded
+  from today's engine, replayed against the new one.
 
 **Done when:** every verb that worked before works; the space-game example in §8
 runs end to end; `rules launch` prints the firing order with the unmet condition
@@ -322,8 +340,10 @@ marked.
 refuse on each of four conditions from three scopes, then succeed; `[B]` a
 refusal quotes the most specific unmet condition; `[B]` `instead` wins over
 `carry_out` and ends processing; `[B]` `after` does not suppress narration;
-`[B]` every world fixture's old rules still refuse and succeed as they did —
-recorded before the cutover, asserted after; `[B]` command tests for `rules`.
+`[B]` the behaviour corpus: for each of the 326 rules in the fixtures, the
+refusal or success today is recorded now and asserted against the new engine --
+differences are expected and each one must be explained, which is the point of
+recording it; `[B]` command tests for `rules`.
 
 ### Phase 8 — Generation prompts
 
@@ -445,7 +465,7 @@ reply, it is tier B. Tier C is only for "is the live model still cooperating".
 
 | Risk | Mitigation |
 |---|---|
-| Phase 7 cutover regresses working worlds | `RULEBOOKS_ENABLED` setting for one release; old-rule adapter; before/after behaviour recorded per fixture world |
+| Phase 7 cutover changes behaviour in ways nobody notices | The behaviour corpus recorded before the cutover (§3, 0.6): every difference surfaces, and each one is either intended or a bug. No live world depends on the answer, so a difference is information rather than an outage |
 | Phase 3 touches four modules at once | Adapter both directions; the table-driven tier A suite lands with it, not after |
 | Rule ordering bugs, the known failure mode of this design | `rules` ships in phase 7; the sort key is an explicit printable tuple; exhaustive tier A tests |
 | A model files rules at too general a scope | Scope ceiling in phase 8; `worldcheck` reports rules at suspiciously wide scopes |
@@ -478,9 +498,12 @@ next, in order:
 
 1. **Phase 0.1–0.4** — one call site, one seam, the harness, the tags. Nothing
    else can be verified without it.
-2. **Phase 4** — the consistency scan. It needs no corpus, no rulebooks and no
-   model; it reports real faults in existing worlds today; and 72% one-way states
-   is worth knowing *before* redesigning around them.
+2. **Phase 4** — the consistency scan, and **0.6, the fixtures, before anything
+   is reset.** The scan needs no corpus, no rulebooks and no model, it reports
+   real faults today, and 72% one-way states is worth knowing *before*
+   redesigning around them. The urgency is the reset: once the worlds go, so does
+   the only generated rule corpus there is. Export it first -- it costs an
+   afternoon and it is irreplaceable.
 3. **Phase 1** — kind anchors and the `verb_ancestors` sense fix. Small, and it
    corrects a live wrongness where the kindred block hands a model the wrong
    rule.
