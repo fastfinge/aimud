@@ -420,8 +420,27 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
     # Handed to the command set rather than refused, so the NPC actually picks
     # the bucket up. Anything the engine declines it declines in its own
     # words, which is the right answer and costs nothing.
-    if verb in verbs.engine_verbs():
-        caller.execute_cmd(raw)
+    #
+    # Only what the command set will actually recognise, and under the name it
+    # knows. A verb is folded before it gets here -- "study" arrives as "look"
+    # -- so handing back the words the player typed hands back "study scroll",
+    # which is not a command, which comes round to this pipeline again, which
+    # hands it back again. The rest of `engine_verbs` is handled inside this
+    # pipeline by clothing, gear and placement, and those have already had
+    # their say by now: reaching here means they declined, and passing their
+    # verbs to a command set that has never heard of them would bounce the
+    # same way.
+    # Whichever spelling the command set actually knows, the player's for
+    # preference. Folding runs both ways here: "study" folds to "look" and
+    # only "look" is a command, while "groups" folds to "group" and only
+    # "groups" is. Sending either the raw word or the folded one alone would
+    # bounce on the other.
+    known = verbs.command_verbs()
+    typed, _, rest = raw.strip().partition(" ")
+    spelling = typed.lower() if typed.lower() in known else (
+        verb if verb in known else "")
+    if spelling:
+        caller.execute_cmd(f"{spelling} {rest}".strip())
         on_message("", "")
         return
 

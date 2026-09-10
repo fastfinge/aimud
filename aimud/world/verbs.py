@@ -538,6 +538,24 @@ world with no way to perform the action at all.
 #: stale within the life of one server.
 _ENGINE_VERBS = None
 
+#: The half of `engine_verbs` that the command set really answers, as opposed
+#: to the half handled inside the attempt pipeline by clothing, gear and
+#: placement. Filled in alongside it.
+#:
+#: The distinction is not academic. Handing a verb to the command set that the
+#: command set does not know sends it straight back out as an unknown command,
+#: which reaches the attempt pipeline again, which hands it over again. Typing
+#: "study scroll" did exactly that: "study" folds to "look", "look" is an
+#: engine verb, and "study" is not a command -- so the two bounced it between
+#: them for ever and the player was told they were still trying.
+_COMMAND_VERBS = set()
+
+
+def command_verbs():
+    """The verbs the command set itself answers, by a name it will recognise."""
+    engine_verbs()
+    return _COMMAND_VERBS
+
 
 def engine_verbs():
     """
@@ -583,6 +601,10 @@ def engine_verbs():
     for command in cmdset.commands:
         if (getattr(command, "help_category", "") or "").lower() != "general":
             continue
+        for name in [command.key] + list(command.aliases or []):
+            spelled = str(name or "")
+            if spelled[:1].isalpha():
+                _COMMAND_VERBS.add(spelled)
         for name in [command.key] + list(command.aliases or []):
             # Punctuation aliases -- the quote mark for say, the colon for
             # pose -- are not verbs anybody would write a rule for, and one
