@@ -456,38 +456,75 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
             return
         _hold(anchor, verb)
 
+    done = []
+
     def release(actor_text, room_text=""):
+        # At most once. The visible symptom of a second release is two answers
+        # to one attempt; the invisible one is that the hold above is dropped
+        # twice, so a release arriving late lets go of a hold somebody else is
+        # relying on. It also lets the guard below release unconditionally
+        # without having to know how far the attempt got.
+        if done:
+            return
+        done.append(True)
         if anchor is not None:
             _drop(anchor, verb)
         _release(caller, on_message, actor_text, room_text)
 
+    def guarded(step):
+        """
+        Run a step of the attempt, and let the object go if it falls over.
+
+        The hold is not a transaction: nothing rolls it back, and it lives in
+        ndb, so an exception anywhere between taking it and releasing it wedges
+        that verb on that object until the server restarts. Every later attempt
+        is answered "Someone else is already doing that" while nobody is doing
+        it, which reads as a game bug rather than as the crash it was. A rule
+        that would not serialise into a prompt did exactly this to `sign`.
+
+        The steps are chained through callbacks rather than nested, so each
+        entry point into the chain -- the synchronous start, and each reply
+        from a model -- is wrapped where it enters. Every ordinary path out of
+        here ends in `release`; this keeps that promise when the way out is a
+        traceback.
+        """
+        try:
+            step()
+        except Exception:
+            logger.log_trace(
+                f"{caller.key}: {verb!r} on {raw!r} did not finish")
+            release("|rSomething went wrong doing that.|n")
+
     waiter = waiter or _once(None)
-    key = verbs.rule_key(verb, bound)
-    rule = verb_gen.get_rule(world_root, key)
 
     def with_rule(known_rule):
         """Once the verb's meaning is settled, ask whether this sort admits it."""
         _admitted(caller, room, account, raw, verb, bound, known_rule,
-                  release, allow_effects, world_root, waiter)
+                  release, allow_effects, world_root, waiter, guarded)
 
-    if rule is not None:
-        with_rule(rule)
-        return
+    def begin():
+        key = verbs.rule_key(verb, bound)
 
-    def learned(new_rule):
-        verb_gen.store_rule(world_root, key, new_rule)
-        with_rule(new_rule)
+        def learned(new_rule):
+            verb_gen.store_rule(world_root, key, new_rule)
+            with_rule(new_rule)
 
-    waiter()
-    verb_gen.learn_rule(
-        account, world_root, verb, bound, caller, raw,
-        on_success=learned,
-        on_error=lambda err: release(f"|r{err}|n"),
-    )
+        rule = verb_gen.get_rule(world_root, key)
+        if rule is not None:
+            with_rule(rule)
+            return
+        waiter()
+        verb_gen.learn_rule(
+            account, world_root, verb, bound, caller, raw,
+            on_success=lambda new_rule: guarded(lambda: learned(new_rule)),
+            on_error=lambda err: release(f"|r{err}|n"),
+        )
+
+    guarded(begin)
 
 
 def _admitted(caller, room, account, raw, verb, bound, rule, release,
-              allow_effects, world_root, waiter):
+              allow_effects, world_root, waiter, guarded):
     """
     Whether this sort of thing can be verbed at all, and then get on with it.
 
@@ -507,7 +544,7 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
 
     def proceed():
         _with_rule(caller, room, account, raw, verb, bound, rule, release,
-                   allow_effects, world_root, waiter)
+                   allow_effects, world_root, waiter, guarded)
 
     def refuse():
         name = (anchor.get_numbered_name(1, None, return_string=True)
@@ -533,7 +570,8 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
     waiter()
     verb_gen.ask_admission(
         account, world_root, verb, rule, obj_kinds[0],
-        on_answer=answered,
+        on_answer=lambda allowed, reason: guarded(
+            lambda: answered(allowed, reason)),
         on_error=lambda err: release(f"|r{err}|n"),
     )
 
@@ -597,7 +635,7 @@ def _with_specifics(rule, bound, verb, actor=None):
 
 
 def _with_rule(caller, room, account, raw, verb, bound, rule, release,
-               allow_effects, world_root, waiter=None):
+               allow_effects, world_root, waiter=None, guarded=None):
     if not rule.get("valid", True):
         release(rule.get("reason") or "You can't do that.")
         return
@@ -671,9 +709,15 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
 
     if waiter:
         waiter()
+    # `_finish` changes the world -- effects land, quests are reviewed -- and
+    # it runs in a deferred callback, where a raise is swallowed as an
+    # unhandled failure and the hold above never comes back. Wrapped so it
+    # comes back.
+    finish = _finish if guarded is None else (
+        lambda *args, **kwargs: guarded(lambda: _finish(*args, **kwargs)))
     verb_gen.narrate(
         account, verb, bound, caller, raw,
-        on_success=_finish,
+        on_success=finish,
         on_error=lambda err: release(f"|r{err}|n"),
         result=result,
     )

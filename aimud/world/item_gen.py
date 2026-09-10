@@ -6,12 +6,11 @@ Two models are used (configured separately via the `models` command):
   items       — creates the object with name, description, and takeability
 """
 
-import json
-import urllib.request
 
 from twisted.internet import threads
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+from world import llm
+
 
 _EXISTENCE_SYSTEM_PROMPT = """You are a game master for a text MUD deciding if an object could plausibly exist in a room.
 Respond with JSON only: {"valid": true|false, "reason": "one sentence"}
@@ -93,26 +92,6 @@ usually empty for a new object.
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-def _call_openrouter(api_key, model, messages):
-    payload = {"model": model, "messages": messages}
-    # The sampling settings chosen for this job ride on the model choice. See
-    # world.model_params: only what the player actually set is sent.
-    from world.model_params import of as _settings
-
-    payload.update(_settings(model))
-    req = urllib.request.Request(
-        OPENROUTER_URL,
-        data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read().decode())
-    return result["choices"][0]["message"]["content"]
-
 
 def _parse_json(content):
     """
@@ -177,7 +156,7 @@ def validate_object_existence(account, room, object_name, on_valid, on_invalid, 
     ]
 
     def _fetch():
-        return _call_openrouter(api_key, model, messages)
+        return llm.ask(api_key, model, messages)
 
     def _done(content):
         try:
@@ -224,7 +203,7 @@ def validate_object_takeable(account, room, obj, on_valid, on_invalid, on_error)
     ]
 
     def _fetch():
-        return _call_openrouter(api_key, model, messages)
+        return llm.ask(api_key, model, messages)
 
     def _done(content):
         try:
@@ -280,7 +259,7 @@ def generate_item(account, room, object_name, on_success, on_error):
     ]
 
     def _fetch():
-        return _call_openrouter(api_key, model, messages)
+        return llm.ask(api_key, model, messages)
 
     def _done(content):
         try:

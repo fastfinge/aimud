@@ -6,14 +6,13 @@ generate_npc_reaction() — send tool-call request to dialogue model (async)
 notify_npcs()           — notify all NPCs in a room of an event (sync helper)
 """
 
-import json
 import re
-import urllib.request
 
 from evennia.utils import logger
 from twisted.internet import threads
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+from world import llm
+
 
 #: How many times a character may be sent back to be renamed. Each retry is a
 #: whole generation rather than a cheap naming call the way a room's is, so
@@ -502,28 +501,6 @@ def _affordance_rule():
     from world import affordances
 
     return affordances.PROMPT
-
-def _call_openrouter(api_key, model, messages, tools=None):
-    payload = {"model": model, "messages": messages}
-    # The sampling settings chosen for this job ride on the model choice. See
-    # world.model_params: only what the player actually set is sent.
-    from world.model_params import of as _settings
-
-    payload.update(_settings(model))
-    if tools:
-        payload["tools"] = tools
-        payload["tool_choice"] = "auto"
-    req = urllib.request.Request(
-        OPENROUTER_URL,
-        data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode())
 
 
 def _parse_json(content):
@@ -1142,7 +1119,7 @@ def generate_npc(account, room, on_success, on_error):
             _spawn(data)
 
         threads.deferToThread(
-            _call_openrouter, api_key, model, convo
+            llm.call, api_key, model, convo
         ).addCallbacks(_answered, _fail)
 
     def _spawn(data):
@@ -1165,7 +1142,7 @@ def generate_npc(account, room, on_success, on_error):
             # something rather than waiting to be given a purpose.
             from world import goals
 
-            npc.db.goal = goals.sanitise(data.get("goal"))
+            npc.db.goal = goals.sanitise(data.get("goal"), owner=npc)
             npc.db.world_description = room.db.world_description
             # Only traits the world already keeps. A character born with one
             # nobody else has is the beginning of a second vocabulary, which
@@ -1265,7 +1242,7 @@ def dress_npc(account, npc):
                 logger.log_info(f"could not equip {npc.key}: {exc}")
 
     threads.deferToThread(
-        _call_openrouter, api_key, model, messages
+        llm.call, api_key, model, messages
     ).addCallbacks(_done, lambda _f: None)
 
 
@@ -1338,7 +1315,7 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
                 ),
             },
         ]
-        return _call_openrouter(api_key, model, messages, tools=tools)
+        return llm.call(api_key, model, messages, tools=tools)
 
     def _done(raw):
         try:
@@ -1356,9 +1333,14 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
                     except ValueError:
                         call_args = {}
                     parsed.append({"name": fn["name"], "args": call_args})
-            on_success(parsed)
         except Exception as exc:
             on_error(str(exc))
+            return
+        # Outside the guard above on purpose. Doing what the model asked for
+        # is the caller's business and can fail on its own terms; reporting
+        # that as a failed model call sent whoever read the log looking at
+        # the provider for a bug that was in the world.
+        on_success(parsed)
 
     def _fail(failure):
         on_error(failure.getErrorMessage())
@@ -1435,7 +1417,7 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
                 ),
             },
         ]
-        return _call_openrouter(api_key, model, messages, tools=tools)
+        return llm.call(api_key, model, messages, tools=tools)
 
     def _done(raw):
         try:
@@ -1453,9 +1435,14 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
                     except ValueError:
                         call_args = {}
                     parsed.append({"name": fn["name"], "args": call_args})
-            on_success(parsed)
         except Exception as exc:
             on_error(str(exc))
+            return
+        # Outside the guard above on purpose. Doing what the model asked for
+        # is the caller's business and can fail on its own terms; reporting
+        # that as a failed model call sent whoever read the log looking at
+        # the provider for a bug that was in the world.
+        on_success(parsed)
 
     def _fail(failure):
         on_error(failure.getErrorMessage())

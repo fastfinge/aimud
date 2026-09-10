@@ -17,12 +17,13 @@ specific is stored on the specific thing, and neither is stored on the room.
 """
 
 import json
-import urllib.request
 
 from evennia.utils import logger
+from evennia.utils.dbserialize import deserialize
 from twisted.internet import threads
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+from world import llm
+
 
 _RULE_SYSTEM = """You define what a verb does in a text MUD, as a reusable rule.
 
@@ -291,23 +292,6 @@ odds, numbers or traits, and never say the word "check". The character does
 not know they were measured; they know the blade turned on a rivet."""
 
 
-def _call_openrouter(api_key, model, messages):
-    payload = {"model": model, "messages": messages}
-    # The sampling settings chosen for this job ride on the model choice. See
-    # world.model_params: only what the player actually set is sent.
-    from world.model_params import of as _settings
-
-    payload.update(_settings(model))
-    req = urllib.request.Request(
-        OPENROUTER_URL,
-        data=json.dumps(payload).encode(),
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode())["choices"][0]["message"]["content"]
-
-
 def _parse_json_object(content):
     """
     Parse a model response that should be a single JSON object.
@@ -326,9 +310,31 @@ def _parse_json_object(content):
 # ---------------------------------------------------------------------------
 
 def get_rule(world_root, key):
+    """
+    The rule this world has learned for that key, as plain Python.
+
+    Decoupled from the database on the way out, and that is not tidiness. An
+    Attribute hands back _SaverDict and _SaverList -- a MutableMapping and a
+    MutableSequence, neither of them a dict or a list -- and a rule is nested:
+    `requires` is a mapping, `effects` a list of mappings. Everything that
+    merely reads a rule is happy with those; `json.dumps` is not, and refuses
+    the whole structure with "Object of type _SaverDict is not JSON
+    serializable".
+
+    That matters because a rule goes into a prompt. `_kindred_block` writes
+    the ancestor verb's rule out as JSON, in the main thread, in the middle of
+    building the message for `learn_rule` -- so every verb that turned out to
+    be a way of doing something this world already knew died there, and took
+    the caller's hold on the object with it.
+
+    A shallow `dict(rule)` at each such place looks like the fix and is not:
+    it unwraps the outside and leaves every nested container exactly as it
+    was. So it is done once, properly, here.
+    """
     if not world_root:
         return None
-    return (world_root.db.verb_rules or {}).get(key)
+    rule = (world_root.db.verb_rules or {}).get(key)
+    return deserialize(rule) if rule is not None else None
 
 
 def store_rule(world_root, key, rule):
@@ -602,7 +608,7 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
             on_error(str(exc))
 
     threads.deferToThread(
-        _call_openrouter, api_key, model, messages
+        llm.ask, api_key, model, messages
     ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
 
 
@@ -673,7 +679,7 @@ def ask_admission(account, world_root, verb, rule, kind, on_answer, on_error):
             on_error(str(exc))
 
     threads.deferToThread(
-        lambda: _call_openrouter(api_key, model, messages)
+        lambda: llm.ask(api_key, model, messages)
     ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
 
 
@@ -735,5 +741,5 @@ def narrate(account, verb, bound, actor, raw, on_success, on_error, result=None)
             on_error(str(exc))
 
     threads.deferToThread(
-        _call_openrouter, api_key, model, messages
+        llm.ask, api_key, model, messages
     ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))

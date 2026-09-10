@@ -22,13 +22,12 @@ person at the keyboard, and that moment is when they have stopped typing. Any
 character reached after they come back is left for the next quiet spell.
 """
 
-import json
-import urllib.request
 
 from evennia.utils import logger
 from twisted.internet import threads
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+from world import llm
+
 
 #: Most facts taken from one character in one pass. A model given no limit
 #: writes a sentence per summary, which is not distillation, only rephrasing.
@@ -58,26 +57,6 @@ Leave out:
 Give 0 to {max_facts}. An uneventful stretch genuinely yields none, and an
 empty list is a better answer than a padded one.
 Return only the JSON object."""
-
-
-def _call_openrouter(api_key, model, messages):
-    """Runs in a thread."""
-    payload = {"model": model, "messages": messages}
-    from world.model_params import of as _settings
-
-    payload.update(_settings(model))
-    req = urllib.request.Request(
-        OPENROUTER_URL,
-        data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        result = json.loads(resp.read().decode())
-    return result["choices"][0]["message"]["content"]
 
 
 def _parse_facts(content):
@@ -185,7 +164,7 @@ def distil(banks=None, on_done=None):
                                on_done=lambda _n: _next())
 
         threads.deferToThread(
-            _call_openrouter, api_key, model, messages
+            llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT
         ).addCallbacks(_answered, lambda _f: _next())
 
     def _finish(why):

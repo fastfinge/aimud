@@ -87,7 +87,7 @@ class CmdRemember(Command):
         def _fetch():
             # Recall and the model call share one trip into the thread pool,
             # keeping both off the reactor.
-            from world.verb_gen import _call_openrouter
+            from world import llm
             from world.memory import format_memories, recall_sync
 
             memories = recall_sync(bank, question, top_k=8)
@@ -103,7 +103,7 @@ class CmdRemember(Command):
                     ),
                 },
             ]
-            return _call_openrouter(api_key, model, messages)
+            return llm.ask(api_key, model, messages)
 
         def _done(answer):
             caller.ndb.recalling = False

@@ -7,12 +7,12 @@ thread.  Only the network call to OpenRouter is deferred to a thread pool.
 
 import json
 import re
-import urllib.request
 
 from evennia.utils import logger
 from twisted.internet import threads
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+from world import llm
+
 
 DIRECTION_ALIASES = {
     "north": ["n"],
@@ -216,26 +216,6 @@ def _affordance_rule():
     from world import affordances
 
     return affordances.PROMPT
-
-def _call_openrouter(api_key, model, messages):
-    payload = {"model": model, "messages": messages}
-    # The sampling settings chosen for this job ride on the model choice. See
-    # world.model_params: only what the player actually set is sent.
-    from world.model_params import of as _settings
-
-    payload.update(_settings(model))
-    req = urllib.request.Request(
-        OPENROUTER_URL,
-        data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        result = json.loads(resp.read().decode())
-    return result["choices"][0]["message"]["content"]
 
 
 # ---------------------------------------------------------------------------
@@ -1063,7 +1043,7 @@ def _generate_plan(account, api_key, world_description, guidance, on_done):
             on_done({})
 
     threads.deferToThread(
-        _call_openrouter, api_key, model, messages
+        llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT
     ).addCallbacks(_done, lambda _f: on_done({}))
 
 
@@ -1148,7 +1128,8 @@ def plan_zone(account, world_root, zone_id):
         _PLANNING.discard(ticket)
 
     threads.deferToThread(
-        _call_openrouter, api_key, account.model_for("rooms"), messages
+        llm.ask, api_key, account.model_for("rooms"), messages,
+        llm.SLOW_TIMEOUT
     ).addCallbacks(_done, _failed)
 
 
@@ -1232,7 +1213,7 @@ def _generate_name(account, api_key, world_description, context, source_room,
             on_success(data)
 
         threads.deferToThread(
-            _call_openrouter, api_key, model, convo
+            llm.ask, api_key, model, convo, llm.SLOW_TIMEOUT
         ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
 
     def _retry(remaining, convo, complaint):
@@ -1319,7 +1300,7 @@ def _generate_description(account, api_key, world_description, guidance, context
             on_error(str(exc))
 
     threads.deferToThread(
-        _call_openrouter, api_key, model, messages
+        llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT
     ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
 
 
@@ -1402,7 +1383,7 @@ def populate_room(account, room):
                          on_error=lambda _err: None)
 
     threads.deferToThread(
-        _call_openrouter, api_key, model, messages
+        llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT
     ).addCallbacks(_done, lambda _f: None)
 
 
@@ -1511,7 +1492,7 @@ def generate_first_room(account, spec, on_success, on_error,
             )
 
         threads.deferToThread(
-            _call_openrouter, api_key, model, messages
+            llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT
         ).addCallbacks(with_name, lambda f: on_error(f.getErrorMessage()))
 
     _generate_plan(account, api_key, world_description, rooms_guidance, with_plan)

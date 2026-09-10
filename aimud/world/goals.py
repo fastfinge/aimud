@@ -25,6 +25,36 @@ a verb can require of the world is also something a goal can ask for.
 CONDITION_TYPES = ("state", "holds", "worn", "trait", "placed", "in_room",
                    "exists", "gone", "delivered")
 
+#: How somebody refers to themselves. A want written in the first person and
+#: then formalised comes back with one of these where a name would go.
+_SELF_WORDS = frozenset([
+    "me", "myself", "self", "himself", "herself", "themselves", "itself",
+])
+
+
+def _names_owner(name, owner):
+    """
+    Whether a recipient a goal names is the character whose goal it is.
+
+    Deliberately strict: the character's own key, one of its aliases, or a
+    word that can only mean the speaker. Nothing looser. A character called
+    "Princess Joy" answers to "Joy" when spoken to, but a world may hold
+    somebody actually named Joy -- and `find_object` prefers an exact key
+    match over a partial one, so it would deliver to her. Guessing wider here
+    would quietly rewrite one goal into a different one.
+    """
+    wanted = str(name or "").strip().lower()
+    if not wanted or owner is None:
+        return False
+    if wanted in _SELF_WORDS:
+        return True
+    if wanted == str(getattr(owner, "key", "") or "").strip().lower():
+        return True
+    try:
+        return wanted in {str(alias).lower() for alias in owner.aliases.all()}
+    except AttributeError:
+        return False
+
 
 def _world_objects(world_root, actor):
     """Everything a goal could plausibly refer to, nearest first."""
@@ -122,12 +152,18 @@ def find_object(world_root, actor, name):
     return None
 
 
-def sanitise(conditions):
+def sanitise(conditions, owner=None):
     """
     Keep only conditions this module can actually test.
 
     A goal that cannot be tested can never be completed, so an unrecognised
     condition is dropped rather than stored and silently failed forever.
+
+    `owner` is whose want this is, and is given only when the goal is somebody
+    acting on their own account rather than an errand somebody else set them.
+    It turns a delivery to oneself into what it actually means. A quest passes
+    no owner on purpose: there, a delivery to the person who asked is the
+    ordinary case and the whole point of the errand.
     """
     clean = []
     for raw in conditions or []:
@@ -153,6 +189,19 @@ def sanitise(conditions):
                     pass
         if ctype == "trait" and not entry.get("trait"):
             continue     # a trait goal that names no trait can never be tested
+        # "Have the letter brought to me" is a want to be carrying the letter,
+        # so it is written down as one. Nothing could carry out the other
+        # reading: `give` refuses a self recipient in the NPC's own tool and
+        # again in the command set, both silently, so the step would be a
+        # turn spent on a line nobody sees. And the test was already the same
+        # test -- `delivered` asks whether the thing is inside the recipient,
+        # which for oneself is exactly `holds` -- so the goal was either
+        # finished before it was set or finished by picking the thing up,
+        # while the character was described the whole time as trying to hand
+        # something to itself.
+        if ctype == "delivered" and _names_owner(entry.get("to"), owner):
+            entry.pop("to", None)
+            entry["type"] = "holds"
         clean.append(entry)
     return clean
 

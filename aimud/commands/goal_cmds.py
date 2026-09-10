@@ -92,7 +92,7 @@ class CmdGoal(Command):
 
         from world import goals
 
-        clean = goals.sanitise(conditions)
+        clean = goals.sanitise(conditions, owner=caller)
         if not clean:
             caller.msg(
                 "|rThat is not something the game knows how to check on.|n Try "

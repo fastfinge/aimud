@@ -29,7 +29,6 @@ lets a job's screen offer exactly the settings that model will take.
 """
 
 import json
-import urllib.request
 
 from twisted.internet import threads
 from evennia.utils.evmenu import EvMenu
@@ -57,15 +56,9 @@ MODELS_PER_PAGE = 10
 
 def _fetch_models_sync(api_key):
     """Runs in a thread; returns list of model dicts sorted by id."""
-    req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/models",
-        headers={"Authorization": f"Bearer {api_key}"},
-    )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return sorted(
-            json.loads(resp.read().decode())["data"],
-            key=lambda m: m["id"],
-        )
+    from world import llm
+
+    return llm.models(api_key)
 
 
 def _get_account(caller):

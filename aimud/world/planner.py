@@ -367,7 +367,17 @@ def _for_condition(actor, world_root, condition):
             return (step, None) if step else (None, None)
         if obj.location is not actor:
             return f"get {obj.key}", None
-        if _bind(actor, recipient) is None:
+        target = _bind(actor, recipient)
+        if target is actor:
+            # A delivery to oneself, which is a want to be holding the thing,
+            # and it is held: there is nothing left to do. Goals made since
+            # this was understood are written down as `holds` on the way in;
+            # ones stored before that are not, and `_test` and this both bind
+            # the recipient by their own rules and can disagree about who it
+            # is. Offering the step anyway would spend the turn on a `give`
+            # that both implementations refuse without a word.
+            return None, None
+        if target is None:
             step = _step_towards_object(actor, recipient)
             return (step, None) if step else (None, None)
         return f"give {obj.key} to {recipient}", None

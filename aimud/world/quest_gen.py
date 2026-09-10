@@ -16,14 +16,13 @@ once per quest, not once per reaction -- so it can afford a capable model
 where dialogue cannot.
 """
 
-import json
-import urllib.request
 
 from twisted.internet import threads
 
+from world import llm
+
 from evennia.utils import logger
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 _SYSTEM = """You turn a character's request into a quest a game can check.
 
@@ -68,23 +67,6 @@ with a person.
 
 Give an empty punishment list unless the character clearly threatened one.
 Keep the goal to one or two conditions. Return only the JSON object."""
-
-
-def _call_openrouter(api_key, model, messages):
-    payload = {"model": model, "messages": messages}
-    # The sampling settings chosen for this job ride on the model choice. See
-    # world.model_params: only what the player actually set is sent.
-    from world.model_params import of as _settings
-
-    payload.update(_settings(model))
-    req = urllib.request.Request(
-        OPENROUTER_URL,
-        data=json.dumps(payload).encode(),
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode())["choices"][0]["message"]["content"]
 
 
 def _parse_json_object(content):
@@ -224,7 +206,7 @@ def formalise(account, npc, target, request, offer, consequence, on_success, on_
         on_error(failure.getErrorMessage())
 
     threads.deferToThread(
-        _call_openrouter, api_key, model, messages
+        llm.ask, api_key, model, messages
     ).addCallbacks(_done, _fail)
 
 
@@ -245,6 +227,9 @@ Each entry is one of:
 
 Name objects and rooms as they are actually called in the list you are given,
 and traits only from the register below. Give one or two conditions.
+
+"delivered" is about handing something to somebody else, and the "to" must be
+another person. A character who simply wants to have the thing wants "holds".
 
 "Get to the library", "go to the kitchen" and the like are in_room conditions,
 and are perfectly good goals even when the place is nowhere near: the game
@@ -294,5 +279,5 @@ def formalise_goal(account, npc, want, on_success, on_error):
             on_error(str(exc))
 
     threads.deferToThread(
-        _call_openrouter, api_key, model, messages
+        llm.ask, api_key, model, messages
     ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
