@@ -24,15 +24,24 @@ the body of both; `_complain` below reads it and `LLMError` carries it, so what
 somebody is told is "This endpoint's maximum context length is 8192 tokens"
 rather than a punctuation mark.
 
-Nothing here touches the database, the reactor, or any Evennia object. Every
-function is synchronous and expects to be called from a thread -- which is what
-every caller already does, since a network round trip on the reactor would stop
-the world for everybody.
+Everything above `fetch` is synchronous, touches no database and no Evennia
+object, and expects to be called from a thread -- a network round trip on the
+reactor would stop the world for everybody. `fetch` is the one function here
+that knows about the reactor, and it is the door: it takes the work off the
+reactor and brings the answer back.
+
+That door matters more for testing than it looks. Without a running reactor a
+`deferToThread` callback never fires at all -- measured, not assumed -- so a
+test that drove a generator through one would pass while asserting nothing,
+which is worse than failing. One door is one thing for a test to make
+synchronous.
 """
 
 import json
 import urllib.error
 import urllib.request
+
+from twisted.internet import threads
 
 #: Where the service lives. One constant rather than six.
 BASE_URL = "https://openrouter.ai/api/v1"
@@ -175,3 +184,19 @@ def models(api_key, timeout=LIST_TIMEOUT):
     except (KeyError, TypeError) as err:
         raise LLMError(_complain(listed)
                        or "the model service sent no list of models") from err
+
+
+def fetch(work, *args, on_success, on_error):
+    """
+    Do `work(*args)` off the reactor, and hand what it returns back on it.
+
+    A pass-through, deliberately: `on_error` is given the Failure exactly as
+    `addCallbacks` would, because this arrived as a refactor of twenty call
+    sites and a refactor that also changed what a handler receives would be two
+    changes wearing one hat. What it buys is the seam -- one function to make
+    synchronous, instead of twenty `deferToThread` calls to find and patch.
+
+    The callbacks are keyword-only so that a call reads in the order it happens:
+    the work and its arguments first, then what becomes of the answer.
+    """
+    return threads.deferToThread(work, *args).addCallbacks(on_success, on_error)

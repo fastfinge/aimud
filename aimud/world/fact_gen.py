@@ -24,7 +24,6 @@ character reached after they come back is left for the next quiet spell.
 
 
 from evennia.utils import logger
-from twisted.internet import threads
 
 from world import llm
 
@@ -163,9 +162,8 @@ def distil(banks=None, on_done=None):
             memory.store_facts(bank, facts, through,
                                on_done=lambda _n: _next())
 
-        threads.deferToThread(
-            llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT
-        ).addCallbacks(_answered, lambda _f: _next())
+        llm.fetch(llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT,
+                  on_success=_answered, on_error=lambda _f: _next())
 
     def _finish(why):
         if tally["facts"]:

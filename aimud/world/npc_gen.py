@@ -9,7 +9,6 @@ notify_npcs()           — notify all NPCs in a room of an event (sync helper)
 import re
 
 from evennia.utils import logger
-from twisted.internet import threads
 
 from world import llm
 
@@ -1118,9 +1117,8 @@ def generate_npc(account, room, on_success, on_error):
                 )
             _spawn(data)
 
-        threads.deferToThread(
-            llm.call, api_key, model, convo
-        ).addCallbacks(_answered, _fail)
+        llm.fetch(llm.call, api_key, model, convo,
+                  on_success=_answered, on_error=_fail)
 
     def _spawn(data):
         try:
@@ -1241,9 +1239,8 @@ def dress_npc(account, npc):
             except Exception as exc:
                 logger.log_info(f"could not equip {npc.key}: {exc}")
 
-    threads.deferToThread(
-        llm.call, api_key, model, messages
-    ).addCallbacks(_done, lambda _f: None)
+    llm.fetch(llm.call, api_key, model, messages,
+              on_success=_done, on_error=lambda _f: None)
 
 
 def generate_npc_idle(account, npc, room, on_success, on_error):
@@ -1345,7 +1342,7 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+    llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
 def generate_npc_reaction(account, npc, room, on_success, on_error):
@@ -1447,4 +1444,4 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+    llm.fetch(_fetch, on_success=_done, on_error=_fail)

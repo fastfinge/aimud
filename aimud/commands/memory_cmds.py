@@ -6,7 +6,6 @@ Their character was there, so the character is the one asked -- in plain
 English, and answered from that character's own memory bank alone.
 """
 
-from twisted.internet import threads
 
 from commands.command import Command
 
@@ -116,7 +115,7 @@ class CmdRemember(Command):
             caller.ndb.recalling = False
             caller.msg(f"|rYou cannot gather your thoughts: {failure.getErrorMessage()}|n")
 
-        threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+        llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
 class CmdMemoryMaintenance(Command):

@@ -20,7 +20,6 @@ import json
 
 from evennia.utils import logger
 from evennia.utils.dbserialize import deserialize
-from twisted.internet import threads
 
 from world import llm
 
@@ -607,9 +606,8 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
         except Exception as exc:
             on_error(str(exc))
 
-    threads.deferToThread(
-        llm.ask, api_key, model, messages
-    ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
+    llm.fetch(llm.ask, api_key, model, messages,
+              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
 
 
 _ADMISSION_SYSTEM = """You decide whether a sort of thing can be acted on at all.
@@ -678,9 +676,8 @@ def ask_admission(account, world_root, verb, rule, kind, on_answer, on_error):
         except Exception as exc:
             on_error(str(exc))
 
-    threads.deferToThread(
-        lambda: llm.ask(api_key, model, messages)
-    ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
+    llm.fetch(lambda: llm.ask(api_key, model, messages),
+              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
 
 
 def narrate(account, verb, bound, actor, raw, on_success, on_error, result=None):
@@ -740,6 +737,5 @@ def narrate(account, verb, bound, actor, raw, on_success, on_error, result=None)
         except Exception as exc:
             on_error(str(exc))
 
-    threads.deferToThread(
-        llm.ask, api_key, model, messages
-    ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
+    llm.fetch(llm.ask, api_key, model, messages,
+              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))

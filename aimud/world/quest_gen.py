@@ -16,9 +16,6 @@ once per quest, not once per reaction -- so it can afford a capable model
 where dialogue cannot.
 """
 
-
-from twisted.internet import threads
-
 from world import llm
 
 from evennia.utils import logger
@@ -205,9 +202,8 @@ def formalise(account, npc, target, request, offer, consequence, on_success, on_
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    threads.deferToThread(
-        llm.ask, api_key, model, messages
-    ).addCallbacks(_done, _fail)
+    llm.fetch(llm.ask, api_key, model, messages,
+              on_success=_done, on_error=_fail)
 
 
 _GOAL_SYSTEM = """You turn what a character wants into conditions a game can check.
@@ -278,6 +274,5 @@ def formalise_goal(account, npc, want, on_success, on_error):
         except Exception as exc:
             on_error(str(exc))
 
-    threads.deferToThread(
-        llm.ask, api_key, model, messages
-    ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
+    llm.fetch(llm.ask, api_key, model, messages,
+              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))

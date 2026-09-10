@@ -30,7 +30,6 @@ lets a job's screen offer exactly the settings that model will take.
 
 import json
 
-from twisted.internet import threads
 from evennia.utils.evmenu import EvMenu
 
 FUNCTIONS = [
@@ -88,7 +87,8 @@ def start_model_menu(caller):
     def on_error(failure):
         caller.msg(f"|rCould not fetch models: {failure.getErrorMessage()}|n")
 
-    threads.deferToThread(_fetch_models_sync, api_key).addCallbacks(on_success, on_error)
+    llm.fetch(_fetch_models_sync, api_key,
+              on_success=on_success, on_error=on_error)
 
 
 def _open_menu(account):

@@ -6,9 +6,6 @@ Two models are used (configured separately via the `models` command):
   items       — creates the object with name, description, and takeability
 """
 
-
-from twisted.internet import threads
-
 from world import llm
 
 
@@ -172,7 +169,7 @@ def validate_object_existence(account, room, object_name, on_valid, on_invalid, 
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+    llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
 def validate_object_takeable(account, room, obj, on_valid, on_invalid, on_error):
@@ -219,7 +216,7 @@ def validate_object_takeable(account, room, obj, on_valid, on_invalid, on_error)
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+    llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
 def generate_item(account, room, object_name, on_success, on_error):
@@ -296,7 +293,7 @@ def generate_item(account, room, object_name, on_success, on_error):
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+    llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
 # ---------------------------------------------------------------------------

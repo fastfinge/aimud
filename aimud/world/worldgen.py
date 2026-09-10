@@ -9,7 +9,6 @@ import json
 import re
 
 from evennia.utils import logger
-from twisted.internet import threads
 
 from world import llm
 
@@ -1042,9 +1041,8 @@ def _generate_plan(account, api_key, world_description, guidance, on_done):
         except Exception:
             on_done({})
 
-    threads.deferToThread(
-        llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT
-    ).addCallbacks(_done, lambda _f: on_done({}))
+    llm.fetch(llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT,
+              on_success=_done, on_error=lambda _f: on_done({}))
 
 
 #: (world id, zone id) for the areas currently being described.
@@ -1127,10 +1125,8 @@ def plan_zone(account, world_root, zone_id):
     def _failed(_reason):
         _PLANNING.discard(ticket)
 
-    threads.deferToThread(
-        llm.ask, api_key, account.model_for("rooms"), messages,
-        llm.SLOW_TIMEOUT
-    ).addCallbacks(_done, _failed)
+    llm.fetch(llm.ask, api_key, account.model_for("rooms"), messages,
+              llm.SLOW_TIMEOUT, on_success=_done, on_error=_failed)
 
 
 def _generate_name(account, api_key, world_description, context, source_room,
@@ -1212,9 +1208,8 @@ def _generate_name(account, api_key, world_description, context, source_room,
                 ], complaint)
             on_success(data)
 
-        threads.deferToThread(
-            llm.ask, api_key, model, convo, llm.SLOW_TIMEOUT
-        ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
+        llm.fetch(llm.ask, api_key, model, convo, llm.SLOW_TIMEOUT,
+                  on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
 
     def _retry(remaining, convo, complaint):
         attempt(remaining - 1, convo + [{"role": "user", "content": complaint}])
@@ -1299,9 +1294,8 @@ def _generate_description(account, api_key, world_description, guidance, context
         except Exception as exc:
             on_error(str(exc))
 
-    threads.deferToThread(
-        llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT
-    ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
+    llm.fetch(llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT,
+              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
 
 
 def _join_names(names):
@@ -1382,9 +1376,8 @@ def populate_room(account, room):
                          on_success=arrived,
                          on_error=lambda _err: None)
 
-    threads.deferToThread(
-        llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT
-    ).addCallbacks(_done, lambda _f: None)
+    llm.fetch(llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT,
+              on_success=_done, on_error=lambda _f: None)
 
 
 # ---------------------------------------------------------------------------
@@ -1491,9 +1484,8 @@ def generate_first_room(account, spec, on_success, on_error,
                 on_success=finish, on_error=on_error,
             )
 
-        threads.deferToThread(
-            llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT
-        ).addCallbacks(with_name, lambda f: on_error(f.getErrorMessage()))
+        llm.fetch(llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT,
+                  on_success=with_name, on_error=lambda f: on_error(f.getErrorMessage()))
 
     _generate_plan(account, api_key, world_description, rooms_guidance, with_plan)
 
