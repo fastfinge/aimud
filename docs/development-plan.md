@@ -359,12 +359,33 @@ These land together or not at all.
 - **7.3 `rules`, `rules <action>`, `help <action>`.** Not later. Inform's hardest
   bug class is rule ordering and its answer is `RULES ON`; a world nobody can
   debug is worse than a world that cannot launch a spaceship.
-- **7.4 Rollback.** The branch, and `worldreset`. With no world to preserve
-  there is nothing to migrate and nothing to keep compatible, so the old
-  `verb_rules` path is deleted in this phase rather than kept behind a setting.
-  A bad cutover is a checkout away, and the replacement for "diff the old and
-  new paths on the same world" is the behaviour corpus in §3, 0.6 -- recorded
-  from today's engine, replayed against the new one.
+- **7.4 Rollback, and what the cutover actually did.** The branch, and
+  `worldreset`. A bad cutover is a checkout away.
+
+  The old `verb_rules` path was to be *deleted* here. It is bridged instead,
+  and the reason is a sequencing fact the plan had wrong: **nothing writes
+  carry-out rules until phase 8.** Delete the old path before the prompts
+  exist and every verb gathers no carry-out rule and does nothing at all --
+  the game stops, and the phases have nothing to run.
+
+  So `rulebooks.from_verb_rule` reads a learned verb rule as what it already
+  amounts to: a stack of world-scope check rules from its `requires`, and one
+  world-scope carry-out rule from its `effects`. Computed at gather time,
+  never stored, because storing it would be one fact written down twice in two
+  shapes with nothing keeping them in step -- which is the failure this whole
+  design exists to end.
+
+  That is better than deletion would have been. The phases run on everything
+  the exported worlds already know, so the engine is exercised against real
+  learned rules before a single prompt is rewritten, and phase 8 becomes a
+  smaller change: ask for rules directly instead of converting them. The
+  bridge goes when the asking lands.
+
+  Two things from this phase remain undone on purpose. Implicit taking is
+  written and tested but unwired, because nothing declares `carried` until
+  phase 8 asks. And `help <action>` waits for the same reason: until a world
+  writes its own rules there is nothing to say about a verb that `rules` does
+  not already say better.
 
 **Done when:** every verb that worked before works; the space-game example in §8
 runs end to end; `rules launch` prints the firing order with the unmet condition

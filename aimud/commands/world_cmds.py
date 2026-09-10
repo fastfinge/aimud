@@ -753,6 +753,123 @@ class CmdWorldCheck(Command):
         self.caller.msg(rulecheck.report(findings, lore.title(root)))
 
 
+class CmdRules(Command):
+    """
+    What this world's rules say, and the order they say it in.
+
+    Usage:
+      rules
+      rules <verb>
+
+    Every rule this world holds, or with a verb after it, only the rules
+    about that verb: what it needs before it will work, what it does, and
+    what follows from it having worked.
+
+    The order is the point. A rule about one particular thing is consulted
+    before a rule about that sort of thing, which comes before one about the
+    sort of place you are standing in, then the room, then the area, then the
+    world. So a rule about datapads decides what powering a datapad does,
+    even aboard a ship with its own rule about powering.
+
+    Rules marked |xsuspended|n are in the book and not in force. Ones marked
+    |xstandard|n came with the world rather than being learned in it.
+
+    Nothing here costs anything: it is read out of what the world already
+    wrote down.
+    """
+
+    key = "rules"
+    locks = "cmd:all()"
+    help_category = "World"
+
+    def func(self):
+        from world import rulebooks, standard_rules, verbs
+
+        root = _current_world_root(self.caller)
+        if root is None:
+            self.caller.msg("You are not in a generated world.")
+            return
+        standard_rules.seed(root)
+
+        asked = self.args.strip().lower()
+        if asked:
+            self.caller.msg(self._one_verb(root, verbs.canonical_verb(asked)))
+        else:
+            self.caller.msg(self._everything(root))
+
+    def _said(self, rule, root):
+        """One rule as a line: where it applies, and what it says."""
+        from world import conditions, rulebooks, standard_rules
+
+        marks = []
+        if not rule.get("listed", True):
+            marks.append("suspended")
+        if standard_rules.is_standard(rule):
+            marks.append("standard")
+        said = rule.get("name") or ""
+        if not said and rule.get("conditions"):
+            said = conditions.describe(rule["conditions"][0])
+        where = rulebooks.said_scope(rule.get("scope"), root)
+        note = f" |x({', '.join(marks)})|n" if marks else ""
+        return f"{where} -- {said}{note}"
+
+    def _one_verb(self, root, verb):
+        from world import actions, rulebooks
+
+        lines = [f"|w{verb}|n"]
+        declared = actions.spec(root, verb)
+        if declared:
+            takes = ", ".join(
+                f"{r['role']} ({r['access']}"
+                + (", optional)" if r["optional"] else ")")
+                for r in declared.get("applies_to") or []) or "nothing"
+            lines.append(f"  takes {takes}")
+            if declared.get("means"):
+                lines.append(f"  |x{declared['means']}|n")
+        else:
+            lines.append("  |xnobody has declared what it takes yet|n")
+
+        found = [r for r in rulebooks.all_rules(root)
+                 if r.get("action") in (None, verb)]
+        if not found:
+            lines.append("")
+            lines.append("  No rules about it yet.")
+            return "\n".join(lines)
+
+        for phase in rulebooks.PHASES:
+            here = sorted((r for r in found if r.get("phase") == phase),
+                          key=lambda r: rulebooks.rank(r, None, root))
+            if not here:
+                continue
+            lines.append("")
+            lines.append(f"  |y{phase.replace('_', ' ')}|n")
+            lines += [f"    {self._said(rule, root)}" for rule in here]
+        return "\n".join(lines)
+
+    def _everything(self, root):
+        from world import rulebooks
+
+        found = rulebooks.all_rules(root)
+        if not found:
+            return "This world has no rules yet."
+
+        by_action = {}
+        for rule in found:
+            by_action.setdefault(rule.get("action") or "any action",
+                                 []).append(rule)
+        lines = [f"|w{lore.title(root)}|n has {len(found)} rules, "
+                 f"over {len(by_action)} verbs.", ""]
+        for action in sorted(by_action):
+            lines.append(f"  |w{action}|n")
+            for rule in sorted(by_action[action],
+                               key=lambda r: rulebooks.rank(r, None, root)):
+                lines.append(f"    {rule.get('phase', ''):10} "
+                             f"{self._said(rule, root)}")
+        lines.append("")
+        lines.append("|xType |wrules <verb>|x for one verb in firing order.|n")
+        return "\n".join(lines)
+
+
 class CmdWorldOpen(Command):
     """
     Open a way on, in a world that has nowhere left to go.

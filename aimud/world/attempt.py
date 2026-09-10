@@ -174,14 +174,12 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
     if not verb:
         return
 
-    # Some states stop their holder doing anything at all. Asked here because
-    # this is the one road every action takes, a player's and a character's
-    # alike, so a dead thing stops acting without any rule having to say so
-    # and without every verb ever learned having to remember it.
-    refusal = verbs.refuse(caller, "prevents_acting", _world_root(room))
-    if refusal:
-        on_message(refusal, "")
-        return
+    # Some states stop their holder doing anything at all. That used to be a
+    # guard here, because there was nowhere for a rule about every verb to
+    # live. There is now: "you must be able to act" is a world-scope check
+    # rule with no action, seeded into every world, and it runs in the check
+    # phase with everything else -- where it can be read in `rules`, and where
+    # a world can add its own beside it.
 
     if verb == "follow":
         # Standing arrangements are not verbs. Without this an NPC asking to
@@ -651,15 +649,31 @@ def _with_specifics(rule, bound, verb, actor=None):
 
 def _with_rule(caller, room, account, raw, verb, bound, rule, release,
                allow_effects, world_root, waiter=None, guarded=None):
-    if not rule.get("valid", True):
-        release(rule.get("reason") or "You can't do that.")
+    from world import conditions, rulebooks
+
+    ctx = conditions.context(bound, caller, world_root)
+    book = rulebooks.for_attempt(world_root, verb, bound, caller,
+                                 verb_rule=rule)
+
+    # INSTEAD. The most specific rule that says this means something else
+    # here wins outright, and processing ends. One winner, never a merge:
+    # merging is how a rule system stops being predictable, and this is the
+    # phase where meaning lives.
+    for aside in [r for r in book if r["phase"] == rulebooks.INSTEAD]:
+        extra = effects_mod.apply(caller, room, aside.get("effects") or [],
+                                  bound=bound, world_root=world_root)
+        release(aside.get("name") or "", " ".join(extra).strip())
         return
 
-    complaint = verbs.check(rule.get("requires"), bound, caller,
-                            world_root=world_root)
-    if complaint:
-        release(complaint)
-        return
+    # CHECK. Every gathered rule, cumulatively, in specificity order. The
+    # first unmet condition is what the player is told. This phase is safe to
+    # extend by construction: a check rule can only ever make an action
+    # stricter, never change what it means.
+    for gate in [r for r in book if r["phase"] == rulebooks.CHECK]:
+        complaint = conditions.unmet(gate.get("conditions") or [], ctx)
+        if complaint:
+            release(complaint)
+            return
 
     # What this particular thing does, and how hard it is on this particular
     # thing. The rule says what the verb means for everything of its sort; the
@@ -710,6 +724,18 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
                                   world_root=world_root)
         spoken = _for_room(room_text, caller, raw)
         visible = " ".join([spoken] + extra).strip()
+        # AFTER. What follows from it having worked, gathered before any of
+        # it landed so that nothing an after-rule does can set another one
+        # going. Bounded by the action, which is how consequence happens here
+        # without a tick: launching a ship makes everyone aboard weightless,
+        # and the rule saying so lives on `spacecraft` rather than inside
+        # `launch`.
+        if outcome != "failure":
+            for later in [r for r in book if r["phase"] == rulebooks.AFTER]:
+                extra += effects_mod.apply(
+                    caller, room, later.get("effects") or [],
+                    bound=bound, world_root=world_root)
+
         _remember(caller, raw, bound, actor_text, extra, outcome=outcome,
                   contested=result is not None)
         release(actor_text, visible)

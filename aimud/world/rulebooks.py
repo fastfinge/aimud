@@ -232,6 +232,38 @@ def gather(world_root, action, bound=None, actor=None, phase=None):
     return [rule for _key, rule in sorted(found, key=lambda pair: pair[0])]
 
 
+def tier_of(rule):
+    """
+    How specific a rule is, from its scope and what it is about.
+
+    Derived rather than discovered, so that a listing with no attempt in front
+    of it sorts the same way an attempt would -- which is the whole use of
+    `rules`: seeing the order before something goes wrong rather than after.
+
+        0  this one thing
+        1  the sort of a thing somebody named
+        2  the sort of place they are standing in
+        3  this room
+        4  this area
+        5  everywhere
+
+    Tiers 1 and 2 are the same scope and differ only by `about`, which is why
+    that slot is load-bearing: a rule about `spacecraft.n.01` may mean the ship
+    you are in or a model on the shelf, and those want different precedence.
+    """
+    scope = rule.get("scope") or {}
+    about = str(rule.get("about") or "direct")
+    if OBJECT in scope:
+        return 0
+    if KIND in scope:
+        return 2 if about in PLACES else 1
+    if ROOM in scope:
+        return 3
+    if ZONE in scope:
+        return 4
+    return 5
+
+
 def matches(rule, attempt):
     """
     Which tier this rule matched at, or None if it does not apply.
@@ -247,20 +279,22 @@ def matches(rule, attempt):
     about = str(rule.get("about") or "direct")
     root = attempt.world_root
 
+    tier = tier_of(rule)
+
     if WORLD in scope:
-        return 5
+        return tier
 
     if ROOM in scope:
         here = attempt.room
-        return 3 if here is not None and here.id == scope[ROOM] else None
+        return tier if here is not None and here.id == scope[ROOM] else None
 
     if ZONE in scope:
-        return 4 if scope[ZONE] in attempt.zone_ids else None
+        return tier if scope[ZONE] in attempt.zone_ids else None
 
     if OBJECT in scope:
         for thing in attempt.things(about) or list(attempt.bound.values()):
             if getattr(thing, "id", None) == scope[OBJECT]:
-                return 0
+                return tier
         return None
 
     if KIND in scope:
@@ -272,18 +306,18 @@ def matches(rule, attempt):
                                             world_root=root)
             if what is None and attempt.room is not None:
                 if kinds.any_is_a(root, kinds.of(attempt.room), wanted):
-                    return 2
+                    return tier
                 return None
-            return 2 if what is not None else None
+            return tier if what is not None else None
         for thing in attempt.things(about):
             if kinds.any_is_a(root, kinds.of(thing), wanted):
-                return 1
+                return tier
         return None
 
     return None
 
 
-def rank(rule, tier, world_root=None):
+def rank(rule, tier=None, world_root=None):
     """
     Where a rule sorts. Lower is more specific, and every tie is broken.
 
@@ -301,6 +335,8 @@ def rank(rule, tier, world_root=None):
     from world import kinds, lexicon, zones
 
     scope = rule.get("scope") or {}
+    if tier is None:
+        tier = tier_of(rule)
     depth = 0
     if KIND in scope:
         depth = -len(kinds.ancestors(world_root, scope[KIND]))
@@ -364,3 +400,86 @@ def said_scope(scope, world_root=None):
     if OBJECT in scope:
         return f"one thing (#{scope[OBJECT]})"
     return "nowhere in particular"
+
+
+# ---------------------------------------------------------------------------
+# Reading a learned verb rule as a rulebook
+# ---------------------------------------------------------------------------
+
+def from_verb_rule(rule, action, world_root=None):
+    """
+    One learned verb rule, as the phase-rules it amounts to.
+
+    The bridge across the cutover. A verb rule is preconditions plus effects
+    for a whole world, which is exactly a stack of world-scope check rules and
+    one world-scope carry-out rule -- so the phases can run on everything a
+    world already knows, before any generator has been taught to write rules
+    directly. Phase 8 replaces the conversion with the real thing.
+
+    Computed rather than stored, deliberately. Storing it would mean the same
+    rule written down twice, in two shapes, with nothing keeping them in step,
+    and drift between two copies of one fact is the failure this whole design
+    exists to end.
+    """
+    from world import conditions
+
+    try:
+        rule = dict(rule or {})
+    except (TypeError, ValueError):
+        return []
+    if not rule.get("valid", True):
+        return [blank(
+            action=action, phase=CHECK, scope={WORLD: True},
+            name=str(rule.get("reason") or "you cannot do that"),
+            conditions=[{"subject": "world", "never": True,
+                         "because": str(rule.get("reason")
+                                        or "You can't do that.")}],
+            source="learned")]
+
+    out = []
+    for condition in conditions.from_requires(rule.get("requires")):
+        out.append(blank(
+            action=action, phase=CHECK, scope={WORLD: True},
+            about=str(condition.get("subject") or "direct"),
+            name=conditions.describe(condition),
+            conditions=[condition], source="learned"))
+    out.append(blank(
+        action=action, phase=CARRY_OUT, scope={WORLD: True},
+        name=f"what {action} does", effects=rule.get("effects") or [],
+        contest=rule.get("check"), source="learned"))
+    for index, entry in enumerate(out):
+        entry["id"] = f"learned:{action}:{index}"
+    return out
+
+
+def for_attempt(world_root, action, bound=None, actor=None, verb_rule=None,
+                phase=None):
+    """
+    Every rule an attempt runs, in order: the world's own, plus the learned.
+
+    The one call the pipeline makes. Seeds the standard rules if this world
+    has never had them, folds in whatever the old generator learned about this
+    verb, and hands back one ordered list per phase.
+    """
+    from world import standard_rules
+
+    standard_rules.seed(world_root)
+    found = gather(world_root, action, bound, actor, phase=phase)
+    if verb_rule is None:
+        return found
+
+    attempt = Attempt(world_root, action, bound, actor)
+    converted = []
+    for rule in from_verb_rule(verb_rule, action, world_root):
+        if phase and rule.get("phase") != phase:
+            continue
+        tier = matches(rule, attempt)
+        if tier is None:
+            continue
+        converted.append((rank(rule, tier, world_root), rule))
+    if not converted:
+        return found
+
+    ranked = [(rank(r, matches(r, attempt) or 5, world_root), r)
+              for r in found] + converted
+    return [rule for _key, rule in sorted(ranked, key=lambda pair: pair[0])]

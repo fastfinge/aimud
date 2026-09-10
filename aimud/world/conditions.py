@@ -246,7 +246,8 @@ def _listed(value):
 def predicate_of(condition):
     """Which predicate a condition uses, and what it names."""
     for name in ("is", "lacks", "affords", "kind", "holds", "wears",
-                 "placed", "trait", "in_room", "exists", "gone"):
+                 "placed", "trait", "in_room", "exists", "gone",
+                 "able", "reachable_by", "never"):
         if name in condition:
             return name, condition[name]
     return "", None
@@ -404,6 +405,15 @@ def _abstractly(condition):
         return f"{subject} exists"
     if name == "gone":
         return f"{subject} {be} gone"
+    if name == "able":
+        doing = {"acting": "act", "moving": "move",
+                 "speaking": "speak"}.get(str(value), "act")
+        return f"{subject} can {doing}"
+    if name == "reachable_by":
+        who = _SUBJECT_WORDS.get(str(value), str(value))
+        return f"{who} can reach {subject}"
+    if name == "never":
+        return str(condition.get("because") or "this cannot be done")
     return ""
 
 
@@ -687,6 +697,73 @@ def _p_gone(subject, value, condition, ctx, mood):
     return met, f"{_cap(said)} is still here."
 
 
+#: What a state can stop its holder doing. Three, and never a list of
+#: forbidden verbs: a state is settled once while new verbs go on being
+#: invented, so any list would be stale within a week.
+GATES = {"acting": "prevents_acting", "moving": "prevents_moving",
+         "speaking": "prevents_speaking"}
+
+
+def _p_never(subject, value, condition, ctx, mood):
+    """
+    A condition that cannot be met, carrying its own reason.
+
+    For a verb a world has decided is not a verb here. The refusal is the
+    rule's name, since there is nothing about the world to report -- it is not
+    that the door is locked, it is that there is no such thing as doing this.
+    """
+    return False, str(condition.get("because") or "You can't do that.")
+
+
+def _p_able(subject, value, condition, ctx, mood):
+    """
+    Whether nothing the subject is in stops them doing this sort of thing.
+
+    The three `prevents_` flags on a state group, asked as a condition. They
+    were a hard-coded guard at the top of the attempt pipeline; as a rule they
+    are one line in `rules`, they compose with everything else, and a world
+    can add its own without anybody touching the pipeline.
+    """
+    from world import verbs
+
+    gate = GATES.get(str(value), GATES["acting"])
+    doing = {"acting": "do that", "moving": "move",
+             "speaking": "speak"}.get(str(value), "do that")
+    if not subject.found:
+        return True, ""
+    stopped = verbs.blocked(subject.obj, gate, ctx.world_root)
+    if mood == WANT:
+        return not stopped, f"be able to {doing}"
+    if not stopped:
+        return True, ""
+    return False, verbs.refuse(subject.obj, gate, ctx.world_root) \
+        or _plainly(subject, f"in no condition to {doing}", ctx)
+
+
+def _p_reachable(subject, value, condition, ctx, mood):
+    """
+    Whether whoever `value` names could take hold of the subject.
+
+    Inform's basic accessibility rule. `relations.reachable` already knows the
+    answer -- your own inventory, the room, what is on or under anything you
+    can reach, and inside anything open -- and a closed box stopping the
+    search is the whole reason a lid is worth having.
+    """
+    from world import relations
+
+    if not subject.found:
+        return _missing(subject, condition, mood)
+    who = resolve(value or "actor", ctx)
+    if not who.found or subject.obj is None:
+        return True, ""
+    if subject.obj is who.obj:
+        return True, ""
+    within = subject.obj in relations.reachable(who.obj, include_self=True)
+    if mood == WANT:
+        return within, f"get within reach of {subject.name()}"
+    return within, f"{_cap(subject.name())} is out of reach."
+
+
 _PREDICATES = {
     "is": _p_is,
     "lacks": _p_lacks,
@@ -699,6 +776,9 @@ _PREDICATES = {
     "in_room": _p_in_room,
     "exists": _p_exists,
     "gone": _p_gone,
+    "able": _p_able,
+    "reachable_by": _p_reachable,
+    "never": _p_never,
 }
 
 
