@@ -626,3 +626,83 @@ class CarryingALampAbout(Looking):
                       bound={"direct": self.thing}, world_root=self.root)
         self.assertFalse(self.sees(self.other))
 
+
+@tag("world")
+class LookingAsksNobodysPermission(Looking):
+    """
+    Found in play, on the first world built with this engine.
+
+    Every generated room has kinds, and `_admitted` asks a model once per kind
+    per verb whether that sort of thing admits the verb -- so the first look in
+    every room bought a call asking whether a cellar can be looked at. While it
+    was in flight the room was held, so a second look was answered "someone else
+    is already doing that", which is what a slow world looks like when it is
+    also lying about who is slow.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # What worldgen has given every room since phase 2.
+        self.room2.db.kinds = ["cellar.n.01"]
+        self.room2.db.desc = "A low stone cellar."
+
+    def test_the_first_look_in_a_room_with_kinds_costs_nothing(self):
+        said = self.look("look")
+        self.assertEqual(self.asked, 0,
+                         "no sort of thing has to be granted the right to be "
+                         "looked at")
+        self.assertIn("low stone cellar", said)
+
+    def test_and_neither_does_looking_at_a_thing_with_kinds(self):
+        self.thing.db.kinds = ["lantern.n.01"]
+        self.look("look lantern")
+        self.assertEqual(self.asked, 0)
+
+    def test_nothing_is_written_down_about_whether_it_may_be_looked_at(self):
+        """
+        The other half of why this is wrong. An admission is permanent and
+        first-answer-wins, so one model saying a ghost cannot be looked at
+        would freeze that for every ghost the world ever holds. Sight belongs
+        to `visible_to` and a check rule, which is per-object and reversible.
+        """
+        from world import kinds
+
+        self.look("look")
+        self.assertIsNone(kinds.admits(self.root, ["cellar.n.01"], "look"))
+
+    def test_a_verb_that_does_something_is_still_asked_about(self):
+        """The exemption is for looking, not a hole in the admission question."""
+        from world import actions
+
+        self.assertEqual(set(actions.ALWAYS_ADMITTED), {"look"})
+
+
+@tag("world")
+class BeingToldWhoIsBusy(Looking):
+    """
+    "Someone else is already doing that" is true of another player and a lie to
+    the person who typed it twice because the world had not answered yet.
+    """
+
+    def test_your_own_attempt_says_so(self):
+        attempt_mod._hold(self.thing, "power", self.char1)
+        self.assertIn("You are already doing that",
+                      attempt_mod._still_waiting(self.thing, "power",
+                                                 self.char1))
+
+    def test_somebody_elses_still_says_someone_else(self):
+        attempt_mod._hold(self.thing, "power", self.char2)
+        self.assertIn("Someone else",
+                      attempt_mod._still_waiting(self.thing, "power",
+                                                 self.char1))
+
+    def test_a_hold_is_dropped_when_the_attempt_ends(self):
+        self.look("look lantern")
+        self.assertFalse(attempt_mod._busy(self.thing, "look"))
+
+    def test_and_a_held_verb_is_refused_rather_than_run_twice(self):
+        attempt_mod._hold(self.thing, "look", self.char2)
+        said = self.look("look lantern")
+        self.assertIn("already doing that", said)
+        self.assertNotIn("dented brass lantern", said)
+

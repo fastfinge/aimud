@@ -378,21 +378,44 @@ def _promote(caller, room, account, parsed, bound, unbound, resume, on_message,
     conjure(caller, room, account, parsed["roles"][role], ready,
             lambda message: on_message(message, ""), fuzzy=fuzzy)
 
+def _holder(obj, verb):
+    """Who has this verb in flight against this object, or None."""
+    try:
+        return dict(obj.ndb.busy_verbs or {}).get(verb)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
 def _busy(obj, verb):
     """True if this verb is already in flight against this object."""
-    return verb in (obj.ndb.busy_verbs or set())
+    return _holder(obj, verb) is not None
 
 
-def _hold(obj, verb):
-    busy = set(obj.ndb.busy_verbs or set())
-    busy.add(verb)
+def _hold(obj, verb, actor=None):
+    busy = dict(obj.ndb.busy_verbs or {})
+    busy[verb] = getattr(actor, "id", None) or True
     obj.ndb.busy_verbs = busy
 
 
 def _drop(obj, verb):
-    busy = set(obj.ndb.busy_verbs or set())
-    busy.discard(verb)
+    busy = dict(obj.ndb.busy_verbs or {})
+    busy.pop(verb, None)
     obj.ndb.busy_verbs = busy
+
+
+def _still_waiting(obj, verb, caller):
+    """
+    What to say when a verb is already in flight against this thing.
+
+    "Someone else is already doing that" is true of another player and a lie to
+    the person who typed it a second time because the first one had not answered
+    yet -- which is what it reads like when a world is thinking. Telling the two
+    apart costs one id, and being told "you are already doing that" is the
+    difference between a slow world and a broken one.
+    """
+    if _holder(obj, verb) == getattr(caller, "id", None):
+        return "You are already doing that. Give it a moment."
+    return "Someone else is already doing that."
 
 
 def _once(callback):
@@ -468,9 +491,9 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
     anchor = _anchor(bound, caller)
     if anchor is not None:
         if _busy(anchor, verb):
-            on_message("Someone else is already doing that.", "")
+            on_message(_still_waiting(anchor, verb, caller), "")
             return
-        _hold(anchor, verb)
+        _hold(anchor, verb, caller)
 
     done = []
 
@@ -636,7 +659,16 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
     for every bottle the world will ever hold. A no ends the attempt here,
     without a rule, a roll or a narration.
     """
-    from world import kinds
+    from world import actions, kinds
+
+    if verb in actions.ALWAYS_ADMITTED:
+        # No sort of thing has to be granted the right to be looked at. See
+        # `actions.ALWAYS_ADMITTED`: asking cost a call per room and would have
+        # frozen the answer for ever, where a check rule on `visible_to` says
+        # the same thing per object and can change its mind.
+        _with_rule(caller, room, account, raw, verb, bound, rule, release,
+                   allow_effects, world_root, waiter, guarded, redirects)
+        return
 
     anchor = _anchor(bound, caller)
     obj_kinds = list(getattr(anchor.db, "kinds", None) or []) if anchor else []

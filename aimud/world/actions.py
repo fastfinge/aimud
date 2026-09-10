@@ -31,6 +31,25 @@ from evennia.utils import logger
 #: Where a world keeps what it has decided about each action.
 ATTR = "action_specs"
 
+#: Actions no kind has to admit, because every kind admits them.
+#:
+#: `kinds.admits` asks a model, once per kind per verb, whether a sort of thing
+#: can be verbed at all -- and caches the answer for good. That is the right
+#: question for a verb that changes something and the wrong one for looking,
+#: on two counts.
+#:
+#: It costs. The first look in a room bought a call asking whether a cellar can
+#: be looked at, and while it was in flight the room was held, so a second look
+#: was answered "someone else is already doing that". Looking is supposed to be
+#: the one action that costs nothing.
+#:
+#: And it is the wrong shape. A world that wants something unseeable has
+#: `visible_to` and a check rule, which is per-object, per-condition and
+#: reversible -- darkness, a ghost, the right spectacles. The admission bit is
+#: permanent and first-answer-wins, so a model saying once that a ghost cannot
+#: be looked at would freeze that for every ghost the world ever holds.
+ALWAYS_ADMITTED = frozenset(["look"])
+
 #: The parts a verb can take. `actor` is not among them -- there is always
 #: one, and no verb has to declare that somebody is doing it.
 ROLES = ("direct", "instrument", "target", "container", "source")
