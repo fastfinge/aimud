@@ -82,6 +82,13 @@ effects change the world. Each is one of:
 {"type": "set_trait", "role": "actor", "trait": "stamina", "change": -5}
 {"type": "set_trait", "role": "actor", "trait": "poisoned", "set_to": 20, "rate": -1}
 
+A figure that moves by a different amount depending on what was acted on
+belongs in the effects, but pick the amount an ORDINARY member of this sort
+would give — each particular thing may say otherwise afterwards, and will be
+asked. Do not build the exceptional case into the rule: a rule that assumes
+everything drinkable is strong drink makes water intoxicating for the life of
+the world.
+
 set_trait changes a figure about a person. "change" moves it by an amount,
 "set_to" puts it at one. "rate" is change per second from then on, and is how
 an effect plays out over time instead of all at once: a poison that drains at
@@ -241,6 +248,13 @@ entirely to accept the rule's own effects unchanged, which is the ordinary
 case and the right answer whenever nothing about this thing is special. Give
 it only where this thing genuinely differs — opening this door reveals the
 stairs, opening that one is barred from the far side.
+
+The commonest reason to differ is AMOUNT. A rule says drinking costs thirst
+and gains intoxication, and it had to pick one number for both; water and
+neat spirits are not that number. Whenever the rule changes a figure by some
+amount, ask what THIS thing would do, and give the whole effects list back
+with your own amount if it differs. Zero is a real answer: water intoxicates
+nobody.
 
 "difficulty" is the number to beat for THIS thing, when the rule says the verb
 is contested. A flimsy crate and a bank vault are both pried, and they are not
