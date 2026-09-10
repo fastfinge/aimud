@@ -98,8 +98,21 @@ and ON surfaces; if the verb you are given is only a way of saying "put this
 there", mark it invalid. Define a verb when the placement is a *consequence*
 of something else -- pouring, posting, sheathing, burying.
 
-Prefer set_state over destroying and recreating things. Use an empty effects
-list for a verb that only produces a sensation.
+A verb usually does more than one thing, and the effects list is where all of
+it goes. Killing somebody makes them dead, and may cost the killer something,
+and may leave what they were carrying on the floor — that is three effects in
+one list, not three verbs. Ask yourself what else changed: what it costs the
+actor, what it leaves behind, what everyone standing there notices. Write them
+all. An empty list is for a verb that genuinely only produces a sensation —
+smelling bread, listening at a door.
+
+Prefer set_state over destroying and recreating things.
+
+"role" may also be "everyone" or "others", which mean every character in the
+room and every character except the one acting. That is how a verb reaches
+people nobody named: a fire warms everyone by it, a shout startles the others.
+Only set_state and set_trait accept them. Use them sparingly and never for
+something a person would resent having done to them from across the room.
 
 check is what makes a verb a gamble instead of a certainty, and is the one
 thing here that decides whether this is a game. Give a check ONLY when a

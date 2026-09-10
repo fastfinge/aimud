@@ -27,6 +27,26 @@ from world import verb_gen, verbs
 NPC_FORBIDDEN_EFFECTS = frozenset(["modify_room", "move_actor"])
 
 
+def _hits_everyone(effect):
+    """
+    Whether an effect is aimed at the room's whole company rather than at one
+    named participant.
+
+    Held to the same line as `modify_room` and `move_actor`, and for the same
+    reason: a character acts without anybody choosing to let it, so the wide
+    end of what a verb can do stays behind a player's decision. One NPC
+    deciding to alarm everybody present is a different kind of event from one
+    NPC opening a door, however reasonable the rule that says so.
+    """
+    from world import effects as effects_mod
+
+    try:
+        role = effect.get("role") or effect.get("name_role")
+    except AttributeError:
+        return False
+    return role in effects_mod.PLURAL_ROLES
+
+
 def _world_root(room):
     return room.db.world_root if room else None
 
@@ -532,7 +552,8 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         effective = _with_specifics(rule, bound, verb)
         allowed = [
             e for e in checks.effects_for(effective, outcome)
-            if allow_effects is None or e.get("type") in allow_effects
+            if (allow_effects is None or e.get("type") in allow_effects)
+            and not (allow_effects is not None and _hits_everyone(e))
         ]
         extra = effects_mod.apply(caller, room, allowed, bound=bound,
                                   world_root=world_root)

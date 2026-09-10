@@ -222,3 +222,44 @@ kind, and it stays: a rule that chars a book is a deliberate act on one book,
 not drift, and it does not stop books being readable.
 
 Worlds are reset for this. There is no migration.
+
+---
+
+# Open: conditions that persist and apply to whoever is present
+
+A verb can now do several things at once, and one of those things can be aimed
+at everyone standing in the room -- a fire warms the company, a shout startles
+the others. What it still cannot do is leave a condition *behind*.
+
+The difference matters and the one-shot version is wrong in both directions.
+Set `warm` on everybody present when the fire is lit, and the man who walks in
+a minute later is cold beside a blazing hearth, while the man who leaves stays
+warm out in the snow. Being near a fire is not something that happens to you
+once; it is true of you for as long as you are there.
+
+Nothing here models that, and the near misses are all worse than they look:
+
+* **A one-shot on everyone present** is the version above. It is right at the
+  instant it fires and wrong from the next moment on.
+
+* **A trait with a `rate`** already plays out over time, which is the closest
+  thing in the game, but it is fixed to a character rather than to a place. It
+  keeps warming somebody who has walked out.
+
+* **A rule that ticks** is the obvious answer and the expensive one. A world
+  with nobody in it is asleep and costs nothing, which is the property every
+  other decision here has been made to protect; anything that has to be
+  re-evaluated on a timer gives that up.
+
+* **A global rule over states** -- "anything in a room with a burning thing is
+  warm" -- has to be evaluated against the world rather than at a checkpoint,
+  which is the same objection wearing a different hat.
+
+The shape of an answer, if there is one, is probably that the *room* or the
+*burning thing* carries the condition, and that arriving and leaving are
+checkpoints like any other: `at_post_move` already fires on both sides of a
+step and already clears posture. Then nothing ticks, nothing is polled, and a
+sleeping world stays asleep -- somebody walking in is what causes the work,
+which is the same bargain the rest of the game makes.
+
+That is a sketch and not a design. Left open deliberately.
