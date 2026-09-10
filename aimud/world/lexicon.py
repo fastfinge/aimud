@@ -494,6 +494,76 @@ _MEASURES = frozenset("""
 # What a verb is a way of doing
 # ---------------------------------------------------------------------------
 
+def _verb_synsets(word, spread=2):
+    """
+    The senses a verb reference names: exact for an id, guessed for a word.
+
+    Everything below reads verb relations, and every one of them is only as
+    right as the sense it starts from. Given `launch.v.03` there is nothing to
+    guess. Given `launch` there is, and the guess is wrong often enough to
+    matter -- WordNet orders senses by how often they turned up in a 1990s
+    newspaper corpus, so the first sense of `launch` is `establish.v.01`, "set
+    up or found", and everything read from it is about founding institutions.
+
+    So the guess is narrow by default and every caller is written to prefer a
+    recorded id. `world.actions` records one per verb for exactly this reason.
+
+    How wide the guess may safely be depends on how common the relation is,
+    which is why `spread` is a parameter rather than a constant:
+
+        95.9% of verb synsets have a hypernym    -- dense
+         2.8% have an entailment                 -- sparse
+         1.6% have a cause                       -- very sparse
+
+    A dense relation is reachable from any sense, so a wide guess mostly finds
+    answers about the wrong sense: that is the `launch` -> `establish` ->
+    `open` road. A sparse one is different -- when 1.6% of senses have a cause
+    at all, a sense that has one is telling us something, and looking past the
+    first two costs almost no risk of finding the wrong thing. Measured: a
+    spread of four recovers `ring` -> `sound` and `break` -> `break`, and
+    anything beyond four adds nothing at all.
+    """
+    wordnet = _wordnet()
+    if wordnet is None or not word:
+        return []
+    word = str(word).strip()
+    exact = _synset(word)
+    if exact is not None:
+        return [exact]
+    try:
+        return wordnet.synsets(lemma(word, "v"), pos="v")[:spread]
+    except Exception:
+        return []
+
+
+def _related_verbs(word, relation, limit, keep_self=False, spread=2):
+    """
+    Words reached from `word` by a verb-to-verb relation, nearest first.
+
+    `keep_self` decides what happens when the relation leads back to the same
+    word, and the two answers are both right for different relations. Nothing
+    is served by reporting that opening is a way of opening, so an ancestor
+    that spells the same is dropped. But `open` *causing* `open` is the
+    causative pair -- the transitive verb beside the intransitive change it
+    produces -- and that is the single most useful thing this file can say
+    about a verb, so `causes` keeps it.
+    """
+    out = []
+    for synset in _verb_synsets(word, spread):
+        try:
+            found = getattr(synset, relation)()
+        except Exception:
+            continue
+        for other in found:
+            said = word_of(other.name())
+            if said in out:
+                continue
+            if not keep_self and said == word_of(word):
+                continue
+            out.append(said)
+    return out[:limit]
+
+
 def verb_ancestors(verb, limit=3):
     """
     The verbs a verb is a way of performing, nearest first.
@@ -507,18 +577,104 @@ def verb_ancestors(verb, limit=3):
     opening; it does not say that prying wants a crowbar, and a rule that
     inherited `open` wholesale would quietly lose the instrument. The caller
     puts this in a prompt beside the learned rule, never in place of it.
+
+    `verb` may be a recorded sense id, and should be wherever one is known.
+    Handed the bare word `launch` this answers `['open', 'propel']` -- `open`
+    because the commonest sense of launching is founding something, whose
+    hypernym is `open.v.02`. That is the world's `open` rule offered as the
+    starting point for writing `launch`, for a spacecraft. Handed
+    `launch.v.03` it answers about launching.
     """
-    wordnet = _wordnet()
-    if wordnet is None or not verb:
-        return []
-    try:
-        found = wordnet.synsets(lemma(verb, "v"), pos="v")
-    except Exception:
-        return []
-    out = []
-    for synset in found[:2]:
-        for parent in synset.hypernyms():
-            word = parent.name().split(".")[0].replace("_", " ")
-            if word != verb and word not in out:
-                out.append(word)
-    return out[:limit]
+    return _related_verbs(verb, "hypernyms", limit)
+
+
+def entailments(verb, limit=3):
+    """
+    The verbs doing this one necessarily involves.
+
+    Snoring entails sleeping; soaping entails washing. Which makes it the one
+    verb relation that transfers a *precondition* soundly: if A cannot happen
+    without B, then whatever B requires, A requires. 408 pairs in all of
+    WordNet, and sense-disambiguated, so it is small and precise rather than
+    broad -- 17% of the verbs the exported worlds learned have one.
+    """
+    return _related_verbs(verb, "entailments", limit, spread=4)
+
+
+def causes(verb, limit=3):
+    """
+    The verbs this one brings about.
+
+    Only 220 pairs exist, and among the verbs these worlds actually learn they
+    are almost all one thing -- the causative pair, a transitive verb beside
+    the intransitive change it produces:
+
+        open  causes open.v.03      kill causes die.v.01
+        fill  causes fill.v.02      dry  causes dry.v.02
+
+    Which is the link this game has needed and never had: the verb a player
+    types, joined to the condition it leaves behind. `world.affordances`
+    already observes that "burn and burning are one idea correctly split
+    across two registers"; nothing anywhere computed it. This does, for a
+    tenth of every verb a world learns, for nothing.
+
+    Read the other way it answers a different and equally useful question --
+    which verbs would bring a condition about -- and there it is deliberately
+    many-to-one. See docs/rulebooks-from-inform.md 5.1 for why that makes it a
+    planner's index and emphatically not a test of whether two verbs are the
+    same word.
+    """
+    return _related_verbs(verb, "causes", limit, keep_self=True,
+                          spread=4)
+
+
+def verb_senses(verb, limit=5):
+    """
+    The senses a verb has, as [(id, definition)], for a model to choose from.
+
+    Capped, because verbs are far more polysemous than nouns: the verbs these
+    worlds learned have a median of six senses and a third have ten or more --
+    `break` has 59. The noun trick of asking only when senses straddle a kind
+    bucket does not transfer, since nearly every verb would qualify. WordNet
+    orders by corpus frequency, so the answer is almost always among the first
+    few, and five short glosses once per verb per world is a rounding error.
+    """
+    return senses(verb, pos="v", limit=limit)
+
+
+def verb_sense_prompt(verb):
+    """
+    A block asking a model which sense of a verb it means, or "" without one.
+
+    Unlike the noun version this is offered for nearly every verb rather than
+    for the ambiguous few, because 98 of the 100 verbs the exported worlds
+    learned have a WordNet sense and most of those have several. The two that do
+    not are an adverb the old parser mistook for a verb and a misspelling, which
+    is its own small argument for asking.
+
+    Empty for a verb with one sense or none, because a menu of one is not a
+    question -- and one is not rare: `power`, `airlock` and `blaster` all have
+    exactly one. `settled_sense` is what a caller uses in that case.
+    """
+    listed = verb_senses(verb)
+    if len(listed) < 2:
+        return ""          # nothing to choose; see `settled_sense`
+    lines = "\n".join(f"  {name} -- {definition}"
+                      for name, definition in listed)
+    return (
+        f'"{verb}" has more than one meaning. Set "sense" to whichever of '
+        f"these this world means by it, given what is going on:\n{lines}\n"
+        f"Copy the identifier exactly. If none of them fits, leave "
+        f'"sense" empty and say what it means in your own words instead.\n'
+    )
+
+
+def settled_sense(verb):
+    """
+    The verb's sense when there is only one, so nobody need be asked.
+
+    Paired with `verb_sense_prompt`, which is empty in exactly this case. A
+    verb with one sense has already been disambiguated by English.
+    """
+    listed = verb_senses(verb, limit=2)
+    return listed[0][0] if len(listed) == 1 else ""
