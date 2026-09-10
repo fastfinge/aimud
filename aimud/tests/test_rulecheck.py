@@ -399,3 +399,57 @@ class ReadingTheRulebookToo(SimpleTestCase):
         self.assertEqual(found["counts"]["verbs"], 0)
         self.assertEqual(found["counts"]["rules"], 1)
 
+
+@tag("unit")
+class WhatASoakWouldCapture(SimpleTestCase):
+    """
+    The exporter has to know about every store the engine writes, or a run of
+    phase 13 produces a corpus of the old engine taken from a world running the
+    new one -- which is the one way that run could be worth nothing.
+
+    Asserted against the modules that declare the attributes, so a store added
+    later fails here rather than going quietly missing from the next export.
+    """
+
+    def exported(self):
+        from tests.fixtures import export
+
+        return set(export.REGISTERS)
+
+    def test_the_rulebook_is_exported(self):
+        from world import rulebooks
+
+        self.assertIn(rulebooks.ATTR, self.exported())
+        self.assertIn(rulebooks.COUNTER, self.exported())
+
+    def test_the_counters_are_exported(self):
+        """The plan calls these the point of the run."""
+        from world import counters
+
+        self.assertIn(counters.ATTR, self.exported())
+
+    def test_the_declarations_are_exported(self):
+        from world import actions
+
+        self.assertIn(actions.ATTR, self.exported())
+
+    def test_what_was_declined_and_given_up_on_is_exported(self):
+        from world import rule_gen, suggest
+
+        self.assertIn(suggest.ATTR_DECLINED, self.exported())
+        self.assertIn(rule_gen.ATTR_FRUITLESS, self.exported())
+
+    def test_the_old_registers_are_still_exported(self):
+        """A world mid-cutover holds both, and both are worth having."""
+        for name in ("verb_rules", "kind_specs", "state_vocabulary",
+                     "state_groups", "trait_vocabulary"):
+            self.assertIn(name, self.exported())
+
+    def test_everything_the_scan_reads_is_exported(self):
+        """
+        The tightest version of the rule: a register the scan reads and the
+        exporter skips is a measurement that cannot be taken afterwards.
+        """
+        self.assertTrue(set(rulecheck.REGISTERS) <= self.exported(),
+                        set(rulecheck.REGISTERS) - self.exported())
+

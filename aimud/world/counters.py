@@ -46,6 +46,22 @@ OUTCOMES = (DONE, REFUSED, NO_OBJECT, NOT_ADMITTED)
 #: either -- an attempt in the void, which a test can produce and a world cannot.
 NOTHING = "nothing"
 
+#: Who tried it. Two, and they answer different questions.
+#:
+#: `worldmode always` buys volume without anybody typing for weeks, and it
+#: exercises the planner hard -- but the distribution is biased, because a
+#: character reaches for verbs the world already knows and rules that already
+#: exist. **Characters do not invent vocabulary.** The verbs that stress this
+#: design are the ones nobody anticipated, typed at a thing nobody expected, and
+#: those come from a person playing.
+#:
+#: So a soak wants both, and the counts have to be told apart afterwards or the
+#: run answers neither question cleanly: a refusal a character met a hundred
+#: times while pathfinding is weak evidence for a rule, and one a person met
+#: three times is strong.
+PLAYER, CHARACTER = "player", "character"
+WHO = (PLAYER, CHARACTER)
+
 #: How many distinct questions a world may remember. Generous, because the real
 #: number is bounded by verbs times kinds and settles in the low hundreds, and
 #: because an eviction that throws away the evidence for a proposal is worse
@@ -100,16 +116,22 @@ def is_enclosure(scope):
     return str(scope or "").startswith("enclosure:")
 
 
-def _key(action, scope, outcome):
-    return f"{action}|{scope}|{outcome}"
+def who_is(actor):
+    """Whether a person or a character is doing this."""
+    return CHARACTER if getattr(actor, "db", None) is not None \
+        and actor.db.is_npc else PLAYER
+
+
+def _key(action, scope, outcome, by):
+    return f"{action}|{scope}|{outcome}|{by}"
 
 
 def split(key):
-    """(action, scope, outcome) from a stored key."""
+    """(action, scope, outcome, by) from a stored key."""
     parts = str(key or "").split("|")
-    while len(parts) < 3:
+    while len(parts) < 4:
         parts.append("")
-    return parts[0], parts[1], parts[2]
+    return parts[0], parts[1], parts[2], parts[3]
 
 
 def all_counts(world_root):
@@ -137,7 +159,7 @@ def note(world_root, action, bound, actor, outcome):
 
     scope = scope_of(bound, actor, world_root)
     store = all_counts(world_root)
-    key = _key(action, scope, outcome)
+    key = _key(action, scope, outcome, who_is(actor))
     entry = dict(store.get(key) or {})
     entry["count"] = int(entry.get("count", 0)) + 1
     entry["last"] = time.time()
@@ -157,22 +179,38 @@ def _evicted(store):
     return dict(ordered[len(ordered) - MAX_KEYS:])
 
 
-def count(world_root, action, scope, outcome):
-    """How often that exact question has come out that way."""
-    entry = all_counts(world_root).get(_key(action, scope, outcome)) or {}
-    try:
-        return int(entry.get("count", 0))
-    except (TypeError, ValueError):
-        return 0
+def count(world_root, action, scope, outcome, by=None):
+    """
+    How often that exact question has come out that way.
+
+    `by` of None sums both, which is what a suggester wants: a refusal is a
+    refusal whoever met it. Naming one is for the measurement afterwards, where
+    the difference between a person and a pathfinder is the whole point.
+    """
+    wanted = (by,) if by else WHO
+    total = 0
+    counts = all_counts(world_root)
+    for one in wanted:
+        entry = counts.get(_key(action, scope, outcome, one)) or {}
+        try:
+            total += int(entry.get("count", 0))
+        except (TypeError, ValueError):
+            continue
+    return total
 
 
-def last_seen(world_root, action, scope, outcome):
+def last_seen(world_root, action, scope, outcome, by=None):
     """When it last did, as a timestamp, or 0."""
-    entry = all_counts(world_root).get(_key(action, scope, outcome)) or {}
-    try:
-        return float(entry.get("last", 0))
-    except (TypeError, ValueError):
-        return 0.0
+    wanted = (by,) if by else WHO
+    counts = all_counts(world_root)
+    latest = 0.0
+    for one in wanted:
+        entry = counts.get(_key(action, scope, outcome, one)) or {}
+        try:
+            latest = max(latest, float(entry.get("last", 0)))
+        except (TypeError, ValueError):
+            continue
+    return latest
 
 
 def refusals(world_root, outcome=None, least=1):
@@ -184,20 +222,28 @@ def refusals(world_root, outcome=None, least=1):
     queue evicts the weakest evidence rather than the newest.
     """
     wanted = (outcome,) if outcome else (REFUSED, NO_OBJECT, NOT_ADMITTED)
-    found = []
+    # Summed across who met it, because a refusal is a refusal whoever met it
+    # and a proposal wants all the evidence there is. `by` is kept alongside so
+    # that the measurement afterwards can still take the two apart.
+    rolled = {}
     for key, entry in all_counts(world_root).items():
-        action, scope, how = split(key)
+        action, scope, how, by = split(key)
         if how not in wanted:
             continue
         try:
             times = int(entry.get("count", 0))
         except (TypeError, ValueError):
             continue
-        if times < least:
-            continue
-        found.append({"action": action, "scope": scope, "outcome": how,
-                      "count": times,
-                      "last": float(entry.get("last", 0) or 0)})
+        row = rolled.setdefault((action, scope, how), {
+            "action": action, "scope": scope, "outcome": how,
+            "count": 0, "last": 0.0, "by": {}})
+        row["count"] += times
+        row["by"][by] = row["by"].get(by, 0) + times
+        try:
+            row["last"] = max(row["last"], float(entry.get("last", 0) or 0))
+        except (TypeError, ValueError):
+            pass
+    found = [row for row in rolled.values() if row["count"] >= least]
     return sorted(found, key=lambda row: (-row["count"], row["action"],
                                           row["scope"]))
 
@@ -211,8 +257,13 @@ def report(world_root, limit=12):
     total = sum(int((e or {}).get("count", 0)) for e in rows.values())
     done = sum(int((e or {}).get("count", 0)) for key, e in rows.items()
                if split(key)[2] == DONE)
+    by_people = sum(int((e or {}).get("count", 0)) for key, e in rows.items()
+                    if split(key)[3] == PLAYER)
     lines = [f"|w{total} attempts|n over {len(rows)} distinct questions: "
-             f"{done} worked, {total - done} did not."]
+             f"{done} worked, {total - done} did not.",
+             f"  {by_people} by people, {total - by_people} by characters. "
+             f"|xThe two answer different questions: characters reach for what "
+             f"the world already knows, people invent vocabulary.|n"]
 
     worst = refusals(world_root)[:limit]
     if not worst:
@@ -226,6 +277,8 @@ def report(world_root, limit=12):
                 REFUSED: "refused"}.get(row["outcome"], row["outcome"])
         where = kind_in(row["scope"]) or "anything"
         aboard = "aboard" if is_enclosure(row["scope"]) else "on"
+        people = row["by"].get(PLAYER, 0)
         lines.append(f"    {row['count']:4} x {row['action']} {aboard} "
-                     f"{where} -- {said}")
+                     f"{where} -- {said}"
+                     + (f" ({people} by a person)" if people else ""))
     return "\n".join(lines)

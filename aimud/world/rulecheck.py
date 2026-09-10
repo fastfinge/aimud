@@ -138,7 +138,11 @@ def as_verb_rule(rule):
     return {"valid": True,
             "requires": requires,
             "effects": rule.get("effects") or [],
-            "check": rule.get("contest")}
+            "check": rule.get("contest"),
+            # Carried across so that `inert` can tell the two silences apart: a
+            # check rule with no effects is doing its job, and a carry-out with
+            # none is the fault this scan exists to name.
+            "phase": rule.get("phase")}
 
 
 def _both_shapes(registers):
@@ -193,10 +197,7 @@ def scan(registers):
             contested += 1
 
         effects = effects_of(rule)
-        if not effects and key in learned:
-            # Only of the old shape. A rulebook check rule has no effects
-            # because refusing is its whole job, and calling that inert would
-            # report every well-written check as a fault.
+        if not effects and _should_do_something(rule, key in learned):
             inert.append(key)
         for effect in effects:
             if effect.get("type") == "set_state":
@@ -234,6 +235,26 @@ def scan(registers):
             "vocabulary": len(vocabulary),
         },
     }
+
+
+def _should_do_something(rule, learned):
+    """
+    Whether a rule with no effects is a fault or is simply not that sort of rule.
+
+    An old-shape verb rule is one rule for a whole verb, so having no effects at
+    all means the verb does nothing: 32% of the exported corpus, and one of the
+    numbers this design claims it will improve.
+
+    A rulebook rule is one of four kinds, and only two of them are supposed to
+    change anything. A check rule with no effects is a well-written check; a
+    carry-out with none is the same fault under a new name, and reporting the
+    first would bury the second. The first draft of this scan excluded every
+    rulebook rule to avoid that, which meant the measurement could not be taken
+    on a world built by the new engine at all.
+    """
+    if learned:
+        return True
+    return str(rule.get("phase") or "") in ("carry_out", "after")
 
 
 def refusal_kind(rule):

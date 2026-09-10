@@ -25,13 +25,14 @@ from world import standard_rules, verbs
 @tag("unit")
 class ReadingAKey(SimpleTestCase):
 
-    def test_a_key_splits_back_into_its_three_parts(self):
-        self.assertEqual(counters.split("launch|kind:datapad|refused"),
-                         ("launch", "kind:datapad", "refused"))
+    def test_a_key_splits_back_into_its_four_parts(self):
+        self.assertEqual(
+            counters.split("launch|kind:datapad|refused|player"),
+            ("launch", "kind:datapad", "refused", "player"))
 
     def test_a_short_key_still_splits(self):
-        self.assertEqual(counters.split("launch"), ("launch", "", ""))
-        self.assertEqual(counters.split(""), ("", "", ""))
+        self.assertEqual(counters.split("launch"), ("launch", "", "", ""))
+        self.assertEqual(counters.split(""), ("", "", "", ""))
 
     def test_the_kind_can_be_read_out_of_either_sort_of_token(self):
         self.assertEqual(counters.kind_in("kind:datapad"), "datapad")
@@ -315,3 +316,73 @@ class EveryWayOutIsCounted(Counting):
         self.assertEqual(rows[0]["count"], 2)
         self.assertEqual(rows[0]["outcome"], counters.NO_OBJECT)
         self.assertEqual(self.counted(counters.DONE), 1)
+
+
+@tag("world")
+class WhoTriedIt(Counting):
+    """
+    The two halves of a soak answer different questions, so they are counted
+    apart. `worldmode always` buys volume and exercises the planner, but a
+    character reaches for verbs the world already knows -- the ones that stress
+    this design come from a person typing something nobody anticipated.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.npc = self.char2
+        self.npc.db.is_npc = True
+        self.npc.move_to(self.room2, quiet=True)
+
+    def test_a_person_and_a_character_are_told_apart(self):
+        self.assertEqual(counters.who_is(self.char1), counters.PLAYER)
+        self.assertEqual(counters.who_is(self.npc), counters.CHARACTER)
+
+    def test_and_something_that_is_neither_reads_as_a_person(self):
+        """The safe way round: an unknown actor is not written off as a tick."""
+        self.assertEqual(counters.who_is(None), counters.PLAYER)
+
+    def test_they_are_counted_separately(self):
+        counters.note(self.root, "launch", {}, self.char1, counters.NO_OBJECT)
+        for _ in range(4):
+            counters.note(self.root, "launch", {}, self.npc, counters.NO_OBJECT)
+        scope = "enclosure:spacecraft.n.01"
+        self.assertEqual(
+            counters.count(self.root, "launch", scope, counters.NO_OBJECT,
+                           by=counters.PLAYER), 1)
+        self.assertEqual(
+            counters.count(self.root, "launch", scope, counters.NO_OBJECT,
+                           by=counters.CHARACTER), 4)
+
+    def test_but_a_suggester_sees_the_whole_evidence(self):
+        """A refusal is a refusal whoever met it."""
+        counters.note(self.root, "launch", {}, self.char1, counters.NO_OBJECT)
+        counters.note(self.root, "launch", {}, self.npc, counters.NO_OBJECT)
+        self.assertEqual(
+            counters.count(self.root, "launch", "enclosure:spacecraft.n.01",
+                           counters.NO_OBJECT), 2)
+
+    def test_a_refusal_row_keeps_the_breakdown(self):
+        counters.note(self.root, "launch", {}, self.char1, counters.NO_OBJECT)
+        for _ in range(3):
+            counters.note(self.root, "launch", {}, self.npc, counters.NO_OBJECT)
+        row = counters.refusals(self.root)[0]
+        self.assertEqual(row["count"], 4)
+        self.assertEqual(row["by"][counters.PLAYER], 1)
+        self.assertEqual(row["by"][counters.CHARACTER], 3)
+
+    def test_and_the_report_says_which(self):
+        counters.note(self.root, "launch", {}, self.char1, counters.NO_OBJECT)
+        counters.note(self.root, "power", {"direct": self.pad}, self.npc,
+                      counters.DONE)
+        said = counters.report(self.root)
+        self.assertIn("1 by people", said)
+        self.assertIn("1 by characters", said)
+        self.assertIn("by a person", said)
+
+    def test_last_seen_answers_across_both(self):
+        counters.note(self.root, "launch", {}, self.npc, counters.NO_OBJECT)
+        self.assertGreater(
+            counters.last_seen(self.root, "launch",
+                               "enclosure:spacecraft.n.01",
+                               counters.NO_OBJECT), 0)
+

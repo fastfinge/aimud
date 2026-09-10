@@ -828,9 +828,47 @@ claim this design makes about itself.
 | Verbs with a WordNet sense | 98 of 100 | **watch it** -- a genre-heavy world is where this should break if it breaks |
 | ConceptNet affordance replay | not yet run | coverage, precision, novelty against the 12-bucket floor (§7.1) |
 
+**Instrumented and ready.** The four prerequisites above were all in place, and
+checking the *measurements* against them turned up three things that were not:
+
+* **The exporter captured none of the new stores.** It knew `verb_rules`,
+  `kind_specs`, the two vocabularies and `rule_failures` -- and not `rules`,
+  where every rule now lives, nor `attempt_counts`, which this table calls the
+  point of the run. A soak would have produced a corpus of the old engine taken
+  from a world running the new one. `tests/test_rulecheck.py` now asserts that
+  every register the scan reads is a register the exporter writes, so the next
+  store to be added fails there rather than going quietly missing.
+* **"Accepted rules with no effects" could not be measured on a new world.**
+  Phase 10 excluded rulebook rules from `inert` for a good reason -- a check rule
+  with no effects is a well-written check -- but that also excluded carry-out
+  rules, where no effects is the same fault under a new name. It now asks which
+  phase the rule is in.
+* **Nothing told a person's attempts from a character's**, which this section
+  asks for in as many words. The counter key gained a fourth part.
+  `refusals` still sums both, because a refusal is a refusal whoever met it and a
+  proposal wants all the evidence there is; the breakdown rides alongside for the
+  measurement afterwards, where the difference is the whole point. A refusal a
+  pathfinder met a hundred times is weak evidence; one a person met three times
+  is strong.
+
 **Done when:** the fixtures are replaced, every baseline is re-recorded with its
 new value, and each number that moved the wrong way has an explanation or a bug
 attached to it.
+
+**Two numbers in the table above need restating before they can be taken**, and
+it is better to say so now than to record a false improvement:
+
+* *Rules refused as invalid (85 of 326)* was a property of the old shape, where a
+  refusal was `valid: false` on the one rule a verb had. There is no such field
+  now. The nearest true measurement is `rule_gen`'s `cannot_say` log plus the
+  `verbs_without_rules` tally, and it is a different denominator -- verbs the
+  world could not write a rule for, rather than rules written and marked bad.
+* *Refused for needing a place (7, expected zero)* is the same measurement and
+  the same caveat. Zero is now the only possible answer by construction, since a
+  scope can name a place -- so it evidences nothing on its own. What would
+  actually evidence the claim is the opposite count: **rules filed against an
+  enclosure or a zone at all**, which the old engine could not produce and which
+  should be greater than zero.
 
 A number going the wrong way is the most valuable thing this run can produce, so
 it should be easy to see. `worldcheck` reporting a ratchet break is better than a

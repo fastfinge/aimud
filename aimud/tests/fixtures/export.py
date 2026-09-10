@@ -35,6 +35,13 @@ GAME_DIR = HERE.parent.parent
 
 #: The attributes that make up a world's registers. Everything a rule, a kind or
 #: a condition is read out of, and nothing else.
+#:
+#: The first six are what a world held before the rulebooks. Everything after
+#: them arrived with phases 5 to 11, and a corpus exported without them would be
+#: a corpus of the old engine taken from a world running the new one -- which is
+#: the one way the soak of phase 13 could be worth nothing. `rules` in particular
+#: is where every rule now lives; `attempt_counts` is what the plan calls the
+#: point of the run.
 REGISTERS = (
     "verb_rules",
     "kind_specs",
@@ -42,6 +49,14 @@ REGISTERS = (
     "state_groups",
     "trait_vocabulary",
     "rule_failures",
+    # The rulebooks, and everything that arrived with them.
+    "rules",                    # rulebooks.ATTR -- where rules live now
+    "rule_counter",             # rulebooks.COUNTER
+    "action_specs",             # actions.ATTR -- arity and access, per verb
+    "attempt_counts",           # counters.ATTR -- what was tried and how it went
+    "declined_suggestions",     # suggest.ATTR_DECLINED
+    "verbs_without_rules",      # rule_gen.ATTR_FRUITLESS
+    "zones",
 )
 
 
@@ -88,7 +103,12 @@ def export():
         record = {
             "label": label,
             "exported": date.today().isoformat(),
-            "engine": "verb_rules",      # the shape this corpus was made by
+            # The shape this corpus was made by, worked out rather than
+            # asserted: a world with a rulebook was played on the new engine,
+            # and one without was not. The interim fixtures say `verb_rules`
+            # because that is what they are, and the ones this run produces
+            # should not have to be told apart by their date.
+            "engine": ("rulebooks" if (root.db.rules or {}) else "verb_rules"),
             "rooms": sum(1 for o in ObjectDB.objects.all()
                          if o.attributes.has("world_root")
                          and o.db.world_root == root),
