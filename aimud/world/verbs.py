@@ -415,9 +415,22 @@ def rule_key(verb, bound=None):
     being answered by one overloaded cache key, and only the first of them is
     about the verb alone.
 
-    `bound` is still accepted so that callers need not change, and ignored.
+    What remains in the key besides the verb is the *shape* of the sentence:
+    which roles were filled, and nothing about what filled them. "Drink the
+    bottle" and "drink from the bottle" are not the same request, and a rule
+    learned for one is wrong for the other in a way no precondition can
+    rescue -- a rule that requires the `source` be open and not empty, met
+    with an attempt that bound only `direct`, refuses with "you are not
+    holding the source", which is true, unanswerable and about nothing the
+    player said.
+
+    So `drink#direct` and `drink#source` are two rules, while a flammable
+    bottle and a plain one still share both. Role names are a closed set of
+    five and most verbs are typed one or two ways, so this costs a fraction
+    of what affordances cost and buys back the distinction that matters.
     """
-    return verb
+    shape = ",".join(sorted(bound or {}))
+    return f"{verb}#{shape}" if shape else verb
 
 
 # ---------------------------------------------------------------------------

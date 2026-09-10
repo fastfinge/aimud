@@ -364,7 +364,7 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
         _release(caller, on_message, actor_text, room_text)
 
     waiter = waiter or _once(None)
-    key = verbs.rule_key(verb)
+    key = verbs.rule_key(verb, bound)
     rule = verb_gen.get_rule(world_root, key)
 
     def with_rule(known_rule):
