@@ -720,7 +720,13 @@ class CmdWorldCheck(Command):
     It also counts what was refused and why, which rules change nothing at
     all, and which words are in the vocabulary that no rule uses.
 
-    Nothing is repaired. This is a report, and reading it is the point.
+    Then what the world has actually been *asked* to do, and how it answered.
+    That is the other half of a fault: a condition nothing can bring about
+    matters more when eleven people have tried, and the commonest refusal in a
+    world is worth knowing whatever is done about it.
+
+    Nothing is repaired. This is a report, and reading it is the point --
+    though it will say if anything is waiting in |wrules suggest|n.
     """
 
     key = "worldcheck"
@@ -749,8 +755,21 @@ class CmdWorldCheck(Command):
                     "|wworlds|n to check one you are not standing in.")
                 return
 
+        from world import counters, suggest
+
         findings = rulecheck.scan(rulecheck.of_world(root))
-        self.caller.msg(rulecheck.report(findings, lore.title(root)))
+        said = [rulecheck.report(findings, lore.title(root)), "",
+                counters.report(root)]
+
+        # What the faults above and the refusals beside them suggest, if
+        # anything. Derived here rather than only under `rules suggest` because
+        # this is the report somebody reads when they want to know what is wrong,
+        # and the proposal is the other half of the finding.
+        standing = len(suggest.queue(root))
+        if standing:
+            said += ["", f"|w{standing} suggestions|n are waiting. "
+                         f"|wrules suggest|n reads them."]
+        self.caller.msg("\n".join(said))
 
 
 class CmdRules(Command):
@@ -774,8 +793,18 @@ class CmdRules(Command):
     Rules marked |xsuspended|n are in the book and not in force. Ones marked
     |xstandard|n came with the world rather than being learned in it.
 
-    Nothing here costs anything: it is read out of what the world already
-    wrote down.
+    Usage:
+      rules                 every rule this world holds, by verb
+      rules <verb>          what it has decided about one verb
+      rules suggest         what its own faults and refusals suggest
+      rules accept <id>     put a suggestion into force
+      rules reject <id>     decline one, and remember the refusal
+      rules judge           ask a model to rule on the whole queue at once
+
+    Nothing here costs anything except |wjudge|n: the rest is read out of what
+    the world already wrote down, and `suggest` derives from it without asking
+    anybody. `judge` is the one call, and it asks a model to rule on rules it
+    did not write, several at a time.
     """
 
     key = "rules"
@@ -791,11 +820,101 @@ class CmdRules(Command):
             return
         standard_rules.seed(root)
 
-        asked = self.args.strip().lower()
+        asked = self.args.strip()
+        word, _, rest = asked.partition(" ")
+        word, rest = word.lower(), rest.strip()
+
+        if word in ("suggest", "suggestions"):
+            self.caller.msg(self._suggest(root))
+            return
+        if word == "accept":
+            self.caller.msg(self._answer(root, rest, taking=True))
+            return
+        if word in ("reject", "decline"):
+            self.caller.msg(self._answer(root, rest, taking=False))
+            return
+        if word == "judge":
+            self._judge(root)
+            return
+
         if asked:
             self.caller.msg(self._one_verb(root, verbs.canonical_verb(asked)))
         else:
             self.caller.msg(self._everything(root))
+
+    def _suggest(self, root):
+        """
+        Derive what this world's own faults and refusals support, and list it.
+
+        Generating costs nothing -- no model, no network -- so it runs every time
+        somebody asks rather than on a timer somebody has to remember. What costs
+        something is deciding, and deciding is `rules accept`.
+        """
+        from world import suggest
+
+        made = suggest.generate(root)
+        said = suggest.report(root)
+        if made:
+            said = (f"|x{len(made)} newly derived from what this world has "
+                    f"done.|n\n{said}")
+        return said
+
+    def _judge(self, root):
+        """
+        Hand the whole queue to a model at once, and apply what comes back.
+
+        The only thing under `rules` that costs anything, and it is a deliberate
+        command rather than a timer for that reason. What it buys is the one
+        question a model is good at: judging a filled-in rule with this world's
+        counts beside it, several to a call, rather than writing one from nothing.
+        """
+        from world import suggest
+
+        standing = suggest.queue(root)
+        if not standing:
+            self.caller.msg("There is nothing waiting to be judged.")
+            return
+        self.caller.msg(f"Asking about {len(standing)} suggestions...")
+
+        def done(taken, declined):
+            said = []
+            if taken:
+                said.append(f"Accepted: {', '.join(taken)}")
+            if declined:
+                said.append(f"Declined: {', '.join(declined)}")
+            if not said:
+                said.append("No verdicts came back that named anything in the "
+                            "queue.")
+            said.append("|xEvery one keeps its derived mark. |wrules|n shows "
+                        "which.|n")
+            self.caller.msg("\n".join(said))
+
+        suggest.judge(_get_account(self.caller), root, on_success=done,
+                      on_error=lambda err: self.caller.msg(f"|r{err}|n"))
+
+    def _answer(self, root, rule_id, taking):
+        """Take a proposal up, or decline it and remember that."""
+        from world import suggest
+
+        rule_id = rule_id.strip()
+        if not rule_id:
+            return "Which one? |wrules suggest|n lists them with their ids."
+
+        if taking:
+            rule = suggest.accept(root, rule_id)
+            if rule is None:
+                return (f"There is no suggestion |w{rule_id}|n. Only a "
+                        f"suggestion can be accepted; a rule the world wrote "
+                        f"for itself is already in force.")
+            return (f"|w{rule_id}|n is in force: {rule.get('name') or ''}\n"
+                    f"|xIt keeps its derived mark, so what this world was "
+                    f"suggested stays answerable later.|n")
+
+        rule = suggest.reject(root, rule_id)
+        if rule is None:
+            return f"There is no suggestion |w{rule_id}|n."
+        return (f"|w{rule_id}|n declined, and remembered as declined so it is "
+                f"not offered again.")
 
     def _said(self, rule, root):
         """One rule as a line: where it applies, and what it says."""
@@ -806,6 +925,10 @@ class CmdRules(Command):
             marks.append("suspended")
         if standard_rules.is_standard(rule):
             marks.append("standard")
+        if rule.get("source") == "derived":
+            # Permanent, accepted or not, so that an audit years later can ask
+            # what this world decided and what was suggested to it.
+            marks.append("derived")
         said = rule.get("name") or ""
         if not said and rule.get("conditions"):
             said = conditions.describe(rule["conditions"][0])

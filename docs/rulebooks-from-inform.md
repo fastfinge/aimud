@@ -1513,7 +1513,7 @@ justify one. That rule is what stops a queue of plausible nonsense.
 |---|---|---|---|
 | A complementary pair from the scan, plus an antonym | `carry_out` inverse | the scan: 45 one-way states, 7 unreachable | **yes** |
 | An optional role left unbound and refused, N times, inside an enclosure of kind K | **`instead` redirect** -- the `power` case | attempt counters | **no: needs §10.1's counter** |
-| Objects of one kind repeatedly verbed where the winning rule is scoped higher | **`instead`** at the narrower scope | counters, plus kind/verb counts | partly |
+| Objects of one kind repeatedly verbed where the winning rule is scoped higher | **`instead`** at the narrower scope | counters, plus kind/verb counts | **not built, on purpose** -- the data exists; a verb that keeps working is not a fault, and rail 4 says a wrong `instead` is the worst bug here. Highest consequence on the weakest warrant. |
 | Sibling kinds with identical affordances where only one has a rule | scope **widening** -- fewer rules, not more | kind specs | yes |
 | Per-object specifics that agree across a kind | `instead` promotion | `verb_specifics` | **no: measured empty** |
 
@@ -1532,6 +1532,19 @@ something the game does not collect. **Attempt counters are a prerequisite**: pe
 Not a transcript and not a log to be read back; six integers per pair. Without
 them every instead-suggestion is a guess, and with them the commonest refusal in a
 world becomes the best-evidenced proposal in the queue.
+
+Built as `world/counters.py`, and two things turned up in the building. The scope
+token has to be the *grounded* kind, or evidence splits itself across two
+spellings of one sort of thing and under-counts exactly what is being looked for.
+And the count has to include verbs answered from the narration cache, which are
+the commonest working verbs there are -- leaving them out made every world look as
+though it refused far more than it allowed.
+
+One ordering change was needed before any of this could pay off: a role the action
+requires was refused *before* the rulebooks were consulted, so an accepted
+redirect could never fire. "Launch what?" is the right answer right up until a
+rule exists that knows what, so the question is now asked second, and only when no
+`instead` rule with a `try` effect is waiting.
 
 #### Who judges, and why judging is the cheap question
 

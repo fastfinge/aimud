@@ -449,6 +449,10 @@ Beyond that:
 | `worldmode [normal \| always]` | Whether this world thinks only while watched, or all the time. On its own, says which. |
 | `worldopen` | Open a way on, in a world that has built itself into a corner and has nowhere unexplored left. |
 | `zones` | The areas of this world, how full each is, what may exist only once in each, and where you are. |
+| `rules` / `rules <verb>` | Every rule this world holds, or only the ones about one verb: what it needs before it will work, what it does, and what follows. In the order they are consulted, which is the point — a rule about datapads decides what powering a datapad does even aboard a ship with its own rule about powering. Costs nothing. |
+| `rules suggest` | What this world's own faults and refusals suggest it is missing, each with the evidence for it. A condition it can set and never unset, beside a verb it has refused over and over, is usually one rule nobody wrote. Costs nothing — nothing is asked of a model and nothing is ever installed unasked. |
+| `rules accept <id>` / `rules reject <id>` | Take a suggestion up, or decline it. A declined one is remembered as declined and not offered again. |
+| `rules judge` | Hand the whole queue to a model at once and apply its verdicts. The only part of `rules` that costs anything, and it is one call for the lot: the model is judging filled-in rules with the world's own counts beside them, never writing one. |
 | `npcgen` | Put a character in the current room. |
 
 ### Playing
@@ -476,7 +480,7 @@ install that is the superuser you made at first start.
 
 | Command | What it does |
 |---|---|
-| `worldcheck [<n>]` | What a world's rules say about each other: conditions it can set and never unset, conditions a rule requires that nothing can bring about, verbs it refused and why. Costs nothing — no model is asked anything. |
+| `worldcheck [<n>]` | What a world's rules say about each other: conditions it can set and never unset, conditions a rule requires that nothing can bring about, verbs it refused and why. Then what the world has actually been asked to do and how it answered — a condition nothing can bring about matters more when eleven people have tried. Says if anything is waiting in `rules suggest`. Costs nothing — no model is asked anything. |
 | `memcheck [sleep \| sweep \| distil \| all]` | Memory upkeep now rather than on its clock: consolidate what characters remember, delete the banks of characters that no longer exist, or turn recent summaries into what a character now knows. On its own it reports what it would do and changes nothing. Distilling is the only part that costs anything. |
 
 ---

@@ -76,12 +76,20 @@ def get(world_root, rule_id):
 
 def blank(action=None, phase=CHECK, scope=None, about="direct", name="",
           when=None, conditions=None, effects=None, contest=None,
-          outcome=None, source="generated"):
+          outcome=None, source="generated", why="", overrides=None,
+          evidence=None):
     """
     A rule with every slot present, so nothing downstream has to guess.
 
     `action` of None means every action, which is how a world says "nothing
     works while you are dead" once instead of once per verb.
+
+    The last three carry provenance, and exist so that a *proposal* needs no
+    storage of its own. `listed: false` already meant "in the book, not in
+    force"; a suggestion is that plus a reason somebody can read, the rule it
+    would override, and the counts that prompted it. Empty for every rule a
+    world wrote for itself. See world/suggest.py and
+    docs/rulebooks-from-inform.md 10.1.
     """
     return {
         "id": "",
@@ -97,6 +105,9 @@ def blank(action=None, phase=CHECK, scope=None, about="direct", name="",
         "outcome": outcome,
         "listed": True,
         "source": str(source),
+        "why": str(why or ""),
+        "overrides": overrides,
+        "evidence": dict(evidence or {}),
         "born": time.time(),
     }
 

@@ -618,6 +618,46 @@ strictly more specific than what it overrides, and that a rejection is never
 re-offered; `[B]` accept and reject round-trip; `[C]` a batched judgement returns
 a verdict per proposal.
 
+**Done, with one generator deliberately left out.** `world/counters.py` keys on
+`(action, scope, outcome)` where the scope is the kind of what was named, or the
+kind of the place the actor was standing in when nothing was. That second case is
+the whole point: `launch` bare aboard a ship is a different question from `launch`
+bare in a corridor, and only the first can have a rule proposed for it. Six exits
+of the pipeline are counted, including the cached-narration success — missing that
+one would have made every world look as though it refused far more than it
+allowed, which is the exact ratio a suggester weighs by.
+
+`world/suggest.py` holds three generators and all six rails. A proposal is a rule
+with `listed: false` and `source: "derived"`, so there is no new storage; `blank`
+gained `why`, `overrides` and `evidence` and nothing else changed.
+
+The **fourth** row of §10.1's table is **not** built: "objects of one kind
+repeatedly verbed where the winning rule is scoped higher → `instead` at the
+narrower scope". The data exists now, and the proposal does not deserve it. A verb
+that keeps working is not a fault, so the only evidence would be that something
+happened often — and rail 4 exists because a wrong `instead` is the worst bug this
+design permits. Proposing the highest-consequence rule on the weakest warrant is
+the wrong trade, and the row is left for a case with a real fault behind it.
+
+Two things had to change for the queue to mean anything:
+
+* **A required role was refused before the rulebooks were consulted.** So an
+  accepted redirect could never fire: "launch what?" came first and ended the
+  attempt. The question is now asked second, and only when no `instead` rule with
+  a `try` effect is waiting — which changes nothing for the verbs that have no
+  redirect, and is what makes an accepted proposal actually work.
+* **A redirect must be filed `about: enclosure`, not `about: direct`.** A kind
+  scope means the place you are standing in or a thing somebody named depending
+  on that one field, and a redirect filed against `direct` never gathers for an
+  attempt that named nothing. The generator got this wrong first time and the
+  end-to-end test caught it.
+
+`_verb_for_state` is the one lexical step, and it is allowed to be lexical because
+it only *names* a candidate. It is also checked rather than trusted: `lemma`
+answers with the word itself when it has never heard of it, so `unlit` lemmatises
+to `unlit`, and a world would have been offered a rule about "unlitting" things.
+The answer must be a word WordNet knows as a verb.
+
 ### Phase 11 — Planner upgrades
 
 *Spec §5.4, §7.1. Depends on 3; better after 7.*

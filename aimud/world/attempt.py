@@ -19,7 +19,7 @@ from evennia.utils import logger
 
 from world import checks
 from world import effects as effects_mod
-from world import verb_gen, verbs
+from world import counters, verb_gen, verbs
 
 #: How many times one verb may become another before the world gives up. A
 #: redirect is a rule sending an action somewhere else, and two rules can send
@@ -535,8 +535,25 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
         from world import actions
 
         def declared(_spec):
+            # "Launch what?" is the right answer right up until a rule exists
+            # that knows what. An `instead` rule guarded by `unbound` is exactly
+            # that rule -- aboard a ship, `launch` means launching the ship --
+            # and refusing before the rulebooks are consulted would make every
+            # such rule dead on arrival, including one a world had just been
+            # persuaded to accept.
+            #
+            # So the question is asked second. Nothing changes for a verb with
+            # no redirect waiting, which is almost all of them: the sentence the
+            # player reads is the same one, from the same place.
             wanted = actions.missing_role(world_root, verb, bound)
+            if wanted and _redirect_waiting(world_root, verb, bound, caller):
+                wanted = ""
             if wanted:
+                # The count the spaceship needs. "launch what?" eleven times
+                # aboard a ship is the evidence for a redirect rule, and until
+                # now nothing anywhere remembered that it had been said.
+                counters.note(world_root, verb, bound, caller,
+                              counters.NO_OBJECT)
                 release(actions.asking_for(verb, wanted))
                 return
             settle()
@@ -621,6 +638,7 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
     def refuse():
         name = (anchor.get_numbered_name(1, None, return_string=True)
                 if anchor is not None else "that")
+        counters.note(world_root, verb, bound, caller, counters.NOT_ADMITTED)
         release(f"You cannot {verb} {name}.")
 
     if not obj_kinds:
@@ -706,6 +724,32 @@ def _with_specifics(rule, bound, verb, actor=None):
     return merged
 
 
+def _redirect_waiting(world_root, verb, bound, caller):
+    """
+    Whether some `instead` rule would send this attempt somewhere else.
+
+    Asked only when a role the action requires was left unbound, and only to
+    decide whether to complain about that or to get on with it. Deliberately not
+    "would the redirect succeed": that is the pipeline's business a moment later,
+    and answering it twice is how two places come to disagree about one rule.
+    """
+    from world import rulebooks
+
+    try:
+        book = rulebooks.for_attempt(world_root, verb, bound, caller,
+                                     phase=rulebooks.INSTEAD)
+    except Exception:
+        return False
+    for rule in book:
+        for effect in (rule.get("effects") or []):
+            try:
+                if str(effect.get("type") or "") == "try":
+                    return True
+            except AttributeError:
+                continue
+    return False
+
+
 def _redirect(effect, bound, caller, world_root):
     """
     The roles a `try` effect names, bound to real things, or None.
@@ -785,6 +829,7 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
                 return
         extra = effects_mod.apply(caller, room, aside.get("effects") or [],
                                   bound=bound, world_root=world_root)
+        counters.note(world_root, verb, bound, caller, counters.DONE)
         release(aside.get("name") or "", " ".join(extra).strip())
         return
 
@@ -795,6 +840,7 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
     for gate in [r for r in book if r["phase"] == rulebooks.CHECK]:
         complaint = conditions.unmet(gate.get("conditions") or [], ctx)
         if complaint:
+            counters.note(world_root, verb, bound, caller, counters.REFUSED)
             release(complaint)
             return
 
@@ -835,6 +881,11 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         # What is cached is the template, so the room line still names its
         # actor as {actor} and has to be filled in here too -- broadcasting it
         # raw hands a stray format placeholder to msg_contents.
+        # Counted like any other success. A verb answered from the cache is the
+        # commonest kind of working verb there is, and leaving it out would make
+        # every world look as though it refused far more than it allowed --
+        # which is the exact figure a suggester weighs its proposals by.
+        counters.note(world_root, verb, bound, caller, counters.DONE)
         release(cached.get("actor", ""),
                 _for_room(cached.get("room", ""), caller, raw))
         return
@@ -893,6 +944,10 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
 
         _remember(caller, raw, bound, actor_text, extra, outcome=outcome,
                   contested=result is not None)
+        # A contested attempt that came out badly is still a thing that
+        # happened rather than a thing that was refused: the player was allowed
+        # to try and the dice said no, which is not evidence of a missing rule.
+        counters.note(world_root, verb, bound, caller, counters.DONE)
         release(actor_text, visible)
         # The world just changed under everyone here, which is exactly when a
         # quest may have quietly become finished.
