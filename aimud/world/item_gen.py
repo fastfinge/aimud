@@ -36,6 +36,7 @@ Respond with a single JSON object — no other text:
   "kinds": [],
   "qualifiers": ["blue", "ceramic"],
   "sense": "",
+  "under": "",
   "holds": ["in"],
   "affordances": {"read": true, "burn": true},
   "states": ["dusty"],
@@ -57,6 +58,12 @@ filing both under "can" makes the world think you can drink from a paint
 sprayer. Same for a "watering can", a "walking stick", a "fire door". When in
 doubt ask whether the plain noun would do the same things; if it would not,
 the word stays in the kind.
+
+under is only for a kind the dictionary has never heard of -- a datapad, a
+holodeck, a hyperdrive. Those have no sort of thing above them, so nothing
+knows a datapad is a device, and a rule written about devices could never
+reach one. Name the nearest real sense when you are asked for one, and leave
+it empty otherwise, which is the ordinary case.
 
 qualifiers are the describing words you took off it — what makes this one
 different from the others of its kind. Colour, material, make, whose it is.
@@ -238,6 +245,11 @@ def generate_item(account, room, object_name, on_success, on_error):
     # a chest, a board, a bar. Empty for almost everything, and a sword or a
     # bottle never costs a token for it.
     which_sense = lexicon.sense_prompt(object_name)
+    # And for a noun no dictionary knows, what sort of thing it is at all --
+    # asked here because this is the one generator that is told the name in
+    # advance. The contents and clothing passes invent their own names, so they
+    # answer the `under` field in the spec instead.
+    which_anchor = lexicon.anchor_prompt(object_name)
 
     messages = [
         {"role": "system",
@@ -250,6 +262,7 @@ def generate_item(account, room, object_name, on_success, on_error):
                 f"{_world_and_room(room, 'items')}\n\n"
                 f"{gear.prompt_block(room.db.world_root if room else None)}"
                 f"{which_sense}"
+                f"{which_anchor}"
                 f"Generate the item the player is examining: '{object_name}'"
             ),
         },

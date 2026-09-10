@@ -467,9 +467,14 @@ def create(spec, location, worn_on=None):
     # has never made before; after that it is the kind's answer, and seventy
     # bottles cannot drift into twenty-five different cache keys.
     declared = spec.get("affordances")
+    # An invented noun -- datapad, holodeck -- has no taxonomy above it, so the
+    # generator is asked which real sense it hangs beneath and it is settled
+    # with the kind. Checked inside `kinds`: an anchor WordNet does not know is
+    # dropped rather than believed.
     granted = kinds_mod.resolve(
         location and _root_of(location), the_kinds, declared,
         accepts=spec.get("holds") or (),
+        under=str(spec.get("under", "") or "").strip(),
     )
     if worn_on is not None and not af.afforded(granted).intersection({WEARABLE}):
         # It is being put on somebody, so it is wearable whatever the model

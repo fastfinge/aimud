@@ -343,6 +343,31 @@ def senses(word, pos="n", limit=12):
         return []
 
 
+def settled_noun_sense(word):
+    """
+    The sense a noun can be ground in without asking anybody, or "".
+
+    The counterpart of `needs_sense_choice`, and it follows from it. That
+    function's whole argument is that most ambiguity does not matter for
+    deciding what *sort of thing* something is: "book" has eleven senses and
+    ten of them are abstractions that "say nothing about what sort of object is
+    being made, so any of them would answer the same". If any of them would
+    answer the same, the first will do, and nobody needs to be asked.
+
+    So this is deliberately the frequency-ordered first sense -- the thing
+    `lexicon.py` warns against everywhere else -- and it is safe here for
+    exactly one reason: it is only reached for words whose senses do not
+    disagree about the answer being asked for. A word whose senses do disagree
+    goes to `sense_prompt` and a generator that can see the room.
+
+    Empty for a word with no senses at all, which is the case an anchor is for.
+    """
+    if not word or needs_sense_choice(word):
+        return ""
+    listed = senses(word, pos="n", limit=1)
+    return listed[0][0] if listed else ""
+
+
 def needs_sense_choice(word):
     """
     Whether a word's senses disagree about what kind of thing it is.
@@ -405,10 +430,23 @@ def implied_affordances(sense):
     into two. Anything the taxonomy can pin down is one less thing that can
     drift.
     """
+    return implied_by(ancestors(sense))
+
+
+def implied_by(senses):
+    """
+    The same, for a chain of senses somebody else worked out.
+
+    `world.kinds` follows an invented noun's anchor to get its ancestry, so it
+    arrives holding the senses rather than a name to look them up from. This
+    keeps the bucket tables in here, where they are defined, rather than having
+    another module reach in for them.
+    """
+    names = frozenset(senses or ())
     return frozenset(
         _BUCKET_AFFORDANCES[bucket]
-        for bucket in buckets(sense)
-        if bucket in _BUCKET_AFFORDANCES
+        for name, bucket in KIND_BUCKETS.items()
+        if name in names and bucket in _BUCKET_AFFORDANCES
     )
 
 
@@ -678,3 +716,36 @@ def settled_sense(verb):
     """
     listed = verb_senses(verb, limit=2)
     return listed[0][0] if len(listed) == 1 else ""
+
+def anchor_prompt(phrase):
+    """
+    A block asking what sort of thing an invented noun is, or "" for a real one.
+
+    The awkward case, and the reason it needs its own function: a noun WordNet
+    has never heard of has no senses to choose between, so there is no menu of
+    *its* meanings to offer. What can be offered is the small closed set of
+    senses the taxonomy actually reads -- `KIND_BUCKETS`, which is what a floor
+    is computed from -- plus leave to name something more precise, since an
+    answer is checked against the dictionary before it is believed either way.
+
+    Coarse on purpose. A datapad and a holodeck both landing under
+    `device.n.01` is not a loss: each is still its own kind, with its own
+    affordances and its own rules, and the anchor exists only so that they have
+    a taxonomy above them at all -- a floor to inherit, a hypernym a rule can
+    be filed against, and something for `prune` to recognise.
+    """
+    word = head_noun(phrase)
+    if not word or ancestors(word) or settled_noun_sense(word):
+        return ""
+    if needs_sense_choice(word):
+        return ""              # it has senses; `sense_prompt` is asking
+    listed = "\n".join(
+        f"  {name} -- {definition(name)}" for name in sorted(KIND_BUCKETS))
+    return (
+        f'"{word}" is not a word the dictionary knows, so nothing is known '
+        f"about what sort of thing it is. Set \"under\" to whichever of these "
+        f"it most nearly is:\n{listed}\n"
+        f"A more precise sense is welcome if you know one -- any WordNet "
+        f"identifier will do, and one that does not exist is ignored. Copy it "
+        f"exactly.\n"
+    )
