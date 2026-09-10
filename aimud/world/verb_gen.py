@@ -49,7 +49,12 @@ Roles are the parts the player named: "direct" is the thing acted on,
 "source". "actor" is the character acting.
 
 requires are the conditions that must hold before the verb works:
-  has    — an affordance the object must have (readable, flammable, openable)
+  has    — something that must be doable to the object, named as the plain
+           verb: "read", "burn", "open". Never the adjective made out of it --
+           "readable" and "flammable" are not what the world keeps, and a rule
+           asking for one is asking for a condition no object can meet.
+           "container" and "surface" are still accepted and mean things go in
+           or on it, which is a fact about the kind rather than a verb.
   is     — a state it must be in (open, lit, wet)
   lacks  — a state it must NOT be in (already burning, already open)
   holds  — something the role must be carrying. Either a role ("direct"),

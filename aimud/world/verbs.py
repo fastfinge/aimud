@@ -1352,18 +1352,56 @@ def _speak_of(obj, actor):
     return obj.get_display_name(actor), "is", "It"
 
 
-def _as_quality(affordance):
+def _in_a_sentence(obj, actor):
     """
-    An affordance as it fits into "X is not ___".
+    The thing as it reads in the middle of a sentence, article and all.
 
-    Almost every one a world invents is already an adjective -- readable,
-    sittable, breakable, flammable -- and the two that are not are things
-    rather than qualities, so they take an article instead.
+    `_speak_of` gives a name for the front of one -- "Glittery Aerosol Can is
+    not..." -- and a refusal phrased around a verb puts it in the middle
+    instead, where a bare name reads as a stranger's: "you cannot read
+    Glittery Aerosol Can".
     """
-    word = str(affordance or "").replace("_", " ").strip()
-    if not word:
-        return ""
-    return word if word.endswith(("able", "ible")) else f"a {word}"
+    if obj is actor:
+        return "yourself"
+    try:
+        return obj.get_numbered_name(1, actor, return_string=True)
+    except (AttributeError, TypeError):
+        return obj.get_display_name(actor)
+
+
+#: What "container" and "surface" became. They were affordances until
+#: `world.affordances` turned affordances into verbs, and they are not verbs
+#: -- they say where things go, which is a fact about a kind. A rule still
+#: allowed to ask for them, and plenty do.
+_PLACEMENT_AFFORDANCE = {"container": "in", "surface": "on"}
+
+
+def _wanted_affordances(needed):
+    """
+    What a rule's `has` list means, in the vocabulary objects actually use.
+
+    Rules are written by models and models write "readable" where the world
+    now keeps "read". Both are the same requirement and the second is the one
+    that can be checked, so the list is folded on the way in rather than the
+    rule being blamed for it -- 39 of the first 42 requirements written after
+    the vocabulary changed were adjectives, and every one of them would have
+    been a condition no object could ever meet.
+
+    Placement comes back separately, since a rule asking for a container is
+    asking a question about the kind rather than about what can be done.
+    """
+    from world import affordances as af
+
+    verbs_wanted, placement = [], []
+    for entry in needed or []:
+        word = str(entry or "").lower().strip()
+        if word in _PLACEMENT_AFFORDANCE:
+            placement.append(_PLACEMENT_AFFORDANCE[word])
+            continue
+        folded = af.to_verb(word)
+        if folded:
+            verbs_wanted.append(folded)
+    return verbs_wanted, placement
 
 
 def check(requires, bound, actor, world_root=None):
@@ -1398,22 +1436,31 @@ def check(requires, bound, actor, world_root=None):
         have = affordances(obj)
         is_now = states(obj)
 
-        for affordance in needed.get("has", []):
+        wanted, placement = _wanted_affordances(needed.get("has", []))
+
+        for affordance in wanted:
             if affordance in have:
                 continue
-            quality = _as_quality(affordance)
-            said = f"{_cap(name)} {be} not {quality}."
+            # An affordance is a verb now, so the refusal is a verb too:
+            # "you cannot spray the can" rather than "the can is not
+            # sprayable", which was fine while affordances were adjectives
+            # and turned into "it is a buy, a crush and a open" the moment
+            # they stopped being.
+            said = f"You cannot {affordance} {_in_a_sentence(obj, actor)}."
             # What it IS for. The hint the old message withheld: a bottle that
             # cannot be sat on can still be drunk, broken and put things in.
             if have:
                 from evennia.utils.utils import iter_to_str
 
-                # Qualities before things, so it reads "breakable, drinkable
-                # and a container" rather than opening on the odd one out.
-                qualities = sorted(_as_quality(a) for a in have)
-                qualities.sort(key=lambda q: q.startswith("a "))
-                said += f" {pronoun} {be} {iter_to_str(qualities)}."
+                said += f" You can {iter_to_str(sorted(have))} {pronoun.lower()}."
             note(said)
+
+        for preposition in placement:
+            from world import kinds
+
+            if preposition in kinds.holds(world_root, obj.db.kinds):
+                continue
+            note(f"{_cap(name)} {be} not something things go {preposition}.")
 
         for state in needed.get("is", []):
             if state in is_now:
