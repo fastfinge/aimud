@@ -87,6 +87,8 @@ def start_model_menu(caller):
     def on_error(failure):
         caller.msg(f"|rCould not fetch models: {failure.getErrorMessage()}|n")
 
+    from world import llm
+
     llm.fetch(_fetch_models_sync, api_key,
               on_success=on_success, on_error=on_error)
 
