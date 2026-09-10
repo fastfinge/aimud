@@ -578,13 +578,33 @@ def order(rule, attempt):
 ```
 
 ```python
-def scope_rank(scope):
-    if "object" in scope:  return (0, 0)
-    if "kind" in scope:    return (1, -taxonomy_depth(scope["kind"]))
-    if "room" in scope:    return (2, 0)
-    if "zone" in scope:    return (3, -zones.depth(root, scope["zone"]))
-    return (4, 0)                              # world
+def tier(rule, attempt):
+    """Not the scope alone: what the scope was matched against."""
+    scope, about = rule["scope"], rule["about"]
+    if "object" in scope:                     return 0
+    if "kind" in scope and about in ROLES:    return 1   # a thing named
+    if "kind" in scope:                       return 2   # the enclosure
+    if "room" in scope:                       return 3
+    if "zone" in scope:                       return 4
+    return 5                                             # world
+
+
+def depth(rule, root):
+    """Deeper in the taxonomy, or deeper in the zone tree, first."""
+    scope = rule["scope"]
+    if "kind" in scope:  return -len(kinds.ancestors(root, scope["kind"]))
+    if "zone" in scope:  return -zones.depth(root, scope["zone"])
+    return 0
 ```
+
+**The tier is not read off the scope alone**, and writing this out is what
+found it: §4 orders "the kind of an object named" above "the kind of the
+enclosure", and both of those are a `{"kind": ...}` scope. Nothing in the
+scope distinguishes them. `about` does, which is why it is a slot rather than
+a note -- a rule filed against `spacecraft.n.01` may mean the ship you are
+standing in or a model spaceship on the shelf, and the two want different
+precedence and different matching. If the tier were guessed from the scope,
+the enclosure rule would fire because somebody was carrying a toy.
 
 Two consequences worth stating, because they are the examples that prompted all
 this:
