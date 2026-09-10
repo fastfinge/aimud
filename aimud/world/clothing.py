@@ -480,7 +480,14 @@ def create(spec, location, worn_on=None):
     obj = create_object(typeclass_for(afforded), key=name, location=location)
     obj.db.desc = str(spec.get("description", "")).strip()
     obj.db.is_ai_item = True
-    obj.db.ai_takeable = bool(spec.get("takeable", True))
+    # Whether a thing can be picked up is a fact about its sort -- tables are
+    # not liftable and cups are -- so the generator's answer settles the kind
+    # rather than only this object. That retires a model call of its own: a
+    # world with forty chairs used to ask forty times, once per chair, the
+    # first time somebody reached for each.
+    takeable = bool(spec.get("takeable", True))
+    obj.db.ai_takeable = takeable
+    kinds_mod.admit(_root_of(location), the_kinds, "get", takeable)
     obj.db.affordances = granted
     obj.db.kinds = the_kinds
     obj.db.kind = the_kinds[0] if the_kinds else ""
@@ -537,6 +544,9 @@ def create(spec, location, worn_on=None):
             granted[slug] = amount
     if granted:
         obj.db.trait_bonuses = granted
+        gate = str(spec.get("bonus_while", "")).strip().lower()
+        if gate:
+            obj.db.bonus_while = gate
         when = str(spec.get("bonus_when", "")).strip().lower()
         if when in gear.CONDITIONS:
             obj.db.bonus_when = when

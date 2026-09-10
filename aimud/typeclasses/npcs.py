@@ -331,6 +331,14 @@ class NPC(ObjectParent, DefaultObject):
         from world.following import move_followers
 
         move_followers(self, source_location)
+
+        # The same sums a player's arrival redoes: what this room is worth to
+        # them, and what they are no longer worth to the one behind them.
+        from world.gear import recompute, recompute_room
+
+        recompute(self)
+        recompute_room(source_location, ignoring=self)
+
         from world.verbs import clear_on_move
 
         room = self.location
@@ -448,16 +456,34 @@ class NPC(ObjectParent, DefaultObject):
         return None
 
     def _execute_tool_calls(self, tool_calls, _depth=0):
-        """Apply a list of {"name": ..., "args": ...} dicts. Runs in main thread."""
-        self.ndb.reacting = False
+        """
+        Apply a list of {"name": ..., "args": ...} dicts. Runs in main thread.
+
+        The guard is held until the last tool has run, and that is the whole
+        of what stops a character answering twice. Doing something tells the
+        room about it, and the room tells everyone else, and one of them
+        answering tells this character in turn -- so a guard released before
+        the tools ran left a character free to react to the conversation its
+        own sentence had just started. What a player saw was somebody speak,
+        somebody else reply, and the first speak again, all at once.
+
+        Released in a `finally` because a character that cannot say anything
+        ever again is a worse failure than a duplicated line, and a tool
+        raising is exactly how a guard gets left standing.
+        """
         # Reset idle probability whenever the NPC actually does something.
         if tool_calls:
             self.ndb.idle_probability = 0
         room = self.location
         if not room:
+            self.ndb.reacting = False
             return
-        for call in tool_calls:
-            self._execute_one(call.get("name", ""), call.get("args", {}), room, _depth)
+        try:
+            for call in tool_calls:
+                self._execute_one(call.get("name", ""), call.get("args", {}),
+                                  room, _depth)
+        finally:
+            self.ndb.reacting = False
 
     def _notify_other_npcs(self, room, event_type, text, _depth):
         """

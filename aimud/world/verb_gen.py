@@ -33,7 +33,8 @@ Respond with a single JSON object — no other text — matching:
   "requires": {"<role>": {"has": ["affordance"], "is": ["state"], "lacks": ["state"], "holds": ["direct" or "item name"], "trait": {"stamina": {"min": 10}}}},
   "check": {"trait": "swordsmanship", "against": {"role": "direct", "trait": "swordsmanship"}},
   "effects": [ ... ],
-  "new_states": [{"slug": "burning", "means": "on fire", "group": "fire", "group_ends_on_move": false}],
+  "new_states": [{"slug": "burning", "means": "on fire", "group": "fire", "group_ends_on_move": false,
+                  "group_prevents_acting": false, "group_prevents_moving": false, "group_prevents_speaking": false}],
   "new_traits": [{"slug": "stamina", "name": "Stamina", "means": "how much effort is left in someone", "trait_type": "gauge", "base": 100, "min": 0}],
   "repeatable": true
 }
@@ -48,7 +49,12 @@ Roles are the parts the player named: "direct" is the thing acted on,
 "source". "actor" is the character acting.
 
 requires are the conditions that must hold before the verb works:
-  has    — an affordance the object must have (readable, flammable, openable)
+  has    — something that must be doable to the object, named as the plain
+           verb: "read", "burn", "open". Never the adjective made out of it --
+           "readable" and "flammable" are not what the world keeps, and a rule
+           asking for one is asking for a condition no object can meet.
+           "container" and "surface" are still accepted and mean things go in
+           or on it, which is a fact about the kind rather than a verb.
   is     — a state it must be in (open, lit, wet)
   lacks  — a state it must NOT be in (already burning, already open)
   holds  — something the role must be carrying. Either a role ("direct"),
@@ -76,6 +82,13 @@ effects change the world. Each is one of:
 {"type": "set_trait", "role": "actor", "trait": "stamina", "change": -5}
 {"type": "set_trait", "role": "actor", "trait": "poisoned", "set_to": 20, "rate": -1}
 
+A figure that moves by a different amount depending on what was acted on
+belongs in the effects, but pick the amount an ORDINARY member of this sort
+would give — each particular thing may say otherwise afterwards, and will be
+asked. Do not build the exceptional case into the rule: a rule that assumes
+everything drinkable is strong drink makes water intoxicating for the life of
+the world.
+
 set_trait changes a figure about a person. "change" moves it by an amount,
 "set_to" puts it at one. "rate" is change per second from then on, and is how
 an effect plays out over time instead of all at once: a poison that drains at
@@ -97,8 +110,21 @@ and ON surfaces; if the verb you are given is only a way of saying "put this
 there", mark it invalid. Define a verb when the placement is a *consequence*
 of something else -- pouring, posting, sheathing, burying.
 
-Prefer set_state over destroying and recreating things. Use an empty effects
-list for a verb that only produces a sensation.
+A verb usually does more than one thing, and the effects list is where all of
+it goes. Killing somebody makes them dead, and may cost the killer something,
+and may leave what they were carrying on the floor — that is three effects in
+one list, not three verbs. Ask yourself what else changed: what it costs the
+actor, what it leaves behind, what everyone standing there notices. Write them
+all. An empty list is for a verb that genuinely only produces a sensation —
+smelling bread, listening at a door.
+
+Prefer set_state over destroying and recreating things.
+
+"role" may also be "everyone" or "others", which mean every character in the
+room and every character except the one acting. That is how a verb reaches
+people nobody named: a fire warms everyone by it, a shout startles the others.
+Only set_state and set_trait accept them. Use them sparingly and never for
+something a person would resent having done to them from across the room.
 
 check is what makes a verb a gamble instead of a certainty, and is the one
 thing here that decides whether this is a game. Give a check ONLY when a
@@ -163,6 +189,14 @@ a state is one of a set that answers the same question: open and closed are an
 "openness", hot and cold a "temperature". That is the cheapest thing you can
 write, and without it a thing can be open and closed at the same moment.
 
+The three "group_prevents_" flags say what a state stops its holder DOING,
+and are the only way to express that -- there is no list of forbidden verbs,
+because a state is settled once while new verbs go on being invented, so any
+list would be stale within a week. Set them on states that genuinely disable:
+dead and unconscious prevent all three, tied and pinned prevent moving, gagged
+prevents speaking. Leave all three false for the ordinary run of states, which
+describe a thing rather than stop it -- wet, dusty, open, lit, empty.
+
 Add "group_ends_on_move": true only if standing up and walking away would end
 it, the way sitting down ends when you leave the room. Almost nothing does. "posture" holds
 seated, standing, lying, kneeling and the like, and ends when the character
@@ -214,6 +248,13 @@ entirely to accept the rule's own effects unchanged, which is the ordinary
 case and the right answer whenever nothing about this thing is special. Give
 it only where this thing genuinely differs — opening this door reveals the
 stairs, opening that one is barred from the far side.
+
+The commonest reason to differ is AMOUNT. A rule says drinking costs thirst
+and gains intoxication, and it had to pick one number for both; water and
+neat spirits are not that number. Whenever the rule changes a figure by some
+amount, ask what THIS thing would do, and give the whole effects list back
+with your own amount if it differs. Zero is a real answer: water intoxicates
+nobody.
 
 "difficulty" is the number to beat for THIS thing, when the rule says the verb
 is contested. A flimsy crate and a bank vault are both pried, and they are not
@@ -296,6 +337,16 @@ def store_rule(world_root, key, rule):
     rules = dict(world_root.db.verb_rules or {})
     rules[key] = rule
     world_root.db.verb_rules = rules
+
+
+def _states_of_kinds(world_root, bound):
+    """Conditions things of the sorts involved here have been in before."""
+    from world import kinds
+
+    seen = set()
+    for obj in (bound or {}).values():
+        seen |= kinds.states_of(world_root, getattr(obj.db, "kinds", None))
+    return seen
 
 
 def _kindred_block(world_root, verb, bound):
@@ -451,11 +502,22 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
     # be seen. Left to guess, one rule called a group "power_state" and the
     # next "charge_status" -- so a thing could be active and uncharged at the
     # same moment, neither name knowing the other existed.
+    def _line(slug, info):
+        return (f"  {slug}: {info.get('means','')}"
+                f" (group: {verbs.group_of(world_root, slug) or 'none'};"
+                f" cancels: {', '.join(info.get('conflicts') or []) or 'nothing'})")
+
+    # The conditions things of this sort have actually been in, shown first
+    # and separately. A world's vocabulary runs to sixty states before long,
+    # and sixty undifferentiated lines are not read -- which is how "shut" got
+    # coined beside "closed" and "dormant" beside "inactive". The handful that
+    # have ever been true of a bottle are worth putting in front of the rest.
+    familiar = _states_of_kinds(world_root, bound)
+    near_text = "\n".join(_line(slug, vocab[slug])
+                          for slug in sorted(familiar & set(vocab)))
     vocab_text = "\n".join(
-        f"  {slug}: {info.get('means','')}"
-        f" (group: {verbs.group_of(world_root, slug) or 'none'};"
-        f" cancels: {', '.join(info.get('conflicts') or []) or 'nothing'})"
-        for slug, info in sorted(vocab.items())
+        _line(slug, info) for slug, info in sorted(vocab.items())
+        if slug not in familiar
     ) or "  (none yet)"
     group_text = ", ".join(sorted(verbs.groups(world_root))) or "(none yet)"
 
@@ -471,7 +533,10 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
                 f"The player typed: '{raw}'\n"
                 f"Verb: {verb}\n\n"
                 f"Things involved:\n{_describe_objects(bound, actor)}\n\n"
-                f"State vocabulary already in use:\n{vocab_text}\n\n"
+                + (f"Conditions things of this sort have been in before, and "
+                   f"the ones to reuse if any of them fit:\n{near_text}\n\n"
+                   if near_text else "")
+                + f"Every other state this world uses:\n{vocab_text}\n\n"
                 f"State groups already in use, to be reused rather than "
                 f"renamed: {group_text}\n\n"
                 f"{traits.vocabulary_block(world_root)}"
@@ -492,6 +557,9 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
                     conflicts=[str(c) for c in state.get("conflicts", [])],
                     group=str(state.get("group", "")).strip().lower() or None,
                     ends_on_move=state.get("group_ends_on_move"),
+                    prevents_acting=state.get("group_prevents_acting"),
+                    prevents_moving=state.get("group_prevents_moving"),
+                    prevents_speaking=state.get("group_prevents_speaking"),
                 )
             # Registered before the rule is stored, so that a trait the rule
             # goes on to change is one the world knows about -- and so that

@@ -424,7 +424,36 @@ def head_noun(name):
     import re
 
     words = re.findall(r"[a-z0-9]+", (name or "").lower())
-    return lemma(words[-1], "n") if words else ""
+    if not words:
+        return ""
+
+    # "Of" turns a phrase around, and which way depends on the first word.
+    # A bottle of soju is a bottle -- it is the bottle you pick up, and the
+    # soju is what happens to be in it. But a pair of boots is boots and a
+    # piece of chalk is chalk, because those first words are measures rather
+    # than things: nobody owns a pair.
+    #
+    # Left unhandled, "bottle of soju" came out as a kind called "soju",
+    # which matched no object in a world full of bottles -- so a character
+    # who wanted one could never be given one, and never stop looking.
+    if "of" in words[1:-1]:
+        at = words.index("of", 1)
+        before, after = words[:at], words[at + 1:]
+        chosen = after if before[-1] in _MEASURES else before
+        words = chosen or words
+
+    return lemma(words[-1], "n")
+
+
+#: Words that count a thing rather than being one. "A pair of boots" is boots;
+#: "a bottle of soju" is a bottle, because a bottle is something in its own
+#: right and a pair is not. Deliberately short and uncontroversial: anything
+#: arguable -- a glass of water, a cup of tea -- is left as the container,
+#: which is the thing you can actually pick up.
+_MEASURES = frozenset("""
+    piece bit lump chunk slice sliver shred scrap pair set pile heap
+    handful bunch stack sheet length strand speck grain
+""".split())
 
 
 # ---------------------------------------------------------------------------

@@ -415,9 +415,22 @@ def rule_key(verb, bound=None):
     being answered by one overloaded cache key, and only the first of them is
     about the verb alone.
 
-    `bound` is still accepted so that callers need not change, and ignored.
+    What remains in the key besides the verb is the *shape* of the sentence:
+    which roles were filled, and nothing about what filled them. "Drink the
+    bottle" and "drink from the bottle" are not the same request, and a rule
+    learned for one is wrong for the other in a way no precondition can
+    rescue -- a rule that requires the `source` be open and not empty, met
+    with an attempt that bound only `direct`, refuses with "you are not
+    holding the source", which is true, unanswerable and about nothing the
+    player said.
+
+    So `drink#direct` and `drink#source` are two rules, while a flammable
+    bottle and a plain one still share both. Role names are a closed set of
+    five and most verbs are typed one or two ways, so this costs a fraction
+    of what affordances cost and buys back the distinction that matters.
     """
-    return verb
+    shape = ",".join(sorted(bound or {}))
+    return f"{verb}#{shape}" if shape else verb
 
 
 # ---------------------------------------------------------------------------
@@ -525,6 +538,24 @@ world with no way to perform the action at all.
 #: stale within the life of one server.
 _ENGINE_VERBS = None
 
+#: The half of `engine_verbs` that the command set really answers, as opposed
+#: to the half handled inside the attempt pipeline by clothing, gear and
+#: placement. Filled in alongside it.
+#:
+#: The distinction is not academic. Handing a verb to the command set that the
+#: command set does not know sends it straight back out as an unknown command,
+#: which reaches the attempt pipeline again, which hands it over again. Typing
+#: "study scroll" did exactly that: "study" folds to "look", "look" is an
+#: engine verb, and "study" is not a command -- so the two bounced it between
+#: them for ever and the player was told they were still trying.
+_COMMAND_VERBS = set()
+
+
+def command_verbs():
+    """The verbs the command set itself answers, by a name it will recognise."""
+    engine_verbs()
+    return _COMMAND_VERBS
+
 
 def engine_verbs():
     """
@@ -570,6 +601,10 @@ def engine_verbs():
     for command in cmdset.commands:
         if (getattr(command, "help_category", "") or "").lower() != "general":
             continue
+        for name in [command.key] + list(command.aliases or []):
+            spelled = str(name or "")
+            if spelled[:1].isalpha():
+                _COMMAND_VERBS.add(spelled)
         for name in [command.key] + list(command.aliases or []):
             # Punctuation aliases -- the quote mark for say, the colon for
             # pose -- are not verbs anybody would write a rule for, and one
@@ -633,7 +668,9 @@ def _similar(a, b):
 #: and closed has already said what it means, and treating an unrecognised name
 #: as a loose flag threw that away, so a thing could be open and closed at the
 #: same time and opening it cleared nothing.
-NEW_GROUP = {"exclusive": True, "ends_on_move": False}
+NEW_GROUP = {"exclusive": True, "ends_on_move": False,
+             "prevents_acting": False, "prevents_moving": False,
+             "prevents_speaking": False}
 
 #: Groups every world starts with, and how they behave.
 #:
@@ -642,15 +679,35 @@ NEW_GROUP = {"exclusive": True, "ends_on_move": False}
 #: ends_on_move -- walking out of the room ends it. You cannot carry a chair
 #:                 away by remaining seated on it.
 #:
+#: The last three are what a state does to whoever is IN it, rather than what
+#: it says about them. Three and no more, and never a list of forbidden verbs:
+#: a state is settled once and never revised, while the verb vocabulary grows
+#: for as long as a world runs, so a list written when "gagged" was coined
+#: cannot mention singing, chanting or reciting and gets staler every day. A
+#: gate is closed and total instead -- everything is an action, so acting
+#: covers the verbs nobody has invented yet.
+#:
+#: prevents_acting   -- a dead thing does not go on about its business.
+#: prevents_moving   -- you cannot walk away tied to a chair.
+#: prevents_speaking -- a gagged mouth makes no dialogue.
+#:
 #: These are seeds rather than the whole list. A world registers its own as it
 #: needs them -- see `register_group` -- and what is here is only what no world
 #: should have to discover for itself: `ends_on_move` in particular is not
 #: something a model reliably works out, and getting it wrong means a character
 #: who stays seated in every room they walk into.
 STATE_GROUPS = {
+    # Sitting ends when you walk rather than stopping you walking, which is
+    # the difference between a posture and a restraint: standing up is part of
+    # leaving. `bonds` is the other half of that, seeded because a world that
+    # ties somebody up and then lets them stroll off has wasted the rope.
     "posture": {"exclusive": True, "ends_on_move": True},
     "wetness": {"exclusive": True, "ends_on_move": False},
     "fire":    {"exclusive": True, "ends_on_move": False},
+    "life_status": {"exclusive": True, "prevents_acting": True,
+                    "prevents_moving": True, "prevents_speaking": True},
+    "bonds":   {"exclusive": True, "prevents_moving": True},
+    "gagged":  {"exclusive": True, "prevents_speaking": True},
 }
 
 #: Where a state belongs when nothing says otherwise. Seeded for the ones a
@@ -675,6 +732,17 @@ DEFAULT_STATE_GROUP.update({
 })
 DEFAULT_STATE_GROUP.update({
     slug: "fire" for slug in ("burning", "alight", "lit", "extinguished", "unlit")
+})
+DEFAULT_STATE_GROUP.update({
+    slug: "life_status" for slug in ("dead", "slain", "killed", "deceased",
+                                     "lifeless", "alive", "living")
+})
+DEFAULT_STATE_GROUP.update({
+    slug: "bonds" for slug in ("bound", "tied", "shackled", "chained",
+                               "manacled", "pinned", "trapped", "free")
+})
+DEFAULT_STATE_GROUP.update({
+    slug: "gagged" for slug in ("gagged", "muzzled", "muted", "silenced")
 })
 
 
@@ -718,7 +786,72 @@ def group_rules(world_root, group):
     return groups(world_root).get(group) or dict(NEW_GROUP)
 
 
-def register_group(world_root, group, exclusive=None, ends_on_move=None):
+#: The three things a state can stop somebody doing, and how to say so.
+#:
+#: The wording is built from the slug because the slugs are already adjectives
+#: -- dead, tied, gagged, sitting -- so "You cannot move while tied" falls out
+#: without anybody writing a sentence for it. A state whose slug does not read
+#: that way still gets an honest line, just a duller one.
+GATES = {
+    "prevents_acting": "do that",
+    "prevents_moving": "move",
+    "prevents_speaking": "speak",
+}
+
+
+def blocked(character, gate, world_root=None):
+    """
+    The state stopping this character, or "" if nothing is.
+
+    One question asked in three places -- before an action, before a step,
+    before a word -- because a state that stops you doing something has to
+    stop the player and the character alike, and neither of them should be
+    asked a different question.
+
+    Cheap enough to ask on every movement and every line of dialogue: a set
+    intersection against the states already on the object, and a dict lookup
+    per group. Nothing here reads the world unless a state is actually held.
+    """
+    if character is None or gate not in GATES:
+        return ""
+    held = states(character)
+    if not held:
+        return ""
+    if world_root is None:
+        room = getattr(character, "location", None)
+        world_root = getattr(getattr(room, "db", None), "world_root", None)
+    known = groups(world_root)
+    for slug in sorted(held):
+        group = group_of(world_root, slug)
+        if not group:
+            continue
+        rules = known.get(group) or STATE_GROUPS.get(group) or {}
+        try:
+            if rules.get(gate):
+                return slug
+        except AttributeError:
+            continue
+    return ""
+
+
+def refuse(character, gate, world_root=None):
+    """
+    What to tell somebody who cannot do this, or "" when they can.
+
+    Second person because both halves of the game need it: a player is told
+    directly, and a character is told the same words as a thing it noticed,
+    which is what stops it trying again every turn for as long as the state
+    lasts.
+    """
+    slug = blocked(character, gate, world_root)
+    if not slug:
+        return ""
+    return f"You cannot {GATES[gate]} while {slug.replace('_', ' ')}."
+
+
+def register_group(world_root, group, exclusive=None, ends_on_move=None,
+                   prevents_acting=None, prevents_moving=None,
+                   prevents_speaking=None):
     """
     Put a group in the world's register, or fold it onto one already there.
 
@@ -748,6 +881,12 @@ def register_group(world_root, group, exclusive=None, ends_on_move=None):
         entry["exclusive"] = bool(exclusive)
     if ends_on_move is not None:
         entry["ends_on_move"] = bool(ends_on_move)
+    for name, given in (("prevents_acting", prevents_acting),
+                        ("prevents_moving", prevents_moving),
+                        ("prevents_speaking", prevents_speaking)):
+        if given is not None:
+            entry[name] = bool(given)
+        entry.setdefault(name, False)
 
     stored = dict(world_root.db.state_groups or {})
     if stored.get(group) != entry:
@@ -792,8 +931,134 @@ def group_members(world_root, group):
     return known
 
 
+#: How English spells "not this". Ordered longest first so "non" is tried
+#: before "no" would be, and kept short: these are the four that actually turn
+#: a condition into its opposite rather than merely starting a word with them.
+_NEGATING = ("non", "dis", "un", "in", "im")
+
+
+def _opposite_group(world_root, slug, vocab):
+    """
+    The group of a state this one is the plain negation of, if there is one.
+
+    Only when the other half is ALREADY registered, which is what makes this
+    safe to act on without a dictionary: "unfolded" is only read as the
+    opposite of "folded" in a world that has met a folded thing. Nothing is
+    inferred about English, so "inert" cannot become "not ert" and "impassive"
+    cannot become "not passive" -- there is no state called ert or passive to
+    be the other half of.
+
+    WordNet is deliberately not consulted here, and it is worth saying why,
+    because antonymy looks like exactly the right relation. Its antonyms run
+    lemma to lemma, and the participles these states are made of are not their
+    own lemmas: it gives "fold" for "unfolded", "lighted" for "unlit", "tune"
+    for "untuned" and nothing at all for "untransformed". It knows the pairs
+    this cannot reach -- open and closed, wet and dry -- and misses every pair
+    this catches, while cheerfully reporting that the opposite of "broken" is
+    "promote".
+    """
+    for prefix in _NEGATING:
+        if not slug.startswith(prefix):
+            continue
+        positive = slug[len(prefix):]
+        if len(positive) < 3 or positive not in vocab:
+            continue
+        found = group_of(world_root, positive)
+        if found:
+            return found
+    return None
+
+
+def _adjective_senses(slug):
+    """
+    A state word's adjective senses, or [] when there is no dictionary.
+
+    Adjectives only, and that restriction is the whole reason the relations
+    below are usable. Asked without it, WordNet reports that the opposite of
+    "broken" is "conform_to", "keep", "make" and "promote" -- all of them
+    perfectly good antonyms of the verb "to break", and none of them a way for
+    a thing to be. Filtered to how a word describes something rather than how
+    it acts, the noise disappears entirely.
+    """
+    from world import lexicon
+
+    wordnet = lexicon._wordnet()
+    if wordnet is None:
+        return []
+    try:
+        return [s for s in wordnet.synsets(slug) if s.pos() in ("a", "s")]
+    except Exception:
+        return []
+
+
+def _antonym_group(world_root, slug, vocab):
+    """
+    The group of a state this one is the opposite of.
+
+    The most clearly correct of the three checks here, because a group is a
+    set of states only one of which can hold at once, and that is precisely
+    what an opposite is. Wet and dry are not two conditions that happen to
+    conflict; being one is what it means not to be the other.
+
+    It also reaches the pairs the other two cannot. Neither spelling nor
+    synonymy connects open to closed, wet to dry, clean to dirty, full to
+    empty or seated to standing -- and those are the ordinary furniture of a
+    world's vocabulary. Of eight such pairs across five worlds, seven were
+    already grouped correctly and the eighth, active against dormant, was not.
+    """
+    found = set()
+    for sense in _adjective_senses(slug):
+        try:
+            for lemma in sense.lemmas():
+                for other in lemma.antonyms():
+                    found.add(other.name().lower())
+        except Exception:
+            continue
+    for other in found & set(vocab):
+        group = group_of(world_root, other)
+        if group:
+            return group
+    return None
+
+
+def _synonym_group(world_root, slug, vocab):
+    """
+    The group of a state that means the same thing as this one.
+
+    Five worlds coined "shut" while already keeping "closed", and "dormant"
+    while already keeping "inactive". Nothing noticed, because folding on the
+    way in compares spellings -- "emptied" collapses onto "empty" and "shut"
+    does not collapse onto anything.
+
+    The slugs are NOT merged, which is the important part. WordNet also calls
+    "broken" and "crushed" synonyms, and a world where a crushed thing is
+    simply a broken one has lost a distinction worth having; sense overlap
+    does not separate the good pairs from that one, since "closed" and "shut"
+    share as little as "broken" and "crushed" do.
+
+    What is safe is the weaker claim: two states that mean the same thing must
+    at least rule each other out. So a synonym joins the group rather than the
+    slug -- which fixes dormant against inactive, leaves shut and closed where
+    they already were, and does the right thing by broken and crushed, since
+    those genuinely are two ways for one thing to be damaged.
+    """
+    kin = set()
+    for sense in _adjective_senses(slug):
+        try:
+            kin |= {name.lower() for name in sense.lemma_names()}
+        except Exception:
+            continue
+    kin.discard(slug)
+    for other in kin & set(vocab):
+        found = group_of(world_root, other)
+        if found:
+            return found
+    return None
+
+
 def register_state(world_root, slug, means="", conflicts=(), group=None,
-                   ends_on_move=None):
+                   ends_on_move=None, prevents_acting=None,
+                   prevents_moving=None, prevents_speaking=None):
     """
     Add a state to the world's vocabulary, or fold it onto an existing one.
 
@@ -812,14 +1077,40 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
         if _similar(slug, existing):
             return existing
 
+    # The same guard traits keep, from the other side. See `world.vocabulary`.
+    from world import vocabulary as _vocabulary
+
+    if not _vocabulary.permit(world_root, slug, "state"):
+        return ""
+
     # The group is registered before the state, so a state that names a new
     # group leaves behind a group that behaves like one. A seeded slug keeps
     # its seeded group whatever was declared -- see DEFAULT_STATE_GROUP.
     seeded = DEFAULT_STATE_GROUP.get(slug)
+    # Three ways one state can belong with another, tried in order of how
+    # certain they are. Spelling is certain: "unfolded" negates "folded" and
+    # no dictionary is consulted. An opposite is the surest thing a dictionary
+    # can tell us, since a group IS a set of mutually exclusive states. A
+    # synonym is the weakest, and is acted on only as far as making two words
+    # for one condition rule each other out.
+    opposite = (_opposite_group(world_root, slug, vocab)
+                or _antonym_group(world_root, slug, vocab)
+                or _synonym_group(world_root, slug, vocab))
     if seeded:
         group = register_group(world_root, seeded)
+    elif opposite:
+        # A state spelled as the negation of one this world already keeps
+        # belongs with it, whatever group was declared -- because the declared
+        # group is the thing that goes wrong. Five worlds registered five such
+        # pairs and put four of them together; the fifth had "folded" under
+        # openness and "unfolded" under foldedness, which let a paper be both
+        # at once with nothing able to put it right.
+        group = register_group(world_root, opposite)
     elif group:
-        group = register_group(world_root, group, ends_on_move=ends_on_move)
+        group = register_group(world_root, group, ends_on_move=ends_on_move,
+                               prevents_acting=prevents_acting,
+                               prevents_moving=prevents_moving,
+                               prevents_speaking=prevents_speaking)
 
     vocab[slug] = {
         "means": means,
@@ -1083,18 +1374,56 @@ def _speak_of(obj, actor):
     return obj.get_display_name(actor), "is", "It"
 
 
-def _as_quality(affordance):
+def _in_a_sentence(obj, actor):
     """
-    An affordance as it fits into "X is not ___".
+    The thing as it reads in the middle of a sentence, article and all.
 
-    Almost every one a world invents is already an adjective -- readable,
-    sittable, breakable, flammable -- and the two that are not are things
-    rather than qualities, so they take an article instead.
+    `_speak_of` gives a name for the front of one -- "Glittery Aerosol Can is
+    not..." -- and a refusal phrased around a verb puts it in the middle
+    instead, where a bare name reads as a stranger's: "you cannot read
+    Glittery Aerosol Can".
     """
-    word = str(affordance or "").replace("_", " ").strip()
-    if not word:
-        return ""
-    return word if word.endswith(("able", "ible")) else f"a {word}"
+    if obj is actor:
+        return "yourself"
+    try:
+        return obj.get_numbered_name(1, actor, return_string=True)
+    except (AttributeError, TypeError):
+        return obj.get_display_name(actor)
+
+
+#: What "container" and "surface" became. They were affordances until
+#: `world.affordances` turned affordances into verbs, and they are not verbs
+#: -- they say where things go, which is a fact about a kind. A rule still
+#: allowed to ask for them, and plenty do.
+_PLACEMENT_AFFORDANCE = {"container": "in", "surface": "on"}
+
+
+def _wanted_affordances(needed):
+    """
+    What a rule's `has` list means, in the vocabulary objects actually use.
+
+    Rules are written by models and models write "readable" where the world
+    now keeps "read". Both are the same requirement and the second is the one
+    that can be checked, so the list is folded on the way in rather than the
+    rule being blamed for it -- 39 of the first 42 requirements written after
+    the vocabulary changed were adjectives, and every one of them would have
+    been a condition no object could ever meet.
+
+    Placement comes back separately, since a rule asking for a container is
+    asking a question about the kind rather than about what can be done.
+    """
+    from world import affordances as af
+
+    verbs_wanted, placement = [], []
+    for entry in needed or []:
+        word = str(entry or "").lower().strip()
+        if word in _PLACEMENT_AFFORDANCE:
+            placement.append(_PLACEMENT_AFFORDANCE[word])
+            continue
+        folded = af.to_verb(word)
+        if folded:
+            verbs_wanted.append(folded)
+    return verbs_wanted, placement
 
 
 def check(requires, bound, actor, world_root=None):
@@ -1129,22 +1458,31 @@ def check(requires, bound, actor, world_root=None):
         have = affordances(obj)
         is_now = states(obj)
 
-        for affordance in needed.get("has", []):
+        wanted, placement = _wanted_affordances(needed.get("has", []))
+
+        for affordance in wanted:
             if affordance in have:
                 continue
-            quality = _as_quality(affordance)
-            said = f"{_cap(name)} {be} not {quality}."
+            # An affordance is a verb now, so the refusal is a verb too:
+            # "you cannot spray the can" rather than "the can is not
+            # sprayable", which was fine while affordances were adjectives
+            # and turned into "it is a buy, a crush and a open" the moment
+            # they stopped being.
+            said = f"You cannot {affordance} {_in_a_sentence(obj, actor)}."
             # What it IS for. The hint the old message withheld: a bottle that
             # cannot be sat on can still be drunk, broken and put things in.
             if have:
                 from evennia.utils.utils import iter_to_str
 
-                # Qualities before things, so it reads "breakable, drinkable
-                # and a container" rather than opening on the odd one out.
-                qualities = sorted(_as_quality(a) for a in have)
-                qualities.sort(key=lambda q: q.startswith("a "))
-                said += f" {pronoun} {be} {iter_to_str(qualities)}."
+                said += f" You can {iter_to_str(sorted(have))} {pronoun.lower()}."
             note(said)
+
+        for preposition in placement:
+            from world import kinds
+
+            if preposition in kinds.holds(world_root, obj.db.kinds):
+                continue
+            note(f"{_cap(name)} {be} not something things go {preposition}.")
 
         for state in needed.get("is", []):
             if state in is_now:

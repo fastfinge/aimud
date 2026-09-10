@@ -136,6 +136,17 @@ class Character(ObjectParent, DefaultCharacter):
 
     def at_say(self, message, msg_self=None, msg_location=None,
                receivers=None, msg_type="say", **kwargs):
+        # A gag stops the words before the room hears them, and before any NPC
+        # is woken to think about what was said. Checked ahead of super() for
+        # that reason: a muffled shout that still reaches everybody is worse
+        # than one nobody hears.
+        from world import verbs
+
+        refusal = verbs.refuse(self, "prevents_speaking")
+        if refusal:
+            self.msg(refusal)
+            return
+
         super().at_say(message, msg_self=msg_self, msg_location=msg_location,
                        receivers=receivers, msg_type=msg_type, **kwargs)
         room = self.location
@@ -156,6 +167,15 @@ class Character(ObjectParent, DefaultCharacter):
         from world.following import move_followers
 
         move_followers(self, source_location)
+
+        # What this room is worth to them changed by walking into it, and what
+        # they were worth to the room behind them changed by leaving. Both are
+        # a fresh sum rather than an adjustment, so neither can drift, and a
+        # fire two rooms back stops warming them the moment they are gone.
+        from world.gear import recompute, recompute_room
+
+        recompute(self)
+        recompute_room(source_location, ignoring=self)
 
         # You stood up to walk here: posture does not travel.
         from world.verbs import clear_on_move

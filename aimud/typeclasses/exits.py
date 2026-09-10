@@ -91,6 +91,18 @@ class AIExit(ObjectParent, DefaultExit):
         return found if found is not source_room else None
 
     def at_traverse(self, traversing_object, target_location, **kwargs):
+        # Before anything is built or entered: some states stop you leaving at
+        # all. Here rather than in `at_post_move`, because a step that never
+        # happens must not build the room on the far side of it -- and because
+        # blocking here is what lets a posture still end on movement while a
+        # rope does not, the one clearing after a step the other forbids.
+        from world import verbs
+
+        refusal = verbs.refuse(traversing_object, "prevents_moving")
+        if refusal:
+            traversing_object.msg(refusal)
+            return
+
         if not self.db.pending_generation:
             return super().at_traverse(traversing_object, target_location, **kwargs)
 

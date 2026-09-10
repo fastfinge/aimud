@@ -61,6 +61,49 @@ def apply(actor, room, effects, bound=None, world_root=None):
     return announcements
 
 
+#: Roles that mean several people rather than one thing.
+#:
+#: Every other role names a participant somebody typed -- the thing acted on,
+#: the thing used, the person spoken to. There was no way to say "and everyone
+#: standing here", so a fire could set the wood burning and could not warm the
+#: room, and a shout could not startle anybody who was not named in it.
+#:
+#: Two, because both are wanted and the difference is not a matter of taste: a
+#: fire warms whoever lit it, and a shout does not startle the one shouting.
+#:
+#: Deliberately confined to `set_state` and `set_trait` below. Destroying or
+#: moving everybody present is not a thing a verb should be able to say in one
+#: line, and a rule that means it can name them.
+PLURAL_ROLES = ("everyone", "others")
+
+
+def _everyone_in(room, actor, role):
+    """The characters a plural role refers to."""
+    from world.quests import is_person
+
+    if room is None:
+        return []
+    found = [obj for obj in room.contents if is_person(obj)]
+    if role == "others":
+        found = [obj for obj in found if obj is not actor]
+    return found
+
+
+def _resolve_many(effect, key, bound, room, actor):
+    """
+    Everyone or everything an effect refers to, as a list.
+
+    One element for the ordinary case, so callers that used to handle a single
+    object handle both by looping. A role naming nobody present gives an empty
+    list, and an effect on nobody is simply an effect that does nothing.
+    """
+    role = effect.get(key + "_role") or effect.get("role")
+    if role in PLURAL_ROLES:
+        return _everyone_in(room, actor, role)
+    found = _resolve(effect, key, bound, room, actor)
+    return [found] if found is not None else []
+
+
 def _resolve(effect, key, bound, room, actor):
     """
     Find the object an effect refers to.
@@ -183,37 +226,60 @@ def _apply_one(actor, room, effect, bound, world_root):
         # drains, a skill that goes rusty, a wound that closes.
         from world import traits
 
-        # Named roles are honoured, but a trait effect with nobody named is
-        # about whoever acted -- that is what it always means.
-        who = _resolve(effect, "name", bound, room, actor) or actor
-        if not traits.has_traits(who):
-            return None
+        # Named roles are honoured, and a plural one names the room's company
+        # -- a shout that costs everyone hearing it their composure. A trait
+        # effect with nobody named at all is about whoever acted, which is
+        # what it has always meant.
         slug = str(effect.get("trait", "")).strip()
         if not slug:
             return None
-        outcome = traits.adjust(
-            who, slug,
-            change=effect.get("change"),
-            set_to=effect.get("set_to"),
-            rate=effect.get("rate"),
-            world_root=world_root,
-        )
-        if outcome is None:
-            return None
-        # The character has already been told directly; the room is told only
-        # that something about them changed, never the figure itself.
+        for who in (_resolve_many(effect, "name", bound, room, actor)
+                    or [actor]):
+            if not traits.has_traits(who):
+                continue
+            traits.adjust(
+                who, slug,
+                change=effect.get("change"),
+                set_to=effect.get("set_to"),
+                rate=effect.get("rate"),
+                world_root=world_root,
+            )
+        # The characters have already been told directly; the room is told
+        # only that something about them changed, never the figure itself.
         return None
 
     if etype == "set_state":
-        obj = _resolve(effect, "name", bound, room, actor)
-        if obj is None:
+        # A list, because a role may name the room's whole company: lighting a
+        # fire makes the wood burn and everybody standing by it warm.
+        targets = _resolve_many(effect, "name", bound, room, actor)
+        if not targets:
             return None
         add, remove = [], []
         for slug in effect.get("add", []):
             add.append(verbs.register_state(world_root, str(slug)))
         for slug in effect.get("remove", []):
             remove.append(str(slug).lower().strip())
-        verbs.apply_states(obj, add=add, remove=remove, world_root=world_root)
+        from world import kinds
+
+        from world import gear
+
+        for obj in targets:
+            verbs.apply_states(obj, add=add, remove=remove,
+                               world_root=world_root)
+            # A lamp going out stops lighting whoever holds it, and a fire
+            # going out stops warming the room. Only for things whose worth is
+            # gated on a state, so the ordinary case costs one lookup.
+            if gear.gated_by(obj):
+                where = getattr(obj, "location", None)
+                if gear.condition(obj) == "present":
+                    gear.recompute_room(where)
+                elif where is not None:
+                    gear.recompute(where)
+            # What this sort of thing turns out to get up to. Both halves: a
+            # bottle that can be emptied is a bottle that can be full, and a
+            # rule written about bottles later should be shown both words
+            # rather than left to coin "drained" beside them.
+            kinds.note_state(world_root, obj.db.kinds, add + remove)
         return None
 
     if etype == "modify_room":

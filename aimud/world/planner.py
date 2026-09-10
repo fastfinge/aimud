@@ -253,7 +253,14 @@ def _step_towards_room(actor, room_name):
 
 
 def _step_towards_object(actor, obj_name):
-    name = (obj_name or "").lower()
+    name = (obj_name or "").strip().lower()
+    if not name:
+        # An empty name is in every string there has ever been, so this would
+        # otherwise answer "yes" for any room holding anything, and send a
+        # character to whichever one is nearest -- for ever, since arriving
+        # achieves nothing. Nothing to look for is not the same as something
+        # findable everywhere.
+        return None
 
     def matches(room):
         return any(name in obj.key.lower() for obj in room.contents)
@@ -278,6 +285,27 @@ def _for_condition(actor, world_root, condition):
     """
     ctype = condition.get("type")
     name = condition.get("object", "")
+
+    if not name and condition.get("kind"):
+        # A want may name a sort of thing rather than one thing -- "a cake",
+        # not "the chocolate cake". Testing whether it is met knows that;
+        # planning towards it did not, and every branch below is written round
+        # a name. So the kind is resolved to whichever one is nearest and the
+        # rest proceeds unchanged.
+        #
+        # Nothing anywhere of that sort means there is nothing to walk towards
+        # and no step to take, which the goal above will notice and spend its
+        # patience on. That is the honest answer: before this, an unfound kind
+        # left the name empty, and an empty name matches every object in the
+        # world -- so a character with no soju anywhere to find would set off
+        # towards the nearest room that had anything in it at all, arrive, and
+        # set off again.
+        from world.goals import find_of_kind
+
+        found = find_of_kind(world_root, actor, condition["kind"])
+        if found is None:
+            return None, None
+        name = found.key
 
     if ctype == "in_room":
         step = _step_towards_room(actor, condition.get("room", ""))

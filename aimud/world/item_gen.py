@@ -45,13 +45,22 @@ Respond with a single JSON object — no other text:
   "states": ["dusty"],
   "clothing_type": "",
   "trait_bonuses": {"defence": 2},
-  "bonus_when": "worn"
+  "bonus_when": "worn",
+  "bonus_while": ""
 }
-kind is the one common noun this thing IS, singular and lowercase, with every
-describing word stripped off: a "Blue Ceramic Cup" is a cup, a "Stained Slate
-Chalkboard" is a chalkboard, an "Iron Storm Lantern" is a lantern. It is what
-the thing has in common with every other one of its sort, and it is how the
-game knows that the blue cup and the red cup are two cups.
+kind is the common noun this thing IS, singular and lowercase. Strip the words
+that only describe it: a "Blue Ceramic Cup" is a cup, a "Stained Slate
+Chalkboard" is a chalkboard. It is what the thing has in common with every
+other one of its sort, and it is how the game knows the blue cup and the red
+cup are two cups.
+
+But keep any word that changes what the thing can DO, because everything of a
+kind shares one answer to that. An "Aerosol Can" is an "aerosol can" and not a
+"can" — a soup can is opened and emptied, an aerosol can is sprayed, and
+filing both under "can" makes the world think you can drink from a paint
+sprayer. Same for a "watering can", a "walking stick", a "fire door". When in
+doubt ask whether the plain noun would do the same things; if it would not,
+the word stays in the kind.
 
 qualifiers are the describing words you took off it — what makes this one
 different from the others of its kind. Colour, material, make, whose it is.

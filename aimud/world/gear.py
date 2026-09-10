@@ -37,7 +37,13 @@ from evennia.utils import logger
 #: carried -- anywhere about the person. For charms and burdens only: a thing
 #:            that works from inside a pack is the exception, not the rule,
 #:            and left to itself it lets somebody carry six of them.
-CONDITIONS = ("worn", "wielded", "carried")
+#: present -- lying in the same room, and doing it for everybody there. A fire
+#:            warms whoever is by it, whoever lit it and whoever walked in
+#:            afterwards, and stops the moment they leave. This is the one
+#:            condition that is not about a person's belongings at all, which
+#:            is why a room may carry bonuses of its own: a forge is warm
+#:            whether or not anything in it is.
+CONDITIONS = ("worn", "wielded", "carried", "present")
 
 DEFAULT_CONDITION = "carried"
 
@@ -91,9 +97,19 @@ def prompt_block(world_root):
         "  wielded — held in a hand. Weapons, tools, a raised lantern.\n"
         "  carried — merely about the person. Charms only; prefer the others,\n"
         "            or somebody will carry six of them at once.\n"
+        "  present — lying in the room, and doing it for everybody there. A\n"
+        "            fire, a stove, a lamp on a table, a draughty window. This\n"
+        "            is the one that works on people who never touched it, and\n"
+        "            it stops the moment they leave the room.\n"
         "An item given trait_bonuses and no bonus_when is judged by its own\n"
         "affordances, so a wearable thing counts when worn and a wieldable one\n"
         "when held.\n\n"
+        "bonus_while names a state the thing must be in before it is worth\n"
+        "anything: a lantern is only worth light while it is \"lit\", a stove\n"
+        "only warms while \"burning\". Leave it out for anything that works by\n"
+        "simply existing, which is most things. Use it whenever the object has\n"
+        "a condition that could be turned off — otherwise a lamp in a pack\n"
+        "shines as brightly as one alight.\n\n"
         + traits.vocabulary_block(
             world_root, "Traits this world already measures")
     )
@@ -153,14 +169,40 @@ def condition(obj):
     return DEFAULT_CONDITION
 
 
+def gated_by(obj):
+    """The state this item must be in before it is worth anything, or ""."""
+    return str(getattr(obj.db, "bonus_while", "") or "").lower().strip()
+
+
+def _gate_open(obj):
+    """
+    Whether a thing that only counts in some condition is in it.
+
+    An unlit lantern lights nobody, and that could not be said before: a bonus
+    applied whenever the thing was held, so a lamp in a pack was as good as one
+    burning. The gate names a state, and states are what the game already uses
+    for a condition that comes and goes.
+    """
+    from world import verbs
+
+    wanted = gated_by(obj)
+    return not wanted or wanted in verbs.states(obj)
+
+
 def applies(obj, character):
     """True when this item is doing something for this character right now."""
-    if obj is None or obj.location is not character:
-        return False
-    if not bonuses(obj):
+    if obj is None or not bonuses(obj) or not _gate_open(obj):
         return False
 
     where = condition(obj)
+    if where == "present":
+        # Not a belonging at all: it works for everybody in the room with it,
+        # and the room itself is allowed to be such a thing.
+        room = getattr(character, "location", None)
+        return obj is room or (room is not None and obj.location is room)
+
+    if obj.location is not character:
+        return False
     if where == "worn":
         return bool(obj.db.worn)
     if where == "wielded":
@@ -289,8 +331,16 @@ def total(character, ignoring=None):
 
     world_root = traits._world_root(character)
     found = {}
-    for obj in character.contents:
-        if obj is ignoring or not applies(obj, character):
+    # What they carry, and then what is simply here. A room contributes as a
+    # thing in its own right -- a forge is warm on its own account -- and so
+    # does anything lying in it that says it works for whoever is present.
+    room = getattr(character, "location", None)
+    sources = list(character.contents)
+    if room is not None:
+        sources.append(room)
+        sources.extend(room.contents)
+    for obj in sources:
+        if obj is ignoring or obj is character or not applies(obj, character):
             continue
         for slug, amount in bonuses(obj).items():
             slug = traits.resolve(world_root, slug)
@@ -298,6 +348,28 @@ def total(character, ignoring=None):
                 continue
             found[slug] = found.get(slug, 0.0) + amount
     return found
+
+
+def recompute_room(room, ignoring=None):
+    """
+    Redo the sums for everybody standing here.
+
+    Two things make this necessary and neither of them is a timer. Somebody
+    arrives or leaves, and their own totals change -- that is `recompute` on
+    one person. But a fire being lit changes what the room is worth to
+    everyone already in it, and there is nobody to hang that on.
+
+    Still a checkpoint rather than a tick: it runs when a thing changes, not
+    while it stays changed. A room where nothing happens costs nothing, which
+    is the same bargain the rest of the game makes.
+    """
+    from world.quests import is_person
+
+    if room is None:
+        return
+    for obj in list(room.contents):
+        if obj is not ignoring and is_person(obj):
+            recompute(obj)
 
 
 def recompute(character, ignoring=None):
