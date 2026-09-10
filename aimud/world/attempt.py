@@ -503,6 +503,21 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
                   release, allow_effects, world_root, waiter, guarded)
 
     def begin():
+        # What this verb takes, settled once. Until a generator is asked
+        # properly it is read off the first attempt that used it -- see
+        # `actions.observe` -- which is enough to turn the failure that
+        # matters into a sentence: a verb first typed with a noun and later
+        # typed bare used to reach a rule whose effects named a role nobody
+        # had bound, change nothing, and report success. `search` in the
+        # exported corpus does exactly that.
+        from world import actions
+
+        actions.observe(world_root, verb, bound)
+        wanted = actions.missing_role(world_root, verb, bound)
+        if wanted:
+            release(actions.asking_for(verb, wanted))
+            return
+
         key = verbs.rule_key(verb, bound)
 
         def learned(new_rule):
