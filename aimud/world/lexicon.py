@@ -104,8 +104,15 @@ def warm():
     half while the indices are built, and that second and a half should be
     spent while the server is starting rather than inside the first command
     somebody types.
+
+    The causation index is built here too, for the same reason and out of the
+    same pass: it walks every verb synset once, and doing that inside whichever
+    command first wanted a planner hint would be a visible pause for nothing.
     """
-    return _wordnet() is not None
+    ready = _wordnet() is not None
+    if ready:
+        _caused_by()
+    return ready
 
 
 def available():
@@ -664,6 +671,68 @@ def causes(verb, limit=3):
     """
     return _related_verbs(verb, "causes", limit, keep_self=True,
                           spread=4)
+
+
+#: The whole causation relation, inverted, built once and kept.
+#:
+#: None until somebody asks. WordNet holds about 220 `causes` pairs in total, so
+#: inverted it is a dict of a couple of hundred entries -- small enough to hold
+#: and far too small to be worth storing on disk. What it costs is one pass over
+#: the verb synsets, which `warm()` already pays for at startup.
+_CAUSED_BY = None
+
+
+def causing(word, limit=3):
+    """
+    The verbs that would bring `word` about, nearest first.
+
+    `causes` read backwards, and the direction that is actually useful to a
+    planner: to make something descend, drop it or lower it or fell it. The spec
+    is emphatic that this is **not** a test of whether two verbs are the same
+    word -- dropping and felling are not synonyms and nothing here claims they
+    are. It is a list of candidates for a world that has no rule about descending
+    and might be taught one.
+
+    Deliberately many-to-one. A condition has several ways to be brought about,
+    and that is the point: a caller takes the first that suits and the rest are
+    there when it does not.
+    """
+    wanted = word_of(str(word or "")) if word else ""
+    if not wanted:
+        return []
+    return list(_caused_by().get(wanted) or [])[:limit]
+
+
+def _caused_by():
+    """The inverted index, built on first use."""
+    global _CAUSED_BY
+    if _CAUSED_BY is not None:
+        return _CAUSED_BY
+
+    wordnet = _wordnet()
+    with _LOCK:
+        if _CAUSED_BY is not None:
+            return _CAUSED_BY
+        index = {}
+        if wordnet is not None:
+            try:
+                for synset in wordnet.all_synsets("v"):
+                    causer = word_of(synset.name())
+                    for caused in synset.causes():
+                        said = word_of(caused.name())
+                        # A verb that causes itself is the causative pair, and
+                        # it is no use as a candidate: a world with no way to
+                        # make something open does not need to be told to open
+                        # it, it needs the rule it has not got.
+                        if not said or said == causer:
+                            continue
+                        entry = index.setdefault(said, [])
+                        if causer not in entry:
+                            entry.append(causer)
+            except Exception as err:
+                logger.log_info(f"causation index unavailable ({err})")
+        _CAUSED_BY = index
+    return _CAUSED_BY
 
 
 def verb_senses(verb, limit=5):

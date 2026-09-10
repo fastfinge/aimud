@@ -672,6 +672,45 @@ The answer must be a word WordNet knows as a verb.
 `[A]` depth capping; `[B]` a verb proposed from a causative pair is attempted and
 learned.
 
+**Done, and it was fixing a real blindness rather than adding a feature.** The
+planner read `world_root.db.verb_rules` and nothing else, so **every check rule
+written since phase 7 was invisible to it**: it would propose launching a cold
+ship, watch the attempt be refused, and then blame the launch rule for not doing
+what it promised. `_candidates` now reads both stores, and
+`conditions_unmet_for` gathers the same check rules in the same order an actual
+attempt would, so the planner and the pipeline cannot come to disagree about why
+something is refused.
+
+Subgoals fall out of that: a verb whose preconditions are unmet is not discarded
+but becomes the question "what would meet them". `conditions.as_goal` is the new
+direction -- a check rule refuses in the condition language and the planner plans
+in the goal language, so a refusal has to be read back, naming whatever the role
+was bound to because `direct` means nothing to a planner looking at the world next
+turn and the ship does. Only the predicates a planner can actually advance are
+converted: `affords`, `able` and `reachable_by` describe the shape of a situation
+rather than something a character could go and change, and offering them as goals
+would send an NPC off to make a bottle drinkable.
+
+`MAX_SUBGOALS = 3`, and the reason to cap is trust rather than cost. Every link is
+read off an effect a model wrote, and this planner's whole safety argument is that
+it takes one step and looks again; a chain four deep built on four approximations
+is the long plan that fails silently at the end.
+
+**The causation index is built and is the spec's own example.** `lexicon.causing`
+inverts `causes` over the verb synsets once -- 1.9 seconds, 71 caused words, and
+"to make something descend: fell, lower". Built inside `warm()` out of the pass
+startup already pays for. A verb that causes itself is excluded: a world with no
+way to make something open does not need to be told to open it, it needs the rule
+it has not got.
+
+**Where the proposed verb is offered is a deliberate narrowing of the plan.**
+"Causative pairs propose a verb the world has never learned" costs a model call to
+find out whether the verb means anything, so it is offered through `advise`, to a
+person who can decide to spend it, and **never** through `plan_for`, which is what
+a character on a tick calls. A planner that bought rules on a timer is the clock
+this design keeps refusing, wearing a different hat. The note says plainly that
+nobody has tried the word, and a real step is always preferred to a guess.
+
 ### Phase 12 — `world/commonsense.py`
 
 *Spec §7.1. Independent of everything; deliberately last.*

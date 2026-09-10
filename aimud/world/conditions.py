@@ -1198,3 +1198,100 @@ def from_goals(conditions):
     for condition in (conditions or []):
         out.extend(from_goal(condition))
     return out
+
+
+def as_goal(condition, bound=None, actor=None):
+    """
+    One condition as a goal condition, or None when it cannot be one.
+
+    The other direction from `from_goal`, and the reason it is needed: a check
+    rule refuses an attempt in the condition language, and the planner plans in
+    the goal language. "A ship only launches under power" has to become the goal
+    "the ship is powered" before anything can work out that the step is `power`.
+
+    A role is resolved to whatever it was bound to, because a goal names its
+    subject -- `direct` means nothing to a planner looking at the world next
+    turn, and the ship does. A condition about a role nothing was bound to, or
+    about a zone or the world, has no goal form: there is no object to walk up to
+    and do something about, which is the honest answer rather than a guess.
+
+    Only the predicates a planner can actually advance are converted. `affords`,
+    `able`, `reachable_by` and the rest describe the shape of a situation rather
+    than something a character could go and change, and offering them as goals
+    would send an NPC off to make a bottle drinkable.
+    """
+    try:
+        condition = dict(condition)
+    except (TypeError, ValueError):
+        return None
+
+    name = _goal_subject_name(condition.get("subject"), bound, actor)
+    if name is None:
+        return None
+
+    predicate, value = predicate_of(condition)
+    if predicate in ("is", "lacks"):
+        listed = [str(s) for s in _listed(value) if s]
+        return {"type": "state", "object": name, predicate: listed} \
+            if listed else None
+    if predicate == "holds":
+        wanted = [str(s) for s in _listed(value) if s]
+        return {"type": "holds", "object": wanted[0]} if wanted else None
+    if predicate == "wears":
+        wanted = [str(s) for s in _listed(value) if s]
+        return {"type": "worn", "object": wanted[0]} if wanted else None
+    if predicate == "trait":
+        entry = {"type": "trait", "trait": str(value)}
+        for edge in ("min", "max"):
+            if condition.get(edge) is not None:
+                entry[edge] = condition[edge]
+        return entry
+    if predicate == "in_room":
+        return {"type": "in_room", "room": str(value)}
+    if predicate == "exists":
+        return {"type": "exists", "object": name} if bool(value) else None
+    if predicate == "gone":
+        return {"type": "gone", "object": name} if bool(value) else None
+    if predicate == "placed":
+        try:
+            where = dict(value)
+        except (TypeError, ValueError):
+            return None
+        for preposition, host in where.items():
+            return {"type": "placed", "object": name,
+                    "preposition": str(preposition), "host": str(host)}
+    return None
+
+
+def _goal_subject_name(subject, bound, actor):
+    """What to call a condition's subject in a goal, or None."""
+    if subject in (None, ""):
+        subject = "direct"
+    if isinstance(subject, str):
+        if subject == "actor":
+            return str(getattr(actor, "key", "") or "") if actor else ""
+        if subject in (HERE, WORLD):
+            return None              # not a thing anybody can act on
+        found = (bound or {}).get(subject)
+        return str(getattr(found, "key", "") or "") if found is not None \
+            else None
+    try:
+        wanted = dict(subject)
+    except (TypeError, ValueError):
+        return None
+    if "named" in wanted:
+        return str(wanted["named"])
+    # An enclosure or a zone is a place, and a place is not something a planner
+    # can walk up to and change.
+    return None
+
+
+def as_goals(conditions, bound=None, actor=None):
+    """Every condition that has a goal form, in order, skipping those that do not."""
+    found = []
+    for condition in (conditions or []):
+        wanted = as_goal(condition, bound, actor)
+        if wanted is not None:
+            found.append(wanted)
+    return found
+

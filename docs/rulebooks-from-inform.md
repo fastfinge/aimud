@@ -333,6 +333,14 @@ is what makes a world worth playing and what the planner exploits. "Achieves the
 same end" is not "is the same verb": poisoning and beheading both cause death and
 want different instruments, different preconditions and different narration.
 
+Built, as `lexicon.causing`, and used the way this paragraph says it should be:
+one pass over the verb synsets inverts the whole relation into 71 caused words --
+"descend" answered by `fell` and `lower`, which is the example this note was
+written around. It is a planner's index of candidates and never a synonym test. A
+verb that causes itself is left out, being the causative pair rather than a
+candidate: a world with no way to make something open does not need to be told to
+open it, it needs the rule it has not got.
+
 *Shared hypernyms -- "verbs that are ways of doing the same thing".* Worse. It
 does not recover the hand table at all (`examine`/`look` and `sniff`/`smell`
 share no hypernym either), and what it does group is exactly what must stay
