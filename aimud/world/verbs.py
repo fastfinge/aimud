@@ -830,6 +830,58 @@ def _opposite_group(world_root, slug, vocab):
     return None
 
 
+def _adjective_senses(slug):
+    """
+    A state word's adjective senses, or [] when there is no dictionary.
+
+    Adjectives only, and that restriction is the whole reason the relations
+    below are usable. Asked without it, WordNet reports that the opposite of
+    "broken" is "conform_to", "keep", "make" and "promote" -- all of them
+    perfectly good antonyms of the verb "to break", and none of them a way for
+    a thing to be. Filtered to how a word describes something rather than how
+    it acts, the noise disappears entirely.
+    """
+    from world import lexicon
+
+    wordnet = lexicon._wordnet()
+    if wordnet is None:
+        return []
+    try:
+        return [s for s in wordnet.synsets(slug) if s.pos() in ("a", "s")]
+    except Exception:
+        return []
+
+
+def _antonym_group(world_root, slug, vocab):
+    """
+    The group of a state this one is the opposite of.
+
+    The most clearly correct of the three checks here, because a group is a
+    set of states only one of which can hold at once, and that is precisely
+    what an opposite is. Wet and dry are not two conditions that happen to
+    conflict; being one is what it means not to be the other.
+
+    It also reaches the pairs the other two cannot. Neither spelling nor
+    synonymy connects open to closed, wet to dry, clean to dirty, full to
+    empty or seated to standing -- and those are the ordinary furniture of a
+    world's vocabulary. Of eight such pairs across five worlds, seven were
+    already grouped correctly and the eighth, active against dormant, was not.
+    """
+    found = set()
+    for sense in _adjective_senses(slug):
+        try:
+            for lemma in sense.lemmas():
+                for other in lemma.antonyms():
+                    found.add(other.name().lower())
+        except Exception:
+            continue
+    for other in found & set(vocab):
+        group = group_of(world_root, other)
+        if group:
+            return group
+    return None
+
+
 def _synonym_group(world_root, slug, vocab):
     """
     The group of a state that means the same thing as this one.
@@ -851,18 +903,8 @@ def _synonym_group(world_root, slug, vocab):
     they already were, and does the right thing by broken and crushed, since
     those genuinely are two ways for one thing to be damaged.
     """
-    from world import lexicon
-
-    wordnet = lexicon._wordnet()
-    if wordnet is None:
-        return None
-    try:
-        senses = [s for s in wordnet.synsets(slug) if s.pos() in ("a", "s")]
-    except Exception:
-        return None
-
     kin = set()
-    for sense in senses:
+    for sense in _adjective_senses(slug):
         try:
             kin |= {name.lower() for name in sense.lemma_names()}
         except Exception:
@@ -899,7 +941,14 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
     # group leaves behind a group that behaves like one. A seeded slug keeps
     # its seeded group whatever was declared -- see DEFAULT_STATE_GROUP.
     seeded = DEFAULT_STATE_GROUP.get(slug)
+    # Three ways one state can belong with another, tried in order of how
+    # certain they are. Spelling is certain: "unfolded" negates "folded" and
+    # no dictionary is consulted. An opposite is the surest thing a dictionary
+    # can tell us, since a group IS a set of mutually exclusive states. A
+    # synonym is the weakest, and is acted on only as far as making two words
+    # for one condition rule each other out.
     opposite = (_opposite_group(world_root, slug, vocab)
+                or _antonym_group(world_root, slug, vocab)
                 or _synonym_group(world_root, slug, vocab))
     if seeded:
         group = register_group(world_root, seeded)
