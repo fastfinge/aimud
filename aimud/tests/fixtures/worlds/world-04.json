@@ -1,0 +1,1427 @@
+{
+ "engine": "verb_rules",
+ "exported": "2026-09-10",
+ "kind_specs": {
+  "bill": {
+   "affordances": {
+    "read": true,
+    "unfold": true
+   },
+   "holds": []
+  },
+  "bottle": {
+   "affordances": {
+    "break": true,
+    "drink": true,
+    "get": true,
+    "open": true,
+    "pour": true,
+    "pull": true,
+    "push": true,
+    "repair": true,
+    "shake": true,
+    "swing": true,
+    "throw": true
+   },
+   "holds": [
+    "in"
+   ],
+   "states": [
+    "broken",
+    "empty",
+    "grasped",
+    "open",
+    "shut"
+   ]
+  },
+  "can": {
+   "affordances": {
+    "buy": true,
+    "crush": true,
+    "drink": true,
+    "get": true,
+    "open": true,
+    "spray": true
+   },
+   "holds": [
+    "in"
+   ],
+   "states": [
+    "empty",
+    "open",
+    "shut"
+   ]
+  },
+  "can.n.01": {
+   "affordances": {
+    "get": true,
+    "spray": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "counter.n.01": {
+   "affordances": {
+    "get": false,
+    "search": true
+   },
+   "holds": [
+    "on"
+   ]
+  },
+  "cup": {
+   "affordances": {
+    "crush": true,
+    "drink": false,
+    "get": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "cup.n.01": {
+   "affordances": {
+    "drink": true,
+    "get": true
+   },
+   "holds": [
+    "in"
+   ],
+   "states": [
+    "empty"
+   ]
+  },
+  "floor": {
+   "affordances": {
+    "get": false,
+    "wash": true
+   },
+   "holds": [
+    "on"
+   ]
+  },
+  "flyer": {
+   "affordances": {
+    "get": true,
+    "read": true,
+    "tear": true
+   },
+   "holds": []
+  },
+  "glowstick": {
+   "affordances": {
+    "get": true,
+    "snap": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "headband": {
+   "affordances": {
+    "get": true,
+    "snap": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "ice.n.01": {
+   "affordances": {
+    "eat": true,
+    "get": true
+   },
+   "holds": []
+  },
+  "key.n.01": {
+   "affordances": {
+    "get": true
+   },
+   "holds": []
+  },
+  "keycard": {
+   "affordances": {
+    "swipe": true
+   },
+   "holds": []
+  },
+  "machine.n.01": {
+   "affordances": {
+    "open": false,
+    "read": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "patch": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "photo": {
+   "affordances": {
+    "burn": true,
+    "dry": true,
+    "get": true,
+    "tear": true,
+    "wash": true
+   },
+   "holds": [],
+   "states": [
+    "clean",
+    "dirty",
+    "dry",
+    "sticky",
+    "wet"
+   ]
+  },
+  "shell": {
+   "affordances": {
+    "get": true,
+    "hear": true,
+    "search": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "shoe": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "sunglass": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "top": {
+   "affordances": {
+    "get": true,
+    "rip": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "vape": {
+   "affordances": {
+    "smoke": true
+   },
+   "holds": [],
+   "states": [
+    "used"
+   ]
+  },
+  "visitor": {
+   "affordances": {
+    "feel": true,
+    "get": false,
+    "search": true,
+    "speak": true
+   },
+   "holds": []
+  },
+  "wristband": {
+   "affordances": {
+    "get": true,
+    "tear": true,
+    "wear": true
+   },
+   "holds": []
+  }
+ },
+ "label": "world-04",
+ "rooms": 11,
+ "rule_failures": {},
+ "state_groups": {
+  "bonds": {
+   "ends_on_move": true,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "cleanliness": {
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "coating": {
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "foldedness": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "fullness": {
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "integrity": {
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "openness": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "posture": {
+   "ends_on_move": true,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "search_status": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "smell": {
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "usage": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "wetness": {
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  }
+ },
+ "state_vocabulary": {
+  "broken": {
+   "conflicts": [],
+   "group": "integrity",
+   "means": "shattered or violently fractured, often leaving sharp edges"
+  },
+  "clean": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "free from dirt, marks, or stains"
+  },
+  "crumpled": {
+   "conflicts": [],
+   "group": "foldedness",
+   "means": "crushed or squeezed into a compact, wrinkled mass"
+  },
+  "dirty": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "covered or marked with an unclean substance"
+  },
+  "dry": {
+   "conflicts": [],
+   "group": "wetness",
+   "means": "free from moisture or liquid"
+  },
+  "embraced": {
+   "conflicts": [],
+   "group": "bonds",
+   "means": "held closely in someone's arms"
+  },
+  "empty": {
+   "conflicts": [],
+   "group": "fullness",
+   "means": "contains no liquid"
+  },
+  "folded": {
+   "conflicts": [],
+   "group": "foldedness",
+   "means": "bent or turned over upon itself to take up less space"
+  },
+  "full": {
+   "conflicts": [],
+   "group": "fullness",
+   "means": "filled to capacity with liquid or contents"
+  },
+  "giving_piggyback": {
+   "conflicts": [],
+   "group": "bonds",
+   "means": "carrying another person on their back"
+  },
+  "grasped": {
+   "conflicts": [],
+   "group": "bonds",
+   "means": "firmly held, dragged, or pulled close by someone else"
+  },
+  "intact": {
+   "conflicts": [],
+   "group": "integrity",
+   "means": "whole and undamaged"
+  },
+  "open": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "unsealed or unfastened, allowing access to its contents"
+  },
+  "piggybacking": {
+   "conflicts": [],
+   "group": "posture",
+   "means": "riding on another person's back"
+  },
+  "scented": {
+   "conflicts": [],
+   "group": "smell",
+   "means": "emitting a noticeable and pleasant fragrance"
+  },
+  "searched": {
+   "conflicts": [],
+   "group": "search_status",
+   "means": "has been thoroughly checked or patted down for hidden items"
+  },
+  "shimmering": {
+   "conflicts": [],
+   "group": "coating",
+   "means": "covered in a fine, reflective layer of glitter or body shimmer"
+  },
+  "shut": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "sealed or closed, preventing access to its contents"
+  },
+  "sticky": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "covered in a viscous, tacky, or adhesive substance"
+  },
+  "unfolded": {
+   "conflicts": [],
+   "group": "foldedness",
+   "means": "spread out flat from a previously bent or crushed shape"
+  },
+  "used": {
+   "conflicts": [],
+   "group": "usage",
+   "means": "has been utilized at least once and is no longer fresh"
+  },
+  "wet": {
+   "conflicts": [],
+   "group": "wetness",
+   "means": "covered or saturated with liquid"
+  }
+ },
+ "trait_vocabulary": {
+  "arousal": {
+   "base": 0,
+   "max": 100,
+   "means": "the degree of physical and sexual excitement",
+   "min": 0,
+   "name": "Arousal",
+   "trait_type": "counter"
+  },
+  "hydration": {
+   "base": 100,
+   "max": 100,
+   "means": "the amount of fluids in a character's body",
+   "min": 0,
+   "name": "Hydration",
+   "trait_type": "gauge"
+  },
+  "intoxication": {
+   "base": 0,
+   "descs": {
+    "0": "sober",
+    "100": "blackout",
+    "20": "buzzed",
+    "40": "tipsy",
+    "70": "drunk",
+    "90": "wasted"
+   },
+   "max": 100,
+   "means": "the degree of inebriation from consuming alcohol",
+   "min": 0,
+   "name": "Intoxication",
+   "trait_type": "gauge"
+  },
+  "money": {
+   "base": 50000,
+   "means": "available currency for purchases",
+   "min": 0,
+   "name": "Money",
+   "trait_type": "counter"
+  },
+  "stamina": {
+   "base": 100,
+   "means": "the physical energy a character has available for exertion",
+   "min": 0,
+   "name": "Stamina",
+   "trait_type": "gauge"
+  }
+ },
+ "verb_rules": {
+  "break#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "broken"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "break"
+     ],
+     "lacks": [
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "buy": {
+   "check": null,
+   "effects": [
+    {
+     "change": -1000,
+     "role": "actor",
+     "trait": "money",
+     "type": "set_trait"
+    },
+    {
+     "name_role": "direct",
+     "to": "actor",
+     "type": "move_object"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "money": {
+       "min": 1000
+      }
+     }
+    },
+    "source": {
+     "is": [
+      "lit"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "buy#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "Buying an item requires a shop, vendor, or vending machine, making it dependent on a specific location or context rather than a universal rule for the object.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "climb#target": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "piggybacking"
+     ],
+     "role": "actor",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "giving_piggyback"
+     ],
+     "role": "target",
+     "type": "set_state"
+    },
+    {
+     "change": -5,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "lacks": [
+      "piggybacking"
+     ],
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "target": {
+     "lacks": [
+      "giving_piggyback"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "drink": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "role": "source",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "source"
+     ]
+    },
+    "source": {
+     "has": [
+      "drink"
+     ],
+     "is": [
+      "open"
+     ],
+     "lacks": [
+      "empty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "drink#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "change": 15,
+     "role": "actor",
+     "trait": "intoxication",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "drink"
+     ],
+     "lacks": [
+      "empty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "drink#source": {
+   "check": null,
+   "effects": [
+    {
+     "change": 20,
+     "role": "actor",
+     "trait": "hydration",
+     "type": "set_trait"
+    },
+    {
+     "add": [
+      "empty"
+     ],
+     "role": "source",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "source"
+     ]
+    },
+    "source": {
+     "has": [
+      "drink"
+     ],
+     "lacks": [
+      "empty",
+      "shut"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "dry#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "dry"
+     ],
+     "remove": [
+      "wet"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "is": [
+      "wet"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "greet#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "greet"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "hug#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "embraced"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "embraced"
+     ],
+     "role": "actor",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "jump#target": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "piggybacking"
+     ],
+     "role": "actor",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "giving_piggyback"
+     ],
+     "role": "target",
+     "type": "set_state"
+    },
+    {
+     "change": -5,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "target": {
+     "lacks": [
+      "giving_piggyback"
+     ],
+     "trait": {
+      "stamina": {
+       "min": 0
+      }
+     }
+    }
+   },
+   "valid": true
+  },
+  "kiss#direct": {
+   "check": null,
+   "effects": [
+    {
+     "change": 5,
+     "role": "direct",
+     "trait": "arousal",
+     "type": "set_trait"
+    },
+    {
+     "change": 5,
+     "role": "actor",
+     "trait": "arousal",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "laugh": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "laugh#target": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "open": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [
+      "shut"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "open"
+     ],
+     "is": [
+      "shut"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [
+      "shut"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "open"
+     ],
+     "lacks": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "pour": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "remove": [
+      "full"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "wet",
+      "sticky"
+     ],
+     "remove": [
+      "dry"
+     ],
+     "role": "target",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "pour"
+     ],
+     "lacks": [
+      "empty",
+      "shut"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "pour#container,direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "full"
+     ],
+     "role": "container",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "container": {
+     "lacks": [
+      "full"
+     ]
+    },
+    "direct": {
+     "lacks": [
+      "empty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "pour#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "remove": [
+      "full"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "pour"
+     ],
+     "is": [
+      "open"
+     ],
+     "lacks": [
+      "empty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "pull#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "grasped"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "change": -2,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "grasped"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "push#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "Pushing an inanimate object like a water bottle is a transient physical interaction that does not alter its condition or have lasting consequences in the world.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "push#direct,target": {
+   "check": null,
+   "effects": [],
+   "reason": "Pressing a liquor bottle against a detached hydrogel patch is a nonsensical interaction caused by the parser mistakenly matching a body part to an item in the room.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "read": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "read"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "read"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "repair#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "intact"
+     ],
+     "remove": [
+      "broken"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "repairable"
+     ],
+     "is": [
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "searched"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "search#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "searched"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "search"
+     ],
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "shake#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "smoke": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "used"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "smoke"
+     ],
+     "lacks": [
+      "empty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "smoke#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "used"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "smoke"
+     ],
+     "lacks": [
+      "empty",
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "spray#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty",
+      "used"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "shimmering",
+      "scented"
+     ],
+     "role": "actor",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "sprayable"
+     ],
+     "lacks": [
+      "empty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "swing#direct": {
+   "check": null,
+   "effects": [
+    {
+     "change": -1,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "throw#direct": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "to": "room",
+     "type": "move_object"
+    },
+    {
+     "add": [
+      "empty"
+     ],
+     "remove": [
+      "full"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "throw"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "throw#direct,target": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "preposition": "on",
+     "to": "target",
+     "type": "move_object"
+    },
+    {
+     "add": [
+      "broken"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "unfold": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "unfolded"
+     ],
+     "remove": [
+      "crumpled",
+      "folded"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "unfold"
+     ],
+     "lacks": [
+      "unfolded"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wash#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean",
+      "wet"
+     ],
+     "remove": [
+      "sticky",
+      "dirty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  }
+ }
+}

@@ -16,6 +16,7 @@ is over.
 
 import contextlib
 import json
+import pathlib
 from unittest import mock
 
 from twisted.python.failure import Failure
@@ -123,3 +124,36 @@ class FakeAccount:
         if not self._key:
             raise ValueError("No OpenRouter API key set.")
         return self._key
+
+
+#: Where the exported corpus lives. See tests/fixtures/export.py for what is in
+#: it and why it is not the worlds themselves.
+FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
+
+
+def worlds():
+    """
+    Every exported world's registers, as plain dicts, by label.
+
+    Real generated data, which is the point: a test that asserts against an
+    example somebody invented proves something about the example. These came out
+    of worlds that were played.
+
+    The corpus is interim -- it was produced by the engine the rulebook change
+    replaces -- so a test reading it should assert a *property* over the whole
+    corpus ("every requires block evaluates") rather than a fact about one
+    record ("rule 47 wants powered"). The first survives the corpus being
+    replaced; the second is forty rewrites.
+    """
+    found = {}
+    for path in sorted((FIXTURES / "worlds").glob("world-*.json")):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        found[record["label"]] = record
+    return found
+
+
+def all_rules():
+    """(label, key, rule) for every rule in the corpus, valid or refused."""
+    for label, record in worlds().items():
+        for key, rule in sorted(record["verb_rules"].items()):
+            yield label, key, rule

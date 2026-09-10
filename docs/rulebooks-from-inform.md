@@ -791,9 +791,9 @@ gated today.
 **What is not known yet.** The downloads page states neither the compressed size
 nor the edge count, so the builder should report what it actually built rather
 than this note guessing. The decisive measurement is a replay: take the 64
-affordance words and 307 kinds the five worlds invented, and ask what fraction of
-each kind's settled affordance map `ReceivesAction`, `UsedFor` and `CapableOf`
-between them would have proposed, after folding through
+affordance words and every settled kind in the exported corpus, and ask what
+fraction of each kind's settled affordance map `ReceivesAction`, `UsedFor` and
+`CapableOf` between them would have proposed, after folding through
 `affordances.known_verb()` -- its values are participles, "eaten" and "burned",
 which that function already handles. Three numbers decide it: coverage,
 precision, and novelty against the twelve-bucket `_BUCKET_AFFORDANCES` table.

@@ -1,0 +1,35 @@
+{
+ "engine": "verb_rules",
+ "exported": "2026-09-10",
+ "kind_specs": {
+  "fragment": {
+   "affordances": {
+    "get": true
+   },
+   "holds": []
+  },
+  "shard": {
+   "affordances": {
+    "get": true,
+    "wield": true
+   },
+   "holds": []
+  }
+ },
+ "label": "world-06",
+ "rooms": 3,
+ "rule_failures": {},
+ "state_groups": {},
+ "state_vocabulary": {},
+ "trait_vocabulary": {},
+ "verb_rules": {
+  "wield#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "'wield' is a built-in verb that the game engine already handles; it cannot be defined as a rule.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  }
+ }
+}

@@ -82,10 +82,17 @@ code's own contracts, and each one is a test in tier A or B.
    nothing has to be re-entered.
 
    The distinction that matters: **the existing rule corpus stays valuable as
-   test data even though the worlds do not.** 326 rules, 307 kinds and seven
-   state vocabularies are the best regression and measurement material
+   test data even though the worlds do not.** 326 rules, 58 settled kinds and
+   81 invented states are the best regression and measurement material
    available, and reading them as fixtures asks nothing of the worlds that
    produced them (§3, 0.6).
+
+   (The "307 kinds" quoted in `kinds-and-affordances.md` is a different figure
+   and not this corpus: it was measured *before* kinds existed, by counting the
+   head nouns of 724 objects to project how many kinds they would settle into.
+   What the database actually holds now is 58 `kind_specs`, because three of the
+   seven worlds predate the change and the rest are young. Worth keeping
+   straight, since one number is a projection and the other is a count.)
 
 ---
 

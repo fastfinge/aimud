@@ -1,0 +1,4636 @@
+{
+ "engine": "verb_rules",
+ "exported": "2026-09-10",
+ "kind_specs": {},
+ "label": "world-03",
+ "rooms": 25,
+ "rule_failures": {},
+ "state_groups": {
+  "binding_status": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "cleanliness": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "comprehension": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "fire": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "fullness": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "harvest_status": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "illumination": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "integrity": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "life_status": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "magical_charge": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "marking": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "openness": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "poison_status": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "posture": {
+   "ends_on_move": true,
+   "exclusive": true
+  },
+  "search_status": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "security": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "sweat": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "wedge_status": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "wetness": {
+   "ends_on_move": false,
+   "exclusive": true
+  }
+ },
+ "state_vocabulary": {
+  "bound": {
+   "conflicts": [],
+   "group": "binding_status",
+   "means": "wrapped or tied securely with bindings, cords, or wraps"
+  },
+  "broken": {
+   "conflicts": [],
+   "group": "integrity",
+   "means": "shattered, ruptured, or otherwise damaged beyond normal use"
+  },
+  "burning": {
+   "conflicts": [],
+   "group": "fire",
+   "means": "actively on fire"
+  },
+  "charged": {
+   "conflicts": [],
+   "group": "magical_charge",
+   "means": "crackling or glowing with magical energy"
+  },
+  "clean": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "free of dirt"
+  },
+  "closed": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "shut, preventing access to the inside"
+  },
+  "cracked": {
+   "conflicts": [],
+   "group": "integrity",
+   "means": "fractured but still in one piece"
+  },
+  "crushed": {
+   "conflicts": [],
+   "group": "integrity",
+   "means": "compressed forcefully so as to break, destroy, or severely deform"
+  },
+  "dead": {
+   "conflicts": [],
+   "group": "life_status",
+   "means": "no longer living"
+  },
+  "deciphered": {
+   "conflicts": [],
+   "group": "comprehension",
+   "means": "the meaning, pattern, or contents have been successfully translated and understood"
+  },
+  "defaced": {
+   "conflicts": [],
+   "group": "marking",
+   "means": "deliberately damaged or vandalized to destroy its original markings or meaning"
+  },
+  "dirty": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "covered in dirt"
+  },
+  "dormant": {
+   "conflicts": [],
+   "group": "magical_charge",
+   "means": "inactive but capable of holding magic"
+  },
+  "dry": {
+   "conflicts": [],
+   "group": "wetness",
+   "means": "free of moisture"
+  },
+  "empty": {
+   "conflicts": [],
+   "group": "fullness",
+   "means": "having nothing left inside"
+  },
+  "faded": {
+   "conflicts": [],
+   "group": "magical_charge",
+   "means": "depleted of magical energy"
+  },
+  "full": {
+   "conflicts": [],
+   "group": "fullness",
+   "means": "filled to capacity"
+  },
+  "glowing": {
+   "conflicts": [],
+   "group": "illumination",
+   "means": "emitting light"
+  },
+  "harvested": {
+   "conflicts": [],
+   "group": "harvest_status",
+   "means": "has been stripped of its useful materials, crops, or produce"
+  },
+  "locked": {
+   "conflicts": [],
+   "group": "security",
+   "means": "secured by a lock or mechanism and unable to be opened"
+  },
+  "marked": {
+   "conflicts": [],
+   "group": "marking",
+   "means": "bearing visible signs, symbols, or drawings"
+  },
+  "open": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "not shut, allowing access to the inside or contents"
+  },
+  "poisoned": {
+   "conflicts": [],
+   "group": "poison_status",
+   "means": "coated or infused with a toxic substance"
+  },
+  "sealed": {
+   "conflicts": [],
+   "group": "security",
+   "means": "secured tightly, preventing opening without breaking or forcing the seal"
+  },
+  "searched": {
+   "conflicts": [],
+   "group": "search_status",
+   "means": "has been examined closely for hidden items or compartments"
+  },
+  "seated": {
+   "conflicts": [],
+   "group": "posture",
+   "means": "sitting down"
+  },
+  "shiny": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "polished and highly reflective"
+  },
+  "shut": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "closed, preventing flow or access"
+  },
+  "sticky": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "coated in a tacky or adhesive substance"
+  },
+  "sweaty": {
+   "conflicts": [],
+   "group": "sweat",
+   "means": "covered in sweat"
+  },
+  "wedged": {
+   "conflicts": [],
+   "group": "wedge_status",
+   "means": "jammed tightly with an object to force or hold it open"
+  },
+  "wet": {
+   "conflicts": [],
+   "group": "wetness",
+   "means": "covered in water"
+  }
+ },
+ "trait_vocabulary": {
+  "arcana": {
+   "base": 0,
+   "descs": {
+    "0": "uninitiated",
+    "10": "apprentice",
+    "30": "adept",
+    "60": "master"
+   },
+   "means": "understanding and manipulation of magical forces",
+   "min": 0,
+   "name": "Arcana",
+   "trait_type": "counter"
+  },
+  "health": {
+   "base": 100,
+   "means": "physical well-being and life force",
+   "min": 0,
+   "name": "Health",
+   "trait_type": "gauge"
+  },
+  "mana": {
+   "base": 50,
+   "means": "magical energy available to be spent",
+   "min": 0,
+   "name": "Mana",
+   "trait_type": "gauge"
+  },
+  "perception": {
+   "base": 10,
+   "means": "the ability to notice hidden, obscure, or subtle details",
+   "name": "Perception",
+   "trait_type": "counter"
+  },
+  "stamina": {
+   "base": 100,
+   "means": "physical energy and endurance",
+   "min": 0,
+   "name": "Stamina",
+   "trait_type": "gauge"
+  },
+  "strength": {
+   "base": 10,
+   "descs": {
+    "10": "capable",
+    "15": "strong",
+    "20": "formidable",
+    "5": "feeble"
+   },
+   "means": "physical power and muscle",
+   "min": 0,
+   "name": "Strength",
+   "trait_type": "static"
+  }
+ },
+ "verb_rules": {
+  "adjust#direct:breakable,edible": {
+   "check": null,
+   "effects": [],
+   "reason": "A fleshy spore-bulb has no dials, straps, or moving parts to adjust.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "adjust#direct:flammable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "wearable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "apply#direct:drinkable|target:breakable,edible": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "type": "destroy_object"
+    },
+    {
+     "add": [
+      "wet",
+      "charged"
+     ],
+     "remove": [
+      "dry",
+      "faded",
+      "dormant"
+     ],
+     "role": "target",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "apply#direct:flammable,readable,wearable|target:container,flammable,openable": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "preposition": "on",
+     "to": "target",
+     "type": "move_object"
+    },
+    {
+     "add": [
+      "bound"
+     ],
+     "role": "target",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "apply#direct:readable|target:breakable,edible": {
+   "check": null,
+   "effects": [],
+   "reason": "Applying a solid token to a squishy bulb is a highly specific puzzle interaction rather than a general rule for how these types of objects behave.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "bathe#container:climbable,container,sittable,surface": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean",
+      "wet"
+     ],
+     "remove": [
+      "sweaty"
+     ],
+     "role": "actor",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "container": {
+     "has": [
+      "container"
+     ],
+     "lacks": [
+      "empty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "brace#direct:breakable,edible|instrument:wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "Bracing a small, squishy bulb with a walking stick is a highly specific action for a particular puzzle or scenario, not a general rule applicable to all similar objects.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "break#direct:breakable,container,drinkable,openable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "broken",
+      "empty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "breakable"
+     ],
+     "lacks": [
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "break#direct:sittable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "broken"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "breakable"
+     ],
+     "lacks": [
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "break#direct:sittable,surface|instrument:wieldable": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "critical_failure": [
+     {
+      "add": [
+       "broken"
+      ],
+      "role": "instrument",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "broken"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "instrument"
+     ],
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "breakable"
+     ],
+     "lacks": [
+      "broken"
+     ]
+    },
+    "instrument": {
+     "lacks": [
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "charge#direct:readable": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "arcana"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "mana",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "mana",
+      "type": "set_trait"
+     },
+     {
+      "add": [
+       "charged"
+      ],
+      "remove": [
+       "faded",
+       "dormant"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "mana": {
+       "min": 10
+      }
+     }
+    },
+    "direct": {
+     "lacks": [
+      "charged"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "chisel#direct:breakable,readable": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "broken"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "chisel"
+     ],
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "breakable"
+     ],
+     "lacks": [
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "chisel#direct:pryable,searchable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "critical_failure": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "critical_success": [
+     {
+      "add": [
+       "broken"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "cracked"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "chisel"
+     ],
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "chiselable"
+     ],
+     "lacks": [
+      "cracked",
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "chisel#direct:readable": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "add": [
+       "cracked"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "defaced",
+       "broken",
+       "faded"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "chisel"
+     ],
+     "trait": {
+      "stamina": {
+       "min": 10
+      }
+     }
+    },
+    "direct": {
+     "lacks": [
+      "defaced",
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "chisel#direct:sittable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "critical_success": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     },
+     {
+      "add": [
+       "cracked"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ],
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     },
+     {
+      "add": [
+       "marked"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "chisel"
+     ],
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "lacks": [
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "close#direct:container,openable,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "closed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "close#direct:flammable,openable,readable,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "closed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "close#direct:openable,readable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "closed"
+     ],
+     "remove": [
+      "open"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "is": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "crack#direct:sittable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 20.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "cracked"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "cracked",
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "crush#direct:crushable,edible,flammable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "crushed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "crushable"
+     ],
+     "lacks": [
+      "crushed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "crush#direct:wieldable": {
+   "check": {
+    "against": null,
+    "difficulty": 10.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "crushed"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -2,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "lacks": [
+      "crushed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "dip#container:climbable,container,sittable,surface|direct:container,flammable,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "wet",
+      "full"
+     ],
+     "remove": [
+      "dry",
+      "empty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "container": {
+     "has": [
+      "container"
+     ],
+     "is": [
+      "wet"
+     ]
+    },
+    "direct": {
+     "has": [
+      "container"
+     ],
+     "lacks": [
+      "full"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "drink#direct:breakable,container,drinkable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "drinkable"
+     ],
+     "lacks": [
+      "empty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "drink#direct:container,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "container"
+     ],
+     "lacks": [
+      "empty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "drink#source:container,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "role": "source",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "source": {
+     "has": [
+      "container"
+     ],
+     "lacks": [
+      "empty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "eat#direct:edible": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "type": "destroy_object"
+    },
+    {
+     "change": 10,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "edible"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "embed#container:breakable,edible|direct:readable": {
+   "check": null,
+   "effects": [],
+   "reason": "The verb 'embed' is just another way of placing or inserting an item into something, which the game already handles.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "feel#direct:breakable,climbable,sittable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "feel#direct:breakable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "feel#direct:climbable,readable,sittable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "feel#direct:container,flammable,openable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "feel#direct:flammable,readable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "feel#direct:openable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "feel#direct:readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "feel#direct:sittable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "fill#direct:container,flammable,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "full"
+     ],
+     "remove": [
+      "empty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "container"
+     ],
+     "lacks": [
+      "full"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "fill#direct:container,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "Filling a container requires a source of liquid, meaning this action only makes sense in specific locations like a fountain or river unless a source object is provided.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "find#direct:flammable,readable,wet_able": {
+   "check": null,
+   "effects": [],
+   "reason": "An object must already be visible and in scope to be targeted by a command, meaning it is already found; to learn more about it, you must 'read' or 'examine' it.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "finish#direct:climbable,sittable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "A physical piece of furniture like a counter cannot be 'finished'; this verb applies to tasks, meals, or creations rather than existing surfaces.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:breakable,climbable,sittable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already handles standard inventory verbs like 'get'.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:breakable,container,surface,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already knows how to pick up and take items, so 'get' is a native command that does not need a custom rule.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:breakable,flammable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles picking up items with its own built-in get, take, and grab commands.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:breakable,meltable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "The engine already handles picking things up and putting them in inventory, so 'get' is not a verb you define.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:breakable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already handles getting and taking items, so this does not need a custom rule.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:container": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles taking and getting objects, so this verb does not need a custom rule.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:container,flammable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already natively handles picking items up with the 'get' command.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:container,movable,wet_able,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already knows how to handle taking or picking up objects, so this verb does not need to be defined.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:crushable,flammable,stainable,throwable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already handles taking objects into inventory, so defining a 'get' or 'take' verb rule is not allowed.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:crushable,flammable,stainable,throwable|source:plain": {
+   "check": null,
+   "effects": [],
+   "reason": "Taking and getting objects is handled natively by the game engine.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:edible,flammable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles taking and getting objects, so this does not need a custom rule.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:edible,flammable,scatterable,throwable,wet_able|source:edible": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles the verb 'get' natively.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:flammable,openable,readable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles 'get' as a built-in inventory command.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:flammable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles taking items natively, so 'get' is not a verb you define.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:openable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already handles the verb 'get' for picking items up.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles 'get' as a built-in inventory command.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "give#direct:crushable,flammable,stainable,throwable|target:plain": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles 'give', as it tracks inventory and moving items between characters.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "give#direct:readable|target:searchable,talkable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles the verb 'give' for transferring items between characters.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "give#direct:wearable|target:readable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles giving items to other characters.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "go#direct:climbable,sittable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "The player was attempting directional movement, which is not a generic action that can be performed directly on a physical object like a terrace.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "grind#direct:wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "crushed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "change": -5,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "lacks": [
+      "crushed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "harvest#direct:edible,flammable,scatterable,throwable,wet_able|source:edible": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "to": "actor",
+     "type": "move_object"
+    },
+    {
+     "add": [
+      "harvested"
+     ],
+     "role": "source",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "source": {
+     "lacks": [
+      "harvested"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "hear#target:climbable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "hear#target:sittable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "hold#direct:breakable": {
+   "check": null,
+   "effects": [],
+   "reason": "Holding an item in hand is already handled by the game engine and is not a verb you define.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "kill#direct:plain": {
+   "check": {
+    "against": {
+     "role": "direct",
+     "trait": "strength"
+    },
+    "difficulty": null,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "health",
+      "type": "set_trait"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "dead"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "dead"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "lay#direct:breakable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "Laying an object down is a basic placement action already handled by the game's built-in commands like put, place, or drop.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "lay#direct:flammable|target:breakable,container,surface,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "Placing an object on a surface is already handled by the game's built-in commands like put or place.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "lay#direct:flammable|target:flammable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles putting things on surfaces, so 'lay' is not valid as a synonym for 'put' or 'place'.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "light#direct:crushable,flammable,stainable,throwable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "burning"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "flammable"
+     ],
+     "lacks": [
+      "burning"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "look#container:pryable,searchable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already handles looking at and into things.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "look#direct:breakable,container,openable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already knows how to look at and inspect objects.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "look#direct:breakable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles looking at and inspecting things natively.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "look#direct:breakable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already knows how to handle looking at and inspecting things, so this does not need a custom rule.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "look#direct:container,flammable,openable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already handles looking at and inspecting objects.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "look#direct:flammable,readable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already knows how to handle looking at and examining things.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "look#direct:plain": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already natively handles looking and examining things.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "look#target:breakable,climbable,sittable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles the 'look' command internally.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "look#target:breakable,container,drinkable,openable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles looking at and examining objects, so a custom rule is not needed.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "look#target:climbable,container,openable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already knows how to look at things, so this does not need a custom rule.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "look#target:container,flammable,openable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already knows how to look at things.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "look#target:pryable,searchable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already handles looking at things natively.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "mark#direct:breakable,climbable,surface|instrument:breakable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "marked"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "instrument"
+     ]
+    },
+    "direct": {
+     "has": [
+      "surface"
+     ],
+     "lacks": [
+      "marked"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "mark#direct:breakable,surface,throwable,wet_able,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "marked"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "marked"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "mark#direct:climbable,surface|instrument:breakable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "marked"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "instrument"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "match#direct:breakable,edible|target:readable": {
+   "check": null,
+   "effects": [],
+   "reason": "Matching a specific item to a set of sigils is a unique puzzle interaction for this particular scenario, not a general rule applicable to every object of this kind.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "match#direct:breakable,readable|target:flammable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "Comparing two objects to see if their symbols, shapes, or properties correspond is a simple investigative action that produces information without altering the world state.",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "match#direct:readable,touchable|target:flammable,openable,readable,wieldable": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "deciphered"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    },
+    "target": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:breakable,drinkable,openable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open",
+      "locked"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:climbable,container,openable,surface": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [
+      "shut",
+      "closed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open",
+      "locked"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:container": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open",
+      "locked"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:container,flammable,openable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open",
+      "locked"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:container,flammable,openable,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open",
+      "locked"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:container,openable,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [
+      "closed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "is": [
+      "closed"
+     ],
+     "lacks": [
+      "locked"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:flammable,openable,readable,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [
+      "shut",
+      "closed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open",
+      "locked"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:openable,readable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [
+      "closed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:sittable,surface": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [
+      "closed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "is": [
+      "closed"
+     ],
+     "lacks": [
+      "locked"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "order#direct:breakable,container,drinkable": {
+   "check": null,
+   "effects": [],
+   "reason": "Ordering a drink is a transaction with a vendor or establishment, not a universal property of the drink itself, and only makes sense in specific locations like a tavern.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "order#direct:container,drinkable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "Ordering a drink is a transaction with a server or bartender, not an action you perform directly on the drink itself.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "order#direct:edible,flammable": {
+   "check": null,
+   "effects": [],
+   "reason": "Ordering an item implies a transaction that only makes sense in a specific location like a tavern or shop, making it context-dependent rather than a rule for the object itself.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "pee#container:container,flushable,openable,sittable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "container": {
+     "lacks": [
+      "closed",
+      "shut"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "peek#container:sittable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "place#direct:brewable,edible,flammable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already handles placing, putting, and dropping items, so 'place' is a built-in command rather than a custom verb to define.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "place#direct:flammable|target:container,movable,surface,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already knows how to place things on surfaces and in containers.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "pour#direct:breakable,drinkable,openable|target:crushable,edible,flammable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "remove": [
+      "full"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "poisoned"
+     ],
+     "role": "target",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "lacks": [
+      "empty",
+      "shut",
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "probe#direct:breakable,edible": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "add": [
+       "searched",
+       "broken"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "breakable"
+     ],
+     "lacks": [
+      "searched",
+      "broken"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "probe#direct:climbable,container,openable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "critical_failure": [
+     {
+      "change": -20,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "failure": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "probe#direct:climbable,container,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 10.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -2,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "container"
+     ],
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "probe#direct:container": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "searchable"
+     ],
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "probe#direct:crushable,flammable,wearable": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "health",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "probe#direct:crushable,flammable,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "searched"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "probe#direct:wieldable": {
+   "check": {
+    "against": null,
+    "difficulty": 10.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -2,
+      "role": "actor",
+      "trait": "health",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "pry#direct:climbable,container,openable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "open"
+      ],
+      "remove": [
+       "shut",
+       "locked"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 10
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "is": [
+      "shut"
+     ],
+     "lacks": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "pry#direct:openable": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "open"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 10
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "pry#direct:pryable,searchable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "open"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 10
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "pryable"
+     ],
+     "lacks": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "pry#direct:sittable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "critical_failure": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     },
+     {
+      "add": [
+       "broken"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ],
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "open"
+      ],
+      "remove": [
+       "closed",
+       "locked"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "is": [
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "push#container:breakable,edible|direct:readable": {
+   "check": null,
+   "effects": [],
+   "reason": "Pushing an object into another is just a way of inserting or putting it there, which is already handled natively by the game.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "push#direct:readable|target:breakable,edible": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "charged",
+      "sticky"
+     ],
+     "remove": [
+      "dormant",
+      "clean"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "faded"
+     ],
+     "remove": [
+      "glowing"
+     ],
+     "role": "target",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "put#direct:container,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "The engine already handles putting items in or on things natively.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "reach#direct:container": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "health",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "affordances": [],
+      "description": "A heavy silver coin bearing an unfamiliar crest.",
+      "location": "actor",
+      "name": "tarnished silver coin",
+      "states": [
+       "dirty"
+      ],
+      "takeable": true,
+      "type": "create_object"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "container"
+     ],
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:breakable,meltable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:breakable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:climbable,container,openable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:climbable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "read#direct:flammable,openable,readable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:flammable,openable,readable,wieldable|target:crushable,edible,flammable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:flammable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:flammable,readable,wet_able": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:openable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ],
+     "lacks": [
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:openable,readable|target:breakable,drinkable,openable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ],
+     "lacks": [
+      "closed",
+      "shut"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:readable,touchable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "remove#direct:crushable,flammable,stainable,throwable": {
+   "check": null,
+   "effects": [],
+   "reason": "The verb 'remove' is a built-in command already handled by the game engine, so it cannot be redefined as a custom rule.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "retrieve#direct:breakable,flammable,wearable|source:container,flammable,openable": {
+   "check": null,
+   "effects": [],
+   "reason": "Retrieving an item is just a way of saying to take it in hand, which the game already handles natively.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "retrieve#direct:crushable,edible,flammable,wieldable|source:container": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "to": "actor",
+     "type": "move_object"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "source": {
+     "lacks": [
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "seal#container:breakable,container,drinkable,openable|direct:edible": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "preposition": "in",
+     "to": "container",
+     "type": "move_object"
+    },
+    {
+     "add": [
+      "closed"
+     ],
+     "remove": [
+      "open",
+      "empty"
+     ],
+     "role": "container",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "container": {
+     "has": [
+      "container",
+      "openable"
+     ],
+     "is": [
+      "open"
+     ],
+     "lacks": [
+      "broken",
+      "full"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "seal#direct:climbable,container,openable,surface": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "closed",
+      "sealed"
+     ],
+     "remove": [
+      "open"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "sealed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "seal#direct:container,flammable,openable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "closed",
+      "sealed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "sealed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:breakable,climbable,sittable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -2,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:climbable,container,openable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "affordances": [],
+      "description": "A forgotten, tarnished gold coin that was hidden out of sight.",
+      "location": "actor",
+      "name": "tarnished gold coin",
+      "states": [],
+      "takeable": true,
+      "type": "create_object"
+     },
+     {
+      "change": -1,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:climbable,container,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -2,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     },
+     {
+      "affordances": [],
+      "description": "A heavy silver coin bearing the faded profile of an unknown monarch.",
+      "location": "actor",
+      "name": "ancient silver coin",
+      "states": [],
+      "takeable": true,
+      "type": "create_object"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:climbable,cuttable,flammable,sittable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "affordances": [],
+      "description": "A small, tarnished coin dropped by a previous delver.",
+      "location": "actor",
+      "name": "forgotten coin",
+      "states": [],
+      "takeable": true,
+      "type": "create_object"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:climbable,surface": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "searched"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:container": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:container,flammable,openable": {
+   "check": {
+    "against": null,
+    "difficulty": 10.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -2,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:flammable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "search#direct:openable": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -2,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     },
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ],
+    "success": [
+     {
+      "change": -2,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     },
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "affordances": [],
+      "description": "A small, darkened coin that fell into a crack ages ago.",
+      "location": "actor",
+      "name": "tarnished coin",
+      "states": [],
+      "takeable": true,
+      "type": "create_object"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:openable,readable": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "affordances": [],
+      "description": "A small, aged gold coin stamped with the worn profile of a forgotten dungeon king.",
+      "location": "actor",
+      "name": "tarnished gold coin",
+      "states": [],
+      "takeable": true,
+      "type": "create_object"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "is": [
+      "open"
+     ],
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:plain": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "searched"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:readable,sittable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "affordances": [],
+      "description": "A small, solid gold coin stamped with an ancient crest.",
+      "location": "room",
+      "name": "gold coin",
+      "states": [
+       "shiny"
+      ],
+      "takeable": true,
+      "type": "create_object"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:sittable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#none": {
+   "check": null,
+   "effects": [],
+   "reason": "Searching without specifying a target implies searching the surrounding room, and these rules cannot reference or interact with locations.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "search#target:climbable,flammable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "shine#direct:container,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "shiny"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "lacks": [
+      "shiny"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "sit#target:readable,sittable,surface": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "seated"
+     ],
+     "role": "actor",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "target": {
+     "has": [
+      "sittable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "slam#direct:container,wieldable|target:climbable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "Slamming an object onto a surface is just a forceful way of putting it there, which is already handled by the game's standard placement verbs.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "sprinkle#direct:breakable,drinkable,openable|target:crushable,edible,flammable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "poisoned"
+     ],
+     "role": "target",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "is": [
+      "open"
+     ],
+     "lacks": [
+      "empty"
+     ]
+    },
+    "target": {
+     "lacks": [
+      "poisoned"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "steady#direct:breakable,edible": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "sweep#direct:drinkable,flammable|instrument:container,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "A solid brass mortar and pestle is a grinding tool and cannot be used to sweep up a liquid spill.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "tap#direct:breakable,edible": {
+   "check": {
+    "against": null,
+    "difficulty": 10.0,
+    "trait": "arcana"
+   },
+   "effects": {
+    "failure": [
+     {
+      "add": [
+       "faded"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "mana",
+      "type": "set_trait"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "faded"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": 10,
+      "role": "actor",
+      "trait": "mana",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "is": [
+      "charged"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "tap#direct:breakable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "tap#direct:sittable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "tap#direct:surface": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "trace#direct:breakable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "trace#direct:climbable,surface": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "marked"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "instrument"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "trace#direct:readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "trace#direct:readable,touchable": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "arcana"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "mana",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "charged"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "mana": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "touchable"
+     ],
+     "lacks": [
+      "charged"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "trace#direct:readable,touchable|instrument:wieldable": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "arcana"
+   },
+   "effects": {
+    "failure": [
+     {
+      "add": [
+       "faded"
+      ],
+      "remove": [
+       "charged"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "health",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "faded"
+      ],
+      "remove": [
+       "charged"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": 1,
+      "role": "actor",
+      "trait": "arcana",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "instrument"
+     ]
+    },
+    "direct": {
+     "has": [
+      "touchable"
+     ],
+     "is": [
+      "charged"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "trace#direct:wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "Tracing the shape, lines, or engravings on an object is a natural physical interaction that anyone holding it can perform.",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "trace#direct:wieldable": {
+   "check": {
+    "against": null,
+    "difficulty": 10.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -1,
+      "role": "actor",
+      "trait": "health",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "deciphered"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "lacks": [
+      "deciphered"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "turn#direct:openable,turnable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [
+      "closed",
+      "shut"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "turnable",
+      "openable"
+     ],
+     "lacks": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wash#direct:container,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean",
+      "wet"
+     ],
+     "remove": [
+      "dirty",
+      "sticky",
+      "dry"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "lacks": [
+      "clean"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wash#direct:plain|instrument:breakable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean",
+      "wet"
+     ],
+     "remove": [
+      "sweaty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "wet"
+     ],
+     "remove": [],
+     "role": "instrument",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "instrument"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wash#direct:plain|instrument:breakable,flammable,wet_able": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean",
+      "wet"
+     ],
+     "remove": [
+      "sweaty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "instrument"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wash#direct:plain|instrument:wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean",
+      "wet"
+     ],
+     "remove": [
+      "dirty",
+      "sweaty",
+      "dry"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "instrument"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wash#direct:wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean",
+      "wet"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "clean"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wedge#container:climbable,container,openable,surface|direct:wieldable": {
+   "check": {
+    "against": null,
+    "difficulty": 15.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     },
+     {
+      "name_role": "direct",
+      "to": "room",
+      "type": "move_object"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "open"
+      ],
+      "remove": [
+       "shut",
+       "locked"
+      ],
+      "role": "container",
+      "type": "set_state"
+     },
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "container": {
+     "has": [
+      "openable"
+     ],
+     "is": [
+      "shut"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wedge#container:container|direct:wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles putting items into containers; 'wedge' in this context is just a way of saying 'put' or 'insert'.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "wedge#container:openable|direct:wieldable": {
+   "check": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "name_role": "direct",
+      "preposition": "in",
+      "to": "container",
+      "type": "move_object"
+     },
+     {
+      "add": [
+       "open",
+       "wedged"
+      ],
+      "remove": [
+       "shut"
+      ],
+      "role": "container",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ],
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "container": {
+     "has": [
+      "openable"
+     ],
+     "is": [
+      "shut"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "weigh#direct:flammable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "weigh#direct:plain": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "weigh#direct:throwable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "weild#direct:wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "Taking an item in hand is handled by the core inventory system, so misspelled or synonymous commands for it cannot be redefined as custom rules.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "wipe#direct:climbable,surface": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean",
+      "dry"
+     ],
+     "remove": [
+      "dirty",
+      "sticky",
+      "wet"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "write#container:flammable,openable,readable,wieldable|direct:readable,touchable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "marked"
+     ],
+     "role": "container",
+     "type": "set_state"
+    }
+   ],
+   "reason": "Writing notes or transcribing details about an object into a journal allows a character to record their findings, provided the journal is open to write in.",
+   "repeatable": true,
+   "requires": {
+    "container": {
+     "is": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "write#direct:readable|target:climbable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "You cannot write a physical object like a stone plaque onto a wall; writing requires a tool like chalk or charcoal.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "write#target:climbable,surface": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "marked"
+     ],
+     "remove": [],
+     "role": "target",
+     "type": "set_state"
+    },
+    {
+     "affordances": [
+      "readable"
+     ],
+     "description": "Scrawled writing left by a passing adventurer.",
+     "location": "room",
+     "name": "graffiti",
+     "states": [],
+     "takeable": false,
+     "type": "create_object"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "target": {
+     "has": [
+      "surface"
+     ]
+    }
+   },
+   "valid": true
+  }
+ }
+}
