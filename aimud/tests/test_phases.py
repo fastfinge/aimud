@@ -18,7 +18,7 @@ from evennia.utils.test_resources import EvenniaTest
 from tests.support import FakeAccount, as_json, immediately, replying
 from world import rulebooks as R
 from world import attempt as attempt_mod
-from world import kinds, standard_rules, verbs
+from world import kinds, standard_rules, verb_gen, verbs
 
 
 @tag("world")
@@ -40,6 +40,20 @@ class RunningTheAttempt(EvenniaTest):
         self.obj1.db.kinds = ["book.n.01"]
         for verb in ("read", "order"):
             kinds.admit(self.root, self.obj1.db.kinds, verb, True)
+
+    def learned(self, verb, rule, *roles):
+        """
+        What this world already worked out about a verb, written down.
+
+        A learned verb rule is one rule per verb per world -- the old shape,
+        which `rulebooks.from_verb_rule` bridges into phase rules. Stored
+        directly here rather than scripted as a model reply, because since
+        phase 8 nothing asks for that shape: a verb nobody has settled is
+        asked for rulebook rules instead. What is under test is the bridge,
+        and the bridge reads what is stored.
+        """
+        shape = {role: True for role in (roles or ("direct",))}
+        verb_gen.store_rule(self.root, verbs.rule_key(verb, shape), rule)
 
     def try_it(self, raw, *replies):
         """One attempt, with the model answering from a script."""
@@ -120,19 +134,16 @@ class TheGuardThatBecameARule(RunningTheAttempt):
 class ThePhasesInOrder(RunningTheAttempt):
 
     def test_a_precondition_from_the_learned_rule_refuses(self):
-        said = self.try_it(
-            "read book",
-            as_json({"valid": True,
-                     "requires": {"direct": {"is": ["open"]}},
-                     "effects": []}))
-        self.assertIn("not open", said)
+        self.learned("read", {"valid": True,
+                              "requires": {"direct": {"is": ["open"]}},
+                              "effects": []})
+        self.assertIn("not open", self.try_it("read book"))
 
     def test_a_verb_the_world_refused_says_why(self):
-        said = self.try_it(
-            "order obj",
-            as_json({"valid": False,
-                     "reason": "Ordering only makes sense in a tavern."}))
-        self.assertIn("tavern", said)
+        self.learned("order", {
+            "valid": False,
+            "reason": "Ordering only makes sense in a tavern."})
+        self.assertIn("tavern", self.try_it("order obj"))
 
     def test_an_instead_rule_replaces_the_action(self):
         R.add(self.root, R.blank(
@@ -188,10 +199,11 @@ class ThePhasesInOrder(RunningTheAttempt):
         self.assertNotIn("dog_eared", verbs.states(self.obj1))
 
     def test_the_learned_rules_effects_still_land(self):
-        self.try_it(
-            "read book",
-            as_json({"valid": True,
-                     "effects": [{"type": "set_state", "role": "direct",
-                                  "add": ["read"]}]}),
-            as_json({"actor": "You read it.", "room": "{actor} reads."}))
+        self.learned("read", {"valid": True,
+                              "effects": [{"type": "set_state",
+                                           "role": "direct",
+                                           "add": ["read"]}]})
+        self.try_it("read book",
+                    as_json({"actor": "You read it.",
+                             "room": "{actor} reads."}))
         self.assertIn("read", verbs.states(self.obj1))

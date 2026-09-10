@@ -247,7 +247,7 @@ def predicate_of(condition):
     """Which predicate a condition uses, and what it names."""
     for name in ("is", "lacks", "affords", "kind", "holds", "wears",
                  "placed", "trait", "in_room", "exists", "gone",
-                 "able", "reachable_by", "never"):
+                 "able", "reachable_by", "never", "unbound"):
         if name in condition:
             return name, condition[name]
     return "", None
@@ -414,6 +414,9 @@ def _abstractly(condition):
         return f"{who} can reach {subject}"
     if name == "never":
         return str(condition.get("because") or "this cannot be done")
+    if name == "unbound":
+        return (f"nobody said {subject}" if value
+                else f"somebody said {subject}")
     return ""
 
 
@@ -704,6 +707,25 @@ GATES = {"acting": "prevents_acting", "moving": "prevents_moving",
          "speaking": "prevents_speaking"}
 
 
+def _p_unbound(subject, value, condition, ctx, mood):
+    """
+    Whether nobody named this role.
+
+    What a redirect is guarded by, and the reason it needs saying rather than
+    being inferred: "powering aboard a ship means powering the ship" must fire
+    when somebody typed `power`, and must NOT fire when they typed `power
+    datapad`. Both are the same verb in the same room; the difference is only
+    whether a role was filled.
+
+    Distinct from `exists`, which asks whether the thing a condition names is
+    anywhere to be found. This asks whether anybody named one.
+    """
+    met = not subject.found if bool(value) else subject.found
+    if mood == WANT:
+        return met, "say what you mean"
+    return met, ""
+
+
 def _p_never(subject, value, condition, ctx, mood):
     """
     A condition that cannot be met, carrying its own reason.
@@ -758,7 +780,13 @@ def _p_reachable(subject, value, condition, ctx, mood):
         return True, ""
     if subject.obj is who.obj:
         return True, ""
-    within = subject.obj in relations.reachable(who.obj, include_self=True)
+    # The place you are in is within reach of you, and so is the place that
+    # place is part of. `relations.reachable` searches downwards -- your
+    # pockets, the floor, inside an open box -- and never upwards, because
+    # nothing needed it to until a rule could act on a room. Aboard a ship,
+    # `power` means the ship: the ship is not in the room, it is the room.
+    within = (subject.obj in relations.reachable(who.obj, include_self=True)
+              or subject.obj in relations.enclosing(who.obj))
     if mood == WANT:
         return within, f"get within reach of {subject.name()}"
     return within, f"{_cap(subject.name())} is out of reach."
@@ -779,6 +807,7 @@ _PREDICATES = {
     "able": _p_able,
     "reachable_by": _p_reachable,
     "never": _p_never,
+    "unbound": _p_unbound,
 }
 
 

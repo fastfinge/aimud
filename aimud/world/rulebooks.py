@@ -427,6 +427,15 @@ def from_verb_rule(rule, action, world_root=None):
         rule = dict(rule or {})
     except (TypeError, ValueError):
         return []
+    if not rule:
+        # No learned rule at all, which the pipeline says by handing over an
+        # empty one. Distinct from a learned rule that happens to do nothing:
+        # a world that decided `sing` has no effects still decided something,
+        # and its carry-out is what stops the verb being asked about again.
+        # Bridging {} would put a nameless do-nothing carry-out in every book
+        # -- harmless while a real rule outranks it, and a verb that silently
+        # succeeds when one does not.
+        return []
     if not rule.get("valid", True):
         return [blank(
             action=action, phase=CHECK, scope={WORLD: True},

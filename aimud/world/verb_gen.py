@@ -490,6 +490,53 @@ def _apply_renames(data, renames):
     return data
 
 
+def state_block(world_root, bound=None):
+    """
+    The states this world already has, as a generator should be shown them.
+
+    Shared by both generators, because they choose from the same vocabulary
+    and the whole reason to show it is that a word not shown gets coined
+    again under another name.
+
+    Each state is shown with the group it belongs to, and the groups are
+    listed again on their own, because a group can only be reused if it can
+    be seen. Left to guess, one rule called a group "power_state" and the
+    next "charge_status" -- so a thing could be active and uncharged at the
+    same moment, neither name knowing the other existed.
+
+    The conditions things of this sort have actually been in come first and
+    separately. A world's vocabulary runs to sixty states before long, and
+    sixty undifferentiated lines are not read -- which is how "shut" got
+    coined beside "closed" and "dormant" beside "inactive". The handful that
+    have ever been true of a bottle are worth putting in front of the rest.
+    """
+    from world import verbs
+
+    vocab = verbs.vocabulary(world_root)
+
+    def line(slug, info):
+        return (f"  {slug}: {info.get('means','')}"
+                f" (group: {verbs.group_of(world_root, slug) or 'none'};"
+                f" cancels: {', '.join(info.get('conflicts') or []) or 'nothing'})")
+
+    familiar = _states_of_kinds(world_root, bound)
+    near_text = "\n".join(line(slug, vocab[slug])
+                          for slug in sorted(familiar & set(vocab)))
+    vocab_text = "\n".join(
+        line(slug, info) for slug, info in sorted(vocab.items())
+        if slug not in familiar
+    ) or "  (none yet)"
+    group_text = ", ".join(sorted(verbs.groups(world_root))) or "(none yet)"
+
+    return (
+        (f"Conditions things of this sort have been in before, and the ones "
+         f"to reuse if any of them fit:\n{near_text}\n\n"
+         if near_text else "")
+        + f"Every other state this world uses:\n{vocab_text}\n\n"
+        + f"State groups already in use, to be reused rather than renamed: "
+          f"{group_text}\n\n")
+
+
 def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_error):
     """Async. Work out what this verb does to things of this kind."""
     model = account.model_for("commands")
@@ -500,31 +547,6 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
         return
 
     from world import checks, traits, verbs
-
-    vocab = verbs.vocabulary(world_root)
-    # Each state is shown with the group it belongs to, and the groups are
-    # listed again on their own, because a group can only be reused if it can
-    # be seen. Left to guess, one rule called a group "power_state" and the
-    # next "charge_status" -- so a thing could be active and uncharged at the
-    # same moment, neither name knowing the other existed.
-    def _line(slug, info):
-        return (f"  {slug}: {info.get('means','')}"
-                f" (group: {verbs.group_of(world_root, slug) or 'none'};"
-                f" cancels: {', '.join(info.get('conflicts') or []) or 'nothing'})")
-
-    # The conditions things of this sort have actually been in, shown first
-    # and separately. A world's vocabulary runs to sixty states before long,
-    # and sixty undifferentiated lines are not read -- which is how "shut" got
-    # coined beside "closed" and "dormant" beside "inactive". The handful that
-    # have ever been true of a bottle are worth putting in front of the rest.
-    familiar = _states_of_kinds(world_root, bound)
-    near_text = "\n".join(_line(slug, vocab[slug])
-                          for slug in sorted(familiar & set(vocab)))
-    vocab_text = "\n".join(
-        _line(slug, info) for slug, info in sorted(vocab.items())
-        if slug not in familiar
-    ) or "  (none yet)"
-    group_text = ", ".join(sorted(verbs.groups(world_root))) or "(none yet)"
 
     messages = [
         {"role": "system",
@@ -538,13 +560,8 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
                 f"The player typed: '{raw}'\n"
                 f"Verb: {verb}\n\n"
                 f"Things involved:\n{_describe_objects(bound, actor)}\n\n"
-                + (f"Conditions things of this sort have been in before, and "
-                   f"the ones to reuse if any of them fit:\n{near_text}\n\n"
-                   if near_text else "")
-                + f"Every other state this world uses:\n{vocab_text}\n\n"
-                f"State groups already in use, to be reused rather than "
-                f"renamed: {group_text}\n\n"
-                f"{traits.vocabulary_block(world_root)}"
+                + state_block(world_root, bound)
+                + f"{traits.vocabulary_block(world_root)}"
                 f"{_kindred_block(world_root, verb, bound)}"
                 f"Define '{verb}' as a rule for objects like these."
             ),

@@ -128,6 +128,47 @@ class Predicates(EvenniaTest):
         self.assertTrue(C.evaluate({}, self.ctx))
 
 
+
+@tag("world")
+class WhatIsWithinReach(EvenniaTest):
+    """
+    Reach used to look only downwards -- your pockets, the floor, inside an
+    open box -- because nothing could act on a place. A rule can, now: aboard
+    a ship, `power` means powering the ship, and the ship is not something in
+    the room. It is the room.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room2.db.world_root = self.root
+        self.char1.move_to(self.room2, quiet=True)
+
+    def reaches(self, thing):
+        ctx = C.context(bound={"direct": thing}, actor=self.char1,
+                        world_root=self.root)
+        return C.evaluate({"subject": "direct", "reachable_by": "actor"}, ctx)
+
+    def test_the_place_you_are_standing_in(self):
+        self.assertTrue(self.reaches(self.room2))
+
+    def test_and_the_place_that_place_is_part_of(self):
+        """A pod inside a ship: the ship is still within reach."""
+        self.room2.location = self.room1
+        self.assertTrue(self.reaches(self.room1))
+
+    def test_but_not_a_place_you_are_not_in(self):
+        self.assertFalse(self.reaches(self.room1))
+
+    def test_a_thing_on_the_floor_is_still_reachable(self):
+        self.obj1.move_to(self.room2, quiet=True)
+        self.assertTrue(self.reaches(self.obj1))
+
+    def test_and_a_thing_in_another_room_is_still_not(self):
+        self.obj1.move_to(self.room1, quiet=True)
+        self.assertFalse(self.reaches(self.obj1))
+
 @tag("world")
 class SubjectsNobodyNamed(EvenniaTest):
     """The half that `launch` needed."""

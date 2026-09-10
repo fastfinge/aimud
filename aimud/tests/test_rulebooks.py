@@ -361,3 +361,61 @@ class RulesLeftBehind(EvenniaTest):
     def test_a_scope_reads_as_a_place(self):
         self.assertEqual(R.said_scope({"world": True}), "everywhere")
         self.assertEqual(R.said_scope({"kind": "sword.n.01"}), "any sword")
+
+
+@tag("unit")
+class TheBridgeFromLearnedRules(SimpleTestCase):
+    """
+    A verb rule is preconditions plus effects for a whole world, which is
+    exactly a stack of world-scope checks and one world-scope carry-out.
+    """
+
+    def phases(self, rule):
+        return [(r["phase"], r["name"])
+                for r in R.from_verb_rule(rule, "power")]
+
+    def test_a_learned_rule_becomes_checks_and_a_carry_out(self):
+        found = self.phases({"valid": True,
+                             "requires": {"direct": {"is": ["intact"]}},
+                             "effects": [{"type": "set_state",
+                                          "role": "direct",
+                                          "add": ["powered"]}]})
+        self.assertEqual([phase for phase, _n in found],
+                         [R.CHECK, R.CARRY_OUT])
+
+    def test_a_rule_that_does_nothing_still_settles_the_verb(self):
+        """`sing` has no effects, and deciding that was still a decision."""
+        found = self.phases({"valid": True, "effects": []})
+        self.assertEqual([phase for phase, _n in found], [R.CARRY_OUT])
+
+    def test_but_no_rule_at_all_bridges_to_nothing(self):
+        """
+        The pipeline says "nothing learned" by handing over an empty rule.
+        Bridging it would put a nameless do-nothing carry-out in every book,
+        and a verb that silently succeeds is the failure this design is for.
+        """
+        self.assertEqual(R.from_verb_rule({}, "power"), [])
+        self.assertEqual(R.from_verb_rule(None, "power"), [])
+
+    def test_a_refusal_becomes_a_check_nothing_can_pass(self):
+        found = R.from_verb_rule({"valid": False, "reason": "No such thing."},
+                                 "power")
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["phase"], R.CHECK)
+        self.assertIn("never", found[0]["conditions"][0])
+
+    def test_preconditions_of_a_shape_nobody_expected_ask_for_nothing(self):
+        """
+        A learned rule is stored model output, and `requires` has arrived as a
+        list of conditions rather than a mapping of roles. Read as a mapping
+        that is an AttributeError inside a gather, which takes down the whole
+        attempt instead of refusing one rule.
+        """
+        found = self.phases({"valid": True,
+                             "requires": [{"subject": "direct",
+                                           "is": ["intact"]}],
+                             "effects": [{"type": "set_state",
+                                          "role": "direct",
+                                          "add": ["powered"]}]})
+        self.assertEqual([phase for phase, _n in found], [R.CARRY_OUT])
+

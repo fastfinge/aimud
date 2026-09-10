@@ -233,7 +233,7 @@ def to_take(world_root, action, bound, actor):
 
 def prompt_block(world_root, action):
     """
-    How to ask for a declaration, for the generator that will (phase 8).
+    How to ask for a declaration. See `learn` below for who asks it.
 
     Kept beside the record it describes, the way `gear.prompt_block` and
     `affordances.PROMPT` are, so that the shape asked for and the shape read
@@ -263,3 +263,83 @@ def prompt_block(world_root, action):
     if asked:
         lines += ["", asked.rstrip()]
     return "\n".join(lines) + "\n"
+
+
+def learn(account, world_root, action, bound, actor, on_success,
+          on_error=None):
+    """
+    Async. Settle what an action takes, and answer with the declaration.
+
+    The first of the two questions a new verb costs, and the cheaper one: what
+    roles it takes, how near they must be, and which may be left unsaid. Asked
+    before anything is asked about what the verb *does*, because the answer
+    changes that question -- a `direct` declared optional is what lets `power`
+    typed bare reach an `instead` rule instead of being told "power what?".
+
+    `observe` is what happens when this cannot be asked, and the two must not
+    both fire: a declaration is settled once and first one wins, so an observed
+    arity read off one attempt would lock out the real answer for good. That is
+    why the caller asks before observing rather than after.
+
+    Never fails the attempt, and so `on_error` never fires: it is in the
+    signature because every other generator has one and a caller should not
+    have to remember which. A verb whose declaration could not be had -- no
+    key, no network, an answer that was not one -- falls back to what the
+    attempt itself shows, which is what the world did before anybody asked at
+    all. Refusing the verb instead would make a new world unplayable over a
+    question it can manage without.
+    """
+    from world import llm, lore, model_json, verbs
+
+    action = verbs.canonical_verb(str(action or "").strip().lower())
+    settled = spec(world_root, action)
+    if settled is not None:
+        on_success(dict(settled))
+        return
+
+    def fall_back(_why=""):
+        on_success(observe(world_root, action, bound))
+
+    try:
+        api_key = account.get_openrouter_key()
+    except (AttributeError, ValueError):
+        fall_back()
+        return
+
+    named = ", ".join(sorted(bound or {})) or "nothing"
+    messages = [
+        {"role": "system", "content": prompt_block(world_root, action)},
+        {"role": "user",
+         "content": (f"{lore.description(world_root, actor)}\n\n"
+                     f'A player typed "{action}". The parser filled these '
+                     f"roles from what they said: {named}.\n"
+                     f"Declare what the action takes in general, not only what "
+                     f"this one sentence happened to name.")},
+    ]
+
+    def answered(content):
+        try:
+            reply = model_json.parse_object(content)
+        except Exception:
+            fall_back()
+            return
+        # A declaration with an empty list is a real answer -- shrugging and
+        # waiting take nothing, and the prompt says so. A reply with no
+        # `applies_to` at all is not an answer, and taking it for one would
+        # settle, permanently and on no evidence, that the verb takes nothing.
+        if not hasattr(reply, "get") or "applies_to" not in reply:
+            fall_back()
+            return
+        try:
+            roles = list(reply.get("applies_to") or [])
+        except (AttributeError, TypeError):
+            fall_back()
+            return
+        on_success(declare(world_root, action, applies_to=roles,
+                           sense=str(reply.get("sense") or ""),
+                           means=str(reply.get("means") or "")))
+
+    llm.fetch(llm.ask, api_key, account.model_for("commands"), messages,
+              on_success=answered,
+              on_error=lambda failure: fall_back(failure.getErrorMessage()))
+

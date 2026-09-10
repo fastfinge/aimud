@@ -28,7 +28,7 @@
    "refused_needs_a_place": 1,
    "rules": 76,
    "unsettable": 4,
-   "verbs": 23
+   "verbs": 28
   },
   "world-02": {
    "accepted": 7,
@@ -42,7 +42,7 @@
    "refused_needs_a_place": 0,
    "rules": 8,
    "unsettable": 0,
-   "verbs": 6
+   "verbs": 7
   },
   "world-03": {
    "accepted": 127,
@@ -56,7 +56,7 @@
    "refused_needs_a_place": 4,
    "rules": 186,
    "unsettable": 1,
-   "verbs": 45
+   "verbs": 62
   },
   "world-04": {
    "accepted": 33,
@@ -70,7 +70,7 @@
    "refused_needs_a_place": 2,
    "rules": 36,
    "unsettable": 2,
-   "verbs": 23
+   "verbs": 24
   },
   "world-05": {
    "accepted": 14,
@@ -84,7 +84,7 @@
    "refused_needs_a_place": 0,
    "rules": 15,
    "unsettable": 0,
-   "verbs": 12
+   "verbs": 13
   },
   "world-06": {
    "accepted": 0,
@@ -98,7 +98,7 @@
    "refused_needs_a_place": 0,
    "rules": 1,
    "unsettable": 0,
-   "verbs": 0
+   "verbs": 1
   },
   "world-07": {
    "accepted": 4,
@@ -128,6 +128,6 @@
   "refused_needs_a_place": 7,
   "rules": 326,
   "unsettable": 7,
-  "verbs": 113
+  "verbs": 139
  }
 }

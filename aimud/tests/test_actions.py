@@ -268,3 +268,92 @@ class TheSilentNoOpIsGone(EvenniaTest):
     def test_and_the_question_reaches_the_player(self):
         self.attempt("search obj")
         self.assertIn("Search what?", self.attempt("search"))
+
+
+@tag("world")
+class AskingWhatAnActionTakes(EvenniaTest):
+    """
+    The first of the two questions a new verb costs, and the cheaper one.
+
+    It comes first because its answer changes the second: a `direct` declared
+    optional is what lets `power` typed bare reach an `instead` rule rather
+    than being told "power what?".
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+        self.room1.db.is_ai_room = True
+
+    def ask(self, reply, bound=None):
+        from tests.support import FakeAccount, as_json, immediately, replying
+
+        got = []
+        with immediately(), replying(
+                as_json(reply) if isinstance(reply, dict) else reply):
+            actions.learn(FakeAccount(), self.root, "power",
+                          bound if bound is not None else {},
+                          self.char1,
+                          on_success=got.append,
+                          on_error=lambda err: self.fail(err))
+        return got[0] if got else None
+
+    def test_a_declaration_is_taken_as_given(self):
+        spec = self.ask({"applies_to": [
+            {"role": "direct", "access": "touchable", "optional": True}]})
+        self.assertEqual(len(spec["applies_to"]), 1)
+        self.assertTrue(spec["applies_to"][0]["optional"])
+        self.assertEqual(spec["applies_to"][0]["access"], "touchable")
+
+    def test_an_optional_role_is_not_asked_about_when_unsaid(self):
+        """The whole reason Q1 runs before Q2."""
+        self.ask({"applies_to": [
+            {"role": "direct", "access": "touchable", "optional": True}]})
+        self.assertEqual(actions.missing_role(self.root, "power", {}), "")
+
+    def test_a_required_one_is(self):
+        self.ask({"applies_to": [
+            {"role": "direct", "access": "touchable", "optional": False}]})
+        self.assertEqual(actions.missing_role(self.root, "power", {}), "direct")
+
+    def test_a_verb_that_takes_nothing_may_say_so(self):
+        spec = self.ask({"applies_to": []})
+        self.assertEqual(spec["applies_to"], [])
+        self.assertEqual(actions.missing_role(self.root, "power", {}), "")
+
+    def test_but_a_reply_that_is_not_a_declaration_falls_back(self):
+        """
+        Not the same thing. Taking a non-answer for "it takes nothing" would
+        settle that permanently, on no evidence, and a declaration is settled
+        once.
+        """
+        spec = self.ask({"valid": True, "effects": []},
+                        bound={"direct": self.obj1})
+        self.assertEqual([r["role"] for r in spec["applies_to"]], ["direct"])
+
+    def test_and_so_does_a_reply_that_is_not_json(self):
+        spec = self.ask("I am afraid I cannot help with that.",
+                        bound={"direct": self.obj1})
+        self.assertEqual([r["role"] for r in spec["applies_to"]], ["direct"])
+
+    def test_an_action_already_declared_is_not_asked_about_again(self):
+        actions.declare(self.root, "power",
+                        [{"role": "direct", "optional": True}])
+        from tests.support import FakeAccount, immediately, replying
+
+        got = []
+        with immediately(), replying("{}") as script:
+            actions.learn(FakeAccount(), self.root, "power", {}, self.char1,
+                          on_success=got.append,
+                          on_error=lambda err: self.fail(err))
+            self.assertEqual(script.count, 0, "nothing should have been asked")
+        self.assertTrue(got[0]["applies_to"][0]["optional"])
+
+    def test_a_sense_from_the_dictionary_fills_in_what_it_means(self):
+        """`power` has one sense, so nobody has to be asked which."""
+        spec = self.ask({"applies_to": []})
+        self.assertTrue(spec["sense"])
+        self.assertTrue(spec["means"])
+

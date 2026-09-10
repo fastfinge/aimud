@@ -50,8 +50,10 @@ REFUSAL_KINDS = ("engine already does it", "needs a place or a context",
 # ---------------------------------------------------------------------------
 
 #: What a scan reads. Named so that the two readers below cannot disagree about
-#: it, and so a third -- for the rulebook shape, when it exists -- has a target.
-REGISTERS = ("verb_rules", "state_vocabulary", "state_groups", "kind_specs")
+#: it. Both rule shapes are in here: `verb_rules` is one rule per verb per world
+#: and `rules` is the rulebook, and a world mid-cutover holds some of each.
+REGISTERS = ("verb_rules", "rules", "state_vocabulary", "state_groups",
+             "kind_specs")
 
 
 def of_world(world_root):
@@ -110,6 +112,56 @@ def verb_of(key):
     return str(key).split("#", 1)[0]
 
 
+def as_verb_rule(rule):
+    """
+    One rulebook rule in the shape the scan reads.
+
+    The scan asks two questions of a rule -- what states it can set, and what
+    states it requires -- and both are answerable of either shape. What differs
+    is only the spelling: a verb rule keeps its preconditions as a mapping of
+    role to what that role must be, a rulebook rule as a list of conditions
+    each naming its own subject. Translating is cheaper than scanning twice,
+    and it means a finding reads the same whichever kind of rule produced it.
+
+    A check rule has no effects and a carry-out has no conditions, which is the
+    point of separating them -- so a rulebook rule contributes to one side of
+    the ledger or the other, and the scan adds them up across the book.
+    """
+    requires = {}
+    for condition in (rule.get("conditions") or []):
+        if not hasattr(condition, "get"):
+            continue
+        subject = str(condition.get("subject") or "direct")
+        entry = requires.setdefault(subject, {"is": [], "lacks": []})
+        for field in ("is", "lacks"):
+            entry[field] += [str(s) for s in (condition.get(field) or [])]
+    return {"valid": True,
+            "requires": requires,
+            "effects": rule.get("effects") or [],
+            "check": rule.get("contest")}
+
+
+def _both_shapes(registers):
+    """
+    Every rule this world holds, keyed by verb, in one shape.
+
+    Rulebook rules are keyed `verb#rule_id` so that a key still says which verb
+    it is about, which is all the scan wants a key for. A rule about every
+    action -- `action` of None, which is how "nothing works while you are dead"
+    is said once -- is filed under the empty verb rather than invented a name
+    for.
+    """
+    found = dict(registers.get("verb_rules") or {})
+    for rule_id, rule in sorted((registers.get("rules") or {}).items()):
+        if not hasattr(rule, "get"):
+            continue
+        if not rule.get("listed", True):
+            continue        # taken out of its rulebook; it applies to nothing
+        action = str(rule.get("action") or "")
+        found[f"{action}#{rule_id}"] = as_verb_rule(rule)
+    return found
+
+
 # ---------------------------------------------------------------------------
 # The scan
 # ---------------------------------------------------------------------------
@@ -122,9 +174,10 @@ def scan(registers):
     world produce the same report and a difference in one means a difference in
     the world.
     """
-    rules = registers.get("verb_rules") or {}
+    rules = _both_shapes(registers)
     vocabulary = registers.get("state_vocabulary") or {}
     groups = registers.get("state_groups") or {}
+    learned = set(registers.get("verb_rules") or {})
 
     added, removed, wanted, forbidden = set(), set(), set(), set()
     refusals = {kind: [] for kind in REFUSAL_KINDS}
@@ -140,7 +193,10 @@ def scan(registers):
             contested += 1
 
         effects = effects_of(rule)
-        if not effects:
+        if not effects and key in learned:
+            # Only of the old shape. A rulebook check rule has no effects
+            # because refusing is its whole job, and calling that inert would
+            # report every well-written check as a fault.
             inert.append(key)
         for effect in effects:
             if effect.get("type") == "set_state":
@@ -148,7 +204,11 @@ def scan(registers):
                 removed |= _states(effect, "remove")
         wanted |= _required(rule, "is")
         forbidden |= _required(rule, "lacks")
-        by_verb.setdefault(verb_of(key), []).append((key, rule))
+        if key in learned:
+            # `forked` is a question about the old cache key, and many rules
+            # for one verb is what a rulebook is FOR -- so rulebook rules are
+            # kept out of it rather than reported as the fault it used to be.
+            by_verb.setdefault(verb_of(key), []).append((key, rule))
 
     one_way = added - removed
     unsettable = wanted - added
@@ -167,7 +227,8 @@ def scan(registers):
             "accepted": accepted,
             "refused": len(rules) - accepted,
             "contested": contested,
-            "verbs": len(by_verb),
+            "verbs": len({verb_of(key) for key in rules if verb_of(key)}),
+            "filed": len([key for key in rules if key not in learned]),
             "states_set": len(added),
             "states_unset": len(removed),
             "vocabulary": len(vocabulary),
@@ -283,6 +344,16 @@ def report(findings, name=""):
              f"  {counts['vocabulary']} conditions in its vocabulary; "
              f"{counts['states_set']} can be set, {counts['states_unset']} "
              f"can be unset."]
+
+    # Only worth a line while a world holds both kinds. Every rule written from
+    # now on is filed against a scope, so in a new world this says nothing --
+    # and in an old one it says which half of the findings below are about the
+    # arrangement that is being replaced.
+    old_shape = counts["rules"] - counts["filed"]
+    if counts["filed"] and old_shape:
+        lines.append(f"  {counts['filed']} are filed against a scope; "
+                     f"{old_shape} are one-per-verb rules from before the "
+                     f"rulebooks.")
 
     trouble = []
     if findings["one_way"]:

@@ -1344,8 +1344,19 @@ def requirements(requires):
     every world already playing has these clauses stored, and a rule is only
     written once.
     """
+    # The outer shape is checked as well as each clause inside it, for the
+    # same reason: this reads stored model output, and a model asked for
+    # role-keyed preconditions sometimes writes the list of conditions it
+    # would have written elsewhere. Read as a mapping that is an
+    # AttributeError deep inside a rulebook gather, which takes down an
+    # attempt rather than refusing one rule.
+    try:
+        requires = dict(requires or {})
+    except (TypeError, ValueError):
+        return {}
+
     clean = {}
-    for role, needed in (requires or {}).items():
+    for role, needed in requires.items():
         try:
             clause = dict(needed)
         except (TypeError, ValueError):

@@ -202,6 +202,23 @@ def displace(obj):
 # Reach
 # ---------------------------------------------------------------------------
 
+def enclosing(obj, limit=MAX_DEPTH + 2):
+    """
+    The places something is inside, innermost first.
+
+    The room you are standing in, the ship that room is part of, and so on
+    outwards. Bounded, because a world that has managed to put a thing inside
+    itself should answer the question rather than hang.
+    """
+    found, seen = [], set()
+    host = getattr(obj, "location", None)
+    while host is not None and len(found) < limit and host.id not in seen:
+        seen.add(host.id)
+        found.append(host)
+        host = getattr(host, "location", None)
+    return found
+
+
 def reachable(caller, include_self=False):
     """
     Everything the caller could take hold of or refer to, nearest first.

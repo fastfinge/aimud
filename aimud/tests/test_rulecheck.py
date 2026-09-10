@@ -22,14 +22,32 @@ from tests.support import FIXTURES, worlds
 from world import rulecheck
 
 
-def world(rules=None, vocabulary=None, groups=None):
+def world(rules=None, vocabulary=None, groups=None, filed=None):
     """A world's registers, small enough to reason about."""
     return {
         "verb_rules": rules or {},
+        "rules": filed or {},
         "state_vocabulary": vocabulary or {},
         "state_groups": groups or {},
         "kind_specs": {},
     }
+
+
+def filed(action="power", phase="carry_out", conditions=None, effects=None,
+          listed=True, contest=None):
+    """One rulebook rule, in the shape `rulebooks.blank` makes."""
+    return {"action": action, "phase": phase, "scope": {"world": True},
+            "conditions": list(conditions or []),
+            "effects": list(effects or []),
+            "contest": contest, "listed": listed}
+
+
+def sets(*states):
+    return [{"type": "set_state", "role": "direct", "add": list(states)}]
+
+
+def unsets(*states):
+    return [{"type": "set_state", "role": "direct", "remove": list(states)}]
 
 
 def rule(adds=(), removes=(), needs=(), lacks=(), valid=True, reason="",
@@ -305,3 +323,79 @@ class TheRatchet(SimpleTestCase):
         self.assertEqual(totals["one_way"], 45)
         self.assertEqual(totals["unsettable"], 7)
         self.assertEqual(totals["refused_needs_a_place"], 7)
+
+
+@tag("unit")
+class ReadingTheRulebookToo(SimpleTestCase):
+    """
+    The scan was written against one rule per verb per world. Every rule a
+    world writes now goes somewhere else, so a scan that read only the old
+    store would report a clean world however broken the new one was.
+    """
+
+    def test_a_rulebook_rule_can_set_a_state_one_way(self):
+        found = rulecheck.scan(world(filed={
+            "r1": filed(effects=sets("lit"))}))
+        self.assertEqual(found["one_way"], ["lit"])
+
+    def test_and_another_rulebook_rule_can_settle_it(self):
+        found = rulecheck.scan(world(filed={
+            "r1": filed(effects=sets("lit")),
+            "r2": filed(action="douse", effects=unsets("lit"))}))
+        self.assertEqual(found["one_way"], [])
+
+    def test_a_check_rule_makes_a_state_wanted(self):
+        found = rulecheck.scan(world(filed={
+            "r1": filed(phase="check",
+                        conditions=[{"subject": "direct", "is": ["powered"]}])}))
+        self.assertEqual(found["unsettable"], ["powered"])
+
+    def test_the_two_stores_answer_each_other(self):
+        """A learned rule sets it; a rulebook check wants it. Nothing wrong."""
+        found = rulecheck.scan(world(
+            {"light": rule(adds=["lit"])},
+            filed={"r1": filed(phase="check",
+                               conditions=[{"subject": "direct",
+                                            "is": ["lit"]}])}))
+        self.assertEqual(found["unsettable"], [])
+
+    def test_a_check_rule_is_not_called_inert_for_having_no_effects(self):
+        """Refusing is its whole job."""
+        found = rulecheck.scan(world(filed={
+            "r1": filed(phase="check",
+                        conditions=[{"subject": "direct", "is": ["lit"]}])}))
+        self.assertEqual(found["inert"], [])
+
+    def test_a_rule_taken_out_of_its_rulebook_is_not_read(self):
+        found = rulecheck.scan(world(filed={
+            "r1": filed(effects=sets("lit"), listed=False)}))
+        self.assertEqual(found["one_way"], [])
+        self.assertEqual(found["counts"]["rules"], 0)
+
+    def test_many_rules_for_one_verb_is_not_a_fork(self):
+        """
+        It is what a rulebook is for. `forked` asks a question about the old
+        cache key, and asking it of rulebook rules would report the design
+        working as the fault it replaced.
+        """
+        found = rulecheck.scan(world(filed={
+            "r1": filed(effects=sets("lit")),
+            "r2": filed(effects=sets("warm")),
+            "r3": filed(phase="check",
+                        conditions=[{"subject": "direct", "is": ["intact"]}])}))
+        self.assertEqual(found["forked"], [])
+
+    def test_the_counts_say_how_the_rules_are_split(self):
+        found = rulecheck.scan(world(
+            {"light": rule(adds=["lit"])},
+            filed={"r1": filed(effects=sets("warm"))}))
+        self.assertEqual(found["counts"]["rules"], 2)
+        self.assertEqual(found["counts"]["filed"], 1)
+
+    def test_a_rule_about_every_action_is_counted_as_no_verb(self):
+        found = rulecheck.scan(world(filed={
+            "r1": filed(action=None, phase="check",
+                        conditions=[{"subject": "actor", "is": ["alive"]}])}))
+        self.assertEqual(found["counts"]["verbs"], 0)
+        self.assertEqual(found["counts"]["rules"], 1)
+

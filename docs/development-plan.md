@@ -420,6 +420,23 @@ effects only known types; `[A]` the scope ceiling rejects a too-general choice;
 `[C]` a live model, five verbs, asserting those same invariants and nothing about
 the prose.
 
+**Done, except Q3.** Q1 is `actions.learn`, asked before Q2 because its answer
+changes Q2 -- an optional `direct` is what lets `power` typed bare reach an
+`instead` rule. Q2 is `rule_gen.learn`. Q4 was already `_with_specifics` and Q5
+is unchanged. `SCOPE_CEILING = 6` was set by measurement, not by taste:
+`instrumentality.n.03` sits at 6 and `device.n.01` at 7.
+
+Q3 -- "is anything missing", fed by phase 4 -- is **not** done, and belongs with
+phase 10's suggestion queue rather than inside an attempt: a player waiting on a
+verb should not also pay for a consistency review. What phase 8 did do for it is
+make phase 4 able to see the new rules at all (`rulecheck.as_verb_rule`), which
+it could not when every rule a world wrote went to a store the scan never read.
+
+Two things turned up in the implementing, both now rules of their own rather
+than notes: reach had to look upwards as well as downwards, since a redirect
+makes the place the direct object (`relations.enclosing`); and a refusal is a
+decision, so a world that has ruled a verb impossible must not be asked again.
+
 ### Phase 9 — Effect vocabulary (standing)
 
 *Spec §11.1. Not one step and not a late one. Each entry must be invertible.*

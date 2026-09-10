@@ -21,6 +21,13 @@ from world import checks
 from world import effects as effects_mod
 from world import verb_gen, verbs
 
+#: How many times one verb may become another before the world gives up. A
+#: redirect is a rule sending an action somewhere else, and two rules can send
+#: it back and forth -- so the chain is capped rather than trusted. Two is
+#: enough for the case this exists for: `launch` becomes launching the ship,
+#: and nothing sensible needs a third hop.
+MAX_REDIRECTS = 2
+
 #: Effects an NPC may not cause on its own initiative. NPCs act without a
 #: player choosing to let them, so the destructive end of the range stays
 #: behind a player's decision.
@@ -402,7 +409,7 @@ def _once(callback):
 
 
 def _with_bindings(caller, room, account, raw, verb, bound, on_message,
-                   allow_effects, waiter=None):
+                   allow_effects, waiter=None, redirects=0):
     world_root = _world_root(room)
 
     # A verb the game already answers is never learned, however it got here.
@@ -498,38 +505,79 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
     def with_rule(known_rule):
         """Once the verb's meaning is settled, ask whether this sort admits it."""
         _admitted(caller, room, account, raw, verb, bound, known_rule,
-                  release, allow_effects, world_root, waiter, guarded)
+                  release, allow_effects, world_root, waiter, guarded,
+                  redirects)
 
     def begin():
-        # What this verb takes, settled once. Until a generator is asked
-        # properly it is read off the first attempt that used it -- see
-        # `actions.observe` -- which is enough to turn the failure that
-        # matters into a sentence: a verb first typed with a noun and later
-        # typed bare used to reach a rule whose effects named a role nobody
-        # had bound, change nothing, and report success. `search` in the
-        # exported corpus does exactly that.
+        # What this verb takes, settled once, and the first of the two
+        # questions a new verb costs. It comes first because its answer
+        # changes the second one: a `direct` declared optional is what lets
+        # `power` typed bare reach an `instead` rule rather than being told
+        # "power what?", and a role declared `carried` is picked up on the
+        # way in rather than refused.
+        #
+        # `actions.observe` is the fallback, not the ordinary path -- a
+        # declaration is settled once and first one wins, so an arity read off
+        # whatever the first attempt happened to name would lock out the real
+        # answer for good. It still matters: an NPC acting on its own
+        # initiative has no account to ask with.
         from world import actions
 
-        actions.observe(world_root, verb, bound)
-        wanted = actions.missing_role(world_root, verb, bound)
-        if wanted:
-            release(actions.asking_for(verb, wanted))
-            return
+        def declared(_spec):
+            wanted = actions.missing_role(world_root, verb, bound)
+            if wanted:
+                release(actions.asking_for(verb, wanted))
+                return
+            settle()
 
+        if actions.spec(world_root, verb) is None:
+            waiter()
+            actions.learn(account, world_root, verb, bound, caller,
+                          on_success=lambda spec: guarded(
+                              lambda: declared(spec)),
+                          on_error=lambda err: release(f"|r{err}|n"))
+            return
+        declared(None)
+
+    def settle():
+        """What this verb means here, once it is known what it takes."""
+        from world import rule_gen, rulebooks
+
+        # What this world already knows how to do about this verb.
+        #
+        # Something has to actually happen, so a carry-out rule settles it --
+        # and so does an `instead` rule, which either replaces the action
+        # outright or sends it somewhere that has one. Asking on the strength
+        # of a missing carry-out alone would buy a rule for every verb that
+        # only ever redirects: aboard a ship nobody powers "nothing", so
+        # `power` typed bare has no carry-out of its own and never will.
+        #
+        # And a learned rule settles it whatever it bridges to. A world that
+        # decided a verb is impossible bridges that to a check nothing can
+        # pass and no carry-out at all, so reading the book alone would ask
+        # again on every attempt -- paying, each time, to be told the same no.
         key = verbs.rule_key(verb, bound)
-
-        def learned(new_rule):
-            verb_gen.store_rule(world_root, key, new_rule)
-            with_rule(new_rule)
-
-        rule = verb_gen.get_rule(world_root, key)
-        if rule is not None:
-            with_rule(rule)
+        learned_rule = verb_gen.get_rule(world_root, key)
+        book = rulebooks.for_attempt(world_root, verb, bound, caller,
+                                     verb_rule=learned_rule)
+        settled = learned_rule is not None or any(
+            r["phase"] in (rulebooks.CARRY_OUT, rulebooks.INSTEAD)
+            for r in book)
+        if settled:
+            with_rule(learned_rule or {})
             return
+
+        # Nobody has settled it, so ask -- and ask for rules rather than for
+        # one universal definition. The prompt shows what already applies and
+        # a menu of places to file against; see world/rule_gen.py for why
+        # that is a smaller question than the one it replaces.
+        def written(_rules):
+            with_rule({})
+
         waiter()
-        verb_gen.learn_rule(
-            account, world_root, verb, bound, caller, raw,
-            on_success=lambda new_rule: guarded(lambda: learned(new_rule)),
+        rule_gen.learn(
+            account, world_root, verb, bound, caller,
+            on_success=lambda rules: guarded(lambda: written(rules)),
             on_error=lambda err: release(f"|r{err}|n"),
         )
 
@@ -537,7 +585,7 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
 
 
 def _admitted(caller, room, account, raw, verb, bound, rule, release,
-              allow_effects, world_root, waiter, guarded):
+              allow_effects, world_root, waiter, guarded, redirects=0):
     """
     Whether this sort of thing can be verbed at all, and then get on with it.
 
@@ -557,7 +605,7 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
 
     def proceed():
         _with_rule(caller, room, account, raw, verb, bound, rule, release,
-                   allow_effects, world_root, waiter, guarded)
+                   allow_effects, world_root, waiter, guarded, redirects)
 
     def refuse():
         name = (anchor.get_numbered_name(1, None, return_string=True)
@@ -647,8 +695,47 @@ def _with_specifics(rule, bound, verb, actor=None):
     return merged
 
 
+def _redirect(effect, bound, caller, world_root):
+    """
+    The roles a `try` effect names, bound to real things, or None.
+
+    A redirect may fill a role from a place rather than from something the
+    player typed -- `{"direct": {"enclosure": "spacecraft.n.01"}}` is the ship
+    they are standing in -- which is the whole reason it exists. Anything it
+    cannot resolve makes the redirect impossible rather than partial, since a
+    verb sent at nothing is worse than a verb refused.
+    """
+    from world import kinds
+
+    wanted = dict(bound or {})
+    try:
+        roles = dict(effect.get("roles") or {})
+    except (TypeError, ValueError):
+        return None
+    for role, named in roles.items():
+        if isinstance(named, str):
+            found = bound.get(named) if named in bound else None
+        else:
+            try:
+                kind = dict(named).get("enclosure")
+            except (TypeError, ValueError):
+                return None
+            what, handle = kinds.enclosure(caller, kind,
+                                           world_root=world_root)
+            found = handle if what == kinds.ROOM else None
+            if what == kinds.ZONE:
+                # A zone is not a thing a verb can act on. The room stands in
+                # for it, which is where its states are read from anyway.
+                found = getattr(caller, "location", None)
+        if found is None:
+            return None
+        wanted[str(role)] = found
+    return wanted
+
+
 def _with_rule(caller, room, account, raw, verb, bound, rule, release,
-               allow_effects, world_root, waiter=None, guarded=None):
+               allow_effects, world_root, waiter=None, guarded=None,
+               redirects=0):
     from world import conditions, rulebooks
 
     ctx = conditions.context(bound, caller, world_root)
@@ -660,6 +747,23 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
     # merging is how a rule system stops being predictable, and this is the
     # phase where meaning lives.
     for aside in [r for r in book if r["phase"] == rulebooks.INSTEAD]:
+        # A redirect is how a verb typed with no object comes to have one:
+        # aboard a ship, `launch` means launching the ship. Inform calls it
+        # trying another action, and it re-enters the whole pipeline rather
+        # than short-cutting to the effects -- so every check that applies to
+        # launching a ship applies, without the redirect having to know them.
+        again = next((e for e in (aside.get("effects") or [])
+                      if str(e.get("type") or "") == "try"), None)
+        if again is not None and redirects < MAX_REDIRECTS:
+            wanted = _redirect(again, bound, caller, world_root)
+            if wanted is not None:
+                _with_bindings(
+                    caller, room, account, raw,
+                    str(again.get("action") or verb), wanted,
+                    lambda actor_text, room_text="": release(actor_text,
+                                                             room_text),
+                    allow_effects, waiter, redirects + 1)
+                return
         extra = effects_mod.apply(caller, room, aside.get("effects") or [],
                                   bound=bound, world_root=world_root)
         release(aside.get("name") or "", " ".join(extra).strip())
@@ -674,6 +778,19 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         if complaint:
             release(complaint)
             return
+
+    # CARRY OUT. The most specific rule with anything to do supplies both what
+    # happens and what it is contested by, so there is one roll per attempt
+    # and one place the change comes from. For a world that has not been
+    # asked yet this is the bridged learned rule; for one that has, it is a
+    # rule somebody wrote against a scope.
+    doing = next((r for r in book if r["phase"] == rulebooks.CARRY_OUT), None)
+    rule = {
+        "valid": True,
+        "effects": (doing or {}).get("effects") or [],
+        "check": (doing or {}).get("contest"),
+        "repeatable": bool(rule.get("repeatable")),
+    }
 
     # What this particular thing does, and how hard it is on this particular
     # thing. The rule says what the verb means for everything of its sort; the

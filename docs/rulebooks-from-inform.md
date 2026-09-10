@@ -897,6 +897,17 @@ inside every rule it learns.
  "conditions": [{"subject": "actor", "lacks": ["bound", "pinned"]}]}
 ```
 
+**Reach looks upwards as well as downwards.** `relations.reachable` searches
+from the actor outwards -- their inventory, the room's floor, inside anything
+open -- and stops there, because until a rule could be about a place there was
+nothing above to find. A redirect makes the place the direct object: aboard a
+ship, `power` means powering the ship, and the ship is not something in the
+room, it *is* the room. So `reachable_by` also answers yes for whatever
+encloses the actor, and for whatever encloses that -- a pod inside a ship can
+still reach the ship. Implemented as `relations.enclosing`, kept separate from
+`reachable` so that what a player may *name* is unchanged: "ship" still does
+not resolve to the room you are standing in.
+
 Those three replace `prevents_acting`, `prevents_moving` and the accessibility
 guesswork now scattered through 121 `lacks` clauses.
 
