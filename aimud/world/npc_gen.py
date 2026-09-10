@@ -1128,9 +1128,14 @@ def generate_npc(account, room, on_success, on_error):
 
             from evennia import create_object
             from typeclasses.npcs import NPC
+            from world import kinds
 
             npc = create_object(NPC, key=name, location=room)
             npc.db.desc = description
+            # A character is a sort of thing. Said here as well as in the
+            # typeclass because a generated character is given its description
+            # and its manner in this order, and a kind belongs beside them.
+            kinds.ensure_person(npc)
             # Kept apart from the description: this is who they are, which
             # players never see by looking, and which the character itself
             # needs in order to behave like anyone in particular.

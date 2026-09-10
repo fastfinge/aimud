@@ -204,6 +204,36 @@ def ancestors(world_root, kind):
 #: contradict. See docs/rulebooks-from-inform.md 7.
 UNTAKEABLE_BUCKETS = ("person", "structure")
 
+#: What a character is. Named rather than spelled at each use, because it is
+#: written by two typeclasses and a generator and a mistyped synset would fail
+#: by matching nothing -- the worst way, since a rule filed against people would
+#: simply never gather and nobody would see an error.
+PERSON = "person.n.01"
+
+
+def ensure_person(obj):
+    """
+    Make sure a character has a kind, and answer with whether one was added.
+
+    Rooms have had kinds since phase 2 and objects since kinds existed; people
+    had none. So no rule could be filed against `person.n.01`, the admission
+    question never applied to anybody, and every character in a world counted as
+    one question to the attempt counters rather than one per sort of person.
+
+    Called from `at_init` as well as at creation, because a world already in
+    play cannot be asked to start again for this, and `at_init` runs when an
+    object is loaded into the cache: one attribute read per load, one write per
+    character ever.
+
+    Only when there is nothing there. A character somebody has made into a ghost
+    or a construct keeps whatever it was made, which is the same first-one-wins
+    rule every other kind follows.
+    """
+    if obj is None or obj.db.kinds:
+        return False
+    obj.db.kinds = [PERSON]
+    return True
+
 
 def sense_contradicts(sense, affordances=None, takeable=None):
     """

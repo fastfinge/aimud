@@ -683,7 +683,7 @@ def _similar(a, b):
 #: same time and opening it cleared nothing.
 NEW_GROUP = {"exclusive": True, "ends_on_move": False,
              "prevents_acting": False, "prevents_moving": False,
-             "prevents_speaking": False}
+             "prevents_speaking": False, "default": ""}
 
 #: Groups every world starts with, and how they behave.
 #:
@@ -717,8 +717,25 @@ STATE_GROUPS = {
     "posture": {"exclusive": True, "ends_on_move": True},
     "wetness": {"exclusive": True, "ends_on_move": False},
     "fire":    {"exclusive": True, "ends_on_move": False},
+    # `default` is the member a thing is in until something puts it in another,
+    # and it is the answer to a fault that turned up in play: a rule required
+    # the target of `greet` to be `alive`, nothing anywhere sets `alive`, and so
+    # every character in the world was refused as not being alive.
+    #
+    # The state could have been written on to each character at creation, and
+    # should not be. Being alive is not a fact worth storing -- it is what is
+    # true of anything nothing has killed -- and storing it would print "Rina is
+    # alive" under every look, need backfilling on to every character that
+    # already exists, and drift the first time something forgot to set it. An
+    # implied default has none of those problems and costs one lookup.
+    #
+    # It also attacks a measured fault from the other end. 45 of 62 states in
+    # the exported corpus can be set and never unset, and a group with a default
+    # is a group whose other end always exists: `dead` cancels `alive` by
+    # exclusivity, and removing `dead` puts it back with no rule needed.
     "life_status": {"exclusive": True, "prevents_acting": True,
-                    "prevents_moving": True, "prevents_speaking": True},
+                    "prevents_moving": True, "prevents_speaking": True,
+                    "default": "alive"},
     "bonds":   {"exclusive": True, "prevents_moving": True},
     "gagged":  {"exclusive": True, "prevents_speaking": True},
 }
@@ -862,7 +879,8 @@ def refuse(character, gate, world_root=None):
     return f"You cannot {GATES[gate]} while {slug.replace('_', ' ')}."
 
 
-def register_group(world_root, group, exclusive=None, ends_on_move=None,
+def register_group(world_root, group, default=None, exclusive=None,
+                   ends_on_move=None,
                    prevents_acting=None, prevents_moving=None,
                    prevents_speaking=None):
     """
@@ -890,6 +908,8 @@ def register_group(world_root, group, exclusive=None, ends_on_move=None,
                 break
 
     entry = dict(known.get(group) or NEW_GROUP)
+    if default is not None:
+        entry["default"] = str(default or "")
     if exclusive is not None:
         entry["exclusive"] = bool(exclusive)
     if ends_on_move is not None:
@@ -1188,6 +1208,50 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
 #: item conjured as a "Brass Orrery" answers to "astrolabe" because somebody
 #: asked for one, and that must survive the bottle being emptied.
 STATE_ALIAS = "state"
+
+
+def implied_states(obj, world_root=None):
+    """
+    Everything true of a thing: what was written on it, plus group defaults.
+
+    A group may name the member a thing is in until something puts it in
+    another -- `life_status` defaults to `alive` -- and that member is implied
+    rather than stored. So a character nothing has killed is alive without
+    anybody writing it down, a character that has been killed is not, because
+    `dead` is a member of the same group, and removing `dead` makes them alive
+    again with no rule for it.
+
+    Kept apart from `states`, which stays the record of what was actually
+    written. The difference matters in exactly one place and it is a visible
+    one: `condition` prints what a thing is, and printing "It is alive" under
+    every character would be noise. What a *condition* tests is this.
+    """
+    now = set(states(obj))
+    if world_root is None:
+        # The same walk `blocked` does, and for the same reason: a caller deep
+        # in a condition often has the thing and not the world it belongs to.
+        room = obj if getattr(obj, "location", None) is None             else getattr(obj, "location", None)
+        world_root = getattr(getattr(room, "db", None), "world_root", None)
+
+    # The built-ins as well as the register, because a world that has never
+    # registered `life_status` still has characters in it, and the seeds are
+    # exactly the groups no world should have to discover for itself.
+    known = dict(STATE_GROUPS)
+    known.update(groups(world_root) or {})
+    for group, rules in known.items():
+        try:
+            fallback = str(rules.get("default") or "")
+        except AttributeError:
+            continue
+        if not fallback:
+            continue
+        members = group_members(world_root, group) | {
+            slug for slug, name in DEFAULT_STATE_GROUP.items()
+            if name == group}
+        if now & members:
+            continue          # already in one of them; nothing to imply
+        now.add(fallback)
+    return now
 
 
 def condition(obj, looker=None):

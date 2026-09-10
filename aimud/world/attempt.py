@@ -670,7 +670,17 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
                    allow_effects, world_root, waiter, guarded, redirects)
         return
 
-    anchor = _anchor(bound, caller)
+    # What is being acted on -- and deliberately not `_anchor(bound, caller)`,
+    # which falls back to the actor when nothing was named. That fallback is
+    # right for narration, where a laugh belongs to whoever laughed, and wrong
+    # here: "does this sort of thing admit this verb" is a question about the
+    # object of the verb, and a bare verb has none.
+    #
+    # It was harmless until characters were given kinds, because a character had
+    # none and this fell straight through. The moment they did, `launch` typed
+    # bare aboard a ship asked whether a *person* can be launched, was told no,
+    # and was refused before the redirect that gives it the ship could run.
+    anchor = _anchor(bound)
     obj_kinds = list(getattr(anchor.db, "kinds", None) or []) if anchor else []
 
     def proceed():

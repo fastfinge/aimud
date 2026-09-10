@@ -30,6 +30,20 @@ class Character(ObjectParent, DefaultCharacter):
         """What is measurably true of this character. See world.traits."""
         return TraitHandler(self)
 
+    def at_object_creation(self):
+        """A character is a sort of thing, like everything else in a world."""
+        super().at_object_creation()
+        from world import kinds
+
+        kinds.ensure_person(self)
+
+    def at_init(self):
+        """And so is one that was made before people had kinds."""
+        super().at_init()
+        from world import kinds
+
+        kinds.ensure_person(self)
+
     def world_name(self, world_root=None):
         """
         What this character is called in a given world, if anything.

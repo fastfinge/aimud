@@ -119,12 +119,19 @@ class Subject:
         return self.what != NOWHERE
 
     def states(self):
+        """
+        What is true of this subject, group defaults included.
+
+        `verbs.implied_states` rather than `verbs.states`, because a rule asking
+        whether somebody is `alive` is asking what is true of them and not what
+        somebody remembered to write down. See the note on `life_status`.
+        """
         from world import verbs, zones
 
         if self.what == ZONE:
             return zones.states(self.ctx.world_root, self.zone_id)
         if self.obj is not None:
-            return verbs.states(self.obj)
+            return verbs.implied_states(self.obj, self.ctx.world_root)
         return set()
 
     def kinds(self):
