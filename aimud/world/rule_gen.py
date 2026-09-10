@@ -53,6 +53,22 @@ from world import llm, rulebooks
 #: world, and offers the ones a rule is genuinely worth having about.
 SCOPE_CEILING = 6
 
+#: Where a world remembers the verbs it asked about and got nothing for.
+#:
+#: The hole this closes: a verb nobody can write a rule for was asked about again
+#: on every single attempt. `kinds.admit` caches a no and `actions.declare` caches
+#: an arity, but "we asked what this means and there was nothing to say" was
+#: cached nowhere -- so a player, or a character working at a goal, could buy the
+#: same empty answer indefinitely.
+ATTR_FRUITLESS = "verbs_without_rules"
+
+#: How many times a world may ask before it stops asking. Two, because the first
+#: answer may have been unlucky -- a malformed reply, a scope the model misread --
+#: and the second is evidence. A network failure is not counted: that path ends in
+#: `on_error` and never reaches the tally, so a world offline for an afternoon does
+#: not come back having given up on half its vocabulary.
+ASKS_ALLOWED = 2
+
 #: What a generated rule may say. Anything else is dropped and logged: a
 #: condition nothing can evaluate and an effect nothing can apply are both
 #: rules that will never do anything, and the place to catch them is here.
@@ -429,11 +445,45 @@ def learn(account, world_root, action, bound, actor, on_success, on_error):
         for complaint in complaints:
             logger.log_info(f"rule_gen: {action} dropped -- {complaint}")
         _register_states(world_root, reply)
+        if not kept:
+            # Asked and answered with nothing usable -- a `cannot_say`, or rules
+            # that every one of them failed validation. Counted, so that the next
+            # attempt at this verb is not another call to the same effect.
+            note_fruitless(world_root, action)
         on_success([rulebooks.add(world_root, rule) for rule in kept])
 
     llm.fetch(llm.ask, api_key, model, messages,
               on_success=answered,
               on_error=lambda failure: on_error(failure.getErrorMessage()))
+
+
+def fruitless(world_root, action):
+    """How many times this world has asked about a verb and got nothing."""
+    if not world_root:
+        return 0
+    store = dict(getattr(world_root.db, ATTR_FRUITLESS, None) or {})
+    try:
+        return int(store.get(str(action), 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def note_fruitless(world_root, action):
+    """Record that asking about a verb produced no rule. Answers with the count."""
+    if not world_root or not action:
+        return 0
+    store = dict(getattr(world_root.db, ATTR_FRUITLESS, None) or {})
+    count = fruitless(world_root, action) + 1
+    store[str(action)] = count
+    setattr(world_root.db, ATTR_FRUITLESS, store)
+    logger.log_info(f"rule_gen: {action} produced no rule ({count} of "
+                    f"{ASKS_ALLOWED})")
+    return count
+
+
+def worth_asking(world_root, action):
+    """Whether this world should spend another call on what a verb means."""
+    return fruitless(world_root, action) < ASKS_ALLOWED
 
 
 def _register_states(world_root, reply):

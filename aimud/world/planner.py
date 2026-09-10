@@ -590,6 +590,16 @@ def _verb_for(actor, world_root, condition, obj, depth=0):
                 # powered, the rule that says what powering does is the one that
                 # promised something it did not deliver.
                 return step, blame or key
+
+    # Nothing this world knows would do it. A word it has never been taught
+    # might, and trying one is how it finds out.
+    #
+    # Only at the top of the chain. Inside a subgoal the step is already resting
+    # on an effect somebody guessed at, and stacking a guess about vocabulary on
+    # top of that is two uncertainties deep for one turn.
+    if depth == 0:
+        for verb in untried_verbs(world_root, condition):
+            return f"{verb} {obj.key}", None
     return None, None
 
 
@@ -738,6 +748,16 @@ def advise(actor, world_root, goal):
     action, _key, condition = plan_for(actor, world_root, goal)
     if action:
         _met, text = goals._test(condition, actor, world_root)
+        # Say so when the step is a word nobody has tried. The planner will
+        # offer one rather than give up, which is right -- and a player deciding
+        # whether to type it should know the world has never heard of it, since
+        # finding out is what costs something.
+        if is_a_guess(world_root, action):
+            verb = action.split(" ", 1)[0]
+            return action, (
+                f"Nothing here knows how to {text}. |w{verb}|n might be the "
+                f"word for it, but nobody has tried -- so the world would have "
+                f"to work out what it means.")
         return action, text
 
     outstanding = [text for met, text in goals.progress(goal, actor, world_root)
@@ -745,23 +765,6 @@ def advise(actor, world_root, goal):
     # Goal descriptions read as "be in Library", "be carrying brass lamp", so
     # they take a verb-phrase frame -- "closer to be in Library" does not.
     wanted = outstanding[0] if outstanding else "do that"
-
-    # Before giving up: a verb this world has never been taught might do it.
-    # Offered here and only here, because finding out costs a model call and a
-    # person asking for advice is somebody who can decide to spend it. A
-    # character acting on a tick is not, and `plan_for` never reaches this.
-    for condition in goal:
-        met, _text = goals._test(condition, actor, world_root)
-        if met or str(condition.get("type") or "") != "state":
-            continue
-        obj = _bind(actor, condition.get("object", ""))
-        if obj is None:
-            continue
-        for verb in untried_verbs(world_root, condition):
-            return f"{verb} {obj.key}", (
-                f"Nothing here knows how to {wanted}. |w{verb}|n might be the "
-                f"word for it, but nobody has tried -- so the world would have "
-                f"to work out what it means.")
 
     return None, (
         f"Nothing you can do from here would help you {wanted}. "
@@ -789,7 +792,7 @@ def untried_verbs(world_root, condition, limit=3):
     a tick. A planner that bought rules on a timer is the clock this design keeps
     refusing, wearing a different hat.
     """
-    from world import lexicon, suggest
+    from world import lexicon, rule_gen, suggest
 
     wanted = ""
     for clause in ("is",):
@@ -806,8 +809,19 @@ def untried_verbs(world_root, condition, limit=3):
             continue
         if _world_knows(world_root, verb):
             continue
+        # And not one this world has already tried to learn and failed. The
+        # attempt would now be refused for nothing rather than bought again, but
+        # a character would still spend a turn a tick on a word that cannot work.
+        if not rule_gen.worth_asking(world_root, verb):
+            continue
         found.append(verb)
     return found[:limit]
+
+
+def is_a_guess(world_root, action):
+    """Whether the verb of this step is one the world has never been taught."""
+    verb = str(action or "").split(" ", 1)[0]
+    return bool(verb) and not _world_knows(world_root, verb)
 
 
 def _world_knows(world_root, verb):

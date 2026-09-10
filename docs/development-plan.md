@@ -703,13 +703,32 @@ startup already pays for. A verb that causes itself is excluded: a world with no
 way to make something open does not need to be told to open it, it needs the rule
 it has not got.
 
-**Where the proposed verb is offered is a deliberate narrowing of the plan.**
-"Causative pairs propose a verb the world has never learned" costs a model call to
-find out whether the verb means anything, so it is offered through `advise`, to a
-person who can decide to spend it, and **never** through `plan_for`, which is what
-a character on a tick calls. A planner that bought rules on a timer is the clock
-this design keeps refusing, wearing a different hat. The note says plainly that
-nobody has tried the word, and a real step is always preferred to a guess.
+**The proposed verb is offered to characters too, and the first draft of this was
+wrong to hold it back.** The reasoning was that finding out what a new verb means
+costs a model call, so only a person should be able to spend it. That missed what
+an idle NPC already does: `trigger_idle_action` works at its goal for nothing, and
+**falls through to the dialogue model when there is no step to take**. So a
+character trying a word that might work is not a new cost at all -- it is the same
+call spent on something that could become a rule rather than on a remark.
+
+What keeps it bounded is two things that already existed and one that did not:
+
+* `activity.npc_may_act` gates every NPC wake-up, and honours `worldmode`: a world
+  set to normal thinks only while somebody is watching.
+* A real step is always preferred to a guess, and a guess is never stacked inside
+  a subgoal -- one uncertainty at a time.
+* **A fruitless ask is now remembered**, which it was not. `kinds.admit` caches a
+  no and `actions.declare` caches an arity; "we asked what this verb means and
+  there was nothing to say" was cached nowhere, so a verb nobody can write a rule
+  for cost a call every time anybody typed it. With a character free to try such
+  verbs on a tick, that is a bill that could run on its own.
+
+`rule_gen.ASKS_ALLOWED = 2`: the first empty answer may have been unlucky, the
+second is evidence. A network failure is not counted, since that path ends in
+`on_error` and a world offline for an afternoon must not come back having given up
+on half its vocabulary. `untried_verbs` skips what the world has given up on, so a
+character does not spend a turn a tick on a word that cannot work, and `advise`
+still says plainly when what it offers is a guess.
 
 ### Phase 12 — `world/commonsense.py`
 

@@ -595,6 +595,16 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
             with_rule(learned_rule or {})
             return
 
+        # Unless this world has already asked and come away with nothing. Twice
+        # is enough: the first empty answer may have been unlucky, the second is
+        # evidence that there is no rule to be had. Without this a verb nobody
+        # can write a rule for costs a call every time anybody types it -- and
+        # since a character working at a goal may now try a verb the world has
+        # never learned, that is a bill that could run on its own.
+        if not rule_gen.worth_asking(world_root, verb):
+            release(f"Nothing here knows how to {verb}.")
+            return
+
         # Nobody has settled it, so ask -- and ask for rules rather than for
         # one universal definition. The prompt shows what already applies and
         # a menu of places to file against; see world/rule_gen.py for why

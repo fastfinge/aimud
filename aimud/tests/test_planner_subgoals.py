@@ -388,15 +388,39 @@ class AVerbNobodyHasTried(AShipThatNeedsPowerFirst):
         self.assertIn("nobody has tried", note)
         self.assertIn("work out what it means", note)
 
-    def test_but_a_character_acting_on_its_own_is_offered_nothing(self):
+    def test_a_character_acting_on_its_own_may_take_it_too(self):
         """
-        `plan_for` is what a tick calls, and it never reaches the guesses. The
-        free half stays free.
+        Not held back to players. An NPC with no step to take falls through to
+        the dialogue model anyway -- `trigger_idle_action` asks what the
+        character would do with itself -- so trying a word that might work is
+        not a new cost, it is a better use of the same one. What keeps it
+        bounded is `activity.npc_may_act` upstream and the fruitless tally below.
         """
         action, _key, _condition = planner.plan_for(
             self.char1, self.root,
             [{"type": "state", "object": "Kestrel", "is": ["vented"]}])
-        self.assertIsNone(action)
+        self.assertEqual(action, "vent Kestrel")
+
+    def test_a_guess_is_never_stacked_inside_a_subgoal(self):
+        """
+        One uncertainty at a time. Inside a chain the step already rests on an
+        effect somebody guessed at, and a guess about vocabulary on top of that
+        is two deep for one turn.
+        """
+        R.add(self.root, R.blank(
+            action="launch", phase=R.CHECK,
+            scope={"kind": "spacecraft.n.01"}, about="direct",
+            name="a ship only launches when vented",
+            conditions=[{"subject": "direct", "is": ["vented"]}]))
+        verbs.apply_states(self.ship, add=["powered"], world_root=self.root)
+        action, _key, _condition = planner.plan_for(
+            self.char1, self.root,
+            [{"type": "state", "object": "Kestrel", "is": ["in_flight"]}])
+        self.assertIsNone(action, "the subgoal may not be answered by a guess")
+
+    def test_and_a_guess_is_told_apart_from_knowledge(self):
+        self.assertTrue(planner.is_a_guess(self.root, "vent Kestrel"))
+        self.assertFalse(planner.is_a_guess(self.root, "power Kestrel"))
 
     def test_and_a_real_step_is_always_preferred_to_a_guess(self):
         action, _note = planner.advise(
@@ -404,4 +428,112 @@ class AVerbNobodyHasTried(AShipThatNeedsPowerFirst):
             [{"type": "state", "object": "Kestrel", "is": ["in_flight"]}])
         self.assertEqual(action, "power Kestrel",
                          "a rule the world has beats a word it might not")
+
+
+@tag("world")
+class AskingTwiceAndNoMore(EvenniaTest):
+    """
+    The bill that could otherwise run on its own.
+
+    A character working at a goal may now try a verb this world has never
+    learned, and the world spends a call finding out what it means. If the
+    answer is "nothing", that has to be remembered -- or the same character
+    tries the same word next tick, for ever, at the same price.
+
+    `kinds.admit` caches a no and `actions.declare` caches an arity. This was
+    the one answer cached nowhere.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+        self.room1.db.is_ai_room = True
+        self.char1.move_to(self.room1, quiet=True)
+        standard_rules.seed(self.root)
+        self.thing = self.obj1
+        self.thing.key = "Kestrel"
+        self.thing.db.kinds = ["spacecraft.n.01"]
+        self.thing.move_to(self.room1, quiet=True)
+        from world import kinds
+
+        kinds.admit(self.root, ["spacecraft.n.01"], "vent", True)
+
+    def try_it(self, raw, reply):
+        from tests.support import FakeAccount, as_json, immediately, replying
+        from world import attempt as attempt_mod
+
+        said = []
+        with immediately(), replying(
+                as_json(reply) if isinstance(reply, dict) else reply) as script:
+            attempt_mod.attempt(
+                self.char1, raw, FakeAccount(),
+                on_message=lambda a, r=None: said.append(a or ""))
+            self.asked = script.count
+        return " ".join(s for s in said if s)
+
+    def nothing_useful(self):
+        return {"rules": [], "cannot_say": "nothing here vents anything"}
+
+    def test_a_fruitless_ask_is_counted(self):
+        from world import rule_gen
+
+        self.try_it("vent Kestrel", self.nothing_useful())
+        self.assertEqual(rule_gen.fruitless(self.root, "vent"), 1)
+
+    def test_a_world_asks_twice_and_then_stops(self):
+        from world import rule_gen
+
+        for _ in range(rule_gen.ASKS_ALLOWED):
+            self.try_it("vent Kestrel", self.nothing_useful())
+        self.assertFalse(rule_gen.worth_asking(self.root, "vent"))
+
+        said = self.try_it("vent Kestrel", self.nothing_useful())
+        self.assertEqual(self.asked, 0, "no third call")
+        self.assertIn("Nothing here knows how to vent", said)
+
+    def test_the_first_answer_is_allowed_to_have_been_unlucky(self):
+        from world import rule_gen
+
+        self.try_it("vent Kestrel", "not json at all")
+        self.assertTrue(rule_gen.worth_asking(self.root, "vent"),
+                        "one empty answer is not evidence")
+
+    def test_a_verb_that_did_produce_a_rule_is_not_counted_against(self):
+        from world import rule_gen
+
+        self.try_it("vent Kestrel", {
+            "rules": [{"phase": "carry_out", "scope": "spacecraft.n.01",
+                       "about": "direct", "name": "venting a ship clears it",
+                       "effects": [{"type": "set_state", "role": "direct",
+                                    "add": ["vented"]}]}]})
+        self.assertEqual(rule_gen.fruitless(self.root, "vent"), 0)
+
+    def test_and_the_planner_stops_offering_a_verb_the_world_gave_up_on(self):
+        """
+        Which closes the loop: the guess is tried, it comes to nothing, and the
+        character does not spend another turn on it.
+        """
+        from world import rule_gen
+
+        wanted = {"type": "state", "object": "Kestrel", "is": ["vented"]}
+        self.assertIn("vent", planner.untried_verbs(self.root, wanted))
+        for _ in range(rule_gen.ASKS_ALLOWED):
+            rule_gen.note_fruitless(self.root, "vent")
+        self.assertNotIn("vent", planner.untried_verbs(self.root, wanted))
+
+    def test_a_network_failure_is_not_counted_against_a_verb(self):
+        """
+        A world offline for an afternoon must not come back having given up on
+        half its vocabulary. That path ends in `on_error` and never reaches the
+        tally.
+        """
+        from tests.support import FakeAccount, immediately, replying
+        from world import attempt as attempt_mod, llm, rule_gen
+
+        with immediately(), replying(llm.LLMError("no route to host")):
+            attempt_mod.attempt(self.char1, "vent Kestrel", FakeAccount(),
+                                on_message=lambda a, r=None: None)
+        self.assertEqual(rule_gen.fruitless(self.root, "vent"), 0)
 
