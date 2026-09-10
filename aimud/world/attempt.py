@@ -179,6 +179,18 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
         _follow(caller, parsed, on_message)
         return
 
+    # "Eat all" is not one action on a strange object called "all", it is as
+    # many ordinary actions as there are things to eat. Expanded here, before
+    # anything binds, so everything downstream sees only single objects and
+    # keeps its one anchor, one check and one cached narration apiece.
+    from world import bulk
+
+    spread = bulk.expand(caller, verb, parsed["roles"])
+    if spread:
+        _in_turn(caller, account, spread, on_message, allow_effects, on_wait,
+                 fuzzy)
+        return
+
     bound, unbound = verbs.bind_all(caller, parsed["roles"], fuzzy=fuzzy)
     waiter = _once(on_wait)
 
@@ -230,6 +242,62 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
 
     _with_bindings(caller, room, account, raw, verb, bound, on_message,
                    allow_effects, waiter)
+
+
+def _in_turn(caller, account, spread, on_message, allow_effects, on_wait,
+             fuzzy):
+    """
+    Run an expanded bulk command one action at a time, then say what happened.
+
+    One at a time and not all at once, which matters for more than tidiness.
+    These are network round trips, and a dozen launched together would land in
+    whatever order they finished, so the room would hear about the last bottle
+    before the first. Worse, they would each decide what to do against a world
+    the others had not changed yet -- drinking the last of something twice.
+
+    Nothing is conjured during a bulk action. The names came from things that
+    are already here, so a miss means the thing went away while we worked
+    through the list, and inventing a replacement for it would be absurd.
+    """
+    told, results = _once(on_wait), []
+
+    def step(remaining):
+        if not remaining:
+            _report(caller, on_message, results)
+            return
+        obj, command = remaining[0]
+
+        def collected(actor_text, room_text=""):
+            if actor_text:
+                results.append((obj, actor_text, room_text))
+            step(remaining[1:])
+
+        if obj.pk is None:
+            step(remaining[1:])      # consumed by an earlier step
+            return
+        attempt(caller, command, account, collected,
+                allow_effects=allow_effects, on_wait=told,
+                allow_promote=False, fuzzy=fuzzy)
+
+    step(list(spread))
+
+
+def _report(caller, on_message, results):
+    """
+    What a bulk action comes to, as one answer rather than a dozen.
+
+    The lines are kept whole rather than summarised. A world writes them one
+    per object and they are the interesting part -- collapsing twelve into
+    "you eat everything" throws away what the game just spent its time
+    saying. What is collapsed is the framing: one message, in order, instead
+    of a dozen arriving separately with the prompt between them.
+    """
+    if not results:
+        on_message("There is nothing here to do that to.", "")
+        return
+    actor_text = "\n".join(text for _obj, text, _room in results)
+    room_text = " ".join(text for _obj, _actor, text in results if text)
+    on_message(actor_text, room_text)
 
 
 def _follow(caller, parsed, on_message):
