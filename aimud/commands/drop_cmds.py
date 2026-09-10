@@ -20,7 +20,12 @@ from world import clothing
 
 #: What a player types when they mean the lot. Anything else after `drop` is
 #: the name of a thing, and goes to Evennia's own command untouched.
-EVERYTHING = ("all", "everything", "all items")
+#:
+#: Read from `world.bulk` rather than kept here, so that "all" means the same
+#: word list to every verb. This command keeps its own body because dropping
+#: everything has a mechanic behind it -- clothes come off first, and in the
+#: order that lets them -- which no expansion into single drops would get
+#: right.
 
 
 def _undress(character):
@@ -66,7 +71,9 @@ class CmdAIDrop(_DefaultDrop):
     """
 
     def func(self):
-        if self.args.strip().lower() in EVERYTHING:
+        from world import bulk
+
+        if bulk.wanted(self.args):
             self._drop_everything()
             return
         super().func()

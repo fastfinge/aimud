@@ -256,6 +256,23 @@ class CmdAIGet(_DefaultGet):
 
         query = self.args.strip()
         room = caller.location
+
+        # "Get all" is every takeable thing here, one at a time. Through the
+        # same expander every other verb uses, so what "all" leaves out is
+        # decided in one place -- exits, people, and anything whose kind has
+        # already said it cannot be picked up.
+        from world import bulk
+
+        if bulk.wanted(query):
+            found = bulk.matching(caller, "get", query)
+            takeable = [obj for obj in found if _takeable(obj, room) is not False]
+            if not takeable:
+                caller.msg("There is nothing here to pick up.")
+                return
+            for obj in takeable:
+                self._take_existing(caller, obj, room)
+            return
+
         obj, multiple = _find_one(caller, query, location=room)
 
         if multiple:
@@ -283,27 +300,33 @@ class CmdAIGet(_DefaultGet):
             _do_take(caller, obj)
             return
 
-        cached = obj.db.ai_takeable
-
-        if cached is True:
+        settled = _takeable(obj, room)
+        if settled is True:
             _do_take(caller, obj)
             return
-
-        if cached is False:
+        if settled is False:
             caller.msg("You can't take that.")
             return
 
-        # Takeability not yet known — ask the validator and cache.
+        # Nobody has decided whether this sort of thing can be picked up. Ask
+        # once, about the kind rather than about this one -- the answer holds
+        # for every table in the world, and for the next one made.
         account = _account_from(caller)
 
+        from world import kinds
         from world.item_gen import validate_object_takeable
 
+        def remember(allowed):
+            kinds.admit(_root(room), obj.db.kinds, "get", allowed)
+            obj.db.ai_takeable = allowed      # the fallback answer, for a
+                                              # thing that has no kind at all
+
         def on_valid(_reason):
-            obj.db.ai_takeable = True
+            remember(True)
             _do_take(caller, obj)
 
         def on_invalid(_reason):
-            obj.db.ai_takeable = False
+            remember(False)
             caller.msg("You can't take that.")
 
         def on_error(err):
@@ -346,9 +369,42 @@ class CmdAIGet(_DefaultGet):
         validate_object_existence(account, room, query, on_valid, on_invalid, on_error)
 
 
+def _root(room):
+    """The world an object belongs to, found from the room holding it."""
+    where = room
+    while where is not None:
+        found = getattr(getattr(where, "db", None), "world_root", None)
+        if found is not None:
+            return found
+        where = getattr(where, "location", None)
+    return None
+
+
+def _takeable(obj, room):
+    """
+    Whether this can be picked up: True, False, or None for undecided.
+
+    Asked of the kind first, because being liftable is a fact about tables
+    rather than about this table. It used to be a flag on each object, set by
+    a model call of its own -- so a world with forty chairs in it asked forty
+    times whether a chair can be carried off, and could get forty answers.
+
+    Now `get` is a verb like any other and a kind can refuse it, which is what
+    "an object that cannot be taken" always wanted to be. The old flag is
+    still read underneath, for things made before kinds existed and for the
+    occasional thing that has no kind at all.
+    """
+    from world import kinds
+
+    settled = kinds.admits(_root(room), obj.db.kinds, "get")
+    if settled is not None:
+        return settled
+    return obj.db.ai_takeable
+
+
 def _finish_take(caller, item, room, key):
     _release_gen_lock(room, key)
-    if item.db.ai_takeable:
+    if _takeable(item, room):
         _do_take(caller, item)
     else:
         # Show the item but explain why it stays.
