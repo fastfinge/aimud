@@ -51,7 +51,7 @@ def _world_root(room):
     return room.db.world_root if room else None
 
 
-def _cached_narration(bound, verb, outcome="success"):
+def _cached_narration(bound, verb, outcome="success", actor=None):
     """
     A narration already learned for these exact objects, if any.
 
@@ -66,7 +66,7 @@ def _cached_narration(bound, verb, outcome="success"):
     this system exists to fix. They are ignored, so the first use of a verb
     regenerates text that travels with the object instead.
     """
-    anchor = _anchor(bound)
+    anchor = _anchor(bound, actor)
     if anchor is None:
         return None
     entry = (anchor.db.ai_commands or {}).get(verb)
@@ -95,8 +95,8 @@ def _cached_narration(bound, verb, outcome="success"):
     return {"actor": actor_text, "room": room_text or ""}
 
 
-def _store_narration(bound, verb, outcome, entry):
-    anchor = _anchor(bound)
+def _store_narration(bound, verb, outcome, entry, actor=None):
+    anchor = _anchor(bound, actor)
     if anchor is None:
         return
     cache = dict(anchor.db.ai_commands or {})
@@ -120,16 +120,27 @@ def _store_narration(bound, verb, outcome, entry):
     anchor.db.ai_commands = cache
 
 
-def _anchor(bound):
+def _anchor(bound, actor=None):
     """
-    The object a narration belongs to.
+    The thing a narration belongs to.
 
-    The direct object if there is one, else whatever else was named. Verbs
-    with no nouns at all ("smell") have nothing object-specific to say, so
-    they are not cached per object.
+    The direct object if there is one, else whatever else was named -- so
+    "smile at Rina" is stored on Rina, and the next person to smile at her is
+    answered for nothing.
+
+    A verb that named nothing at all is stored on whoever did it. That looks
+    like a special case and is the ordinary rule applied honestly: the part
+    that is specific goes on the specific thing, and when somebody laughs the
+    only specific thing in the sentence is them. Without it "laugh" was
+    written again every single time it was typed, for ever, because there was
+    nowhere to put the answer.
+
+    Whose laugh it is matters, too. Stored per character rather than per
+    world, so Rina's laugh is not the innkeeper's -- which is the same reason
+    a narration is stored per object rather than per kind.
     """
     if not bound:
-        return None
+        return actor
     return bound.get("direct") or next(iter(bound.values()))
 
 
@@ -419,7 +430,7 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
     # two people pulling the same lever in that window both apply its effects.
     # The lock is per object AND verb, so one person reading a notice does not
     # stop another burning it.
-    anchor = _anchor(bound)
+    anchor = _anchor(bound, caller)
     if anchor is not None:
         if _busy(anchor, verb):
             on_message("Someone else is already doing that.", "")
@@ -472,7 +483,7 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
     """
     from world import kinds
 
-    anchor = _anchor(bound)
+    anchor = _anchor(bound, caller)
     obj_kinds = list(getattr(anchor.db, "kinds", None) or []) if anchor else []
 
     def proceed():
@@ -508,9 +519,9 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
     )
 
 
-def _specifics_of(bound, verb):
+def _specifics_of(bound, verb, actor=None):
     """What was learned about this verb on these particular objects, if any."""
-    anchor = _anchor(bound)
+    anchor = _anchor(bound, actor)
     if anchor is None:
         return {}
     try:
@@ -519,7 +530,7 @@ def _specifics_of(bound, verb):
         return {}
 
 
-def _store_specifics(bound, verb, specifics):
+def _store_specifics(bound, verb, specifics, actor=None):
     """
     Keep what this object does under this verb, beside its narration.
 
@@ -527,7 +538,7 @@ def _store_specifics(bound, verb, specifics):
     the object actually differs -- an empty answer is stored as an empty
     answer so the question is not asked twice.
     """
-    anchor = _anchor(bound)
+    anchor = _anchor(bound, actor)
     if anchor is None:
         return
     store = dict(anchor.db.verb_specifics or {})
@@ -537,7 +548,7 @@ def _store_specifics(bound, verb, specifics):
     anchor.db.verb_specifics = store
 
 
-def _with_specifics(rule, bound, verb):
+def _with_specifics(rule, bound, verb, actor=None):
     """
     The rule as it applies to these objects.
 
@@ -547,7 +558,7 @@ def _with_specifics(rule, bound, verb):
     -- stays the verb's business. The rule decides that prying is a strength
     contest; the crate decides that this one is a 12.
     """
-    specifics = _specifics_of(bound, verb)
+    specifics = _specifics_of(bound, verb, actor)
     if not specifics:
         return rule
 
@@ -583,7 +594,7 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
     # specifics say how this door differs from that door, and were written by
     # the same call that wrote what the player reads. Absent for almost
     # everything, which means the rule's own answer stands.
-    rule = _with_specifics(rule, bound, verb)
+    rule = _with_specifics(rule, bound, verb, caller)
 
     # Preconditions say whether the attempt was allowed; the check says
     # whether it worked. That order is the whole point: you are told you have
@@ -594,7 +605,7 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
               if contest else None)
     outcome = result["outcome"] if result else "success"
 
-    cached = _cached_narration(bound, verb, outcome)
+    cached = _cached_narration(bound, verb, outcome, caller)
     # A contested verb always runs its effects again: the player swung again,
     # and this time it landed. Only a verb with a settled, single outcome may
     # answer from the cache without touching the world.
@@ -611,13 +622,13 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         # the actor as {actor}, so the same narration reads correctly when
         # somebody else does the same thing to the same object later.
         _store_narration(bound, verb, outcome,
-                         {"actor": actor_text, "room": room_text})
+                         {"actor": actor_text, "room": room_text}, caller)
         # Whatever the same reply said this thing does differently, kept
         # beside it. Stored even when empty, so a thing that turned out to be
         # perfectly ordinary is not asked about a second time.
         if specifics is not None:
-            _store_specifics(bound, verb, specifics)
-        effective = _with_specifics(rule, bound, verb)
+            _store_specifics(bound, verb, specifics, caller)
+        effective = _with_specifics(rule, bound, verb, caller)
         allowed = [
             e for e in checks.effects_for(effective, outcome)
             if (allow_effects is None or e.get("type") in allow_effects)
