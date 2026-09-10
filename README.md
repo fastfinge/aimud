@@ -65,6 +65,44 @@ particular poster — and stores that on the object, so it travels with it. The
 part that generalises is stored by kind; the part that is specific is stored on
 the specific thing. Neither is stored on the room.
 
+### Everything is a sort of something
+
+Everything in a world is a *sort* of thing — a **kind** — and the kind, not
+the thing, is what the world keeps its decisions on. What can be done to a
+bottle — it can be drunk from, filled and smashed; it cannot be read — is
+settled once, by the first bottle the world ever makes, and every bottle after
+that agrees.
+Those decisions are its **affordances**, and since they are half of a verb
+rule's cache key, making them once per sort rather than once per object is what
+stops a world's rules quietly splitting in two. Seventy-three bottles across
+five worlds had reached twenty-five different answers about what a bottle is,
+and `drink` had been learned thirty separate times as a result.
+
+Kinds cannot be free-written strings, because a string drifts: chest, storage
+chest, wooden chest, coffer. A kind is a dictionary sense — `chest.n.02` — so
+the chest in one zone and the chest built an hour later in another are the same
+sort of thing, and English already knows a chest is a container before anybody
+is asked. Nouns no dictionary has heard of, and generated worlds are full of
+them, keep their own word and are anchored under the nearest real sense.
+
+Affordances are verbs, and they are the verbs you type. `burn`, not
+`flammable`; and always what can be done **to** a thing, never what it does — a
+lantern affords `light` because it can be lit. A thing can be two sorts at once,
+so a sword with runes on the blade is a sword and an inscription and affords
+whatever either of them does. It can never afford *less* than its sort: a thing
+that cannot do what its sort can is either in a condition that prevents it
+(sealed, blunted, waterlogged) or is honestly another sort.
+
+One more thing falls out of it. "Can a bottle be burned" is one bit, asked once
+for bottles, instead of a whole rule invented to answer a yes-or-no question —
+which is what 86% of every rule those five worlds had learned turned out to be.
+Try to burn the key, be told you cannot, and nothing pays for that answer again.
+
+`help bottle` says what this world has decided a bottle is, and `help burn` says
+what it will let you burn. The measurements behind all of this, and the two
+designs that were tried and rejected first, are written up in
+[docs/kinds-and-affordances.md](docs/kinds-and-affordances.md).
+
 ### Some verbs can be lost
 
 A rule may declare a **check**: a figure of yours that decides the attempt, and
@@ -89,16 +127,27 @@ costs nothing is only a command you retype until it works.
 
 An item can carry `trait_bonuses` — what it is worth to whoever has it — and a
 `bonus_when` saying what has to be true for it to count: **worn**, **wielded**,
-or merely **carried**. A coat of mail is +3 defence and −1 stealth while it is
-on, and nothing at all in a pack. Every generator that can make an object can
-give one, so a breastplate found in a chest protects exactly as well as one a
-guard was created wearing.
+merely **carried**, or **present**. A coat of mail is +3 defence and −1 stealth
+while it is on, and nothing at all in a pack. Every generator that can make an
+object can give one, so a breastplate found in a chest protects exactly as well
+as one a guard was created wearing.
+
+**present** is the one that is not about belongings: it counts for everybody in
+the room with it. A fire warms whoever lit it, whoever was already sitting there
+and whoever walks in a minute later, and stops warming them the moment they
+leave — which is the only honest way round, since being near a fire is not
+something that happens to you once. Rooms may carry bonuses of their own, too,
+because a forge is warm whether or not anything is in it. And a `bonus_while`
+names a condition the thing has to be in first, so a lamp is worth nothing until
+it is lit.
 
 Nothing is added or subtracted. Putting a helmet on recalculates what all your
 gear is worth and writes that total to the trait's modifier, leaving the figure
 you earned untouched underneath — so a bonus cannot drift, however many times
 you change, and taking a thing off removes exactly what putting it on added.
-`score` says where the difference came from.
+Nothing ticks, either: the sums are redone when somebody arrives or leaves, or
+when a source changes condition. `score` says where the difference came from,
+fire and forge included.
 
 Wielding is a mechanic rather than a learned verb, for the same reason wearing
 is: `wield`, `brandish` and `equip` never reach a model, and hand the attempt
@@ -124,7 +173,16 @@ They:
   require and change, including gradually over time.
 
 They only think when somebody is there to see it. A world with nobody active in
-it is asleep and costs nothing.
+it is asleep and costs nothing: characters act while you are in the room with
+them, keep going for a few minutes after you leave, and go still altogether once
+five minutes pass with nobody typing.
+
+`worldmode always` lifts both of those, when what you want is to watch a world
+run rather than to play in it — every character acting every turn, on the far
+side of the map, in rooms you have never visited. Every one of those turns is a
+model call, so it is the one setting that will quietly spend money while you make
+a sandwich; it puts itself back to `normal` the moment the last player logs out,
+and nothing ever switches it on but you.
 
 ### Help without an autopilot
 
@@ -136,6 +194,15 @@ errand somebody gave you.
 It is the same planner the NPCs use, and it never acts for you — wander off,
 take a longer route, or drop the goal, and the next suggestion is worked out
 from wherever you actually ended up.
+
+The other half of finding your feet is being able to ask what a world means by
+its own words, and every word it invents gets a help entry of its own, written
+at the moment it was invented: `help bottle` for a sort of thing and what can be
+done to one, `help burn` for what that verb may be done to, `help empty` for a
+condition, `help composure` for a figure you are measured by.
+`help vocabulary` says how those four differ; `help kinds`, `help affordances`
+and `help conditions` list everything this world has put in each. They are per
+world, so a new one knows almost nothing until it has been played in.
 
 ### Tune it per job
 
@@ -243,7 +310,7 @@ apikey set sk-or-v1-...
 The key is stored on **your account, in your own database**. It is not in any
 file in this repository, not in the settings, and not visible to other
 accounts. `apikey` on its own tells you whether one is set (never the key
-itself), and `apikey clear` removes it.
+itself), and `apikey delete` removes it.
 
 Put some credit on the OpenRouter account, or pick free models — see
 [What it costs](#what-it-costs).
@@ -348,7 +415,16 @@ Beyond that:
   included, for when several worlds' worth of interesting objects have
   accumulated about your person.
 - **Check yourself.** `score` shows every trait this world has decided to
-  measure about you.
+  measure about you, and how much of each is lent to you by what you are
+  wearing, holding or standing next to.
+- **Ask what a word means.** `help bottle`, `help burn`, `help empty`,
+  `help composure` — every word a world invents explains itself. `help
+  vocabulary` says how the four sorts of word differ.
+- **See the shape of the place.** `zones` lists the areas this world planned
+  for itself, how full each one is, and which you are standing in.
+- **Watch it run without you.** `worldmode always` has every character in the
+  world act every turn, wherever you are. It costs a call each time one of them
+  does; `worldmode normal` puts it back, and so does logging out.
 
 ---
 
@@ -358,18 +434,21 @@ Beyond that:
 
 | Command | What it does |
 |---|---|
-| `apikey [set \| clear] <key>` | Your OpenRouter key. Per account. |
-| `models` / `models refresh` | Model and sampling settings for each job. |
+| `apikey` / `apikey set <key>` / `apikey delete` | Your OpenRouter key. Per account. On its own it says whether one is set, never what it is. |
+| `models` / `models refresh` | Model and sampling settings for each job. `refresh` re-fetches the model list from OpenRouter. |
 
 ### World
 
 | Command | What it does |
 |---|---|
-| `worldgen` | The wizard: make a new world. |
+| `worldgen [<description>]` | The wizard: make a new world. |
 | `worlds` / `worlds <n>` | List your worlds, or enter one. |
 | `worldedit [<n>]` | Change a world's text without rebuilding it. |
 | `worldreset [<n>] confirm` | Wipe and regenerate from the same setup. |
 | `worldremove <n> confirm` | Delete a world permanently. |
+| `worldmode [normal \| always]` | Whether this world thinks only while watched, or all the time. On its own, says which. |
+| `worldopen` | Open a way on, in a world that has built itself into a corner and has nowhere unexplored left. |
+| `zones` | The areas of this world, how full each is, what may exist only once in each, and where you are. |
 | `npcgen` | Put a character in the current room. |
 
 ### Playing
@@ -379,15 +458,25 @@ Beyond that:
 | `look [thing]` | Look. Mentioned-but-nonexistent things become real. |
 | `get <thing>` | Pick something up. |
 | `drop <thing>` / `drop all` | Put something down. `all` empties you out, worn clothes included. |
-| `name <what you are called here>` | Rename yourself in this world. |
+| `help [<topic>]` | Commands, topics, and every word this world has invented for itself. |
+| `name [<what you are called here>]` / `name clear` | Rename yourself in this world, per world. |
 | `follow <person>` / `follow` | Travel with somebody, or stop. |
-| `pose <action>` | Emote. |
-| `remember <question>` | Ask your own memory something. |
-| `score [trait]` | Your traits, and what they stand at. |
-| `wear` / `remove` / `cover` / `uncover` / `inventory` | Clothing. |
-| `wield <thing>` / `unwield <thing>` | Take something in hand, or lower it. |
-| `quests` / `quests hint` / `quests accept \| decline \| abandon` | Errands. |
+| `pose <action>` / `emote` | Emote. |
+| `remember <question>` / `recall` | Ask your own memory something. |
+| `score [trait]` / `traits` / `sheet` | Your traits, what they stand at, and what is lending you the difference. |
+| `wear` / `remove` / `cover <worn> with <item>` / `uncover` / `inventory` | Clothing. `don` and `doff` also work. |
+| `wield <thing>` / `unwield <thing>` | Take something in hand, or lower it. Two hands, so a sword and a shield. |
+| `quests` / `quests hint` / `quests accept \| decline \| abandon` | Errands. `quest` also works. |
 | `goal <what you want>` / `goal` | Set or drop a goal, with nudges. |
+
+### Upkeep
+
+One command, and it needs Builder or Admin permission — on a single-player
+install that is the superuser you made at first start.
+
+| Command | What it does |
+|---|---|
+| `memcheck [sleep \| sweep \| distil \| all]` | Memory upkeep now rather than on its clock: consolidate what characters remember, delete the banks of characters that no longer exist, or turn recent summaries into what a character now knows. On its own it reports what it would do and changes nothing. Distilling is the only part that costs anything. |
 
 ---
 
@@ -408,11 +497,14 @@ nobody active in it does not think at all**.
 | Say something with an NPC present | 1 per NPC | The big recurring cost |
 | Try a verb the world has never seen | 2 | Rule + narration |
 | Try that verb again, anywhere | 0–1 | The rule is free; a new object needs narration |
+| Try a known verb on a sort of thing nobody has tried it on | 1 | One bit — can this be done to that at all — kept for that whole sort |
+| Try something that sort has already refused | 0 | "You cannot burn the key", for nothing |
 | Lose a fight you have already lost once | 0 | Each outcome is narrated once per thing |
 | Look at something only mentioned in prose | 2 | Plausibility check + creation |
 | Take on an errand | 1 | Turning it into something checkable |
 | An NPC acting on its own | 0–1 | Free whenever the planner finds a step |
-| Walking, `score`, `inventory`, `quests`, `goal` nudges | 0 | No model involved |
+| Walking, `score`, `inventory`, `quests`, `zones`, `help`, `goal` nudges | 0 | No model involved |
+| A world in `worldmode always` | 1 per character per turn | Every character, everywhere, whether or not you are watching |
 
 ### Roughly what that adds up to
 
@@ -452,6 +544,8 @@ your `default` to try everything at no cost, and expect rougher prose.
 - A world nobody is in is asleep. Five minutes without typing and you stop
   counting as present, so an idle window costs nothing.
 - Cheap `naming` and `dialogue`; capable `commands` and `quests`.
+- Leave `worldmode` at `normal` unless you are deliberately watching a world
+  run. It is the one setting that spends money with nobody reading the output.
 - `worldreset` regenerates an entire world and costs an entire world's worth.
 
 ---
@@ -514,30 +608,41 @@ The interesting half is `world/`:
 | Module | What it is for |
 |---|---|
 | `worldgen.py` | Building rooms: planning, naming, describing, furnishing |
+| `zones.py` | The areas a world plans for itself, and how large each may get |
+| `coords.py` | Where rooms are, so a world can close back on itself |
 | `lore.py` | What a world says about itself, and per-generator guidance |
 | `verbs.py` | Parsing, binding nouns to objects, the world's state vocabulary |
 | `verb_gen.py` | Learning what a verb does; narrating what happened |
 | `attempt.py` | One verb attempt, deciding everything free before paying |
 | `effects.py` | The only way a verb changes the world |
 | `checks.py` | Rolling for an outcome, so trying is not the same as doing |
-| `gear.py` | What a thing is worth to whoever wears or wields it |
+| `kinds.py` | What sort of thing something is, and what that sort affords |
+| `affordances.py` | The vocabulary of what can be done to a thing — verbs, not adjectives |
+| `lexicon.py` | What English already knows: inflections, senses, what is a kind of what |
+| `vocabulary.py` | One word, one meaning: the four registers a world fills in as it runs |
+| `relations.py` | What is in, on, under or behind what |
+| `gear.py` | What a thing is worth to whoever wears, wields or stands beside it |
 | `npc_gen.py` | Creating characters, dressing them, and their dialogue |
+| `activity.py` | Who is worth thinking about just now, and what `worldmode` changes |
 | `goals.py` | Conditions about the world that can be tested |
 | `planner.py` | One next step towards a goal, with no model involved |
 | `quests.py` | Errands: offering, accepting, testing, rewarding |
 | `traits.py` | Figures about people, and the world's register of them |
 | `clothing.py` | Wearing things, and what that does to how you look |
+| `item_gen.py` | Deciding whether a thing could be here, and making it if so |
+| `naming.py` | Recognising the thing somebody meant, so a typo is not a new object |
 | `hints.py` | Giving a player the same help an NPC gets |
 | `memory.py` | Per-character memory, written and recalled by relevance |
-| `coords.py` | Where rooms are, so a world can close back on itself |
+| `fact_gen.py` | Turning what a character has been through into what it knows |
 
 Two ideas run through all of it and explain most of the design:
 
-**Pay once, for the part that generalises.** A verb rule is stored by the
-*kind* of thing it acts on, so it is learned once for every readable object in
-the world. A narration is stored on the object, so it travels with it. Neither
-is stored on the room, which is what stops results that only made sense where
-they were first produced.
+**Pay once, for the part that generalises.** A verb rule is stored against the
+*kind* of thing it acts on — and a kind is a closed dictionary sense rather than
+a written string, so it cannot drift out from under the rule — which means the
+rule is learned once for every readable object in the world. A narration is
+stored on the object, so it travels with it. Neither is stored on the room,
+which is what stops results that only made sense where they were first produced.
 
 **Decide everything free before paying for anything.** An attempt parses, binds
 nouns, checks the cache and tests preconditions before a model is consulted at

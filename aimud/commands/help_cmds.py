@@ -2,45 +2,121 @@
 Help for the words a world made up for itself.
 
 Every other help topic in the game was written before the game ran: a command
-has a docstring, a file entry is a file. The two vocabularies that matter most
-to a player are neither. States and traits are registered as the world plays
--- the first rule that needs "burning" invents it, the first character who
-needs "composure" registers it -- and each is entered with a `means` written
-in plain words so the next model to see it uses it the same way.
+has a docstring, a file entry is a file. The vocabularies that matter most to a
+player are neither. They are registered as the world plays -- the first rule
+that needs "burning" invents it, the first character who needs "composure"
+registers it, the first bottle anybody makes settles what a bottle is -- and
+each is entered with a sentence in plain words, a `means` for a condition or a
+figure and a dictionary gloss for a sort of thing, so that the next model to
+see it uses it the same way.
 
-That sentence exists already, for every state and trait in the world, and it
-was being shown to models and to nobody else. The player is the one who has to
-read "It is burning" or see a check against "composure" and work out what the
-world meant by it, so the same sentence answers `help burning` now.
+`world.vocabulary` keeps four such registers: a **kind** says what something
+is, an **affordance** says what can be done to it, a **state** says what is
+true of it now, and a **trait** says what is true of somebody by degree. All
+four were being shown to models and to nobody else. The player is the one who
+has to read "It is burning", or see a check against "composure", or work out
+why this world will let them burn a flyer and not a key -- so the same
+sentences answer `help burning`, `help composure`, `help flyer` and `help burn`
+now.
 
 Which makes these topics unlike any other in one way worth knowing: they are
-per world and they grow. Two worlds have different states, a new world has
-almost none, and a word enters the help the moment the world first needs it.
-So they are built for the caller at the moment they ask, out of the register
+per world and they grow. Two worlds have different conditions, a new world has
+almost none, and a word enters the help the moment the world first needs it. So
+they are built for the caller at the moment they ask, out of the registers
 belonging to whatever world they are standing in.
+
+Kinds and affordances are kept out of the main `help` index, which is the one
+way they differ from the other two. A mature world holds three hundred kinds,
+and three hundred nouns at the top of the index would bury the twenty commands
+somebody typing `help` was looking for. They are read by name -- `help bottle`
+-- and listed on demand, because `help kinds` and `help affordances` are
+category searches, and a category lists everything filed under it whether or
+not the index does.
 """
 
 from evennia import default_cmds
 from evennia.help.filehelp import FileHelpEntry
 
-#: Where these land in `help`'s index. Two categories rather than one, because
-#: they answer different questions -- what a thing is like, and what a person
-#: is like -- and the index is read by someone looking for one or the other.
-STATE_CATEGORY = "Conditions"
-TRAIT_CATEGORY = "Traits"
+#: Where these land in `help`'s index. Four categories rather than one, because
+#: they answer four different questions -- what a thing is, what can be done to
+#: it, what is true of it now, and what is true of a person by degree -- and
+#: the index is read by somebody looking for one of them.
+#:
+#: Lower case, because that is what the file-help loader does to a category and
+#: therefore what a category search compares against. An entry filed under
+#: "Conditions" is found by name and never by `help conditions`, which is the
+#: one way a player would think to ask for the whole list. Evennia title-cases
+#: these for display, so nothing is lost by writing them the way it stores them.
+KIND_CATEGORY = "kinds"
+AFFORDANCE_CATEGORY = "affordances"
+STATE_CATEGORY = "conditions"
+TRAIT_CATEGORY = "traits"
 
 #: Anyone may read them. They document a world the player is standing in.
 OPEN = "view:all();read:all()"
 
+#: Readable by name and listed by category, and kept out of the main index.
+#: `view` is what the index checks and `read` is what a search checks, so this
+#: is a topic that exists for whoever asks for it and does not crowd whoever
+#: did not. See the module docstring for why kinds need it and conditions do
+#: not: there are ten times as many of them.
+UNLISTED = "view:false();read:all()"
 
-def _entry(key, category, text):
+#: How many words a list in an entry will show before it stops being readable.
+#: A world can afford to settle two hundred kinds of thing that can be burned;
+#: a person reading `help burn` cannot afford to be shown them.
+MOST_LISTED = 24
+
+
+def _entry(key, category, text, aliases=(), locks=OPEN):
     return FileHelpEntry(
         key=key,
-        aliases=[],
+        aliases=list(aliases),
         help_category=category,
         entrytext=text.strip(),
-        lock_storage=OPEN,
+        lock_storage=locks,
     )
+
+
+def _place(topics, key, label, entry):
+    """
+    File an entry under its word, or under a qualified one if that is taken.
+
+    Two registers can hold the same word -- a world that measures "fire" and
+    also has fires in it is well organised rather than confused, and
+    `world.vocabulary` allows exactly that -- so the second comer is keyed
+    "fire (kind)" and both stay reachable. Whoever gets there first keeps the
+    bare word, which is why the order in `world_topics` is the order a player
+    is most likely to have meant.
+    """
+    key = str(key or "").lower().strip()
+    if not key:
+        return
+    if key not in topics:
+        topics[key] = entry
+        return
+
+    qualified = f"{key} ({label})"
+    attempt = 2
+    while qualified in topics:
+        qualified = f"{key} ({label} {attempt})"
+        attempt += 1
+    # The search index is built from the entry's own key rather than from where
+    # it was filed, so the qualified name has to go on the entry too or nothing
+    # would ever find it. The bare word stays on as an alias: it belongs to
+    # whoever got there first, but a search for it should at least offer this.
+    entry.key = qualified
+    if key not in entry.aliases:
+        entry.aliases.append(key)
+    topics[qualified] = entry
+
+
+def _listed(words):
+    """A run of words to read, cut off before it becomes a wall of them."""
+    words = sorted({str(word) for word in words if word})
+    if len(words) <= MOST_LISTED:
+        return ", ".join(words)
+    return ", ".join(words[:MOST_LISTED]) + f", and {len(words) - MOST_LISTED} more"
 
 
 def _state_text(world_root, slug, entry):
@@ -102,7 +178,7 @@ def _state_text(world_root, slug, entry):
 
 def _trait_text(caller, slug, entry):
     """What `help composure` says."""
-    from world import traits
+    from world import gear, traits
 
     means = (entry.get("means") or "").strip()
     name = (entry.get("name") or slug).strip()
@@ -126,8 +202,138 @@ def _trait_text(caller, slug, entry):
     mine = traits.describe(caller, slug)
     if mine:
         lines += ["", f"Yours: {mine}"]
+
+        # And how much of that is not theirs: armour, a weapon in hand, a fire
+        # in the room they are standing in. Worth naming because it is the part
+        # a player can change today. Asked only of somebody who has the trait,
+        # since nothing can be lending a figure that nobody is keeping.
+        granted = gear.describe(caller, slug)
+        if granted:
+            lines += ["", f"Of that, something else is lending you: {granted}. "
+                          f"Take it off, put it down or walk away from it and "
+                          f"the figure goes back to what you earned."]
     lines += ["", "|wscore|n shows everything you are measured by."]
     return "\n".join(lines)
+
+
+def _kind_text(world_root, kind, entry):
+    """What `help bottle` says."""
+    from world import affordances as af, kinds, lexicon
+
+    word = lexicon.word_of(kind) or kind
+    gloss = lexicon.definition(kind)
+    granted = dict(entry.get("affordances") or {})
+    can = sorted(af.afforded(granted))
+    cannot = sorted(af.refused(granted))
+    takes = [where for where in kinds.PLACEMENT
+             if where in {str(p) for p in (entry.get("holds") or [])}]
+    been = sorted(str(s) for s in (entry.get("states") or []) if s)
+
+    lines = [
+        f"|w{word}|n is a sort of thing this world has in it"
+        + (f": {gloss}." if gloss else "."),
+        "",
+        f"What a sort of thing affords is decided once, by the first "
+        f"{word} the world ever makes, and every one after that agrees with "
+        f"it. That is what makes a rule worth learning: whatever is worked "
+        f"out on one {word} is free on the next, and free on anything else "
+        f"that affords the same things.",
+    ]
+    if can:
+        lines += ["", f"What can be done to a {word}: "
+                      f"{_listed(can)}."]
+    if cannot:
+        lines += ["", f"What plainly cannot: {_listed(cannot)}."]
+    if not can and not cannot:
+        lines += ["", f"Nothing has been settled yet about what can be done "
+                      f"to a {word}. Try something, and it will be."]
+    if takes:
+        where = " and ".join(f"|w{place}|n one" for place in takes)
+        lines += ["", f"Things can be put {where}."]
+    if been:
+        lines += ["", f"Ones in this world have been: {_listed(been)}. "
+                      f"|whelp {been[0]}|n says what that means."]
+    lines += [
+        "",
+        "A thing can be two sorts at once -- a sword with runes on the blade "
+        "is a sword and an inscription -- and then it affords whatever either "
+        "of them does. Nothing can afford less than its sort does; a thing "
+        "that cannot do what its sort can is either in a condition that "
+        "stops it, or is really another sort.",
+    ]
+    return "\n".join(lines)
+
+
+def _affordance_text(verb, yes, no):
+    """What `help burn` says."""
+    lines = [
+        f"|w{verb}|n is something this world knows can be done to a thing.",
+        "",
+        "Read it the way |wreadable|n reads: it says what can be done TO "
+        "something, never what that something does. A lantern affords "
+        "|wlight|n because it can be lit, not because it gives light.",
+    ]
+    if yes:
+        lines += ["", f"Sorts of thing that afford it: {_listed(yes)}."]
+    if no:
+        lines += ["", f"Sorts that plainly do not: {_listed(no)}."]
+    lines += [
+        "",
+        "Anything not named either way has not been decided, which is the "
+        "ordinary state of most pairs of verb and thing. Whoever tries it "
+        f"first settles it -- once, for that whole sort of thing -- so "
+        f"|w{verb} <something>|n is how the question gets answered.",
+    ]
+    if yes:
+        lines += ["", f"|whelp {sorted(yes)[0]}|n says everything that sort "
+                      f"affords."]
+    return "\n".join(lines)
+
+
+def _kind_topics(world_root):
+    """Every kind this world has settled, as (word, label, entry) triples."""
+    from world import kinds, lexicon
+
+    found = []
+    for kind in kinds.vocabulary(world_root):
+        spec = kinds.spec(world_root, kind) or {}
+        word = lexicon.word_of(kind) or kind
+        # The synset id is an alias rather than the key: a player types
+        # "chest", and "chest.n.02" is what the world wrote down. Both reach
+        # the same entry, and the id is also what tells two kinds sharing a
+        # word apart when one of them has to be filed under a qualified name.
+        found.append((word, kind, _entry(
+            word, KIND_CATEGORY, _kind_text(world_root, kind, spec),
+            aliases=[kind] if kind != word else [], locks=UNLISTED)))
+    return found
+
+
+def _affordance_topics(world_root):
+    """
+    Every verb this world's kinds have an opinion about.
+
+    Read out of the kind specs rather than kept anywhere of its own, because
+    that is where an affordance lives now: it is a fact about bottles, held
+    against the kind. This turns that store inside out to answer the other
+    question -- not "what can be done to this" but "what is this done to".
+    """
+    from world import kinds, lexicon
+
+    yes, no = {}, {}
+    for kind in kinds.vocabulary(world_root):
+        spec = kinds.spec(world_root, kind) or {}
+        word = lexicon.word_of(kind) or kind
+        for verb, allowed in dict(spec.get("affordances") or {}).items():
+            (yes if allowed else no).setdefault(str(verb), set()).add(word)
+
+    # A verb that is also a command -- `get`, `wear`, `look` -- keeps its
+    # command help, because Evennia lets a command win any name clash and that
+    # is the right answer: the command is what the player types. The entry is
+    # still reachable through `help affordances`.
+    return [(verb, "affordance", _entry(
+        verb, AFFORDANCE_CATEGORY,
+        _affordance_text(verb, yes.get(verb, ()), no.get(verb, ())),
+        locks=UNLISTED)) for verb in sorted(set(yes) | set(no))]
 
 
 def world_topics(caller, world_root=None):
@@ -137,6 +343,11 @@ def world_topics(caller, world_root=None):
     Empty for anyone standing outside an AI world, which is the right answer:
     these words describe a particular world's rules and mean nothing away
     from it.
+
+    Ordered by who should keep a word the registers share. Conditions and
+    traits first because a player asking what "burning" or "composure" means
+    is asking about the thing in front of them, then kinds, then affordances
+    -- which are verbs, and verbs collide with participles least of all.
     """
     if world_root is None:
         room = getattr(caller, "location", None)
@@ -150,19 +361,21 @@ def world_topics(caller, world_root=None):
     for slug, entry in (verbs.vocabulary(world_root) or {}).items():
         if not slug:
             continue
-        topics[str(slug).lower()] = _entry(
-            slug, STATE_CATEGORY, _state_text(world_root, slug, entry))
+        _place(topics, slug, "condition",
+               _entry(slug, STATE_CATEGORY,
+                      _state_text(world_root, slug, entry)))
     for slug, entry in (traits.vocabulary(world_root) or {}).items():
         if not slug:
             continue
         # A world that registered a trait and a state under one word is
         # telling us something about people; the state entry is about things.
         # Keep both reachable by keying the trait on its own name.
-        key = str(slug).lower()
-        if key in topics:
-            key = f"{key} (trait)"
-        topics[key] = _entry(
-            slug, TRAIT_CATEGORY, _trait_text(caller, slug, entry))
+        _place(topics, slug, "trait",
+               _entry(slug, TRAIT_CATEGORY, _trait_text(caller, slug, entry)))
+    for key, label, entry in _kind_topics(world_root):
+        _place(topics, key, label, entry)
+    for key, label, entry in _affordance_topics(world_root):
+        _place(topics, key, label, entry)
     return topics
 
 
@@ -175,9 +388,18 @@ class CmdAIHelp(default_cmds.CmdHelp):
       help <topic or command>
 
     As well as the usual commands and topics, this world keeps its own
-    vocabulary: the conditions a thing can be in and the figures a person is
-    measured by, both of which it invents as it goes. `help empty` and `help
-    composure` say what this world means by them.
+    vocabulary, invented as it goes, and every word of it has an entry:
+
+      |wkinds|n         what a thing is -- `help bottle`
+      |waffordances|n   what can be done to one -- `help burn`
+      |wconditions|n    what is true of one just now -- `help empty`
+      |wtraits|n        what a person is measured by -- `help composure`
+
+    Typing the name of a group -- `help kinds` -- lists every word this world
+    has put in it, and `score` does the same for the figures kept about you.
+    The lists are per world: another world knows other things, and a new one
+    knows almost nothing until it has been played in. `help vocabulary` says
+    how the four differ.
     """
 
     def collect_topics(self, caller, mode="list"):
@@ -188,9 +410,17 @@ class CmdAIHelp(default_cmds.CmdHelp):
         resemble -- text with a key, owned by nobody in the database. Evennia
         lets commands win a name clash and database entries beat file ones, so
         a world that registers a state called "look" cannot bury the command.
+
+        Locks are checked here rather than left to the caller, because the
+        superclass checks them before it returns and anything added afterwards
+        would have slipped past: `view` for the index and `read` for a search
+        is exactly the distinction that keeps three hundred kinds readable
+        without putting all three hundred at the top of `help`.
         """
         cmd_topics, db_topics, file_topics = super().collect_topics(caller, mode)
+        permitted = self.can_list_topic if mode == "list" else self.can_read_topic
         merged = dict(file_topics)
         for key, entry in world_topics(caller).items():
-            merged.setdefault(key, entry)
+            if permitted(entry, caller):
+                merged.setdefault(key, entry)
         return cmd_topics, db_topics, merged

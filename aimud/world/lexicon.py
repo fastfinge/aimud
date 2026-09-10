@@ -288,6 +288,40 @@ def buckets(sense):
     )
 
 
+def word_of(sense):
+    """
+    The plain word a sense is about: "chest.n.02" -> "chest".
+
+    A synset id is written for a machine but it carries its own lemma, which
+    is the one part of it meant for a person -- and a person is who asks, since
+    this exists for `help chest` rather than for anything the game decides. No
+    corpus needed, and a bare noun (which is what a kind is when WordNet has
+    never heard of it) comes back as itself.
+    """
+    name = str(sense or "").strip().lower()
+    if not name:
+        return ""
+    return name.split(".")[0].replace("_", " ")
+
+
+def definition(sense):
+    """
+    What WordNet says a sense is, or "" when there is no corpus.
+
+    The gloss, which is the sentence that tells a box from a ribcage. Only ever
+    shown to a player: nothing in the game decides anything by it, which is the
+    rule this module keeps -- a lexicon is asked what a word can be, never what
+    it means here.
+    """
+    synset = _synset(sense)
+    if synset is None:
+        return ""
+    try:
+        return synset.definition() or ""
+    except Exception:
+        return ""
+
+
 def senses(word, pos="n", limit=12):
     """
     The senses a word has, as [(id, definition)], for a model to choose from.
