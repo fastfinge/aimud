@@ -440,6 +440,44 @@ descendant of it**, which is the reuse axis: one rule on `vehicle.n.01` covers
 every ship, pod and cart a world will ever generate, because
 `lexicon.ancestors` answers that for nothing.
 
+#### The other axis, and why it is not a scope
+
+The taxonomy carves the world one way -- by what a thing *is* -- and a rule
+sometimes wants the other: by what a thing is *for*. "Everything readable",
+"all machines". WordNet will not give that, and it is not wrong to refuse:
+`spacecraft.n.01` descends through `vehicle`, not through `machine`, and an
+`inscription` is `written_communication` rather than a `publication`. Each of
+those reads as an error and is not one; a carved inscription is genuinely not
+published. Three assumptions to the contrary were made and corrected while
+building phase 2, and they are tests now.
+
+The temptation is to reach for a corpus. ConceptNet's `UsedFor`, `CapableOf`
+and `ReceivesAction` are precisely the functional axis, and they would work.
+They must still not be a scope, for a reason that is structural rather than
+fastidious: **a scope has to be a closed identifier, stable, printable in
+`rules`, and the same whether or not a corpus is installed.** A grouping
+computed from edges is none of those. Membership would shift with the corpus,
+and a world without ConceptNet would have different scopes from one with it,
+which breaks the neutral-degradation rule this whole design rests on.
+
+It is also unnecessary, because the functional axis is already expressible --
+as a **condition** rather than as a scope:
+
+```json
+{"phase": "check", "action": "read", "scope": {"world": true},
+ "conditions": [{"subject": "direct", "affords": ["read"]}]}
+```
+
+That reaches every readable thing in the world, out of the world's own settled
+affordances (§5.4). And where a world wants to say that in *this* world a
+spacecraft is a machine, the mechanism is a **secondary kind** -- the union of
+§5.3, declared once per kind, closed and world-local.
+
+So two ways to group by function already exist and neither needs a corpus.
+ConceptNet's job stays where §7.1 puts it: proposing what a kind affords, and
+proposing an anchor for an invented noun. Both are suggestions into a prompt,
+and neither grounds a scope.
+
 ### 5.4 Conditions
 
 One language, replacing both `verbs.check`'s role-keyed form and `goals`'

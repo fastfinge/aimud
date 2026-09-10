@@ -575,6 +575,26 @@ reply, it is tier B. Tier C is only for "is the live model still cooperating".
   `naming.py` already cover these.
 * **A logical resolver, a general triple store, and synonym folding computed
   from corpora.** All three rejected with reasons in the notes.
+* **Senses and dictionary priors for traits.** Asked, measured, declined.
+  There are 10 distinct trait slugs across all seven worlds; 9 have a WordNet
+  noun sense; and **no pair anywhere would be folded by synonymy**, so a sense
+  would deduplicate nothing. The prior already exists --
+  `traits.vocabulary_block` is shown to every prompt that can invent one, which
+  is why the register is small. And a gloss would make things worse rather than
+  better: a trait's `means` is a decision about *this* world, not about
+  English. World-05's `stamina` is "physical energy and satiety" where
+  world-01's is "physical energy and endurance", and a dictionary would flatten
+  both to "the power of sustained exertion".
+
+  The collision the prompts warn about -- "a world where one character has
+  magic and another mana" -- did occur, in world-03, and the world was right:
+  `arcana` is a counter for "understanding and manipulation of magical forces"
+  and `mana` is a gauge of "magical energy available to be spent". A skill and
+  a resource. Folding them would have been the error, which is the argument
+  `traits._matching` already makes: "folding 'mana' onto 'magic' would be
+  deciding a question of meaning that is not this function's to decide." The
+  one collision that does matter, a trait and a state sharing a word, is
+  already refused by `world.vocabulary`.
 
 ---
 
