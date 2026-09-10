@@ -537,6 +537,9 @@ def create(spec, location, worn_on=None):
             granted[slug] = amount
     if granted:
         obj.db.trait_bonuses = granted
+        gate = str(spec.get("bonus_while", "")).strip().lower()
+        if gate:
+            obj.db.bonus_while = gate
         when = str(spec.get("bonus_when", "")).strip().lower()
         if when in gear.CONDITIONS:
             obj.db.bonus_when = when

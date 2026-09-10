@@ -331,6 +331,14 @@ class NPC(ObjectParent, DefaultObject):
         from world.following import move_followers
 
         move_followers(self, source_location)
+
+        # The same sums a player's arrival redoes: what this room is worth to
+        # them, and what they are no longer worth to the one behind them.
+        from world.gear import recompute, recompute_room
+
+        recompute(self)
+        recompute_room(source_location, ignoring=self)
+
         from world.verbs import clear_on_move
 
         room = self.location

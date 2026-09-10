@@ -152,6 +152,15 @@ def register(world_root, slug, name="", means="", trait_type=DEFAULT_TRAIT_TYPE,
     if existing:
         return existing
 
+    # A word already meaning something else in this world is not free. See
+    # `world.vocabulary`: a state and a trait sharing a name are two answers
+    # to one question about a thing, and nothing afterwards can say which was
+    # meant.
+    from world import vocabulary
+
+    if not vocabulary.permit(world_root, slug, "trait"):
+        return ""
+
     trait_type = trait_type if trait_type in TRAIT_TYPES else DEFAULT_TRAIT_TYPE
     entry = {
         "name": str(name).strip() or slug.replace("_", " ").title(),

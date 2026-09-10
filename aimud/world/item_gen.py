@@ -45,7 +45,8 @@ Respond with a single JSON object — no other text:
   "states": ["dusty"],
   "clothing_type": "",
   "trait_bonuses": {"defence": 2},
-  "bonus_when": "worn"
+  "bonus_when": "worn",
+  "bonus_while": ""
 }
 kind is the one common noun this thing IS, singular and lowercase, with every
 describing word stripped off: a "Blue Ceramic Cup" is a cup, a "Stained Slate

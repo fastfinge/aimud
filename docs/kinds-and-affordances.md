@@ -225,41 +225,94 @@ Worlds are reset for this. There is no migration.
 
 ---
 
-# Open: conditions that persist and apply to whoever is present
+# Conditions that persist and apply to whoever is present
 
-A verb can now do several things at once, and one of those things can be aimed
-at everyone standing in the room -- a fire warms the company, a shout startles
-the others. What it still cannot do is leave a condition *behind*.
-
-The difference matters and the one-shot version is wrong in both directions.
-Set `warm` on everybody present when the fire is lit, and the man who walks in
-a minute later is cold beside a blazing hearth, while the man who leaves stays
+A verb can set a state on everyone standing in a room. What it could not do was
+leave a condition *behind*, and the one-shot version is wrong in both
+directions: set `warm` on everybody when the fire is lit, and the man who walks
+in a minute later is cold beside a blazing hearth while the man who leaves stays
 warm out in the snow. Being near a fire is not something that happens to you
-once; it is true of you for as long as you are there.
+once.
 
-Nothing here models that, and the near misses are all worse than they look:
+Every obvious answer was worse than it looked. A rule that ticks gives up the
+one property every other decision here protects -- a world with nobody in it is
+asleep and costs nothing. A global rule over states has to be evaluated against
+the world rather than at a checkpoint, which is the same objection wearing a
+different hat. A trait with a `rate` already plays out over time but is fixed to
+a person, so it keeps warming somebody who has walked out.
 
-* **A one-shot on everyone present** is the version above. It is right at the
-  instant it fires and wrong from the next moment on.
+## Traits already solved this, for gear
 
-* **A trait with a `rate`** already plays out over time, which is the closest
-  thing in the game, but it is fixed to a character rather than to a place. It
-  keeps warming somebody who has walked out.
+`gear.recompute()` rewrites every trait from scratch, so *"taking the helmet off
+removes exactly what putting it on added and no accounting is kept anywhere"*.
+That is idempotent recalculation from a set of sources, which is exactly the
+shape an ambient condition needs. Adding the room as a source is a change to
+`total()`, and everything else falls out.
 
-* **A rule that ticks** is the obvious answer and the expensive one. A world
-  with nobody in it is asleep and costs nothing, which is the property every
-  other decision here has been made to protect; anything that has to be
-  re-evaluated on a timer gives that up.
+So: a fourth `bonus_when`.
 
-* **A global rule over states** -- "anything in a room with a burning thing is
-  warm" -- has to be evaluated against the world rather than at a checkpoint,
-  which is the same objection wearing a different hat.
+```
+worn - wielded - carried - present
+```
 
-The shape of an answer, if there is one, is probably that the *room* or the
-*burning thing* carries the condition, and that arriving and leaving are
-checkpoints like any other: `at_post_move` already fires on both sides of a
-step and already clears posture. Then nothing ticks, nothing is polled, and a
-sleeping world stays asleep -- somebody walking in is what causes the work,
-which is the same bargain the rest of the game makes.
+`present` means lying in the room and doing it for everybody there -- and the
+room itself may carry bonuses, because a forge is warm on its own account. A
+fire warms whoever lit it, whoever was already there, and whoever walks in
+afterwards, and stops the moment they leave. Nothing is added or subtracted;
+the sum is redone.
 
-That is a sketch and not a design. Left open deliberately.
+And `bonus_while`, naming a state the thing must be in first. Without it a lamp
+in a pack shines as brightly as one alight, which is the same class of mistake
+as an affordance list that cannot say no.
+
+## Two triggers, both checkpoints
+
+* **Somebody arrives or leaves.** `at_post_move` recomputes the mover and the
+  room behind them. Both sides, because leaving changes what the room is worth
+  to them and what they were worth to the room.
+* **A source changes state.** Lighting the fire changes what the room is worth
+  to everyone already in it, and there is nobody to hang that on -- so
+  `recompute_room` redoes the sums for the company. Only for things whose worth
+  is gated on a state, so the ordinary case costs one lookup.
+
+Nothing ticks. It runs when a thing changes, not while it stays changed.
+
+## Why traits rather than states
+
+States *are* plannable -- `_for_condition` handles them and `_effect_achieves`
+matches `set_state`. That was not the reason. The reason is threefold:
+
+* **Accounting.** A state applied on entry must be removed on every exit, and
+  any missed removal is permanent. Recomputation cannot miss one.
+* **Degree.** Warmth from a forge plus warmth from a coat is more than either.
+  A state is on or off, so a candle warms you as much as a bonfire.
+* **No verb required.** A state changes only when a verb sets it, so "become
+  warm" is plannable only if the world has learned a verb that makes people
+  warm. A trait moves by standing somewhere or carrying something, which is
+  what makes *go to the forge* and *put on the coat* available as answers to
+  being cold.
+
+The line, stated once: **a state persists until something changes it; a trait
+modifier persists only while its source does.** Burning, open, cracked and dead
+are states. Warm, lit, sheltered and overburdened are sourced.
+
+## One word, one meaning
+
+Four registers describe a thing -- kind, affordance, state, trait -- and every
+one is filled in by a model as a world runs. Nothing stopped the same word
+turning up in several, and the way that goes wrong is quiet: `fire` as a trait
+on people, a state group, and a kind of object, with `set_trait fire` and
+`set_state fire` writing to different places under one name and no record of
+which any given rule meant.
+
+`world.vocabulary` refuses the pair that actually collides. **A trait and a
+state may not share a word**, because both say what is true of a thing right
+now and two answers to one question is worse than neither -- first registration
+wins, the second is refused and logged. The other overlaps are reported and
+allowed, because they are usually English working properly: affordances are
+verbs and states are participles, so `burn` and `burning` are one idea
+correctly split across two registers, and a world with a kind called `fire` is
+not confused but well organised.
+
+Which also settles a collision already latent in the code: `lit` on a lantern
+is a state, and `lit` on a person would be sourced. Same word, two mechanisms.

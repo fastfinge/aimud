@@ -1042,6 +1042,12 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
         if _similar(slug, existing):
             return existing
 
+    # The same guard traits keep, from the other side. See `world.vocabulary`.
+    from world import vocabulary as _vocabulary
+
+    if not _vocabulary.permit(world_root, slug, "state"):
+        return ""
+
     # The group is registered before the state, so a state that names a new
     # group leaves behind a group that behaves like one. A seeded slug keeps
     # its seeded group whatever was declared -- see DEFAULT_STATE_GROUP.

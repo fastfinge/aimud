@@ -261,9 +261,20 @@ def _apply_one(actor, room, effect, bound, world_root):
             remove.append(str(slug).lower().strip())
         from world import kinds
 
+        from world import gear
+
         for obj in targets:
             verbs.apply_states(obj, add=add, remove=remove,
                                world_root=world_root)
+            # A lamp going out stops lighting whoever holds it, and a fire
+            # going out stops warming the room. Only for things whose worth is
+            # gated on a state, so the ordinary case costs one lookup.
+            if gear.gated_by(obj):
+                where = getattr(obj, "location", None)
+                if gear.condition(obj) == "present":
+                    gear.recompute_room(where)
+                elif where is not None:
+                    gear.recompute(where)
             # What this sort of thing turns out to get up to. Both halves: a
             # bottle that can be emptied is a bottle that can be full, and a
             # rule written about bottles later should be shown both words

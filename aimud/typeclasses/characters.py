@@ -168,6 +168,15 @@ class Character(ObjectParent, DefaultCharacter):
 
         move_followers(self, source_location)
 
+        # What this room is worth to them changed by walking into it, and what
+        # they were worth to the room behind them changed by leaving. Both are
+        # a fresh sum rather than an adjustment, so neither can drift, and a
+        # fire two rooms back stops warming them the moment they are gone.
+        from world.gear import recompute, recompute_room
+
+        recompute(self)
+        recompute_room(source_location, ignoring=self)
+
         # You stood up to walk here: posture does not travel.
         from world.verbs import clear_on_move
 
