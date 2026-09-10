@@ -33,7 +33,8 @@ Respond with a single JSON object — no other text — matching:
   "requires": {"<role>": {"has": ["affordance"], "is": ["state"], "lacks": ["state"], "holds": ["direct" or "item name"], "trait": {"stamina": {"min": 10}}}},
   "check": {"trait": "swordsmanship", "against": {"role": "direct", "trait": "swordsmanship"}},
   "effects": [ ... ],
-  "new_states": [{"slug": "burning", "means": "on fire", "group": "fire", "group_ends_on_move": false}],
+  "new_states": [{"slug": "burning", "means": "on fire", "group": "fire", "group_ends_on_move": false,
+                  "group_prevents_acting": false, "group_prevents_moving": false, "group_prevents_speaking": false}],
   "new_traits": [{"slug": "stamina", "name": "Stamina", "means": "how much effort is left in someone", "trait_type": "gauge", "base": 100, "min": 0}],
   "repeatable": true
 }
@@ -162,6 +163,14 @@ not have to list what a state cancels -- membership does it. Give one whenever
 a state is one of a set that answers the same question: open and closed are an
 "openness", hot and cold a "temperature". That is the cheapest thing you can
 write, and without it a thing can be open and closed at the same moment.
+
+The three "group_prevents_" flags say what a state stops its holder DOING,
+and are the only way to express that -- there is no list of forbidden verbs,
+because a state is settled once while new verbs go on being invented, so any
+list would be stale within a week. Set them on states that genuinely disable:
+dead and unconscious prevent all three, tied and pinned prevent moving, gagged
+prevents speaking. Leave all three false for the ordinary run of states, which
+describe a thing rather than stop it -- wet, dusty, open, lit, empty.
 
 Add "group_ends_on_move": true only if standing up and walking away would end
 it, the way sitting down ends when you leave the room. Almost nothing does. "posture" holds
@@ -516,6 +525,9 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
                     conflicts=[str(c) for c in state.get("conflicts", [])],
                     group=str(state.get("group", "")).strip().lower() or None,
                     ends_on_move=state.get("group_ends_on_move"),
+                    prevents_acting=state.get("group_prevents_acting"),
+                    prevents_moving=state.get("group_prevents_moving"),
+                    prevents_speaking=state.get("group_prevents_speaking"),
                 )
             # Registered before the rule is stored, so that a trait the rule
             # goes on to change is one the world knows about -- and so that

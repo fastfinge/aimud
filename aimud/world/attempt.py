@@ -143,6 +143,15 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
     if not verb:
         return
 
+    # Some states stop their holder doing anything at all. Asked here because
+    # this is the one road every action takes, a player's and a character's
+    # alike, so a dead thing stops acting without any rule having to say so
+    # and without every verb ever learned having to remember it.
+    refusal = verbs.refuse(caller, "prevents_acting", _world_root(room))
+    if refusal:
+        on_message(refusal, "")
+        return
+
     if verb == "follow":
         # Standing arrangements are not verbs. Without this an NPC asking to
         # follow someone would have the world learn a "follow" rule, which can

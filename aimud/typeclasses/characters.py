@@ -136,6 +136,17 @@ class Character(ObjectParent, DefaultCharacter):
 
     def at_say(self, message, msg_self=None, msg_location=None,
                receivers=None, msg_type="say", **kwargs):
+        # A gag stops the words before the room hears them, and before any NPC
+        # is woken to think about what was said. Checked ahead of super() for
+        # that reason: a muffled shout that still reaches everybody is worse
+        # than one nobody hears.
+        from world import verbs
+
+        refusal = verbs.refuse(self, "prevents_speaking")
+        if refusal:
+            self.msg(refusal)
+            return
+
         super().at_say(message, msg_self=msg_self, msg_location=msg_location,
                        receivers=receivers, msg_type=msg_type, **kwargs)
         room = self.location

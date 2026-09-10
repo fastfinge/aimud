@@ -633,7 +633,9 @@ def _similar(a, b):
 #: and closed has already said what it means, and treating an unrecognised name
 #: as a loose flag threw that away, so a thing could be open and closed at the
 #: same time and opening it cleared nothing.
-NEW_GROUP = {"exclusive": True, "ends_on_move": False}
+NEW_GROUP = {"exclusive": True, "ends_on_move": False,
+             "prevents_acting": False, "prevents_moving": False,
+             "prevents_speaking": False}
 
 #: Groups every world starts with, and how they behave.
 #:
@@ -642,15 +644,35 @@ NEW_GROUP = {"exclusive": True, "ends_on_move": False}
 #: ends_on_move -- walking out of the room ends it. You cannot carry a chair
 #:                 away by remaining seated on it.
 #:
+#: The last three are what a state does to whoever is IN it, rather than what
+#: it says about them. Three and no more, and never a list of forbidden verbs:
+#: a state is settled once and never revised, while the verb vocabulary grows
+#: for as long as a world runs, so a list written when "gagged" was coined
+#: cannot mention singing, chanting or reciting and gets staler every day. A
+#: gate is closed and total instead -- everything is an action, so acting
+#: covers the verbs nobody has invented yet.
+#:
+#: prevents_acting   -- a dead thing does not go on about its business.
+#: prevents_moving   -- you cannot walk away tied to a chair.
+#: prevents_speaking -- a gagged mouth makes no dialogue.
+#:
 #: These are seeds rather than the whole list. A world registers its own as it
 #: needs them -- see `register_group` -- and what is here is only what no world
 #: should have to discover for itself: `ends_on_move` in particular is not
 #: something a model reliably works out, and getting it wrong means a character
 #: who stays seated in every room they walk into.
 STATE_GROUPS = {
+    # Sitting ends when you walk rather than stopping you walking, which is
+    # the difference between a posture and a restraint: standing up is part of
+    # leaving. `bonds` is the other half of that, seeded because a world that
+    # ties somebody up and then lets them stroll off has wasted the rope.
     "posture": {"exclusive": True, "ends_on_move": True},
     "wetness": {"exclusive": True, "ends_on_move": False},
     "fire":    {"exclusive": True, "ends_on_move": False},
+    "life_status": {"exclusive": True, "prevents_acting": True,
+                    "prevents_moving": True, "prevents_speaking": True},
+    "bonds":   {"exclusive": True, "prevents_moving": True},
+    "gagged":  {"exclusive": True, "prevents_speaking": True},
 }
 
 #: Where a state belongs when nothing says otherwise. Seeded for the ones a
@@ -675,6 +697,17 @@ DEFAULT_STATE_GROUP.update({
 })
 DEFAULT_STATE_GROUP.update({
     slug: "fire" for slug in ("burning", "alight", "lit", "extinguished", "unlit")
+})
+DEFAULT_STATE_GROUP.update({
+    slug: "life_status" for slug in ("dead", "slain", "killed", "deceased",
+                                     "lifeless", "alive", "living")
+})
+DEFAULT_STATE_GROUP.update({
+    slug: "bonds" for slug in ("bound", "tied", "shackled", "chained",
+                               "manacled", "pinned", "trapped", "free")
+})
+DEFAULT_STATE_GROUP.update({
+    slug: "gagged" for slug in ("gagged", "muzzled", "muted", "silenced")
 })
 
 
@@ -718,7 +751,72 @@ def group_rules(world_root, group):
     return groups(world_root).get(group) or dict(NEW_GROUP)
 
 
-def register_group(world_root, group, exclusive=None, ends_on_move=None):
+#: The three things a state can stop somebody doing, and how to say so.
+#:
+#: The wording is built from the slug because the slugs are already adjectives
+#: -- dead, tied, gagged, sitting -- so "You cannot move while tied" falls out
+#: without anybody writing a sentence for it. A state whose slug does not read
+#: that way still gets an honest line, just a duller one.
+GATES = {
+    "prevents_acting": "do that",
+    "prevents_moving": "move",
+    "prevents_speaking": "speak",
+}
+
+
+def blocked(character, gate, world_root=None):
+    """
+    The state stopping this character, or "" if nothing is.
+
+    One question asked in three places -- before an action, before a step,
+    before a word -- because a state that stops you doing something has to
+    stop the player and the character alike, and neither of them should be
+    asked a different question.
+
+    Cheap enough to ask on every movement and every line of dialogue: a set
+    intersection against the states already on the object, and a dict lookup
+    per group. Nothing here reads the world unless a state is actually held.
+    """
+    if character is None or gate not in GATES:
+        return ""
+    held = states(character)
+    if not held:
+        return ""
+    if world_root is None:
+        room = getattr(character, "location", None)
+        world_root = getattr(getattr(room, "db", None), "world_root", None)
+    known = groups(world_root)
+    for slug in sorted(held):
+        group = group_of(world_root, slug)
+        if not group:
+            continue
+        rules = known.get(group) or STATE_GROUPS.get(group) or {}
+        try:
+            if rules.get(gate):
+                return slug
+        except AttributeError:
+            continue
+    return ""
+
+
+def refuse(character, gate, world_root=None):
+    """
+    What to tell somebody who cannot do this, or "" when they can.
+
+    Second person because both halves of the game need it: a player is told
+    directly, and a character is told the same words as a thing it noticed,
+    which is what stops it trying again every turn for as long as the state
+    lasts.
+    """
+    slug = blocked(character, gate, world_root)
+    if not slug:
+        return ""
+    return f"You cannot {GATES[gate]} while {slug.replace('_', ' ')}."
+
+
+def register_group(world_root, group, exclusive=None, ends_on_move=None,
+                   prevents_acting=None, prevents_moving=None,
+                   prevents_speaking=None):
     """
     Put a group in the world's register, or fold it onto one already there.
 
@@ -748,6 +846,12 @@ def register_group(world_root, group, exclusive=None, ends_on_move=None):
         entry["exclusive"] = bool(exclusive)
     if ends_on_move is not None:
         entry["ends_on_move"] = bool(ends_on_move)
+    for name, given in (("prevents_acting", prevents_acting),
+                        ("prevents_moving", prevents_moving),
+                        ("prevents_speaking", prevents_speaking)):
+        if given is not None:
+            entry[name] = bool(given)
+        entry.setdefault(name, False)
 
     stored = dict(world_root.db.state_groups or {})
     if stored.get(group) != entry:
@@ -918,7 +1022,8 @@ def _synonym_group(world_root, slug, vocab):
 
 
 def register_state(world_root, slug, means="", conflicts=(), group=None,
-                   ends_on_move=None):
+                   ends_on_move=None, prevents_acting=None,
+                   prevents_moving=None, prevents_speaking=None):
     """
     Add a state to the world's vocabulary, or fold it onto an existing one.
 
@@ -961,7 +1066,10 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
         # at once with nothing able to put it right.
         group = register_group(world_root, opposite)
     elif group:
-        group = register_group(world_root, group, ends_on_move=ends_on_move)
+        group = register_group(world_root, group, ends_on_move=ends_on_move,
+                               prevents_acting=prevents_acting,
+                               prevents_moving=prevents_moving,
+                               prevents_speaking=prevents_speaking)
 
     vocab[slug] = {
         "means": means,

@@ -243,6 +243,15 @@ def npc_may_act(npc):
 
     world_root = room.db.world_root
 
+    # Before either brake, and before the "always on" override: a state that
+    # stops its holder acting stops it thinking too. `attempt` refuses the
+    # action anyway, but an NPC that reaches that point has already spent a
+    # dialogue call deciding what a corpse would like to do next.
+    from world import verbs
+
+    if verbs.blocked(npc, "prevents_acting", world_root):
+        return False
+
     # A world set to always skips both brakes at once: how long since anybody
     # typed, and whether anybody is anywhere near this character. The window
     # is still stamped, so that turning the mode off afterwards leaves
