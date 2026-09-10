@@ -159,3 +159,44 @@ def free_directions(world_root, coord):
                                 coord[1] + vector[1],
                                 coord[2] + vector[2])) is None
     ]
+
+
+def rooms_of(world_root):
+    """Every room in this world, in creation order."""
+    from evennia.objects.models import ObjectDB
+
+    if world_root is None:
+        return []
+    found = [
+        obj for obj in ObjectDB.objects.all()
+        if obj.db_destination is None and obj.db.world_root == world_root
+    ]
+    if world_root not in found and world_root.db.is_world_root:
+        found.append(world_root)
+    return sorted(found, key=lambda room: room.id)
+
+
+def room_named(world_root, title):
+    """
+    The room in this world whose name a rule wrote, or None.
+
+    Beside `room_at`, and for the same reason: both answer "which room in this
+    world is that", one from a coordinate and one from a name. A name is what a
+    rule can actually write -- a dbref is meaningless to whoever is writing the
+    rule and wrong the moment a world is rebuilt -- so this is the lookup every
+    effect that names a place goes through.
+
+    Matched on the title first and the key second, because `room_title` is the
+    name a world calls a place and `key` is what Evennia stores. Case and
+    surrounding space are ignored; nothing cleverer, because an effect that
+    half-matched the wrong room would move things somewhere nobody asked for.
+    """
+    wanted = str(title or "").strip().lower()
+    if not wanted:
+        return None
+    for room in rooms_of(world_root):
+        for name in (room.db.room_title, room.key):
+            if str(name or "").strip().lower() == wanted:
+                return room
+    return None
+

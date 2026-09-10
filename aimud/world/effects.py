@@ -228,6 +228,22 @@ def _apply_one(actor, room, effect, bound, world_root):
             ok, message = relations.place(obj, host, preposition, quiet=True)
             return message if ok else None
 
+        # Another room entirely, named the way a rule can name one. Until now
+        # `to` reached the actor, this room, or a role -- never a different
+        # place -- so a ship that launched could not put anything anywhere, and
+        # nor could a verb that sent a letter or emptied a bin.
+        if where not in ("actor", "room"):
+            from world import coords
+
+            elsewhere = coords.room_named(world_root, where)
+            if elsewhere is None:
+                return None
+            if not obj.move_to(elsewhere, quiet=True):
+                return None
+            relations.displace(obj)
+            label = obj.get_numbered_name(1, None, return_string=True)
+            return f"{label.capitalize()} is gone."
+
         destination = actor if where == "actor" else room
         if obj.move_to(destination, quiet=True):
             # It is in a hand or on a floor now, not on or in anything.
@@ -236,6 +252,43 @@ def _apply_one(actor, room, effect, bound, world_root):
             return (f"{actor.get_display_name(actor)} takes {label}." if destination is actor
                     else f"{label.capitalize()} is set down.")
         return None
+
+    if etype == "set_exit":
+        # Where a way out of here leads. The effect a launching ship needs: its
+        # airlock opened onto a landing pad a moment ago and opens onto a dock
+        # now, and nothing in the vocabulary could say so -- exits were built by
+        # `worldgen` and never touched again.
+        #
+        # Rooms are named rather than referenced. A dbref means nothing to
+        # whoever writes the rule and is wrong the moment a world is rebuilt,
+        # so the name a world calls a place is the only thing a rule may use.
+        from world import coords
+
+        name = str(effect.get("exit") or effect.get("name") or "").strip()
+        if not name:
+            return None
+        found = [e for e in room.exits
+                 if str(e.key or "").strip().lower() == name.lower()
+                 or name.lower() in [str(a).lower() for a in (e.aliases.all()
+                                                              or [])]]
+        if not found:
+            return None
+        exit_obj = found[0]
+
+        wanted = str(effect.get("to") or "").strip()
+        if not wanted:
+            return None
+        elsewhere = coords.room_named(world_root, wanted)
+        if elsewhere is None or elsewhere is room:
+            return None
+        if exit_obj.destination is elsewhere:
+            return None                 # already there; say nothing twice
+        exit_obj.destination = elsewhere
+        # A way that was waiting to be built no longer is: it leads somewhere
+        # real, and generating a second room behind it would strand this one.
+        exit_obj.db.pending_generation = False
+        return (f"{exit_obj.get_numbered_name(1, None, return_string=True)}"
+                f" leads somewhere else now.")
 
     if etype == "modify_object":
         obj = _resolve(effect, "name", bound, room, actor)

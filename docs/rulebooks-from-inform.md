@@ -1666,7 +1666,7 @@ already closed and already minimal. Set against what `effects.py` can do today:
 | Inform has | aimud has | Worth taking |
 |---|---|---|
 | doors, two-sided, connecting two rooms | exits, built only by `worldgen` | **yes** -- `set_exit`; §11 already has this binding first |
-| lockable things with a matching key | nothing; a `locked` state with no key behind it | **yes**, with declared relations |
+| lockable things with a matching key | a `locked` state that now really shuts an exit; still no key behind it | **partly done** -- refusing and unlocking by rule works; matching *this* key to *that* lock still wants declared relations |
 | devices, switched on/off | a state, which is the right answer | no |
 | light and darkness, and actions that require light | `gear.py`: `trait_bonuses` with `bonus_when: present` and `bonus_while` | **no code** -- it is a trait, and the mechanism is already built. §8.1 |
 | backdrops: one thing present in many rooms | nothing; a sky would have to be a separate object per room | **probably** -- the hum of an engine, a river, a storm overhead |

@@ -469,6 +469,58 @@ buy warmth, stench, noise and radiation.
 without this test is a hole in the planner**; `[B]` each effect applied and
 observed; `[B]` exits retargeted and traversed.
 
+**Done, except declared relations.** `set_exit` retargets a way out of this room;
+`move_object` takes a room's name as well as the actor, this room or a role.
+Both name rooms the way somebody reading would — `coords.room_named` — because a
+dbref means nothing to whoever writes the rule and is wrong the moment a world is
+rebuilt. `leads_to` is the condition that reads `set_exit` backwards, and it asks
+about one step rather than about reachability, which is both what a rule about an
+airlock means and what the planner can act on.
+
+A third gap turned up on the way and was the cheapest of the three:
+`relations.SHUT` has named the shutting states since containers learned to
+close, and **an exit in one admitted everybody anyway**. So the `locked` state
+that 121 `lacks` clauses in the corpus talk about had nothing behind it. Fixed in
+`at_traverse`, which means locking a door is now `set_state` and `is` — no new
+effect, no new condition, and invertible because both ends already were.
+
+That fix names its own limit: going is Evennia's own command and does not come
+through the attempt pipeline, so a world can set the states a door is in but
+cannot yet write rules about walking. Carving `go` out the way `look` was carved
+out in 9.1 is a bigger job than looking was — movement runs through exits,
+following, the planner and the coordinate index — and waits for a world that
+wants it.
+
+**Declared relations for lockable-with-key are not done**, and that is the order
+this phase was always written in: "relations when the first key meets the first
+lock". Nothing yet has a key. A `locked` exit is now refusable and unlockable by
+rule, which is most of what the case wanted; matching *this* key to *that* lock
+needs a relation the condition language cannot express, and is worth building
+against a real lock rather than an imagined one.
+
+Two boundaries the tests now pin down rather than leave to be rediscovered.
+A room receiving a lit lamp recomputed **nobody**, because `gear.recompute`
+answers for one person and a room is not one -- so the carrier saw by it and
+everybody else stood in the dark. Fixed in the object hooks, and it exposed a
+second confusion worth the comment it now has: `recompute_room`'s `ignoring` is a
+*person* who is leaving, while an item on its way out needs discounting instead,
+since Evennia announces a departure before it happens. Passing the lamp as
+`ignoring` skipped nobody and recounted everybody by the light of it.
+
+And `bonus_when: present` means *lying* in the room, so a lamp in somebody's hand
+lights them and nobody else. That is wrong about lamps and right about what the
+three conditions mean; widening `present` to reach into people's hands would
+change what every charm and burden does, so it waits for a world that wants it.
+
+One thing worth knowing that the tests now assert: `achieves` reads `move_actor`
+**optimistically** — any `move_actor` is taken to satisfy any `in_room` goal,
+because the effect names an exit and not a destination, so where it leads is a
+fact about the world rather than about the effect. That is the function's stated
+contract ("would that shape help", and the step is checked afterwards) rather
+than an oversight, and `set_exit` beside it is read exactly because it names its
+room. If a goal about being somewhere is ever planned wrongly often enough to
+notice, the fix is to let `move_actor` name the room too.
+
 ### Phase 9.1 — Looking as an action
 
 *Spec §8.1. Depends on 7 for the phases and 8 for `unbound`; independent of the

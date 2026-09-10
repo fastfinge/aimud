@@ -103,6 +103,27 @@ class AIExit(ObjectParent, DefaultExit):
             traversing_object.msg(refusal)
             return
 
+        # And some states stop you going through this particular way. A door
+        # has been shuttable since `relations.SHUT` named the vocabulary, and
+        # shutting one did nothing: a rule could set `locked` on an exit and the
+        # exit went on admitting everybody. So the `locked` state that 121
+        # `lacks` clauses in the corpus talk about had nothing behind it.
+        #
+        # Read from the same set a container uses, so that closing a thing means
+        # one thing in this game and not two. Checked here rather than in a
+        # rulebook because going is Evennia's own command and does not come
+        # through the attempt pipeline -- which is a limit worth naming: a world
+        # cannot yet write its own rules about walking, only set the states this
+        # reads. See docs/development-plan.md phase 9.
+        from world import relations
+
+        shut = relations.SHUT & verbs.states(self)
+        if shut:
+            traversing_object.msg(
+                f"{self.get_numbered_name(1, traversing_object, return_string=True)}"
+                f" is {sorted(shut)[0]}.".capitalize())
+            return
+
         if not self.db.pending_generation:
             return super().at_traverse(traversing_object, target_location, **kwargs)
 

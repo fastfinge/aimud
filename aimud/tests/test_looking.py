@@ -548,3 +548,81 @@ class WhatFollowsFromLooking(Looking):
             {"type": "set_trait", "role": "actor", "trait": "knowledge",
              "change": 1}, wanted))
 
+
+@tag("world")
+class CarryingALampAbout(Looking):
+    """
+    Nothing here calls `gear.recompute`, and that is the point.
+
+    Every test above that moved a lamp recomputed by hand afterwards, which hid
+    a gap: `gear.recompute` answers for one person, a room is not a person, and
+    so a room receiving a lit lamp recomputed nobody. The carrier saw by it and
+    everybody else stood in the dark.
+    """
+
+    def setUp(self):
+        super().setUp()
+        traits.register(self.root, traits.LIGHT, name="Light",
+                        means="how well lit it is here",
+                        trait_type="counter", base=0, min=0)
+        self.thing.db.trait_bonuses = {traits.LIGHT: 2}
+        self.thing.db.bonus_when = "present"
+        self.thing.db.bonus_while = "lit"
+        verbs.apply_states(self.thing, add=["lit"], world_root=self.root)
+        # Somebody else standing in the same cellar, who recomputes nothing.
+        self.other = self.char2
+        self.other.move_to(self.room2, quiet=True)
+
+    def sees(self, who):
+        from world import conditions
+
+        return conditions.sees(who, self.room2, self.root)
+
+    def test_a_lamp_in_the_room_lights_everybody_in_it(self):
+        self.thing.move_to(self.room1, quiet=True)
+        self.assertFalse(self.sees(self.char1))
+        self.assertFalse(self.sees(self.other))
+
+        self.thing.move_to(self.room2, quiet=True)
+        self.assertTrue(self.sees(self.char1))
+        self.assertTrue(self.sees(self.other),
+                        "not only whoever was carrying it")
+
+    def test_and_taking_it_away_leaves_them_in_the_dark(self):
+        self.assertTrue(self.sees(self.other))
+        self.thing.move_to(self.room1, quiet=True)
+        self.assertFalse(self.sees(self.other))
+
+    def test_a_carried_lamp_lights_its_carrier_and_nobody_else(self):
+        """
+        The boundary, asserted rather than wished away. `bonus_when: present`
+        means *lying* in the room -- `gear.applies` tests `obj.location is
+        room` -- so a lamp in somebody's hand is not present, and `carried` or
+        `wielded` lights the person holding it and only them.
+
+        A lamp carried into a cellar therefore lights the carrier while their
+        companions stand in the dark, which is wrong about lamps and right about
+        what the three conditions mean. Widening `present` to reach into
+        people's hands would change what every charm and burden does, so it
+        waits for a world that actually wants it.
+        """
+        self.thing.db.bonus_when = "carried"
+        self.thing.move_to(self.room1, quiet=True)
+        self.assertFalse(self.sees(self.char1))
+        self.assertFalse(self.sees(self.other))
+
+        self.thing.move_to(self.char1, quiet=True)
+        self.assertTrue(self.sees(self.char1))
+        self.assertFalse(self.sees(self.other),
+                         "a lamp in a hand is not lying in the room")
+
+    def test_putting_it_out_darkens_the_room_without_moving_it(self):
+        self.assertTrue(self.sees(self.other))
+        from world import effects
+
+        effects.apply(self.char1, self.room2,
+                      [{"type": "set_state", "name": "Lantern",
+                        "remove": ["lit"]}],
+                      bound={"direct": self.thing}, world_root=self.root)
+        self.assertFalse(self.sees(self.other))
+

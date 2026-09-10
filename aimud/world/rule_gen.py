@@ -59,7 +59,7 @@ SCOPE_CEILING = 6
 PHASES = rulebooks.PHASES
 EFFECTS = ("set_state", "set_trait", "create_object", "destroy_object",
            "move_object", "modify_object", "modify_room", "move_actor",
-           "try", "stop")
+           "set_exit", "describe", "try", "stop")
 
 
 # ---------------------------------------------------------------------------
@@ -328,9 +328,16 @@ _EFFECTS = """An effect is one of:
   {"type": "set_state", "role": "direct", "add": ["powered"], "remove": []}
   {"type": "set_trait", "role": "actor", "trait": "stamina", "change": -5}
   {"type": "move_object", "name_role": "direct", "to": "actor"}
+  {"type": "move_object", "name_role": "direct", "to": "<a room's name>"}
+  {"type": "set_exit", "exit": "airlock", "to": "<a room's name>"}
   {"type": "create_object", "name": "...", "description": "..."}
   {"type": "destroy_object", "name_role": "direct"}
   {"type": "try", "action": "<verb>", "roles": {"direct": {"enclosure": "<kind>"}}}
+"set_exit" changes where a way out of this room leads, and "move_object" with a
+room's name sends a thing to another room entirely. Both name a room the way
+somebody reading would -- its name, never a number -- and do nothing at all if
+this world has no room by that name, so name one that exists.
+
 "try" is how a verb typed with no object comes to have one: aboard a ship,
 "launch" means launching the ship. Use it in an "instead" rule, guarded by
 {"subject": "direct", "unbound": true} -- otherwise it fires when somebody

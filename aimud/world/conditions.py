@@ -255,7 +255,8 @@ def predicate_of(condition):
     """Which predicate a condition uses, and what it names."""
     for name in ("is", "lacks", "affords", "kind", "holds", "wears",
                  "placed", "trait", "in_room", "exists", "gone",
-                 "able", "reachable_by", "visible_to", "never", "unbound"):
+                 "able", "reachable_by", "visible_to", "leads_to", "never",
+                 "unbound"):
         if name in condition:
             return name, condition[name]
     return "", None
@@ -446,6 +447,8 @@ def _abstractly(condition):
     if name == "visible_to":
         who = _SUBJECT_WORDS.get(str(value), str(value))
         return f"{who} can see {subject}"
+    if name == "leads_to":
+        return f"a way leads from {subject} to {value}"
     if name == "never":
         return str(condition.get("because") or "this cannot be done")
     if name == "unbound":
@@ -807,6 +810,46 @@ def _p_visible(subject, value, condition, ctx, mood):
     return True, ""
 
 
+def _p_leads_to(subject, value, condition, ctx, mood):
+    """
+    Whether a way out of this place reaches the room named.
+
+    What reads `set_exit` backwards, and the reason `set_exit` is allowed to
+    exist: 11.1 holds that an effect nobody can read backwards is not a cheap
+    effect but a hole in the planner, so an effect that changes where a door
+    leads needs a condition that asks where a door leads.
+
+    Deliberately about one step rather than about reachability. "Is the dock
+    reachable from here" is a search over the whole world and would answer yes
+    for somewhere twenty rooms away, which is not what a rule about an airlock
+    means. One step is also what the planner can act on: a way that does not
+    lead there yet is a way something could be made to lead there.
+    """
+    wanted = str(value or "").strip().lower()
+    if not wanted:
+        return True, ""
+    room = subject.obj if subject.what in (ROOM, THING) else None
+    if room is None:
+        room = getattr(ctx.actor, "location", None)
+    if room is None:
+        return _missing(subject, condition, mood)
+
+    met = False
+    for exit_obj in room.exits:
+        where = getattr(exit_obj, "destination", None)
+        if where is None:
+            continue
+        for name in (where.db.room_title, where.key):
+            if str(name or "").strip().lower() == wanted:
+                met = True
+                break
+        if met:
+            break
+    if mood == WANT:
+        return met, f"open a way to {value}"
+    return met, f"Nothing here leads to {value}."
+
+
 def _p_never(subject, value, condition, ctx, mood):
     """
     A condition that cannot be met, carrying its own reason.
@@ -890,6 +933,7 @@ def _p_reachable(subject, value, condition, ctx, mood):
 _PREDICATES = {
     "is": _p_is,
     "visible_to": _p_visible,
+    "leads_to": _p_leads_to,
     "lacks": _p_lacks,
     "affords": _p_affords,
     "kind": _p_kind,
@@ -991,6 +1035,12 @@ def achieves(effect, condition):
     if name == "gone" and etype == "destroy_object":
         return True
 
+    if name == "leads_to" and etype == "set_exit":
+        wanted = str(value or "").strip().lower()
+        made = str(effect.get("to") or "").strip().lower()
+        return bool(wanted) and wanted == made
+
+
     if name == "trait" and etype == "set_trait":
         if str(effect.get("trait") or "") != str(value):
             return False
@@ -1022,6 +1072,18 @@ def achieves(effect, condition):
         return False
 
     if name == "in_room" and etype == "move_actor":
+        # The loosest answer in here, and deliberately so. `move_actor` names an
+        # exit -- {"exit": "north"} -- not a destination, so whether it reaches
+        # the dock depends on where north leads, which is a fact about the world
+        # and not about the effect. This function is handed an effect and a
+        # condition and nothing else, on purpose, and answers "would that shape
+        # help"; the step is checked when it is taken.
+        #
+        # So the planner may try a door that turns out to go elsewhere, and
+        # learn by trying. The alternative -- letting `move_actor` name the room
+        # as well as the way -- is worth doing the day a goal about being
+        # somewhere is planned wrongly often enough to notice, and not before.
+        # Contrast `set_exit` above, which names its room and is read exactly.
         return True
 
     return False
