@@ -1034,6 +1034,206 @@ revised. This is the property the previous design could not have at any price.
 
 ---
 
+## 8.1 Looking, as the action it should always have been
+
+Everything above is about changing the world. This is about reading it, and the
+design has been treating that as a different kind of thing for no reason that
+survives inspection.
+
+`look` is a command. It never reaches the pipeline: `verbs.VERB_SYNONYMS` folds
+`examine`, `inspect`, `study`, `view`, `x` and `l` onto it, `engine_verbs`
+reports it as one the game answers for itself, and `_with_bindings` hands it
+straight back to the command set. So no world can hold an opinion about seeing
+-- which is the one sense the game offers no rules about, and the sense every
+other rule quietly assumes. A world cannot say that its cave is dark, that its
+ghost needs the right spectacles, or that its moon is there to be looked at and
+not to be touched.
+
+### Three questions wearing one verb
+
+What `look` is asked to do is three different things, and only two of them are
+an action:
+
+1. **`look`** -- describe the room. Inform calls this *looking*.
+2. **`look at X`** -- describe one thing. Inform calls this *examining*, and
+   makes it a separate action.
+3. **How X appears inside a room description** -- Inform's *writing a paragraph
+   about* and *printing the name of*. This is not an action at all: nobody is
+   doing it, it runs while somebody else's action reports.
+
+(1) and (2) fit the four rulebooks exactly. (3) does not, and this section
+deliberately does not bend the action shape to fit it -- see **The listing**
+below for the part of it that cannot wait.
+
+### One action, not two -- and why this diverges from Inform
+
+Inform splits LOOK and EXAMINE because it must: its rulebooks key on the action
+name, so `Instead of examining the painting` needs *examining* to be a thing.
+
+Here they stay one action, because the machinery that separates them already
+exists and was built for the spaceship. Declare `look` with `direct` **optional**,
+and the two cases are told apart by the predicate §8 already needed:
+
+```json
+{"name": "looking about you means looking at the room", "phase": "instead",
+ "action": "look", "scope": {"world": true}, "about": "enclosure",
+ "when": [{"subject": "direct", "unbound": true}],
+ "effects": [{"type": "try", "action": "look",
+              "roles": {"direct": {"enclosure": "room"}}}]}
+```
+
+That is the `power` redirect with the nouns changed, and it is a **standard**
+rule rather than a per-world one. `relations.enclosing` already makes the room a
+legal direct object, so after the redirect there is exactly one case to write
+rules about: looking at a thing. A rule that means to be about rooms scopes to a
+room kind; a rule about a painting scopes to the painting.
+
+The cost is one `unbound` guard on the handful of rules that really are about
+looking-about-you rather than looking-at. The saving is a new action, an
+unfolding of five synonyms, and a second set of scopes for every world to learn.
+
+### The bug this exposes
+
+The standard rule seeded into every world is:
+
+```json
+{"name": "you must be able to reach what you act on", "phase": "check",
+ "action": null, "scope": {"world": true}, "about": "direct",
+ "conditions": [{"subject": "direct", "reachable_by": "actor"}]}
+```
+
+`action: null` means **every** action, including looking. Meanwhile §5.1 gives
+every role one of three access levels -- `visible`, `touchable`, `carried` --
+`actions.access_for` reads the declared level, and **nothing enforces it**. The
+`visible` level has never been connected to anything.
+
+So today the moon is not merely undescribed, it is unlookable, and so is a
+notice across the room. Two changes fix it, and both are small:
+
+* The standard reach rule consults `actions.access_for(world_root, action,
+  role)` instead of assuming `touchable`.
+* A `visible_to` predicate joins `reachable_by`. Reach is already a strict
+  subset of sight, so the first implementation is honest and cheap: everything
+  reachable is visible, plus whatever a world's own rules add.
+
+`look` then declares `direct` as `visible`, and the moon works.
+
+### The standard rules for looking
+
+The defaults are **exactly the current behaviour**, written down as rules so
+that a world can add to them. Nothing about an ordinary room changes.
+
+```json
+{"name": "you must be able to see what you look at", "phase": "check",
+ "action": "look", "scope": {"world": true}, "about": "direct",
+ "conditions": [{"subject": "direct", "visible_to": "actor"}]}
+
+{"name": "what looking at a thing shows", "phase": "carry_out",
+ "action": "look", "scope": {"world": true}, "about": "direct",
+ "effects": [{"type": "describe", "role": "direct"}]}
+```
+
+`describe` is a new effect, and it is the one effect in the vocabulary that is
+deliberately **output-only**: it returns the appearance text that
+`return_appearance` returns today and changes nothing. Effects already hand back
+text -- `effects.apply` returns the lines an attempt says -- so this needs no new
+plumbing, and a carry-out that produces prose without a model call is what keeps
+looking free.
+
+**On §11.1's invertibility rule.** `conditions.achieves` cannot read `describe`
+backwards, and that is correct rather than a hole: no goal is ever "to have been
+told something". An NPC that wants to look at the painting wants what *follows*
+from looking, and that is an `after` rule with `set_trait` or `set_state` --
+both of which `achieves` already reads. The planner reaches looking through the
+consequence, never through the description.
+
+### Light, with no light subsystem
+
+Light needs no new code, and the first draft of this plan was wrong to budget a
+subsystem for it. `world/gear.py` already has every part:
+
+* An item carries `trait_bonuses` -- `{"light": 2}`.
+* `bonus_when` says when they count: `worn`, `wielded`, `carried`, or
+  **`present`**, which means lying in the same room and doing it for everybody
+  there. The module docstring names the case: *"a room may carry bonuses of its
+  own: a forge is warm whether or not anything in it is."*
+* `bonus_while` names a state that must hold first. Its docstring names the
+  other case: *"An unlit lantern lights nobody."*
+* The total is **derived, never accumulated** -- `gear.recompute` rebuilds it
+  from scratch, so a lamp put down or carried away needs no bookkeeping and
+  nothing drifts.
+
+So the check is one condition on the actor, and the room, a held lamp and a lamp
+on the floor all feed the same figure:
+
+```json
+{"name": "you cannot see in the dark", "phase": "check", "action": "look",
+ "scope": {"world": true}, "about": "actor",
+ "conditions": [{"subject": "actor", "trait": "light", "min": 1}]}
+```
+
+**Invert the default and darkness is free.** Let `light` be 0 everywhere, and
+let lit places and lit things grant it. A cave is then not a room carrying
+negative light against a trait floor -- it is a room that grants none, and
+needs nothing declared at all. Only brightness is ever stated, which is also
+the shorter list.
+
+Two schema fields are missing, and they are the whole of the work:
+
+* Room generation never declares room-level `trait_bonuses`. `worldgen`'s
+  contents prompt offers them for the *items in* a room, not for the room.
+* That item schema offers `trait_bonuses` and `bonus_when` but not
+  `bonus_while`, so a model cannot say "lights you only while lit" even though
+  `gear._gate_open` implements precisely that.
+
+The same two fields buy warmth, stench, noise and radiation, none of which is
+light-specific. That is the test a capability should pass before it earns code.
+
+### Descriptions written when somebody looks
+
+A world generates hundreds of objects and a player examines a dozen. Describing
+all of them at creation spends money on prose nobody reads, and the pipeline
+already has the answer: the narration cache writes the words for a verb on an
+object the first time anybody does it, keyed by object, verb and outcome, and
+replays them afterwards. That is how `read` works.
+
+Looking is the same arrangement pointed at a different field. The first look at
+something with no `desc` writes one and stores it; `modify_object` already
+writes `db.desc`, so even the effect exists. Afterwards the look is free, and a
+rule that changes the thing can clear the description the way any other state
+change does.
+
+This also disposes of a smaller wrong thing: `CmdAILook` already *materialises*
+objects that do not exist when you look for them. Describing one lazily is the
+more modest cousin of something the game has done all along.
+
+### The listing
+
+Rule-driven paragraphs -- a world deciding how its thing reads in a list -- are
+deferred. What cannot be deferred is the **filter**: if darkness stops you
+examining the lamp but the room description still lists it, the rule is
+decoration. So `get_display_things` consults the same `visible_to` predicate,
+and nothing else about the listing changes.
+
+That is not Inform's *writing a paragraph about*, and the gap is recorded rather
+than closed. Closing it wants a rulebook that runs inside another action's
+report, which is a fifth rulebook, and no evidence yet says it is worth one.
+
+### What comes free
+
+Once looking is an action, three of its uses need nothing built:
+
+* **NPCs can want to look at things.** `goals` and `planner` see `look` like any
+  other action the moment it has a declaration and rules.
+* **Looking can change somebody.** An `after` rule with `set_trait` -- knowledge
+  for reading a map, fear for looking down the well -- and `achieves` already
+  reads it, so wanting the knowledge makes looking a plan step.
+* **A world can hide things.** Invisibility is a check rule on a kind or a
+  state, written by the same question that writes every other rule, with no
+  notion of invisibility anywhere in the engine.
+
+---
+
 ## 9. Generation: five questions, each a menu
 
 A model is asked for one record at a time, and never for a universal answer.
@@ -1452,7 +1652,7 @@ already closed and already minimal. Set against what `effects.py` can do today:
 | doors, two-sided, connecting two rooms | exits, built only by `worldgen` | **yes** -- `set_exit`; §11 already has this binding first |
 | lockable things with a matching key | nothing; a `locked` state with no key behind it | **yes**, with declared relations |
 | devices, switched on/off | a state, which is the right answer | no |
-| **light and darkness**, and actions that require light | **nothing at all** | **yes** -- cheap, classic, and a generated world full of cellars and corridors wants it |
+| light and darkness, and actions that require light | `gear.py`: `trait_bonuses` with `bonus_when: present` and `bonus_while` | **no code** -- it is a trait, and the mechanism is already built. §8.1 |
 | backdrops: one thing present in many rooms | nothing; a sky would have to be a separate object per room | **probably** -- the hum of an engine, a river, a storm overhead |
 | pushing things from room to room | `move_object` reaches the actor, this room, or a role -- never another room | **yes** |
 | containers, supporters, carried, worn | `relations.py`, `clothing.py`, `gear.py` | already done |
@@ -1474,12 +1674,22 @@ not "which effect types should exist", but "given that these effect types exist,
 what should this verb do with them". Those are different questions and only the
 second is a lookup.
 
-**So the effect list is not a late step.** Writing it as step 11 would leave
+**So the effect list is not a late step.** Writing it last would leave
 `launch` unable to change where an airlock leads until the very end, when §11
 establishes that exits bind first. It is a standing item, ordered by what the
 rulebooks actually need: `set_exit` with the first real vehicle, cross-room
-`move_object` beside it, light when the first cellar is generated, relations when
-the first key meets the first lock.
+`move_object` beside it, relations when the first key meets the first lock.
+
+Light is **not** on that list, and the first draft of it was wrong twice. It
+needs no effect type, because it is a trait and `gear.py` already sums traits
+granted by a room and by what is lying in it. And a bespoke light effect would
+have needed new `achieves` support to avoid being exactly the hole this section
+exists to prevent, where `set_trait` is invertible already. §8.1 has the
+worked example; what remains is two generation schema fields.
+
+That is the test worth applying to every candidate below: a capability earns
+code when it cannot be said with the vocabulary already there. The same two
+fields that buy light buy warmth, stench, noise and radiation.
 
 ---
 
@@ -1512,22 +1722,27 @@ Revised from the previous note, now that actions are declared separately.
 7. **`rules` and `help <action>`.** Same sitting as step 6. Not later.
 8. **The generation prompts**, §9. Last, when there is an engine to write into.
 9. **Effect vocabulary, as the rulebooks demand it**, §11.1: `set_exit` and
-   cross-room `move_object` first, then planner subgoals, then light, then
-   declared relations. Not one step and not a late one -- each entry is small,
-   each must be invertible, and the order is set by what the first real world
-   needs rather than by how common it is in a corpus.
-10. **The consistency scan**, §9.1. Orderable anywhere, including before step 1:
+   cross-room `move_object` first, then planner subgoals, then declared
+   relations. Not one step and not a late one -- each entry is small, each must
+   be invertible, and the order is set by what the first real world needs rather
+   than by how common it is in a corpus. Light was on this list and has been
+   taken off it: §8.1.
+10. **Looking as an action**, §8.1. After step 8, and it needs nothing from
+    step 9. The one sense no world can currently hold an opinion about, and the
+    step that connects the `visible` access level declared in §5.1 to something
+    that enforces it.
+11. **The consistency scan**, §9.1. Orderable anywhere, including before step 1:
     it needs no corpus, no rulebooks and no model, and it already reports real
     faults in existing worlds. Do it early precisely because it is cheap --
     72% one-way states is a thing worth knowing before redesigning around them.
     Inverse rules and inherited checks follow it, once §5.4 and §5.1 exist.
-11. **Attempt counters, then the suggestion queue**, §10.1. The counters come
+12. **Attempt counters, then the suggestion queue**, §10.1. The counters come
     first and are worth having on their own -- the commonest refusal in a world
     is worth knowing whatever is done about it. The queue reuses suspension from
     §10, so it is mostly the generators and one command.
-12. **`world/commonsense.py`**, §7.1. Deliberately last, and deliberately
+13. **`world/commonsense.py`**, §7.1. Deliberately last, and deliberately
     independent of everything above: it improves the quality of what gets
-    generated and changes no capability, so nothing in steps 1-9 may come to
+    generated and changes no capability, so nothing in steps 1-10 may come to
     depend on it. Within it, the free column of §7.1's table first -- state
     groups, body parts, verb kindred, anchor proposals -- because those cost
     nothing per call and can be judged by reading a log. The prompt priors

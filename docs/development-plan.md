@@ -444,12 +444,102 @@ decision, so a world that has ruled a verb impossible must not be asked again.
 Ordered by what the first real world needs: `set_exit` and cross-room
 `move_object` (a ship that launches must change where its airlock leads, and
 `move_object` today reaches the actor, this room, or a role — never another
-room); then light and darkness, of which there is currently nothing at all; then
-declared relations for lockable-with-key.
+room); then declared relations for lockable-with-key.
+
+**Light is struck from this phase.** It read "light and darkness, of which there
+is currently nothing at all", and that was wrong twice over. `world/gear.py`
+already carries the whole mechanism: `trait_bonuses` on any object, `bonus_when:
+"present"` for a thing that works on everybody in the room — and for the room
+itself, which its docstring spells out ("a forge is warm whether or not anything
+in it is") — `bonus_while` for a state that must hold first ("An unlit lantern
+lights nobody"), and a total that is *derived, never accumulated*, so a lamp
+carried away needs no bookkeeping.
+
+So light is a trait, the check is one condition on the actor, and the room, a
+held lamp and a lamp on the floor all feed the same figure. It needs no effect
+type, and `set_trait` is already invertible — where a bespoke light effect
+would have needed new `achieves` support to avoid being the hole this phase
+exists to prevent. What is actually missing is two schema fields, and they move
+to phase 9.1 where the worked example lives. See spec §8.1.
+
+The test that a capability should pass before it earns code: the same two fields
+buy warmth, stench, noise and radiation.
 
 **Tests:** `[A]` `conditions.achieves` handles each new effect — **an effect
 without this test is a hole in the planner**; `[B]` each effect applied and
 observed; `[B]` exits retargeted and traversed.
+
+### Phase 9.1 — Looking as an action
+
+*Spec §8.1. Depends on 7 for the phases and 8 for `unbound`; independent of the
+rest of 9.*
+
+Reading the world is the one thing no world can hold an opinion about. `look` is
+a command, `engine_verbs` reports it as the game's own, and `_with_bindings`
+hands it straight back — so a cave cannot be dark, a ghost cannot need
+spectacles, and the moon cannot be visible without being touchable.
+
+**The defaults are exactly the current behaviour.** Nothing about an ordinary
+room changes; what changes is that the behaviour is written as rules a world can
+add to.
+
+- Carve `look` out of the engine-verb hand-back, deliberately and in one place.
+  This is the delicate part: the comment in `_with_bindings` records the
+  infinite bounce that happens when the pipeline and the command set disagree
+  about who owns a verb ("study scroll" did it), so the carve-out needs a test
+  that types `look`, `x`, `examine` and `study` and asserts each is answered
+  once.
+- Declare `look` with `direct` **optional** and `visible`. One action, not two:
+  bare `look` redirects to looking at the enclosing room via a *standard*
+  `instead` rule guarded by `unbound` — the `power` redirect with the nouns
+  changed. This diverges from Inform, which splits LOOK and EXAMINE; the reason
+  is in the spec.
+- **Fix the access bug.** The standard reach rule has `action: null` and asserts
+  `reachable_by`, so it applies to looking too — while `actions.ACCESS` has had
+  a `visible` level since phase 5 that nothing has ever enforced. The rule
+  consults `actions.access_for`, and a `visible_to` predicate joins
+  `reachable_by`. First implementation: everything reachable is visible, plus
+  what a world's rules add.
+- A `describe` effect, returning what `return_appearance` returns today. The one
+  deliberately output-only effect in the vocabulary — `achieves` cannot read it
+  backwards and should not, because no goal is "to have been told something".
+  An NPC wanting to look at the painting wants the `after` rule's consequence.
+- **Descriptions written when somebody looks.** The narration cache already
+  writes prose per object, verb and outcome on first use and replays it after —
+  that is how `read` works. Pointed at `db.desc`, it stops a world paying for
+  descriptions of the hundreds of things nobody examines. `modify_object`
+  already writes `db.desc`.
+- The two `gear` schema fields light needs: room-level `trait_bonuses` in
+  `worldgen`'s room generation, and `bonus_while` in its contents schema.
+- `get_display_things` consults `visible_to`, so darkness that stops you
+  examining the lamp also stops the room listing it. Rule-driven *paragraphs*
+  are **not** in scope — see below.
+
+**Done when:** a world can be given a dark room and a lantern by hand, and
+`look` in the dark refuses, `light lantern` then lets it succeed, dropping the
+lantern and walking out refuses again — with no light-specific code anywhere,
+and no change to how any lit room behaves.
+
+**Tests:** mostly tier B, because everything but the last one needs a world root
+and real objects — `access_for` reads `world_root.db`, and reach and sight are
+questions about where things actually are.
+
+`[B]` `visible_to` against reach, and the access rule choosing a level per
+declaration; `[B]` the `unbound` redirect sending bare `look` to the room; `[B]`
+the engine-verb carve-out answering `look`/`x`/`examine`/`study` exactly once
+each; `[B]` the dark-room walkthrough above, end to end through
+`attempt.attempt`; `[B]` a description written on first look, cached, and
+replayed without a second call; `[B]` an `after` rule on looking raising a trait,
+and `achieves` reading it so the planner makes looking a step; `[A]` `achieves`
+declining `describe` — the one assertion here with no database in it, and worth
+making on purpose so that "output-only" is a decision on the record rather than
+an omission somebody later reads as a hole.
+
+**Deferred, and recorded rather than closed:** Inform's *writing a paragraph
+about* — a world deciding how its thing reads inside a list. That wants a
+rulebook running inside another action's report, which is a fifth rulebook, and
+no evidence yet says it is worth one. The visibility *filter* is in scope above
+because without it the rules are decoration.
 
 ### Phase 10 — Attempt counters and the suggestion queue
 
