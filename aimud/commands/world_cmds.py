@@ -697,6 +697,62 @@ class CmdWorldMode(Command):
                 f"goes still when nobody is typing. Type |wworldmode always|n "
                 f"to have all of it act all the time.")
 
+class CmdWorldCheck(Command):
+    """
+    What this world's own rules say about each other.
+
+    Usage:
+      worldcheck
+      worldcheck <number>
+
+    Reads the rules a world has learned and reports what they cannot do
+    between them. It costs nothing -- no model is asked anything, and the
+    answer comes out of what the world already wrote down.
+
+    Two faults matter most, and they are usually the same one seen twice. A
+    condition that some rule can set and no rule can unset is a lamp that
+    lights and never goes out. A condition that some rule requires and nothing
+    can bring about is a rule that will never fire, however long anybody
+    plays. When both turn up in one group of conditions -- open and closed,
+    lit and unlit -- the gap between them is a single rule nobody ever wrote,
+    and this says which.
+
+    It also counts what was refused and why, which rules change nothing at
+    all, and which words are in the vocabulary that no rule uses.
+
+    Nothing is repaired. This is a report, and reading it is the point.
+    """
+
+    key = "worldcheck"
+    locks = "cmd:perm(Builder) or perm(Admin)"
+    help_category = "World"
+
+    def parse(self):
+        arg = self.args.strip()
+        self.world_num = int(arg) if arg.isdigit() else None
+
+    def func(self):
+        from world import rulecheck
+
+        if self.world_num is not None:
+            account = _get_account(self.caller)
+            worlds = _resolve_worlds(account)
+            root = _choose_world(self.caller, worlds, self.world_num,
+                                 "check", "worldcheck <number>")
+            if root is None:
+                return
+        else:
+            root = _current_world_root(self.caller)
+            if root is None:
+                self.caller.msg(
+                    "You are not in a generated world. Give a number from "
+                    "|wworlds|n to check one you are not standing in.")
+                return
+
+        findings = rulecheck.scan(rulecheck.of_world(root))
+        self.caller.msg(rulecheck.report(findings, lore.title(root)))
+
+
 class CmdWorldOpen(Command):
     """
     Open a way on, in a world that has nowhere left to go.

@@ -476,6 +476,7 @@ install that is the superuser you made at first start.
 
 | Command | What it does |
 |---|---|
+| `worldcheck [<n>]` | What a world's rules say about each other: conditions it can set and never unset, conditions a rule requires that nothing can bring about, verbs it refused and why. Costs nothing — no model is asked anything. |
 | `memcheck [sleep \| sweep \| distil \| all]` | Memory upkeep now rather than on its clock: consolidate what characters remember, delete the banks of characters that no longer exist, or turn recent summaries into what a character now knows. On its own it reports what it would do and changes nothing. Distilling is the only part that costs anything. |
 
 ---
