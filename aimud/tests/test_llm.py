@@ -237,6 +237,10 @@ class TheSeamItself(SimpleTestCase):
     `world.llm` exists so that there is exactly one place to fake. That is only
     true while it stays the only place that names the service, and the cheapest
     way to keep it true is to say so in a test.
+
+    The claim is about **model calls**, which is narrower than "all networking"
+    and deliberately so -- see `MAY_OPEN_URLS` below for the one other thing that
+    reaches the network and why putting it behind this seam would help nobody.
     """
 
     def source_files(self):
@@ -254,10 +258,40 @@ class TheSeamItself(SimpleTestCase):
         ]
         self.assertEqual(offenders, [], "these should call world.llm instead")
 
+    #: Files allowed to open a URL without going through the seam, and why.
+    #:
+    #: `world/llm.py` is the seam. `world/commonsense.py` fetches a dictionary,
+    #: which is a different kind of network call from a model call: it happens
+    #: once ever, on a command, and what comes back is a corpus rather than an
+    #: answer. Routing a gigabyte of gzip through the module that exists to make
+    #: one JSON reply fakeable would make both jobs worse.
+    #:
+    #: The testability the seam protects is kept there by other means:
+    #: `commonsense.build_from` takes an iterable of lines, so the whole builder
+    #: is tested against a committed sample and only the download itself ever
+    #: touches the network. An allowlist rather than a looser pattern, so that
+    #: the next file to want one has to come and argue for it here.
+    MAY_OPEN_URLS = ("llm.py", "commonsense.py")
+
     def test_nothing_opens_a_url_of_its_own(self):
         offenders = [
             str(path.relative_to(path.parent.parent.parent))
             for path, text in self.source_files()
-            if "urllib.request.urlopen" in text and path.name != "llm.py"
+            if "urllib.request.urlopen" in text
+            and path.name not in self.MAY_OPEN_URLS
         ]
-        self.assertEqual(offenders, [], "these should call world.llm instead")
+        self.assertEqual(offenders, [],
+                         "these should call world.llm instead, or be added to "
+                         "MAY_OPEN_URLS with a reason")
+
+    def test_and_the_corpus_fetch_is_still_testable_without_a_network(self):
+        """
+        What the allowlist above costs, and why it costs nothing. The builder
+        takes lines; only the fetching takes a URL. So the parsing, the index and
+        every lookup are covered by a committed sample.
+        """
+        from world import commonsense
+
+        found = list(commonsense.read_edges(
+            ["\t".join(["x", "/r/IsA", "/c/en/a", "/c/en/b", "{}"])]))
+        self.assertEqual(found, [("a", "IsA", "b", 1.0)])

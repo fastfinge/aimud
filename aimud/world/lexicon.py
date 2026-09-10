@@ -786,6 +786,30 @@ def settled_sense(verb):
     listed = verb_senses(verb, limit=2)
     return listed[0][0] if len(listed) == 1 else ""
 
+def suggested_anchors(phrase, limit=4):
+    """
+    Senses an invented noun might hang under, drawn from a second corpus.
+
+    WordNet cannot help here by definition: the words section 7 is about are the
+    ones it has never heard of. ConceptNet sometimes has -- it is crowdsourced,
+    so somebody has typed "a datapad is a device" -- and `IsA` read forward is
+    that typing. Folded back into real senses here, because a kind is a synset
+    and this corpus answers in words, which is exactly what it may not be
+    trusted for.
+
+    Advisory, and it only ever pre-fills a menu somebody still chooses from.
+    Empty without a corpus, which is the ordinary case and not a failure.
+    """
+    from world import commonsense
+
+    found = []
+    for word in commonsense.kinds_of(phrase, limit=limit * 2):
+        sense = settled_noun_sense(head_noun(word))
+        if sense and sense not in found:
+            found.append(sense)
+    return found[:limit]
+
+
 def anchor_prompt(phrase):
     """
     A block asking what sort of thing an invented noun is, or "" for a real one.
@@ -810,10 +834,28 @@ def anchor_prompt(phrase):
         return ""              # it has senses; `sense_prompt` is asking
     listed = "\n".join(
         f"  {name} -- {definition(name)}" for name in sorted(KIND_BUCKETS))
+
+    # A second corpus sometimes has heard of the word, being crowdsourced
+    # rather than curated -- somebody has typed that a datapad is a device.
+    # Offered at the top as a suggestion rather than used as an answer: it is
+    # advisory everywhere, and the menu below stands whether or not anything
+    # is suggested.
+    # Not filtered against the menu. The first draft left out anything already
+    # listed, which threw away the whole value: pointing at the right entry of a
+    # menu of eleven is more use than adding a twelfth.
+    hint = ""
+    proposed = suggested_anchors(word)
+    if proposed:
+        said = "\n".join(f"  {name} -- {definition(name)}"
+                          for name in proposed)
+        hint = (f"Something outside the dictionary suggests it may be one "
+                f"of these, which is a guess rather than a fact:\n{said}\n")
+
     return (
         f'"{word}" is not a word the dictionary knows, so nothing is known '
         f"about what sort of thing it is. Set \"under\" to whichever of these "
         f"it most nearly is:\n{listed}\n"
+        f"{hint}"
         f"A more precise sense is welcome if you know one -- any WordNet "
         f"identifier will do, and one that does not exist is ignored. Copy it "
         f"exactly.\n"

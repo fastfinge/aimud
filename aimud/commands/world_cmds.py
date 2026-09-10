@@ -1049,3 +1049,92 @@ class CmdWorldOpen(Command):
             f"A way |w{opened.key}|n opens from |w{where}|n. "
             f"The world has somewhere to go again."
         )
+
+
+class CmdCommonsense(Command):
+    """
+    The second lexicon: fetch it, or say what it knows.
+
+    Usage:
+      commonsense
+      commonsense fetch
+
+    WordNet, which ships with the game, answers what a word can be. This answers
+    what people think is true of it -- that open and closed cannot both hold, that
+    a beetle has mandibles, that a datapad is probably a device. Four of its
+    relations are definitionally four things this game had to invent for itself.
+
+    Nothing depends on it. Every lookup answers neutrally when it is absent, which
+    is the ordinary state of a fresh install: state groups, body parts and anchor
+    suggestions are guessed rather than looked up, and that is all. Fetching it
+    makes the world slightly less clumsy and nothing more.
+
+    |wfetch|n downloads the corpus and builds an index beside the dictionary. It
+    is a large download and takes a while; it runs in the background and says when
+    it is done. The corpus is fetched rather than shipped, which is deliberate --
+    see the README.
+    """
+
+    key = "commonsense"
+    locks = "cmd:perm(Builder) or perm(Admin)"
+    help_category = "World"
+
+    def func(self):
+        from world import commonsense
+
+        if self.args.strip().lower() not in ("fetch", "download", "get"):
+            self.caller.msg(self._report(commonsense))
+            return
+        if commonsense.available():
+            self.caller.msg(
+                "It is already here. Delete |w" + commonsense.PATH + "|n and "
+                "run this again to rebuild it.")
+            return
+        self._fetch(commonsense)
+
+    def _report(self, commonsense):
+        if not commonsense.available():
+            return (
+                "|wNo second lexicon.|n Nothing is wrong: state groups, body "
+                "parts and anchor suggestions are guessed rather than looked "
+                "up, which is how this game has always worked.\n"
+                "|wcommonsense fetch|n downloads it. It is large.\n"
+                f"|x{commonsense.ATTRIBUTION}|n")
+
+        edges, megabytes = commonsense.size()
+        lines = [f"|w{edges} edges|n, {megabytes} MB, at |w{commonsense.PATH}|n.",
+                 "A few things it knows, as a sanity check:"]
+        for word in ("open", "bird", "chest"):
+            opposite = commonsense.opposites(word, limit=3)
+            parts = commonsense.parts_of(word, limit=3)
+            sorts = commonsense.kinds_of(word, limit=3)
+            said = []
+            if opposite:
+                said.append("not also " + ", ".join(opposite))
+            if parts:
+                said.append("has " + ", ".join(parts))
+            if sorts:
+                said.append("is a " + ", ".join(sorts))
+            lines.append(f"  {word}: {'; '.join(said) or 'nothing'}")
+        lines.append(f"|x{commonsense.ATTRIBUTION}|n")
+        return "\n".join(lines)
+
+    def _fetch(self, commonsense):
+        from world import llm
+
+        caller = self.caller
+        caller.msg(
+            "Fetching the second lexicon. This is a large download and will "
+            "take a while; carry on playing.\n"
+            f"|x{commonsense.ATTRIBUTION}|n")
+
+        # Through the same seam every network call uses, so it lands off the
+        # main thread and cannot stall the game while it runs.
+        llm.fetch(
+            commonsense.download,
+            on_success=lambda kept: caller.msg(
+                f"|wSecond lexicon ready.|n {kept} edges indexed. Nothing in "
+                f"the game needed it; it is a little better informed now."),
+            on_error=lambda failure: caller.msg(
+                f"|rCould not fetch it: {failure.getErrorMessage()}|n\n"
+                f"|xNothing is broken. The game runs without it.|n"))

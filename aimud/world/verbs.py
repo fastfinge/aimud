@@ -1069,6 +1069,46 @@ def _synonym_group(world_root, slug, vocab):
     return None
 
 
+def _commonsense_group(world_root, slug, vocab):
+    """
+    The group an outside corpus thinks this state belongs with, or None.
+
+    `DistinctFrom` is definitionally what a group is -- "something that is A is
+    not B" -- so ConceptNet knows the ordinary pairs, open/closed, wet/dry,
+    locked/unlocked, that nobody should have to declare by hand.
+
+    **Ranked last on purpose, and behind a declaration rather than in front of
+    it.** The three tests above may overrule a declared group, and they have
+    earned that: spelling is certain, and WordNet is curated and
+    sense-disambiguated. This corpus is crowdsourced and its nodes are words
+    rather than senses, which is exactly why 7.1 says it may never hold a
+    position it can win from -- never a floor, never against what somebody
+    actually wrote down. So it only ever fills a silence.
+
+    The pair still has to be in this world. A world that has never heard of
+    `closed` gets no group for `open` out of this, for the same reason every
+    suggestion in this project wants evidence from the world it is about.
+    """
+    from world import commonsense
+
+    for other in commonsense.opposites(slug):
+        other = _slug_state(other)
+        if not other or other == slug or other not in vocab:
+            continue
+        found = group_of(world_root, other)
+        if found:
+            return found
+    return None
+
+
+def _slug_state(word):
+    """A word as a state slug: lower case, underscores, nothing else."""
+    import re
+
+    found = re.sub(r"[^a-z0-9_]+", "_", str(word or "").lower().strip())
+    return found.strip("_")
+
+
 def register_state(world_root, slug, means="", conflicts=(), group=None,
                    ends_on_move=None, prevents_acting=None,
                    prevents_moving=None, prevents_speaking=None):
@@ -1124,6 +1164,15 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
                                prevents_acting=prevents_acting,
                                prevents_moving=prevents_moving,
                                prevents_speaking=prevents_speaking)
+    else:
+        # Last of all, and only into a silence: a second corpus knows that open
+        # and closed answer one question, and nobody here has said so. It is
+        # placed after the declaration rather than among the three tests above
+        # because those are allowed to overrule what was declared and this is
+        # not -- see `_commonsense_group`.
+        outside = _commonsense_group(world_root, slug, vocab)
+        if outside:
+            group = register_group(world_root, outside)
 
     vocab[slug] = {
         "means": means,

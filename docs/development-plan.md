@@ -748,6 +748,41 @@ dropped on licence grounds. SQLite index, stdlib only, gated behind
 ground rule; `[A]` the index builder against a small committed sample of edges;
 `[B]` a group seeded from antonyms registers correctly.
 
+**Done: the corpus, and the three free uses.** `world/commonsense.py` streams the
+assertions export into SQLite -- stdlib only, one file beside `data/nltk_data`,
+indexed both ways so a lookup is the same shape as a WordNet one. Fourteen
+relations kept out of the whole file; the rest is either WordNet re-exported, which
+this game already has *with senses*, or about language rather than the world.
+`commonsense fetch` builds it, and `.gitignore` keeps it out of the repository with
+the licence reasoning written beside the line, because that reasoning is the thing
+that lets the whole corpus be used rather than a filtered part of it.
+
+The three free uses land where 7.1 said: exclusive state groups from
+`DistinctFrom`/`Antonym`, body parts beyond the hand-written list, and an anchor
+suggestion that pre-fills section 7's menu. **Prompt priors are not wired**, as
+planned: `can_be_done_to` exists and is called from nothing, waiting on the replay
+measurement.
+
+Two things turned up in the doing, and both were the tests correcting me:
+
+* **I put the group lookup where it could overrule a declaration.** The three
+  tests already in `register_state` -- spelling, WordNet opposites, WordNet
+  synonyms -- *are* allowed to overrule a declared group, and have earned it:
+  five worlds registered five separate groups for pairs that belonged together.
+  This corpus is not allowed to, because its nodes are words rather than senses
+  and 7.1 is explicit that it may never hold a position it can win from. It now
+  fills a silence and nothing else, ranked after the declaration.
+* **`is_part_of_anything` read one relation and needed both.** A contributor who
+  typed "an insect has a proboscis" leaves no `PartOf` edge at all, so checking
+  one direction finds half the parts -- which on a yes-or-no test is a wrong
+  answer rather than a thin one.
+
+And one correction to 7.1's own framing, worth recording because the note leans on
+it: **`anatomy.PARTS` is fuller than its docstring's complaint suggests.** Wings,
+mandibles, carapaces and beaks are all already in it. The gap this use fills is
+real but narrower than "a world with beetles and birds in it" implies -- the test
+uses `thorax` and `proboscis`, which genuinely are absent.
+
 ### Phase 13 — The instrumented soak, and better data
 
 *Depends on everything. The only phase that costs real money on purpose.*

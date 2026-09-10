@@ -36,6 +36,7 @@ from commands.trait_cmds import CmdScore
 from commands.unknown_cmd import CmdAIUnknown
 from commands.world_cmds import (
     CmdNPCGen,
+    CmdCommonsense,
     CmdRules,
     CmdWorldCheck,
     CmdWorldEdit,
@@ -90,6 +91,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdZones())
         self.add(CmdWorldCheck())
         self.add(CmdRules())
+        self.add(CmdCommonsense())
         self.add(CmdNPCGen())
         self.add(CmdAIUnknown())
 

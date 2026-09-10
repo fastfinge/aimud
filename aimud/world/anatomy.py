@@ -155,7 +155,19 @@ def is_part(phrase):
     words = set(_words(phrase))
     if words & DETACHED:
         return False        # a severed hand is a thing, and may be made
-    return head_noun(phrase) in PARTS
+    noun = head_noun(phrase)
+    if noun in PARTS:
+        return True
+
+    # A world with beetles and birds in it has mandibles and wings, and this
+    # list has about 120 nouns in it. `PartOf` is that fact already written
+    # down -- for every creature somebody invents, not only the ones whoever
+    # wrote the list thought of. Asked second and only when the list says no,
+    # so the common case costs nothing and a world with no corpus behaves
+    # exactly as it did.
+    from world import commonsense
+
+    return commonsense.is_part_of_anything(noun)
 
 
 def people_near(caller):

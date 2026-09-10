@@ -8,3 +8,19 @@ wheels/
 
 # Virtual environments
 .venv
+
+# The second lexicon, which is fetched and never shipped.
+#
+# WordNet is vendored a few lines above this in spirit -- data/nltk_data is
+# committed, because its licence permits redistribution and having it means the
+# game works out of the box. ConceptNet is the opposite case: its licence varies
+# by source and is recorded per edge, and the share-alike obligation attaches to
+# *distributing* the data or a derivative of it.
+#
+# So the repository ships only the code to fetch it. That is not caution, it is
+# what lets the whole corpus be used: a project that distributed it would have to
+# drop every edge whose licence it could not satisfy, and a project that does not
+# distribute it keeps all of them. `commonsense fetch` builds this
+# file on the machine that will use it, and it never leaves.
+data/conceptnet.sqlite3
+data/conceptnet.sqlite3.building

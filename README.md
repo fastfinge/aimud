@@ -453,6 +453,7 @@ Beyond that:
 | `rules suggest` | What this world's own faults and refusals suggest it is missing, each with the evidence for it. A condition it can set and never unset, beside a verb it has refused over and over, is usually one rule nobody wrote. Costs nothing — nothing is asked of a model and nothing is ever installed unasked. |
 | `rules accept <id>` / `rules reject <id>` | Take a suggestion up, or decline it. A declined one is remembered as declined and not offered again. |
 | `rules judge` | Hand the whole queue to a model at once and apply its verdicts. The only part of `rules` that costs anything, and it is one call for the lot: the model is judging filled-in rules with the world's own counts beside them, never writing one. |
+| `commonsense [fetch]` | A second dictionary, optional and fetched rather than shipped. WordNet answers what a word can be; this answers what people think is true of it — that open and closed cannot both hold, that a beetle has a thorax, that a datapad is probably a device. On its own it says whether the corpus is here and what it knows. Nothing depends on it: without it, state groups, body parts and anchor suggestions are guessed rather than looked up, which is how the game has always worked. |
 | `npcgen` | Put a character in the current room. |
 
 ### Playing
@@ -590,6 +591,15 @@ Your API key lives in the database and nowhere else.
 
 If you fork this, keep it that way: check `git status` before you commit, and
 never `git add -f` anything under `server/`.
+
+One more thing stays out, for a different reason. WordNet **is** committed, under
+`data/nltk_data`, because its licence permits that and having it means the game
+works out of the box. ConceptNet is not: its licence varies by source, recorded
+per edge, and the share-alike obligation attaches to distributing the data. So
+the repository ships only the code to fetch it — which is not caution but the
+thing that lets the whole corpus be used, since a project that redistributed it
+would have to drop every edge whose licence it could not satisfy. `commonsense
+fetch` builds the index on the machine that will use it and it never leaves.
 
 ---
 
