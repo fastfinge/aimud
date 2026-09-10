@@ -1189,23 +1189,39 @@ Two schema fields are missing, and they are the whole of the work:
 The same two fields buy warmth, stench, noise and radiation, none of which is
 light-specific. That is the test a capability should pass before it earns code.
 
-### Descriptions written when somebody looks
+### Descriptions written when somebody looks -- measured, and not built
 
-A world generates hundreds of objects and a player examines a dozen. Describing
-all of them at creation spends money on prose nobody reads, and the pipeline
-already has the answer: the narration cache writes the words for a verb on an
-object the first time anybody does it, keyed by object, verb and outcome, and
-replays them afterwards. That is how `read` works.
+The argument was that a world generates hundreds of objects, a player examines a
+dozen, and describing all of them at creation spends money on prose nobody
+reads. The pipeline already has the shape for the alternative: the narration
+cache writes the words for a verb on an object the first time anybody does it and
+replays them afterwards, which is how `read` works.
 
-Looking is the same arrangement pointed at a different field. The first look at
-something with no `desc` writes one and stores it; `modify_object` already
-writes `db.desc`, so even the effect exists. Afterwards the look is free, and a
-rule that changes the thing can clear the description the way any other state
-change does.
+**The saving is not there.** Every path that makes a describable thing already
+carries its description in a call that was happening regardless:
 
-This also disposes of a smaller wrong thing: `CmdAILook` already *materialises*
-objects that do not exist when you look for them. Describing one lazily is the
-more modest cousin of something the game has done all along.
+* `worldgen`'s contents pass asks for `{"name", "description", ...}` for 0-3
+  items in one call per room -- the call that decides what is in the room at all.
+* `item_gen.generate_item` describes the one thing it was asked to conjure.
+* the `create_object` effect carries a `description` written by the rule.
+
+So descriptions cost a few dozen extra tokens inside a reply already paid for.
+Making them lazy would replace that with **one call per examined object**, which
+is more calls and not fewer for any player who examines more than a fraction of
+what they walk past. Room descriptions, which *are* a separate call each, are
+already lazy in the way that matters: a room is generated when somebody first
+walks into it.
+
+What this does cost is the other direction: looking now skips narration
+entirely, so a look can never be richer than `db.desc`. A world cannot yet say
+"describe the painting vividly, once, and keep it". The fallback that would buy
+both -- if a thing has no description, narrate one and store it -- is about
+fifteen lines and is **deferred until something actually creates a describable
+thing without a description**, because until then it is code that cannot run.
+
+`CmdAILook` already *materialises* objects that do not exist when you look for
+them, and that is untouched: a thing conjured by a look is described by the call
+that conjures it, then looked at through the pipeline like anything else.
 
 ### The listing
 

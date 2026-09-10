@@ -129,6 +129,33 @@ def _resolve(effect, key, bound, room, actor):
     return obj
 
 
+#: Effects whose return value is the whole of what the player should read.
+#:
+#: Ordinarily an effect's text is an aside broadcast to the room -- "the candle
+#: is now lit" beside a narrated sentence somebody paid for. These are not
+#: asides: they ARE the answer, they go to whoever acted rather than to the
+#: room, and asking a model to narrate on top of one would both cost money and
+#: talk over the thing it was asked to describe.
+#:
+#: This is why `describe` is allowed to be the only effect in the vocabulary
+#: that `conditions.achieves` cannot read backwards. Nothing is ever a goal "to
+#: have been told something"; what an NPC wants from looking is whatever an
+#: `after` rule does next, and that is a `set_trait` or a `set_state` like any
+#: other. See docs/rulebooks-from-inform.md 8.1.
+SPEAKS_FOR_ITSELF = ("describe",)
+
+
+def speaks_for_itself(effects):
+    """Whether this rule's own effects are the answer the player reads."""
+    for effect in (effects or []):
+        try:
+            if str(effect.get("type") or "") in SPEAKS_FOR_ITSELF:
+                return True
+        except AttributeError:
+            continue
+    return False
+
+
 def _apply_one(actor, room, effect, bound, world_root):
     from world import verbs
 
@@ -145,6 +172,27 @@ def _apply_one(actor, room, effect, bound, world_root):
             return None
         where = "is now here" if location is room else "is now carried"
         return f"{obj.get_numbered_name(1, None, return_string=True)} {where}."
+
+    if etype == "describe":
+        # The one effect that changes nothing and only says something.
+        #
+        # Looking has to produce prose, and must not pay a model for it: the
+        # appearance is already assembled from the thing as written, the states
+        # it is in, and whatever is placed on it. So the carry-out rule for
+        # looking returns that, and `attempt` skips the narration call when a
+        # rule speaks for itself -- see SPEAKS_FOR_ITSELF below.
+        obj = _resolve(effect, "name", bound, room, actor)
+        if obj is None:
+            return None
+        said = obj.return_appearance(actor)
+        # The hook a look has always fired. Keeping it means everything hung on
+        # being examined -- an NPC noticing, a trap arming -- still happens now
+        # that the look arrives through the pipeline instead of the command.
+        try:
+            obj.at_desc(looker=actor)
+        except Exception as exc:
+            logger.log_info(f"at_desc failed on {obj}: {exc}")
+        return said
 
     if etype == "destroy_object":
         obj = _resolve(effect, "name", bound, room, actor)

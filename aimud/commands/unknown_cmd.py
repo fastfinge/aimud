@@ -141,11 +141,25 @@ class CmdAIUnknown(SystemNoMatch):
             return
 
         account = _get_account(caller)
-        try:
-            account.get_openrouter_key()
-        except ValueError as e:
-            caller.msg(str(e))
-            return
+        # A key is wanted before anything is attempted, because almost every
+        # attempt ends at a model and being told so after the wait is worse
+        # than being told so now.
+        #
+        # Not every attempt does, though. Looking is answered by the rulebooks
+        # out of what the world already holds -- `describe` returns the
+        # appearance and nobody is asked anything -- so refusing `x lantern` for
+        # want of an API key refuses the one action that never needs one. The
+        # generators inside the pipeline each report a missing key for
+        # themselves, so letting these through costs only a later, truer
+        # message. See docs/rulebooks-from-inform.md 8.1.
+        from world import verbs as _verbs
+
+        if _verbs.canonical_verb(cmd_verb) not in _verbs.PIPELINE_VERBS:
+            try:
+                account.get_openrouter_key()
+            except ValueError as e:
+                caller.msg(str(e))
+                return
 
         caller.ndb.attempting = raw
 

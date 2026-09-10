@@ -550,6 +550,19 @@ _ENGINE_VERBS = None
 #: them for ever and the player was told they were still trying.
 _COMMAND_VERBS = set()
 
+#: Verbs with a command of their own that the attempt pipeline owns anyway.
+#:
+#: `look` is a command, because typing it is how a player looks. What looking
+#: MEANS is a world's business -- whether the cave is dark, whether the ghost
+#: needs the right spectacles, whether the moon may be looked at without being
+#: touched -- and none of that could be said while the pipeline handed the verb
+#: straight back to `CmdAILook`. See docs/rulebooks-from-inform.md 8.1.
+#:
+#: Canonical verbs only. Everything folds through `VERB_SYNONYMS` before this is
+#: consulted, so one entry covers `l`, `x`, `examine`, `inspect`, `study` and
+#: `view`, and adding the spellings separately would be six chances to miss one.
+PIPELINE_VERBS = frozenset(["look"])
+
 
 def command_verbs():
     """The verbs the command set itself answers, by a name it will recognise."""

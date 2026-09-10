@@ -21,6 +21,28 @@ class Room(ObjectParent, DefaultRoom):
     properties and methods available on all Objects.
     """
 
+    def return_appearance(self, looker, **kwargs):
+        """
+        What this place looks like, or that it cannot be seen.
+
+        Overridden here rather than left to the rules alone, because arriving
+        somewhere is not an action. Evennia describes the room you have walked
+        into from a movement hook, so the check rule that refuses looking in the
+        dark never runs for it -- and a world that refused to let you examine
+        anything in a cellar while still handing you the cellar's description on
+        the way in would be telling you two different things.
+
+        A world that has never registered a `light` trait has no darkness in it
+        and never reaches the second branch. See world.conditions.sees and
+        docs/rulebooks-from-inform.md 8.1.
+        """
+        from world import conditions
+
+        root = getattr(self.db, "world_root", None)
+        if root is None or conditions.sees(looker, self, root):
+            return super().return_appearance(looker, **kwargs)
+        return conditions.darkness(looker, self, root)
+
     def get_display_things(self, looker, **kwargs):
         """
         The room's loose contents, each noting what it is holding.

@@ -504,11 +504,15 @@ add to.
   deliberately output-only effect in the vocabulary — `achieves` cannot read it
   backwards and should not, because no goal is "to have been told something".
   An NPC wanting to look at the painting wants the `after` rule's consequence.
-- **Descriptions written when somebody looks.** The narration cache already
-  writes prose per object, verb and outcome on first use and replays it after —
-  that is how `read` works. Pointed at `db.desc`, it stops a world paying for
-  descriptions of the hundreds of things nobody examines. `modify_object`
-  already writes `db.desc`.
+- ~~Descriptions written when somebody looks.~~ **Dropped on measurement.**
+  Every path that makes a describable thing already carries its description in a
+  call that happens anyway — `worldgen`'s contents pass, `item_gen`, and the
+  `create_object` effect all do. Lazy descriptions would trade a few dozen extra
+  tokens in an existing reply for one fresh call per examined object, which is
+  more calls and not fewer. Recorded in spec §8.1 with the paths measured. The
+  cost of skipping it is that a look can never be richer than `db.desc`; the
+  fallback that would fix that waits until something actually creates a
+  describable thing without a description.
 - The two `gear` schema fields light needs: room-level `trait_bonuses` in
   `worldgen`'s room generation, and `bonus_while` in its contents schema.
 - `get_display_things` consults `visible_to`, so darkness that stops you
@@ -528,8 +532,7 @@ questions about where things actually are.
 declaration; `[B]` the `unbound` redirect sending bare `look` to the room; `[B]`
 the engine-verb carve-out answering `look`/`x`/`examine`/`study` exactly once
 each; `[B]` the dark-room walkthrough above, end to end through
-`attempt.attempt`; `[B]` a description written on first look, cached, and
-replayed without a second call; `[B]` an `after` rule on looking raising a trait,
+`attempt.attempt`; `[B]` an `after` rule on looking raising a trait,
 and `achieves` reading it so the planner makes looking a step; `[A]` `achieves`
 declining `describe` — the one assertion here with no database in it, and worth
 making on purpose so that "output-only" is a decision on the record rather than

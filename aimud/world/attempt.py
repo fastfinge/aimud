@@ -444,6 +444,17 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
     typed, _, rest = raw.strip().partition(" ")
     spelling = typed.lower() if typed.lower() in known else (
         verb if verb in known else "")
+    # Except the ones the pipeline has taken over. A command still exists for
+    # `look` -- it is how a player types it -- but what looking MEANS is now a
+    # world's business, so handing it back would return it to the code the
+    # rules were written to replace, and the rules would never run.
+    #
+    # Tested on the canonical verb rather than on what was typed, so every one
+    # of `look`, `l`, `x`, `examine`, `inspect`, `study` and `view` is caught by
+    # the one entry. Getting that wrong is the bounce the comment above
+    # describes, in the other direction.
+    if verb in verbs.PIPELINE_VERBS:
+        spelling = ""
     if spelling:
         caller.execute_cmd(f"{spelling} {rest}".strip())
         on_message("", "")
@@ -705,7 +716,7 @@ def _redirect(effect, bound, caller, world_root):
     cannot resolve makes the redirect impossible rather than partial, since a
     verb sent at nothing is worse than a verb refused.
     """
-    from world import kinds
+    from world import conditions, kinds
 
     wanted = dict(bound or {})
     try:
@@ -714,7 +725,15 @@ def _redirect(effect, bound, caller, world_root):
         return None
     for role, named in roles.items():
         if isinstance(named, str):
-            found = bound.get(named) if named in bound else None
+            if named == conditions.HERE:
+                # The room itself, which is what bare `look` redirects to.
+                # `{"enclosure": kind}` answers the same question for a place
+                # of some particular sort; this is the case where any place
+                # will do, and asking for a kind would mean inventing one that
+                # every room in every world happened to be.
+                found = getattr(caller, "location", None)
+            else:
+                found = bound.get(named) if named in bound else None
         else:
             try:
                 kind = dict(named).get("enclosure")
@@ -738,7 +757,7 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
                redirects=0):
     from world import conditions, rulebooks
 
-    ctx = conditions.context(bound, caller, world_root)
+    ctx = conditions.context(bound, caller, world_root, verb)
     book = rulebooks.for_attempt(world_root, verb, bound, caller,
                                  verb_rule=rule)
 
@@ -820,12 +839,22 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
                 _for_room(cached.get("room", ""), caller, raw))
         return
 
+    # Whether this rule's own effects are the whole of the answer. Looking is
+    # the case: `describe` returns the appearance, and a model asked to narrate
+    # on top of it would cost money to talk over the thing it was describing.
+    speaks = effects_mod.speaks_for_itself(rule.get("effects"))
+
     def _finish(actor_text, room_text, specifics=None):
         # The template is cached, not the finished line: the room text names
         # the actor as {actor}, so the same narration reads correctly when
         # somebody else does the same thing to the same object later.
-        _store_narration(bound, verb, outcome,
-                         {"actor": actor_text, "room": room_text}, caller)
+        #
+        # Nothing is cached for a rule that speaks for itself: there is no
+        # model reply to save, and the effect will say it again for nothing
+        # next time -- which is the point of it.
+        if not speaks:
+            _store_narration(bound, verb, outcome,
+                             {"actor": actor_text, "room": room_text}, caller)
         # Whatever the same reply said this thing does differently, kept
         # beside it. Stored even when empty, so a thing that turned out to be
         # perfectly ordinary is not asked about a second time.
@@ -839,6 +868,15 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         ]
         extra = effects_mod.apply(caller, room, allowed, bound=bound,
                                   world_root=world_root)
+        if speaks:
+            # The effects produced the words, and they are an answer to
+            # whoever acted rather than an announcement to the room: a look is
+            # not an event, and a room told about everybody's reading would be
+            # unusable. Joined on newlines because an appearance is already
+            # several lines of its own.
+            actor_text = "\n".join(
+                part for part in [actor_text] + extra if part).strip()
+            extra = []
         spoken = _for_room(room_text, caller, raw)
         visible = " ".join([spoken] + extra).strip()
         # AFTER. What follows from it having worked, gathered before any of
@@ -863,6 +901,12 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
 
     if cached is not None:
         _finish(cached.get("actor", ""), cached.get("room", ""))
+        return
+
+    # No narrator for a rule that speaks for itself, and no round trip: the
+    # whole reason looking can be an action is that it costs nothing to run.
+    if speaks:
+        _finish("", "")
         return
 
     if waiter:

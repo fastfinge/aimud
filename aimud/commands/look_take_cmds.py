@@ -26,6 +26,18 @@ def _in_ai_world(room):
     return bool(room and room.db.world_description)
 
 
+def _world_root(room):
+    """
+    The world this room belongs to, or None outside a generated one.
+
+    The test for whether there are rulebooks to consult at all. Limbo, the
+    character creation rooms and anything built by hand have no root, and must
+    go on behaving exactly as they did -- a look that refused to work outside a
+    generated world would be a far worse bug than anything rules could fix.
+    """
+    return getattr(room.db, "world_root", None) if room is not None else None
+
+
 def _reach(caller, query):
     """
     Something in reach that the room's own contents did not answer for.
@@ -147,14 +159,34 @@ class CmdAILook(_DefaultLook):
 
     In AI worlds, examining something that doesn't yet exist may cause it to
     materialise if the world and room context makes it plausible.
+
+    Looking is an action with rulebooks, so in a generated world this command
+    finds what was meant and then hands the attempt to the pipeline rather than
+    describing anything itself. That is what lets a world say its cave is dark,
+    that the ghost needs the right spectacles, or that the moon may be looked at
+    and not touched -- none of which could be said while the describing happened
+    here. See docs/rulebooks-from-inform.md 8.1.
+
+    Outside a generated world there is no rulebook to consult and nothing to
+    consult it with, so the original behaviour stands unchanged. Limbo still
+    looks like Limbo.
     """
 
     def func(self):
         caller = self.caller
+        room = caller.location
+        root = _world_root(room)
 
         if not self.args:
-            # No target — look at the room normally.
-            super().func()
+            if root is None:
+                super().func()          # no world, no rules: look as ever
+                return
+            # Bare `look` goes through as an attempt with nothing bound. A
+            # standard `instead` rule guarded by `unbound` redirects it to
+            # looking at the room, which is how the room's own rules -- its
+            # darkness, its kind -- come to apply without this command knowing
+            # anything about them.
+            self._attempt(caller, "look")
             return
 
         query = self.args.strip()
@@ -178,9 +210,19 @@ class CmdAILook(_DefaultLook):
             self._ai_look(caller, query)
             return
 
-        # Single match — standard look.
-        caller.msg(obj.return_appearance(caller))
-        obj.at_desc(looker=caller)
+        if root is None:
+            caller.msg(obj.return_appearance(caller))
+            obj.at_desc(looker=caller)
+            return
+        self._attempt(caller, f"look {query}")
+
+    def _attempt(self, caller, raw):
+        """Hand the look to the rulebooks, and say whatever they answer."""
+        from world import attempt as attempt_mod
+
+        attempt_mod.attempt(caller, raw, _account_from(caller),
+                            on_message=lambda actor_text, room_text=None:
+                                caller.msg(actor_text) if actor_text else None)
 
     def _ai_look(self, caller, query):
         room = caller.location
@@ -218,8 +260,18 @@ class CmdAILook(_DefaultLook):
 
 def _finish_look(caller, item, room, key):
     _release_gen_lock(room, key)
-    caller.msg(item.return_appearance(caller))
-    item.at_desc(looker=caller)
+    # Through the pipeline, like any other look: a thing that has just been
+    # conjured is as subject to the room's darkness as one that was always here.
+    if _world_root(room) is None:
+        caller.msg(item.return_appearance(caller))
+        item.at_desc(looker=caller)
+    else:
+        from world import attempt as attempt_mod
+
+        attempt_mod.attempt(
+            caller, f"look {item.key}", _account_from(caller),
+            on_message=lambda actor_text, room_text=None:
+                caller.msg(actor_text) if actor_text else None)
     from world.npc_gen import notify_npcs
     notify_npcs(room, "action", caller.get_display_name(caller),
                 f"examined {item.get_display_name(caller)}")

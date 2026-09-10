@@ -149,7 +149,20 @@ Write no prose beyond the destination hints. Return only the JSON object."""
 
 _DESC_SYSTEM_PROMPT = """You write the description of one room in a text-based MUD.
 Respond with a single JSON object — no other text — matching:
-{"description": "2-4 sentences"}
+{"description": "2-4 sentences", "trait_bonuses": {}}
+
+trait_bonuses is what being in this room does to whoever is in it, as
+{"trait": amount}. Almost always empty. Use it only for something the
+description already says is true of the place itself — a forge is warm, a
+clearing at noon is bright, a reactor hall is irradiated — never for an
+object in the room, which has its own.
+
+|light| is the one the game reads by name. A room that is lit by daylight, a
+window, a fire or a lamp fixed to the wall should give {"light": 2}.
+
+A room that is dark — a cellar, a cave, a corridor with no lamp — gives
+NOTHING AT ALL. Do not write {"light": 0}: leave trait_bonuses empty, and the
+darkness follows on its own. Only brightness is ever stated.
 
 Describe ONLY the permanent physical fabric of the room: its architecture,
 surfaces, fixtures fixed in place, light, sound, smell, temperature, wear.
@@ -172,7 +185,7 @@ Respond with a single JSON object — no other text — matching:
     {"name": "item name", "description": "1-2 sentences", "takeable": true,
      "kind": "flyer", "holds": [],
      "affordances": {"read": true}, "states": [], "clothing_type": "",
-     "trait_bonuses": {}, "bonus_when": ""}
+     "trait_bonuses": {}, "bonus_when": "", "bonus_while": ""}
   ],
   "wants_npc": <true or false>
 }
@@ -391,7 +404,7 @@ def _parent_chain_context(source_room, max_chars=4000):
 
 def _create_room(title, description, exits, world_description, source_room, arrival_exit,
                  world_root=None, creator=None, room_type="", category="", zone="",
-                 zone_purpose="", plan=None):
+                 zone_purpose="", plan=None, bonuses=None):
     """
     Create an Evennia Room and its exits.  Must run in the main thread.
 
@@ -410,6 +423,15 @@ def _create_room(title, description, exits, world_description, source_room, arri
 
     room = create_object(Room, key=title)
     room.db.desc = description
+    # What being in this place does to whoever is in it. Almost always nothing.
+    # `gear` already treats a room as a source of trait bonuses in its own right
+    # -- "a forge is warm whether or not anything in it is" -- and this is the
+    # first thing that ever gave one any. Light is the case it exists for: a lit
+    # room grants it, a dark one simply does not, and sight follows from the sum
+    # without a line of light-specific code. See world/conditions.py _p_visible.
+    if bonuses:
+        room.db.trait_bonuses = dict(bonuses)
+        room.db.bonus_when = "present"
     room.db.room_title = title
     room.db.world_description = world_description
     room.db.world_parent = source_room  # Evennia stores this as a dbref
@@ -1301,7 +1323,7 @@ def _generate_description(account, api_key, world_description, guidance, context
             desc = str(data.get("description", "")).strip()
             if not desc:
                 raise ValueError("empty description")
-            on_success(desc)
+            on_success(desc, data.get("trait_bonuses") or {})
         except Exception as exc:
             on_error(str(exc))
 
@@ -1461,12 +1483,12 @@ def generate_first_room(account, spec, on_success, on_error,
                 if d in BUILDABLE_DIRECTIONS
             ]
 
-            def finish(description):
+            def finish(description, bonuses=None):
                 try:
                     room = _create_room(
                         name, description, exits, world_description, None, None,
                         creator=account, room_type=room_type, category=category,
-                        zone=zone, plan=plan,
+                        zone=zone, plan=plan, bonuses=bonuses,
                     )
 
                     # Title, long description, and the player's name and
@@ -1537,19 +1559,20 @@ def generate_connected_room(account, world_description, source_room, exit_name,
         _generate_description(
             account, api_key, world_description, rooms_guidance, context, name,
             room_type, category,
-            on_success=lambda description: finish(name, description, exits,
-                                                  room_type, category, zone,
-                                                  zone_purpose),
+            on_success=lambda description, bonuses=None: finish(
+                name, description, exits, room_type, category, zone,
+                zone_purpose, bonuses),
             on_error=on_error,
         )
 
-    def finish(name, description, exits, room_type, category, zone, zone_purpose):
+    def finish(name, description, exits, room_type, category, zone,
+               zone_purpose, bonuses=None):
         try:
             room = _create_room(
                 name, description, exits, world_description, source_room, exit_name,
                 world_root=source_room.db.world_root,
                 room_type=room_type, category=category, zone=zone,
-                zone_purpose=zone_purpose,
+                zone_purpose=zone_purpose, bonuses=bonuses,
             )
             # The player moves now; contents arrive behind them, and so does
             # any thinking about the place they have just walked into.

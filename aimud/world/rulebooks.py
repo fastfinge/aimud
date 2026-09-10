@@ -213,7 +213,7 @@ def gather(world_root, action, bound=None, actor=None, phase=None):
     from world import conditions
 
     attempt = Attempt(world_root, action, bound, actor)
-    ctx = conditions.context(bound, actor, world_root)
+    ctx = conditions.context(bound, actor, world_root, action)
     found = []
     for rule in _store(world_root).values():
         if not rule.get("listed", True):

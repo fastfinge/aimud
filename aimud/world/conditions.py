@@ -73,16 +73,24 @@ THING, ROOM, ZONE, NOWHERE = "thing", "room", "zone", "nowhere"
 
 #: Everything a condition needs in order to be tested. Bundled so that adding
 #: something later does not change every signature.
-Context = namedtuple("Context", "bound actor world_root")
-Context.__new__.__defaults__ = (None, None, None)
+#:
+#: `action` is the one field that is not about the world: it is which action is
+#: being attempted, and only one predicate reads it. `reachable_by` has to,
+#: because how near you must be to a thing is a fact about the action rather
+#: than about the thing -- reading a notice across a room and prising it off the
+#: wall ask different things of the same notice. Everything that tests a
+#: condition outside an attempt (a quest, a goal, a `rules` listing) leaves it
+#: empty, and the predicate then asks for reach, which is the safe answer.
+Context = namedtuple("Context", "bound actor world_root action")
+Context.__new__.__defaults__ = (None, None, None, "")
 
 
-def context(bound=None, actor=None, world_root=None):
+def context(bound=None, actor=None, world_root=None, action=""):
     """The world as a condition sees it."""
     if world_root is None and actor is not None:
         room = getattr(actor, "location", None)
         world_root = getattr(room.db, "world_root", None) if room else None
-    return Context(dict(bound or {}), actor, world_root)
+    return Context(dict(bound or {}), actor, world_root, str(action or ""))
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +255,7 @@ def predicate_of(condition):
     """Which predicate a condition uses, and what it names."""
     for name in ("is", "lacks", "affords", "kind", "holds", "wears",
                  "placed", "trait", "in_room", "exists", "gone",
-                 "able", "reachable_by", "never", "unbound"):
+                 "able", "reachable_by", "visible_to", "never", "unbound"):
         if name in condition:
             return name, condition[name]
     return "", None
@@ -257,6 +265,29 @@ def evaluate(condition, ctx):
     """Whether this condition holds. The one test everything shares."""
     met, _said = _judge(condition, ctx, WANT)
     return met
+
+
+def sees(looker, obj, world_root=None):
+    """
+    Whether `looker` can see `obj`. The `visible_to` predicate, asked directly.
+
+    For the places sight matters and no action is being attempted. Walking into
+    a cellar is the case: Evennia describes the room you have arrived in, and
+    that is a movement hook rather than a look, so the check rule that refuses
+    looking in the dark never runs. Without this, a world could refuse to let
+    you examine anything in the dark and still hand you the room description on
+    the way in.
+    """
+    ctx = context({"direct": obj}, looker, world_root, "look")
+    return evaluate({"subject": "direct", "visible_to": "actor"}, ctx)
+
+
+def darkness(looker, obj, world_root=None):
+    """What to say instead, when `looker` cannot see `obj`."""
+    ctx = context({"direct": obj}, looker, world_root, "look")
+    _met, said = _judge({"subject": "direct", "visible_to": "actor"},
+                        ctx, UNMET)
+    return said
 
 
 def describe(condition, ctx=None, mood=None):
@@ -412,6 +443,9 @@ def _abstractly(condition):
     if name == "reachable_by":
         who = _SUBJECT_WORDS.get(str(value), str(value))
         return f"{who} can reach {subject}"
+    if name == "visible_to":
+        who = _SUBJECT_WORDS.get(str(value), str(value))
+        return f"{who} can see {subject}"
     if name == "never":
         return str(condition.get("because") or "this cannot be done")
     if name == "unbound":
@@ -726,6 +760,53 @@ def _p_unbound(subject, value, condition, ctx, mood):
     return met, ""
 
 
+def _p_visible(subject, value, condition, ctx, mood):
+    """
+    Whether whoever `value` names could see the subject.
+
+    The other half of Inform's accessibility, and the half that has never been
+    enforced: 5.1 has given every role a `visible` / `touchable` / `carried`
+    level since actions were first declared, `actions.access_for` has read it,
+    and nothing has ever asked the question. So a notice across the room and a
+    moon overhead were not merely undescribed, they were unlookable, because the
+    one standard rule that applied to every action demanded reach.
+
+    Wider than reach on purpose, and narrower in one way reach is not. Anything
+    within reach can be seen, and so can the place you are standing in and
+    whatever else is simply here with you. But sight needs light, and reach does
+    not: you can find a door in the dark.
+
+    Light is a trait rather than a subsystem -- a lit room grants it, a lit lamp
+    grants it while burning, and `gear` sums both. A world that has never
+    registered the trait has no darkness in it; see `traits.lights`.
+    """
+    from world import relations, traits
+
+    if not subject.found:
+        return _missing(subject, condition, mood)
+    who = resolve(value or "actor", ctx)
+    if not who.found or subject.obj is None:
+        return True, ""
+    if subject.obj is who.obj:
+        return True, ""
+
+    here = getattr(who.obj, "location", None)
+    near = (subject.obj in relations.reachable(who.obj, include_self=True)
+            or subject.obj in relations.enclosing(who.obj)
+            or (here is not None and subject.obj.location is here))
+    if not near:
+        if mood == WANT:
+            return False, f"get to where you can see {subject.name()}"
+        return False, f"You cannot see {subject.name()} from here."
+
+    if traits.lights(ctx.world_root):
+        if (traits.value(who.obj, traits.LIGHT) or 0) < 1:
+            if mood == WANT:
+                return False, "find some light"
+            return False, "It is too dark to see anything."
+    return True, ""
+
+
 def _p_never(subject, value, condition, ctx, mood):
     """
     A condition that cannot be met, carrying its own reason.
@@ -771,10 +852,24 @@ def _p_reachable(subject, value, condition, ctx, mood):
     can reach, and inside anything open -- and a closed box stopping the
     search is the whole reason a lid is worth having.
     """
-    from world import relations
+    from world import actions, relations
 
     if not subject.found:
         return _missing(subject, condition, mood)
+
+    # What this action actually asks of this role, which is not always reach.
+    # 5.1 has given every role a `visible` / `touchable` / `carried` level since
+    # actions were first declared, and until now nothing read it -- so the one
+    # standard rule that applies to every action demanded reach for all of them,
+    # and looking at a thing across a room was refused for not being within
+    # arm's length. A role declared `visible` is excused here and answered by
+    # `visible_to` instead.
+    role = condition.get("subject")
+    if ctx.action and isinstance(role, str) and role in ROLES:
+        if actions.access_for(ctx.world_root, ctx.action,
+                              role) == actions.VISIBLE:
+            return True, ""
+
     who = resolve(value or "actor", ctx)
     if not who.found or subject.obj is None:
         return True, ""
@@ -794,6 +889,7 @@ def _p_reachable(subject, value, condition, ctx, mood):
 
 _PREDICATES = {
     "is": _p_is,
+    "visible_to": _p_visible,
     "lacks": _p_lacks,
     "affords": _p_affords,
     "kind": _p_kind,

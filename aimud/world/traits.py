@@ -62,6 +62,20 @@ BUILTIN = {
     },
 }
 
+#: The one trait the engine asks about by name, and the reason it is safe to.
+#:
+#: Light is not a subsystem here: a lit room grants it, a lit lamp grants it
+#: while burning, and `gear` sums whatever is granted by what you carry and by
+#: the place you are standing in. So sight needs one number and no machinery of
+#: its own -- see docs/rulebooks-from-inform.md 8.1.
+#:
+#: Deliberately NOT in `BUILTIN`. A world opts into darkness by registering the
+#: trait, and until it does, `visible_to` reads the absence as daylight rather
+#: than as nought. That is the inverted default the spec argues for: only
+#: brightness is ever stated, which is the shorter list, and a world that states
+#: none is lit throughout instead of being a cave from end to end.
+LIGHT = "light"
+
 #: Where a character remembers what they were last told each trait was, so
 #: that a value which drifted on its own can be noticed and reported.
 _SEEN = "trait_last_seen"
@@ -531,3 +545,16 @@ def meets(character, requirement):
 def satisfied(character, requirement):
     """True when every trait requirement holds."""
     return meets(character, requirement) is None
+
+
+def lights(world_root):
+    """
+    Whether this world has anything to say about light.
+
+    Asked before darkness is enforced, because a character who has never been
+    near a lamp has no `light` trait at all and `value` answers None for them.
+    Read as nought that would make every world pitch dark; read as "this world
+    does not do darkness" it is correct, and the register is exactly where a
+    world says which it is.
+    """
+    return LIGHT in vocabulary(world_root)
