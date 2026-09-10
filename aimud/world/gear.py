@@ -427,14 +427,25 @@ def sources(character, slug):
 
     For `score`, so that a defence of 9 says where the other four came from
     rather than looking like something the character was simply born with.
+
+    Which means it has to look exactly where `total()` looks. A `present`
+    source is not a belonging -- the room itself, or a fire burning in it --
+    and leaving those out would put the warmth in the figure and nothing
+    beside it to explain the warmth, which is the one failure this exists to
+    prevent.
     """
     from world import traits
 
     world_root = traits._world_root(character)
     slug = traits.resolve(world_root, slug)
+    room = getattr(character, "location", None)
+    looking = list(character.contents)
+    if room is not None:
+        looking.append(room)
+        looking.extend(room.contents)
     found = []
-    for obj in character.contents:
-        if not applies(obj, character):
+    for obj in looking:
+        if obj is character or not applies(obj, character):
             continue
         for granted, amount in bonuses(obj).items():
             if traits.resolve(world_root, granted) == slug and amount:
