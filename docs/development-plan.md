@@ -759,9 +759,15 @@ that lets the whole corpus be used rather than a filtered part of it.
 
 The three free uses land where 7.1 said: exclusive state groups from
 `DistinctFrom`/`Antonym`, body parts beyond the hand-written list, and an anchor
-suggestion that pre-fills section 7's menu. **Prompt priors are not wired**, as
-planned: `can_be_done_to` exists and is called from nothing, waiting on the replay
-measurement.
+suggestion that pre-fills section 7's menu.
+
+**Prompt priors are now refused rather than deferred.** The replay has been run
+against the real corpus -- `tests/fixtures/conceptnet_replay.py` -- and it gives
+13% coverage, 6% precision, and silence on 23 of 58 kinds. The spec's prediction
+was right that invented vocabulary draws a blank and wrong that ordinary nouns do
+well. `can_be_done_to` stays, called from nothing, because the lookup is free and
+the next person to wonder should find the measurement beside it rather than
+repeat it.
 
 Two things turned up in the doing, and both were the tests correcting me:
 

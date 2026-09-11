@@ -854,6 +854,13 @@ bar, resumable. SQLite is in the standard library, the result is one file beside
 everything behind `commonsense.available()`, exactly as `lexicon.available()` is
 gated today.
 
+**What the corpus turned out to be.** 402,274 edges, 37.9 MB, built from the
+5.7 assertions export in one pass. Much smaller than the download, because
+`commonsense.KEPT` holds fourteen relations and drops everything else along with
+every language but English. `IsA` is half of it (198k); `DistinctFrom`, the
+relation the state groups want, is the smallest at 1,294 -- which is enough,
+because a world only ever asks about the pairs it has actually coined.
+
 **What is not known yet.** The downloads page states neither the compressed size
 nor the edge count, so the builder should report what it actually built rather
 than this note guessing. The decisive measurement is a replay: take the 64
@@ -870,6 +877,53 @@ can be wrong on the record: **good on ordinary nouns -- bread, door, rope, paper
 because crowdsourced commonsense has never heard of a datapad either. Which would
 mean it improves the easy case and not the hard one. Worth having; not worth
 reordering anything for.
+
+---
+
+**The replay has now been run, and that prediction was half wrong.**
+`tests/fixtures/conceptnet_replay.py`, over the 58 settled kinds of the exported
+corpus:
+
+| | all kinds | words the dictionary knows | invented words |
+|---|---|---|---|
+| kinds | 58 | 56 | 2 |
+| the corpus says nothing at all | 23 | 21 | 2 |
+| affordances a world granted | 153 | 149 | 4 |
+| affordances proposed | 340 | 340 | 0 |
+| **coverage** | 13.1% | 13.4% | 0% |
+| **precision** | 5.9% | 5.9% | 0% |
+| proposals a world had refused | 1 | 1 | 0 |
+
+The prediction was right about invented words -- both of them draw a complete
+blank, which is §7's vocabulary exactly -- and **wrong that ordinary nouns do
+well**. 13% coverage and 6% precision is not "good on the easy case": the corpus
+offers 340 suggestions to land 20 that a world agreed with, and says nothing
+whatever about 23 of 58 kinds.
+
+So **the paid column is refused on measurement, not deferred.** Two hundred
+tokens of prior in every item prompt, for the life of every world, to raise one
+affordance in eight that a generator mostly gets right unaided, is the wrong
+trade -- and the README's cost section is the reason that arithmetic matters.
+
+Three honest caveats on the numbers:
+
+* **The 100% novelty figure is an artefact and should not be read as a signal.**
+  `lexicon.implied_affordances` covers six bucket words, so nearly anything
+  clears that floor. It measures the floor's size, not the corpus's value.
+* **Precision is understated, and not by much.** The corpus answers in phrases
+  -- "looked at", "access to room", "feed baby" -- so folding them to verbs
+  introduces reads a person would not have made. The first version of the replay
+  made this far worse by scanning past the head word for anything that folded,
+  which turned "feed baby" into `fee` and a sword into `look`; corrected to the
+  head only, the figure moved from 5.7% to 5.9%. The raw edges really are good
+  -- a door is opened, closed and locked -- and the loss is mostly in the
+  distance between "what people say about doors" and "what a verb rule needs".
+* **This is the old engine's corpus.** The soak will produce another, and the
+  numbers should be re-taken against it. They will not move by a factor of ten.
+
+The free column stands, unaffected and independently verified: state groups, body
+parts and anchor suggestions cost nothing per call, and the first two are tested
+against real edges.
 
 **Numberbatch**, the embedding download, is a separate question with one good
 answer in it: `verbs.similarity` is word-overlap and deliberately strict, because
