@@ -132,14 +132,14 @@ def _world_and_room(room, facet):
 # Public async API
 # ---------------------------------------------------------------------------
 
-def validate_object_existence(account, room, object_name, on_valid, on_invalid, on_error):
+def validate_object_existence(sponsor, room, object_name, on_valid, on_invalid, on_error):
     """
     Async. Ask the validation model whether object_name could exist in room.
     Calls on_valid(reason) or on_invalid(reason) or on_error(msg) in the main thread.
     """
-    model = account.model_for("validation")
+    model = sponsor.model_for("validation")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -156,7 +156,7 @@ def validate_object_existence(account, room, object_name, on_valid, on_invalid, 
     ]
 
     def _fetch():
-        return llm.ask(api_key, model, messages)
+        return llm.ask(sponsor, model, messages)
 
     def _done(content):
         try:
@@ -175,14 +175,14 @@ def validate_object_existence(account, room, object_name, on_valid, on_invalid, 
     llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
-def validate_object_takeable(account, room, obj, on_valid, on_invalid, on_error):
+def validate_object_takeable(sponsor, room, obj, on_valid, on_invalid, on_error):
     """
     Async. Ask the validation model whether obj can be picked up.
     Calls on_valid(reason) or on_invalid(reason) or on_error(msg) in the main thread.
     """
-    model = account.model_for("validation")
+    model = sponsor.model_for("validation")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -203,7 +203,7 @@ def validate_object_takeable(account, room, obj, on_valid, on_invalid, on_error)
     ]
 
     def _fetch():
-        return llm.ask(api_key, model, messages)
+        return llm.ask(sponsor, model, messages)
 
     def _done(content):
         try:
@@ -222,15 +222,15 @@ def validate_object_takeable(account, room, obj, on_valid, on_invalid, on_error)
     llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
-def generate_item(account, room, object_name, on_success, on_error):
+def generate_item(sponsor, room, object_name, on_success, on_error):
     """
     Async. Ask the item model to create object_name and spawn it in room.
     The created object has db.ai_takeable already set from the model response.
     Calls on_success(item_obj) or on_error(msg) in the main thread.
     """
-    model = account.model_for("items")
+    model = sponsor.model_for("items")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -268,7 +268,7 @@ def generate_item(account, room, object_name, on_success, on_error):
     ]
 
     def _fetch():
-        return llm.ask(api_key, model, messages)
+        return llm.ask(sponsor, model, messages)
 
     def _done(content):
         try:
@@ -312,7 +312,7 @@ def generate_item(account, room, object_name, on_success, on_error):
 # The one way a thing comes into being
 # ---------------------------------------------------------------------------
 
-def conjure(caller, room, account, phrase, on_ready, on_refused, fuzzy=False):
+def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False):
     """
     Async. Settle what `phrase` names, making it real if nothing answers to it.
 
@@ -367,7 +367,7 @@ def conjure(caller, room, account, phrase, on_ready, on_refused, fuzzy=False):
         on_refused(f"|rCould not resolve {phrase}: {err}|n")
 
     def on_valid(_reason):
-        generate_item(account, room, phrase, on_success=made, on_error=failed)
+        generate_item(sponsor, room, phrase, on_success=made, on_error=failed)
 
     def on_invalid(_reason):
         release()
@@ -377,5 +377,5 @@ def conjure(caller, room, account, phrase, on_ready, on_refused, fuzzy=False):
         release()
         on_refused(f"|rError: {err}|n")
 
-    validate_object_existence(account, room, phrase, on_valid, on_invalid,
+    validate_object_existence(sponsor, room, phrase, on_valid, on_invalid,
                               on_error)

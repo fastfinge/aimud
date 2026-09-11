@@ -3,8 +3,8 @@ What a test needs in order not to call a model.
 
 Three pieces, and between them they are what turns most of this game's
 untestable half into tier `world`: a way to make the one async door
-synchronous, a way to answer as a model would, and a stand-in for an account so
-a generator can be called without creating one.
+synchronous, a way to answer as a model would, and a stand-in for a sponsor so
+a generator can be called without a world or an account behind it.
 
 The door is `world.llm.fetch`. Without a running reactor a `deferToThread`
 callback never fires -- so a test that drove a generator through one would pass
@@ -67,13 +67,13 @@ def replying(*answers, tools=None):
             raise answer
         return answer
 
-    def fake_call(api_key, model, messages, tools=None, timeout=llm.TIMEOUT):
+    def fake_call(sponsor, model, messages, tools=None, timeout=llm.TIMEOUT):
         answer = reply_for(messages)
         if isinstance(answer, dict):
             return answer
         return {"choices": [{"message": {"content": answer}}]}
 
-    def fake_ask(api_key, model, messages, timeout=llm.TIMEOUT):
+    def fake_ask(sponsor, model, messages, timeout=llm.TIMEOUT):
         answer = reply_for(messages)
         if isinstance(answer, dict):
             return llm.content(answer)
@@ -103,24 +103,46 @@ def as_json(data):
     return json.dumps(data)
 
 
-class FakeAccount:
+class FakeSponsor:
     """
-    Enough of an account to be handed to a generator.
+    Enough of a sponsor to be handed to a generator.
 
-    Generators want two things from one -- which model answers for a job, and
-    the key to ask with -- and a real `Account` is a database row with a
-    password. This is the two methods.
+    A generator wants four things -- which model answers for a job, the key to
+    ask with, where to send it, and whether there is going to be an answer at
+    all -- and a real `Sponsor` reaches a database row with a password behind
+    it. This is the four, and nothing to set up.
+
+    It was `FakeAccount`, and it is not an account any more -- which is the
+    whole point of the change it was renamed for: what pays for a call
+    belongs to a world rather than to whoever happens to be typing.
     """
 
-    def __init__(self, model="test/model", key="sk-test", params=None):
+    def __init__(self, model="test/model", key="sk-test", params=None,
+                 base_url="https://example.test/v1", actor=None,
+                 world_root=None):
         self._model = model
         self._key = key
         self.params = params or {}
+        self.base_url = base_url
+        self.account = None
+        self.actor = actor
+        self.world_root = world_root
+
+    @property
+    def payer(self):
+        return self.account
+
+    @property
+    def answers(self):
+        return bool(self._key)
 
     def model_for(self, *jobs):
-        return self._model
+        from world.model_params import ModelChoice
 
-    def get_openrouter_key(self):
+        return ModelChoice(self._model, self.params,
+                           job=jobs[0] if jobs else "")
+
+    def key(self):
         if not self._key:
             raise ValueError("No OpenRouter API key set.")
         return self._key

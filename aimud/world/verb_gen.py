@@ -537,11 +537,11 @@ def state_block(world_root, bound=None):
           f"{group_text}\n\n")
 
 
-def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_error):
+def learn_rule(sponsor, world_root, verb, bound, actor, raw, on_success, on_error):
     """Async. Work out what this verb does to things of this kind."""
-    model = account.model_for("commands")
+    model = sponsor.model_for("commands")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -623,7 +623,7 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
         except Exception as exc:
             on_error(str(exc))
 
-    llm.fetch(llm.ask, api_key, model, messages,
+    llm.fetch(llm.ask, sponsor, model, messages,
               on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
 
 
@@ -658,7 +658,7 @@ A verb that is only a figure of speech is not admitted either: you can lose
 your temper, and you cannot lose it at a chair."""
 
 
-def ask_admission(account, world_root, verb, rule, kind, on_answer, on_error):
+def ask_admission(sponsor, world_root, verb, rule, kind, on_answer, on_error):
     """
     Async. Ask whether a kind of thing can be verbed at all, and remember it.
 
@@ -672,9 +672,9 @@ def ask_admission(account, world_root, verb, rule, kind, on_answer, on_error):
     different question depending on whether burning, in this world, means
     catching fire or means being consumed utterly.
     """
-    model = account.model_for("commands")
+    model = sponsor.model_for("commands")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -715,11 +715,11 @@ def ask_admission(account, world_root, verb, rule, kind, on_answer, on_error):
         except Exception as exc:
             on_error(str(exc))
 
-    llm.fetch(lambda: llm.ask(api_key, model, messages),
+    llm.fetch(lambda: llm.ask(sponsor, model, messages),
               on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
 
 
-def narrate(account, verb, bound, actor, raw, on_success, on_error, result=None):
+def narrate(sponsor, verb, bound, actor, raw, on_success, on_error, result=None):
     """
     Async. Describe this action on these particular objects.
 
@@ -730,9 +730,9 @@ def narrate(account, verb, bound, actor, raw, on_success, on_error, result=None)
     """
     from world import checks
 
-    model = account.model_for("commands")
+    model = sponsor.model_for("commands")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -776,5 +776,5 @@ def narrate(account, verb, bound, actor, raw, on_success, on_error, result=None)
         except Exception as exc:
             on_error(str(exc))
 
-    llm.fetch(llm.ask, api_key, model, messages,
+    llm.fetch(llm.ask, sponsor, model, messages,
               on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))

@@ -32,18 +32,31 @@ question that actually matters once worlds are shared, and it can only be
 answered if the actor and the payer were both still in scope when the request
 was built.
 
-**Which way the creator link points, and why it had to be turned around.**
-An account keeps `created_worlds`, a list of world ids. Nothing on a world
-said who made it, so answering "who pays for this room" meant scanning every
-account in the database. The back-link is written by `claim` when a world is
-made and backfilled for worlds that predate it, and the scan survives only as
-the fallback that feeds the backfill.
+**One place to ask who made a world.** `world_creator` has been written on a
+first room for as long as `worldgen` has had a creator to write, and read raw
+in three other modules -- each of which then had its own idea of what to do
+when it was empty. `npcs.py` in particular preferred *any player in the room
+with a key*, which is the exact behaviour shared worlds cannot have: an NPC
+would spend a visitor's money because the visitor happened to be standing
+there.
+
+So the attribute stays and the reading of it moves here. `creator_of` is the
+one answer, `claim` the one write, and a world made before either -- or made
+without a creator being passed through -- falls back to the scan of
+`created_worlds` that this replaced, claiming itself on the way past so the
+scan is paid once per world at most.
 """
 
 from evennia.utils import logger
 
 #: What a world says when asked who made it.
-CREATOR_ATTR = "created_by"
+#:
+#: Already the name for this before a sponsor existed: `worldgen` has always
+#: written it on the first room, and three places read it. What changes is
+#: that it is now written for every world rather than only the ones that
+#: happened to pass a creator through, and that everything asking goes
+#: through `creator_of` rather than reading the attribute raw.
+CREATOR_ATTR = "world_creator"
 
 
 class Sponsor:
@@ -204,17 +217,12 @@ def creator_of(world_root):
     if world_root is None:
         return None
 
-    stored = world_root.db.created_by
-    if stored:
-        account = _account_by_id(stored)
-        if account is not None:
-            return account
-        # The account was deleted. Say so once and stop asking; a world whose
-        # owner is gone is unfunded rather than broken.
-        logger.log_info(
-            f"sponsor: world {world_root.id} names account {stored}, "
-            f"which no longer exists"
-        )
+    # An attribute holding a deleted object reads back as None, which is the
+    # right answer here without any checking: a world whose owner is gone is
+    # unfunded rather than broken.
+    stored = world_root.db.world_creator
+    if stored is not None:
+        return stored
 
     found = _scan_for_creator(world_root)
     if found is not None:
@@ -226,16 +234,7 @@ def claim(world_root, account):
     """Record who made a world, so nothing has to go looking again."""
     if world_root is None or account is None:
         return
-    world_root.db.created_by = account.id
-
-
-def _account_by_id(account_id):
-    from evennia.accounts.models import AccountDB
-
-    try:
-        return AccountDB.objects.get(id=int(account_id))
-    except Exception:
-        return None
+    world_root.db.world_creator = account
 
 
 def _scan_for_creator(world_root):
@@ -280,7 +279,7 @@ def backfill():
                 root = ObjectDB.objects.get(id=int(world_id))
             except Exception:
                 continue
-            if root.db.created_by:
+            if root.db.world_creator:
                 continue
             claim(root, account)
             claimed += 1

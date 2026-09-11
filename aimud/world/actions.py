@@ -352,7 +352,7 @@ def prompt_block(world_root, action):
     return "\n".join(lines) + "\n"
 
 
-def learn(account, world_root, action, bound, actor, on_success,
+def learn(sponsor, world_root, action, bound, actor, on_success,
           on_error=None):
     """
     Async. Settle what an action takes, and answer with the declaration.
@@ -388,7 +388,7 @@ def learn(account, world_root, action, bound, actor, on_success,
         on_success(observe(world_root, action, bound))
 
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except (AttributeError, ValueError):
         fall_back()
         return
@@ -427,7 +427,7 @@ def learn(account, world_root, action, bound, actor, on_success,
                            means=str(reply.get("means") or ""),
                            despite=reply.get("despite") or []))
 
-    llm.fetch(llm.ask, api_key, account.model_for("commands"), messages,
+    llm.fetch(llm.ask, sponsor, sponsor.model_for("commands"), messages,
               on_success=answered,
               on_error=lambda failure: fall_back(failure.getErrorMessage()))
 

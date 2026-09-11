@@ -58,9 +58,11 @@ class CmdGoal(Command):
             caller.msg("You can only set a goal inside a world.")
             return
 
-        account = getattr(caller, "account", None) or caller
+        from world import sponsor as sponsor_mod
+
+        sponsor = sponsor_mod.of(caller)
         try:
-            account.get_openrouter_key()
+            sponsor.key()
         except ValueError as e:
             caller.msg(str(e))
             return
@@ -73,7 +75,7 @@ class CmdGoal(Command):
 
         from world.quest_gen import formalise_goal
 
-        formalise_goal(account, caller, want,
+        formalise_goal(sponsor, caller, want,
                        on_success=self._ready, on_error=self._failed)
 
     def _clear(self):

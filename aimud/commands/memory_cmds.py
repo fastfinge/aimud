@@ -21,8 +21,11 @@ Answer from those memories only.
 - Do not list the memories back or mention that you were given memories."""
 
 
-def _get_account(caller):
-    return getattr(caller, "account", None) or caller
+def _sponsor_for(caller):
+    """Who pays for this. See world.sponsor."""
+    from world import sponsor
+
+    return sponsor.of(caller)
 
 
 class CmdRemember(Command):
@@ -67,9 +70,9 @@ class CmdRemember(Command):
             caller.msg("You find your memory of recent events oddly blank.")
             return
 
-        account = _get_account(caller)
+        sponsor = _sponsor_for(caller)
         try:
-            api_key = account.get_openrouter_key()
+            sponsor.key()      # refuse early rather than mid-prompt
         except ValueError as e:
             caller.msg(str(e))
             return
@@ -79,7 +82,7 @@ class CmdRemember(Command):
             return
         caller.ndb.recalling = True
 
-        model = account.model_for("memory", "dialogue")
+        model = sponsor.model_for("memory", "dialogue")
         bank = bank_for(caller)
         caller.msg("You cast your mind back...")
 
@@ -102,7 +105,7 @@ class CmdRemember(Command):
                     ),
                 },
             ]
-            return llm.ask(api_key, model, messages)
+            return llm.ask(sponsor, model, messages)
 
         def _done(answer):
             caller.ndb.recalling = False

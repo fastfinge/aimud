@@ -38,15 +38,27 @@ synchronous.
 """
 
 import json
+import queue
 import urllib.error
 import urllib.request
 
 from twisted.internet import threads
 
-#: Where the service lives. One constant rather than six.
+#: Where the service lives when nobody has chosen otherwise. One constant
+#: rather than six, and now a default rather than the only answer: a sponsor
+#: may point at another provider, and the URL follows whoever pays rather than
+#: being a fact about the game. See `world.sponsor`.
 BASE_URL = "https://openrouter.ai/api/v1"
 CHAT_URL = f"{BASE_URL}/chat/completions"
 MODELS_URL = f"{BASE_URL}/models"
+
+
+def _chat_url(base):
+    return f"{str(base or BASE_URL).rstrip('/')}/chat/completions"
+
+
+def _models_url(base):
+    return f"{str(base or BASE_URL).rstrip('/')}/models"
 
 #: How long to wait. Two values, because the old copies used two and the
 #: difference is real rather than an oversight: a room description or a set of
@@ -126,13 +138,18 @@ def _request(url, api_key, payload=None, timeout=TIMEOUT):
                                f"({err.code})") from err
 
 
-def call(api_key, model, messages, tools=None, timeout=TIMEOUT):
+def call(sponsor, model, messages, tools=None, timeout=TIMEOUT):
     """
     Ask a model, and answer with the whole reply.
 
     For the callers that need more than the text: a reply carrying tool calls
     has nothing in its `content` at all, and the calls are the answer.
     Everything else wants `ask`.
+
+    Takes a sponsor rather than a key. The key is the smallest part of what it
+    carries -- the service to talk to and who to charge come with it -- and
+    unpacking it into a key at the top of every generator is what left the
+    other two with nowhere to travel.
     """
     # The sampling settings chosen for this job ride on the model choice. See
     # world.model_params: only what the player actually set is sent.
@@ -143,7 +160,10 @@ def call(api_key, model, messages, tools=None, timeout=TIMEOUT):
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
-    return _request(CHAT_URL, api_key, payload, timeout)
+    reply = _request(_chat_url(sponsor.base_url), sponsor.key(), payload,
+                     timeout)
+    _spent(sponsor, model, reply)
+    return reply
 
 
 def content(reply):
@@ -161,7 +181,7 @@ def content(reply):
         return ""
 
 
-def ask(api_key, model, messages, timeout=TIMEOUT):
+def ask(sponsor, model, messages, timeout=TIMEOUT):
     """
     Ask a model, and answer with the text. What almost everything wants.
 
@@ -169,21 +189,61 @@ def ask(api_key, model, messages, timeout=TIMEOUT):
     on to read JSON out of it -- so it is reported rather than returned, with
     whatever the service said about why.
     """
-    reply = call(api_key, model, messages, timeout=timeout)
+    reply = call(sponsor, model, messages, timeout=timeout)
     text = content(reply)
     if text:
         return text
     raise LLMError(_complain(reply) or "the model returned no text")
 
 
-def models(api_key, timeout=LIST_TIMEOUT):
+def models(sponsor, timeout=LIST_TIMEOUT):
     """Every model this key can reach, ordered by id. For the `models` menu."""
-    listed = _request(MODELS_URL, api_key, timeout=timeout)
+    listed = _request(_models_url(sponsor.base_url), sponsor.key(),
+                      timeout=timeout)
     try:
         return sorted(listed["data"], key=lambda record: record["id"])
     except (KeyError, TypeError) as err:
         raise LLMError(_complain(listed)
                        or "the model service sent no list of models") from err
+
+
+#: Calls that have happened but have not been written down yet.
+#:
+#: A reply arrives in a worker thread, where the token counts are, and the
+#: ledger is an Evennia attribute, which may only be written on the reactor.
+#: So the thread leaves the figures here and `fetch` picks them up on the way
+#: back -- a queue rather than a thread-local, because the hand-off crosses
+#: exactly that boundary and a thread-local does not.
+#:
+#: Unbounded is deliberate: entries are drained by the very next callback, and
+#: a cap here would silently discard the record of money that was spent, which
+#: is the one thing this must not do.
+_spending = queue.Queue()
+
+
+def _spent(sponsor, model, reply):
+    """
+    Note what a reply cost, from inside the thread that received it.
+
+    Never raises and never touches the database. Bookkeeping must not be able
+    to lose an answer somebody is waiting for.
+    """
+    try:
+        _spending.put_nowait((sponsor, model, (reply or {}).get("usage")))
+    except Exception:
+        pass
+
+
+def _write_down_spending():
+    """Drain what the threads left, on the reactor, where writing is allowed."""
+    from world import ledger
+
+    while True:
+        try:
+            sponsor, model, usage = _spending.get_nowait()
+        except queue.Empty:
+            return
+        ledger.note(sponsor, model, usage)
 
 
 def fetch(work, *args, on_success, on_error):
@@ -198,5 +258,18 @@ def fetch(work, *args, on_success, on_error):
 
     The callbacks are keyword-only so that a call reads in the order it happens:
     the work and its arguments first, then what becomes of the answer.
+
+    Both paths write the ledger down first. A call that failed on the way back
+    -- a reply that parsed badly, a generator that threw -- was still paid for,
+    and recording only the successes would make the figures quietly wrong in
+    exactly the direction nobody would notice.
     """
-    return threads.deferToThread(work, *args).addCallbacks(on_success, on_error)
+    def _succeeded(result):
+        _write_down_spending()
+        return on_success(result)
+
+    def _failed(failure):
+        _write_down_spending()
+        return on_error(failure)
+
+    return threads.deferToThread(work, *args).addCallbacks(_succeeded, _failed)

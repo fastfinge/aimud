@@ -18,8 +18,11 @@ from evennia.commands.default.general import CmdGet as _DefaultGet
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _account_from(caller):
-    return getattr(caller, "account", None) or caller
+def _sponsor_for(caller):
+    """Who pays for what this character is about to cause. See world.sponsor."""
+    from world import sponsor
+
+    return sponsor.of(caller)
 
 
 def _in_ai_world(room):
@@ -237,7 +240,7 @@ class CmdAILook(_DefaultLook):
         """Hand the look to the rulebooks, and say whatever they answer."""
         from world import attempt as attempt_mod
 
-        attempt_mod.attempt(caller, raw, _account_from(caller),
+        attempt_mod.attempt(caller, raw, _sponsor_for(caller),
                             on_message=lambda actor_text, room_text=None:
                                 caller.msg(actor_text) if actor_text else None)
 
@@ -252,14 +255,14 @@ class CmdAILook(_DefaultLook):
             caller.msg("Something is already appearing there.")
             return
 
-        account = _account_from(caller)
+        sponsor = _sponsor_for(caller)
         caller.msg(f"You look carefully for {query}...")
 
         from world.item_gen import validate_object_existence, generate_item
 
         def on_valid(_reason):
             generate_item(
-                account, room, query,
+                sponsor, room, query,
                 on_success=lambda item: _finish_look(caller, item, room, key),
                 on_error=lambda err: _gen_error(caller, room, key, err),
             )
@@ -272,7 +275,7 @@ class CmdAILook(_DefaultLook):
             _release_gen_lock(room, key)
             caller.msg(f"|rError: {err}|n")
 
-        validate_object_existence(account, room, query, on_valid, on_invalid, on_error)
+        validate_object_existence(sponsor, room, query, on_valid, on_invalid, on_error)
 
 
 def _finish_look(caller, item, room, key):
@@ -286,7 +289,7 @@ def _finish_look(caller, item, room, key):
         from world import attempt as attempt_mod
 
         attempt_mod.attempt(
-            caller, f"look {item.key}", _account_from(caller),
+            caller, f"look {item.key}", _sponsor_for(caller),
             on_message=lambda actor_text, room_text=None:
                 caller.msg(actor_text) if actor_text else None)
     from world.npc_gen import notify_npcs
@@ -390,7 +393,7 @@ class CmdAIGet(_DefaultGet):
         from world import attempt as attempt_mod
 
         attempt_mod.attempt(
-            caller, raw, _account_from(caller),
+            caller, raw, _sponsor_for(caller),
             on_message=lambda actor_text, room_text=None:
                 caller.msg(actor_text) if actor_text else None)
 
@@ -413,7 +416,7 @@ class CmdAIGet(_DefaultGet):
         # Nobody has decided whether this sort of thing can be picked up. Ask
         # once, about the kind rather than about this one -- the answer holds
         # for every table in the world, and for the next one made.
-        account = _account_from(caller)
+        sponsor = _sponsor_for(caller)
 
         from world import kinds
         from world.item_gen import validate_object_takeable
@@ -434,7 +437,7 @@ class CmdAIGet(_DefaultGet):
         def on_error(err):
             caller.msg(f"|rValidation error: {err}|n")
 
-        validate_object_takeable(account, room, obj, on_valid, on_invalid, on_error)
+        validate_object_takeable(sponsor, room, obj, on_valid, on_invalid, on_error)
 
     # -- object doesn't exist yet --
 
@@ -448,14 +451,14 @@ class CmdAIGet(_DefaultGet):
             caller.msg("Something is already appearing there.")
             return
 
-        account = _account_from(caller)
+        sponsor = _sponsor_for(caller)
         caller.msg(f"You look for {query}...")
 
         from world.item_gen import validate_object_existence, generate_item
 
         def on_valid(_reason):
             generate_item(
-                account, room, query,
+                sponsor, room, query,
                 on_success=lambda item: _finish_take(caller, item, room, key),
                 on_error=lambda err: _gen_error(caller, room, key, err),
             )
@@ -468,7 +471,7 @@ class CmdAIGet(_DefaultGet):
             _release_gen_lock(room, key)
             caller.msg(f"|rError: {err}|n")
 
-        validate_object_existence(account, room, query, on_valid, on_invalid, on_error)
+        validate_object_existence(sponsor, room, query, on_valid, on_invalid, on_error)
 
 
 def _root(room):

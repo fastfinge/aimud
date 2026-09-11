@@ -58,7 +58,9 @@ def _account_for(traversing_object, source_room):
         if other and other.db.openrouter_api_key:
             return other
     world_root = source_room.db.world_root if source_room else None
-    return world_root.db.world_creator if world_root else None
+    from world import sponsor
+
+    return sponsor.creator_of(world_root)
 
 
 class AIExit(ObjectParent, DefaultExit):

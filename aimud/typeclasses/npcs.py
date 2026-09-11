@@ -299,8 +299,8 @@ class NPC(ObjectParent, DefaultObject):
         # working memory now, in time to be part of what it does next.
         traits.notice_changes(self)
 
-        account = self._find_account(room)
-        if not account:
+        sponsor = self._sponsor(room)
+        if not sponsor.answers:
             return
 
         # Working at a goal costs nothing: the world already knows what its
@@ -313,7 +313,7 @@ class NPC(ObjectParent, DefaultObject):
         self.ndb.reacting = True
         from world.npc_gen import generate_npc_idle
         generate_npc_idle(
-            account=account,
+            sponsor=sponsor,
             npc=self,
             room=room,
             on_success=self._execute_tool_calls,
@@ -415,13 +415,13 @@ class NPC(ObjectParent, DefaultObject):
 
         if not npc_may_act(self):
             return
-        account = self._find_account(room)
-        if not account:
+        sponsor = self._sponsor(room)
+        if not sponsor.answers:
             return
         self.ndb.reacting = True
         from world.npc_gen import generate_npc_reaction
         generate_npc_reaction(
-            account=account,
+            sponsor=sponsor,
             npc=self,
             room=room,
             on_success=lambda calls: self._execute_tool_calls(calls, _depth),
@@ -444,16 +444,20 @@ class NPC(ObjectParent, DefaultObject):
         self.ndb.reacting = False
         logger.log_info(f"{self.key}: no reaction; the model call failed: {err}")
 
-    def _find_account(self, room):
-        """Return an account with an API key — prefer players currently in the room."""
-        for obj in room.contents:
-            account = getattr(obj, "account", None)
-            if account and account.db.openrouter_api_key:
-                return account
-        world_root = room.db.world_root
-        if world_root:
-            return world_root.db.world_creator
-        return None
+    def _sponsor(self, room):
+        """
+        Who pays for this character to think, and who is doing the thinking.
+
+        It used to be whichever player in the room had a key, falling back to
+        the world's creator. That is the one thing a shared world cannot do: a
+        visitor walking past an innkeeper would buy the innkeeper's next
+        remark, without asking and without knowing. The world pays for its own
+        people. See world.sponsor.
+        """
+        from world import sponsor
+
+        return sponsor.of_world(room.db.world_root if room else None,
+                                actor=self)
 
     def _execute_tool_calls(self, tool_calls, _depth=0):
         """
@@ -526,8 +530,8 @@ class NPC(ObjectParent, DefaultObject):
 
         if not want:
             return
-        account = self._find_account(room)
-        if not account:
+        sponsor = self._sponsor(room)
+        if not sponsor.answers:
             return
 
         def ready(conditions):
@@ -546,7 +550,7 @@ class NPC(ObjectParent, DefaultObject):
         from world.quest_gen import formalise_goal
 
         formalise_goal(
-            account, self, want,
+            sponsor, self, want,
             on_success=ready,
             on_error=lambda err: logger.log_info(
                 f"{self.key}: could not turn {want!r} into a goal: {err}"
@@ -619,8 +623,8 @@ class NPC(ObjectParent, DefaultObject):
             )
             return
 
-        account = self._find_account(room)
-        if not account:
+        sponsor = self._sponsor(room)
+        if not sponsor.answers:
             return
 
         offer = str(args.get("offer", "")).strip()
@@ -670,7 +674,7 @@ class NPC(ObjectParent, DefaultObject):
 
         from world.quest_gen import formalise
 
-        formalise(account, self, target, request, offer, consequence,
+        formalise(sponsor, self, target, request, offer, consequence,
                   on_success=ready, on_error=failed)
 
     def _answer_quest(self, args, room):
@@ -911,8 +915,8 @@ class NPC(ObjectParent, DefaultObject):
         """
         from world.attempt import NPC_FORBIDDEN_EFFECTS, attempt
 
-        account = self._find_account(room)
-        if not account:
+        sponsor = self._sponsor(room)
+        if not sponsor.answers:
             return
 
         # set_trait belongs here for the same reason set_state does: what an
@@ -961,7 +965,7 @@ class NPC(ObjectParent, DefaultObject):
         # words: "the blackboard" should find the chalkboard already on the
         # wall. It may still conjure a fixture nothing resembles, which is how
         # a described-but-unmodelled thing becomes real.
-        attempt(self, action, account, deliver, allow_effects=allowed,
+        attempt(self, action, sponsor, deliver, allow_effects=allowed,
                 fuzzy=True)
 
     def _conjure(self, name, room):
@@ -981,8 +985,8 @@ class NPC(ObjectParent, DefaultObject):
         """
         if not name:
             return
-        account = self._find_account(room)
-        if not account:
+        sponsor = self._sponsor(room)
+        if not sponsor.answers:
             return
 
         from world.item_gen import conjure
@@ -1000,7 +1004,7 @@ class NPC(ObjectParent, DefaultObject):
             self._add_to_history("action", self.key, said)
             self._notify_other_npcs(room, "action", said, 0)
 
-        conjure(self, room, account, name, ready,
+        conjure(self, room, sponsor, name, ready,
                 lambda message: self._note_to_self(_as_noticed(message)),
                 fuzzy=True)
 

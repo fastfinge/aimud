@@ -14,7 +14,7 @@ instead, and a wrong `instead` silently changes what a verb means.
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeAccount, as_json, immediately, replying
+from tests.support import FakeSponsor, as_json, immediately, replying
 from world import attempt as attempt_mod
 from world import actions, counters, kinds, rulebooks as R
 from world import standard_rules, suggest, verbs
@@ -471,7 +471,7 @@ class TheWholeRoad(EvenniaTest):
         with immediately(), replying(
                 as_json({"actor": "Done.", "room": "{actor} does it."})):
             attempt_mod.attempt(
-                self.char1, raw, FakeAccount(),
+                self.char1, raw, FakeSponsor(),
                 on_message=lambda a, r=None: said.append(a or ""))
         return " ".join(s for s in said if s)
 
@@ -506,7 +506,7 @@ class TheWholeRoad(EvenniaTest):
     def test_nothing_was_asked_of_a_model_to_get_there(self):
         with immediately(), replying("{}") as script:
             for _ in range(suggest.LEAST):
-                attempt_mod.attempt(self.char1, "launch", FakeAccount(),
+                attempt_mod.attempt(self.char1, "launch", FakeSponsor(),
                                     on_message=lambda a, r=None: None)
             suggest.generate(self.root)
             self.assertEqual(script.count, 0,
@@ -532,7 +532,7 @@ class AskingSomebodyElseToJudge(AWorldWithFaults):
         taken, declined, errors = [], [], []
         with immediately(), replying(
                 as_json(reply) if isinstance(reply, dict) else reply) as script:
-            suggest.judge(FakeAccount(), self.root,
+            suggest.judge(FakeSponsor(), self.root,
                           on_success=lambda a, d: (taken.extend(a),
                                                    declined.extend(d)),
                           on_error=errors.append)

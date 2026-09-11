@@ -81,12 +81,12 @@ class FindingWhoPays(EvenniaTest):
         """
         self.account.db.created_worlds = [self.root.id]
         sponsor.creator_of(self.root)
-        self.assertEqual(self.root.db.created_by, self.account.id)
+        self.assertEqual(self.root.db.world_creator, self.account)
 
     def test_backfill_claims_every_unclaimed_world(self):
         self.account.db.created_worlds = [self.root.id]
         self.assertEqual(sponsor.backfill(), 1)
-        self.assertEqual(self.root.db.created_by, self.account.id)
+        self.assertEqual(self.root.db.world_creator, self.account)
 
     def test_and_is_a_no_op_the_second_time(self):
         self.account.db.created_worlds = [self.root.id]

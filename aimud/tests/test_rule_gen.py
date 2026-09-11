@@ -15,7 +15,7 @@ allowed to say so.
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeAccount, as_json, immediately, replying
+from tests.support import FakeSponsor, as_json, immediately, replying
 from world import attempt as attempt_mod
 from world import actions, kinds, rule_gen, verbs, zones
 from world import rulebooks as R
@@ -304,7 +304,7 @@ class TheSpaceshipExample(EvenniaTest):
         with immediately(), replying(
                 as_json({"actor": "Done.", "room": "{actor} does it."})):
             attempt_mod.attempt(
-                self.char1, raw, FakeAccount(),
+                self.char1, raw, FakeSponsor(),
                 on_message=lambda a, r=None: said.append(a or ""))
         return " ".join(s for s in said if s)
 
@@ -350,7 +350,7 @@ class WordsARuleCoined(EvenniaTest):
     def written(self, reply):
         kept = []
         with immediately(), replying(as_json(reply)):
-            rule_gen.learn(FakeAccount(), self.root, "power",
+            rule_gen.learn(FakeSponsor(), self.root, "power",
                            {"direct": self.obj1}, self.char1,
                            on_success=kept.extend,
                            on_error=lambda err: self.fail(err))
@@ -443,7 +443,7 @@ class AFreshWorldLearningAVerb(EvenniaTest):
         said = []
         with immediately(), replying(*replies) as script:
             attempt_mod.attempt(
-                self.char1, raw, FakeAccount(),
+                self.char1, raw, FakeSponsor(),
                 on_message=lambda a, r=None: said.append(a or ""))
             asked = script.count
         return " ".join(s for s in said if s), asked

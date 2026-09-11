@@ -20,7 +20,16 @@ from unittest import mock
 
 from django.test import SimpleTestCase, tag
 
+from tests.support import FakeSponsor
 from world import llm
+
+
+#: Who is paying, for the tests that only care that somebody is.
+#:
+#: Pinned to the default service so that the URL assertions below stay about
+#: the path this module builds rather than about a fixture's opinion; the one
+#: test that cares which service is being talked to says so itself.
+SPONSOR = FakeSponsor(key="sk-key", base_url=llm.BASE_URL)
 
 
 def reply(content="{}", **extra):
@@ -105,7 +114,7 @@ class AskingAModel(SimpleTestCase):
     def test_the_request_is_a_post_to_chat_completions(self):
         patch, sent = sending(reply("text"))
         with patch:
-            llm.ask("sk-key", "some/model", [{"role": "user", "content": "hi"}])
+            llm.ask(SPONSOR, "some/model", [{"role": "user", "content": "hi"}])
         self.assertEqual(sent["url"], llm.CHAT_URL)
         self.assertEqual(sent["method"], "POST")
         self.assertEqual(sent["headers"]["Authorization"], "Bearer sk-key")
@@ -117,41 +126,41 @@ class AskingAModel(SimpleTestCase):
         patch, _sent = sending(reply("the flyer is damp"))
         with patch:
             self.assertEqual(
-                llm.ask("k", "m", []), "the flyer is damp")
+                llm.ask(SPONSOR, "m", []), "the flyer is damp")
 
     def test_call_answers_with_the_whole_reply(self):
         """npc_gen needs this: a tool call is not in the text."""
         patch, _sent = sending(reply("", extra_field=1))
         with patch:
-            got = llm.call("k", "m", [])
+            got = llm.call(SPONSOR, "m", [])
         self.assertIn("choices", got)
         self.assertEqual(got["extra_field"], 1)
 
     def test_tools_are_sent_only_when_given(self):
         patch, sent = sending(reply())
         with patch:
-            llm.call("k", "m", [])
+            llm.call(SPONSOR, "m", [])
         self.assertNotIn("tools", sent["payload"])
         self.assertNotIn("tool_choice", sent["payload"])
 
         tools = [{"type": "function", "function": {"name": "give"}}]
         patch, sent = sending(reply())
         with patch:
-            llm.call("k", "m", [], tools=tools)
+            llm.call(SPONSOR, "m", [], tools=tools)
         self.assertEqual(sent["payload"]["tools"], tools)
         self.assertEqual(sent["payload"]["tool_choice"], "auto")
 
     def test_the_default_wait_is_thirty_seconds(self):
         patch, sent = sending(reply("x"))
         with patch:
-            llm.ask("k", "m", [])
+            llm.ask(SPONSOR, "m", [])
         self.assertEqual(sent["timeout"], llm.TIMEOUT)
 
     def test_a_caller_may_choose_to_wait_longer(self):
         """worldgen and fact_gen did, before this was one function."""
         patch, sent = sending(reply("x"))
         with patch:
-            llm.ask("k", "m", [], llm.SLOW_TIMEOUT)
+            llm.ask(SPONSOR, "m", [], llm.SLOW_TIMEOUT)
         self.assertEqual(sent["timeout"], llm.SLOW_TIMEOUT)
         self.assertEqual(llm.SLOW_TIMEOUT, 60)
 
@@ -159,7 +168,7 @@ class AskingAModel(SimpleTestCase):
         """`model_params.of` answers {} for a string, and must keep doing so."""
         patch, sent = sending(reply("x"))
         with patch:
-            llm.ask("k", "plain/model", [])
+            llm.ask(SPONSOR, "plain/model", [])
         self.assertEqual(set(sent["payload"]), {"model", "messages"})
 
 
@@ -176,7 +185,7 @@ class WhenItWillNotAnswer(SimpleTestCase):
     def test_an_error_body_inside_a_200_is_explained(self):
         patch, _sent = sending({"error": {"message": "No credits left"}})
         with patch, self.assertRaises(llm.LLMError) as caught:
-            llm.ask("k", "m", [])
+            llm.ask(SPONSOR, "m", [])
         self.assertIn("No credits left", str(caught.exception))
 
     def test_an_http_error_carries_what_the_service_said(self):
@@ -185,7 +194,7 @@ class WhenItWillNotAnswer(SimpleTestCase):
             llm.CHAT_URL, 400, "Bad Request", {}, io.BytesIO(body))
         with mock.patch.object(llm.urllib.request, "urlopen", side_effect=err):
             with self.assertRaises(llm.LLMError) as caught:
-                llm.ask("k", "m", [])
+                llm.ask(SPONSOR, "m", [])
         self.assertIn("model not found", str(caught.exception))
 
     def test_an_http_error_with_an_unreadable_body_still_says_something(self):
@@ -193,21 +202,21 @@ class WhenItWillNotAnswer(SimpleTestCase):
             llm.CHAT_URL, 502, "Bad Gateway", {}, io.BytesIO(b"<html>"))
         with mock.patch.object(llm.urllib.request, "urlopen", side_effect=err):
             with self.assertRaises(llm.LLMError) as caught:
-                llm.ask("k", "m", [])
+                llm.ask(SPONSOR, "m", [])
         self.assertIn("502", str(caught.exception))
 
     def test_empty_text_is_reported_rather_than_returned(self):
         """Every `ask` caller goes straight on to read JSON out of it."""
         patch, _sent = sending(reply(""))
         with patch, self.assertRaises(llm.LLMError):
-            llm.ask("k", "m", [])
+            llm.ask(SPONSOR, "m", [])
 
     def test_a_timeout_is_not_swallowed(self):
         """Only HTTP errors are translated; the rest reach the caller intact."""
         with mock.patch.object(llm.urllib.request, "urlopen",
                                side_effect=TimeoutError("timed out")):
             with self.assertRaises(TimeoutError):
-                llm.ask("k", "m", [])
+                llm.ask(SPONSOR, "m", [])
 
 
 @tag("unit")
@@ -216,16 +225,27 @@ class ListingModels(SimpleTestCase):
     def test_models_come_back_sorted_by_id(self):
         patch, sent = sending({"data": [{"id": "z/model"}, {"id": "a/model"}]})
         with patch:
-            got = llm.models("k")
+            got = llm.models(SPONSOR)
         self.assertEqual([m["id"] for m in got], ["a/model", "z/model"])
         self.assertEqual(sent["url"], llm.MODELS_URL)
         self.assertEqual(sent["method"], "GET")
         self.assertIsNone(sent["payload"])
 
+    def test_the_service_follows_whoever_pays(self):
+        """
+        The reason a sponsor is passed rather than a key. A player pointing
+        their account at another provider changes where every one of their
+        calls goes, and nothing else in the game has to know.
+        """
+        patch, sent = sending({"data": []})
+        with patch:
+            llm.models(FakeSponsor(base_url="https://nano-gpt.com/api/v1"))
+        self.assertEqual(sent["url"], "https://nano-gpt.com/api/v1/models")
+
     def test_a_listing_with_no_models_in_it_is_explained(self):
         patch, _sent = sending({"error": {"message": "invalid key"}})
         with patch, self.assertRaises(llm.LLMError) as caught:
-            llm.models("k")
+            llm.models(SPONSOR)
         self.assertIn("invalid key", str(caught.exception))
 
 

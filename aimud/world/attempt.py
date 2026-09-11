@@ -151,7 +151,7 @@ def _anchor(bound, actor=None):
     return bound.get("direct") or next(iter(bound.values()))
 
 
-def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
+def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
             allow_promote=True, fuzzy=False):
     """
     Try to perform `raw` as a verb.
@@ -203,7 +203,7 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
 
     spread = bulk.expand(caller, verb, parsed["roles"])
     if spread:
-        _in_turn(caller, account, spread, on_message, allow_effects, on_wait,
+        _in_turn(caller, sponsor, spread, on_message, allow_effects, on_wait,
                  fuzzy)
         return
 
@@ -234,17 +234,17 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
             # earlier attempt happened to fill, and answered "Put at what?".
             if _mechanics(caller, verb, parsed, bound, on_message):
                 return
-            _with_bindings(caller, room, account, raw, verb, bound,
+            _with_bindings(caller, room, sponsor, raw, verb, bound,
                            on_message, allow_effects, waiter)
 
         # A noun that is not an object yet may still be real -- fixtures live
         # in the room description until something reaches for them.
         waiter()
-        _promote(caller, room, account, parsed, bound, unbound, resume,
+        _promote(caller, room, sponsor, parsed, bound, unbound, resume,
                  on_message, fuzzy=fuzzy)
         return
 
-    _with_bindings(caller, room, account, raw, verb, bound, on_message,
+    _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
                    allow_effects, waiter)
 
 
@@ -269,7 +269,7 @@ def _mechanics(caller, verb, parsed, bound, on_message):
                 or relations.handle(caller, verb, parsed, bound, on_message))
 
 
-def _in_turn(caller, account, spread, on_message, allow_effects, on_wait,
+def _in_turn(caller, sponsor, spread, on_message, allow_effects, on_wait,
              fuzzy):
     """
     Run an expanded bulk command one action at a time, then say what happened.
@@ -300,7 +300,7 @@ def _in_turn(caller, account, spread, on_message, allow_effects, on_wait,
         if obj.pk is None:
             step(remaining[1:])      # consumed by an earlier step
             return
-        attempt(caller, command, account, collected,
+        attempt(caller, command, sponsor, collected,
                 allow_effects=allow_effects, on_wait=told,
                 allow_promote=False, fuzzy=fuzzy)
 
@@ -349,7 +349,7 @@ def _follow(caller, parsed, on_message):
     on_message(message, room_text)
 
 
-def _promote(caller, room, account, parsed, bound, unbound, resume, on_message,
+def _promote(caller, room, sponsor, parsed, bound, unbound, resume, on_message,
              fuzzy=False):
     """
     Try to turn an unbound noun into a real object.
@@ -408,7 +408,7 @@ def _promote(caller, room, account, parsed, bound, unbound, resume, on_message,
         bound[role] = obj
         resume()
 
-    conjure(caller, room, account, parsed["roles"][role], ready,
+    conjure(caller, room, sponsor, parsed["roles"][role], ready,
             lambda message: on_message(message, ""), fuzzy=fuzzy)
 
 def _holder(obj, verb):
@@ -464,7 +464,7 @@ def _once(callback):
     return call
 
 
-def _with_bindings(caller, room, account, raw, verb, bound, on_message,
+def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
                    allow_effects, waiter=None, redirects=0):
     world_root = _world_root(room)
 
@@ -579,7 +579,7 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
 
     def with_rule(known_rule):
         """Once the verb's meaning is settled, ask whether this sort admits it."""
-        _admitted(caller, room, account, raw, verb, bound, known_rule,
+        _admitted(caller, room, sponsor, raw, verb, bound, known_rule,
                   release, allow_effects, world_root, waiter, guarded,
                   redirects)
 
@@ -595,7 +595,7 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
         # declaration is settled once and first one wins, so an arity read off
         # whatever the first attempt happened to name would lock out the real
         # answer for good. It still matters: an NPC acting on its own
-        # initiative has no account to ask with.
+        # initiative has no sponsor to ask with.
         from world import actions
 
         def declared(_spec):
@@ -624,7 +624,7 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
 
         if actions.spec(world_root, verb) is None:
             waiter()
-            actions.learn(account, world_root, verb, bound, caller,
+            actions.learn(sponsor, world_root, verb, bound, caller,
                           on_success=lambda spec: guarded(
                               lambda: declared(spec)),
                           on_error=lambda err: release(f"|r{err}|n"))
@@ -678,7 +678,7 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
 
         waiter()
         rule_gen.learn(
-            account, world_root, verb, bound, caller,
+            sponsor, world_root, verb, bound, caller,
             on_success=lambda rules: guarded(lambda: written(rules)),
             on_error=lambda err: release(f"|r{err}|n"),
         )
@@ -686,7 +686,7 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
     guarded(begin)
 
 
-def _admitted(caller, room, account, raw, verb, bound, rule, release,
+def _admitted(caller, room, sponsor, raw, verb, bound, rule, release,
               allow_effects, world_root, waiter, guarded, redirects=0):
     """
     Whether this sort of thing can be verbed at all, and then get on with it.
@@ -707,7 +707,7 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
         # `actions.ALWAYS_ADMITTED`: asking cost a call per room and would have
         # frozen the answer for ever, where a check rule on `visible_to` says
         # the same thing per object and can change its mind.
-        _with_rule(caller, room, account, raw, verb, bound, rule, release,
+        _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                    allow_effects, world_root, waiter, guarded, redirects)
         return
 
@@ -728,7 +728,7 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
     obj_kinds = kinds.of(anchor) if anchor is not None else []
 
     def proceed():
-        _with_rule(caller, room, account, raw, verb, bound, rule, release,
+        _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                    allow_effects, world_root, waiter, guarded, redirects)
 
     def refuse():
@@ -755,7 +755,7 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
 
     waiter()
     verb_gen.ask_admission(
-        account, world_root, verb, rule, obj_kinds[0],
+        sponsor, world_root, verb, rule, obj_kinds[0],
         on_answer=lambda allowed, reason: guarded(
             lambda: answered(allowed, reason)),
         on_error=lambda err: release(f"|r{err}|n"),
@@ -892,7 +892,7 @@ def _redirect(effect, bound, caller, world_root):
     return wanted
 
 
-def _with_rule(caller, room, account, raw, verb, bound, rule, release,
+def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                allow_effects, world_root, waiter=None, guarded=None,
                redirects=0):
     from world import conditions, rulebooks
@@ -917,7 +917,7 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
             wanted = _redirect(again, bound, caller, world_root)
             if wanted is not None:
                 _with_bindings(
-                    caller, room, account, raw,
+                    caller, room, sponsor, raw,
                     str(again.get("action") or verb), wanted,
                     lambda actor_text, room_text="": release(actor_text,
                                                              room_text),
@@ -1085,7 +1085,7 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
     finish = _finish if guarded is None else (
         lambda *args, **kwargs: guarded(lambda: _finish(*args, **kwargs)))
     verb_gen.narrate(
-        account, verb, bound, caller, raw,
+        sponsor, verb, bound, caller, raw,
         on_success=finish,
         on_error=lambda err: release(f"|r{err}|n"),
         result=result,

@@ -11,7 +11,7 @@ it was ever covered.
 from django.test import tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeAccount, as_json, immediately, replying
+from tests.support import FakeSponsor, as_json, immediately, replying
 from world import llm, verb_gen, verbs
 
 
@@ -22,7 +22,7 @@ class LearningARule(EvenniaTest):
         super().setUp()
         self.root = self.room1
         self.root.db.is_world_root = True
-        self.account_stub = FakeAccount()
+        self.account_stub = FakeSponsor()
 
     def learn(self, answer, verb="read", bound=None):
         """Drive `learn_rule` once and return (rule, error, recorder)."""
@@ -138,7 +138,7 @@ class TheDoorIsClosed(EvenniaTest):
         got = []
         with replying(as_json({"valid": True, "effects": []})):
             verb_gen.learn_rule(
-                FakeAccount(), self.room1, "read", {"direct": self.obj1},
+                FakeSponsor(), self.room1, "read", {"direct": self.obj1},
                 self.char1, "read obj",
                 on_success=got.append, on_error=got.append,
             )

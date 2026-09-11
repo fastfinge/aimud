@@ -16,7 +16,7 @@ than it is, and a suggester weighs its proposals by exactly that ratio.
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeAccount, as_json, immediately, replying
+from tests.support import FakeSponsor, as_json, immediately, replying
 from world import attempt as attempt_mod
 from world import actions, counters, kinds, rulebooks as R
 from world import standard_rules, verbs
@@ -248,7 +248,7 @@ class EveryWayOutIsCounted(Counting):
                                        "room": "{actor} does it."}),)
         with immediately(), replying(*answers):
             attempt_mod.attempt(
-                self.char1, raw, FakeAccount(),
+                self.char1, raw, FakeSponsor(),
                 on_message=lambda a, r=None: said.append(a or ""))
         return " ".join(s for s in said if s)
 

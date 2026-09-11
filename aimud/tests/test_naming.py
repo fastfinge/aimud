@@ -18,7 +18,7 @@ is why "look here" conjured a `here`.
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeAccount, immediately, replying
+from tests.support import FakeSponsor, immediately, replying
 from world import attempt as attempt_mod
 from world import bulk, relations, standard_rules, verbs
 
@@ -104,7 +104,7 @@ class Naming(EvenniaTest):
         said = []
         with immediately(), replying(*(replies or ("{}",))):
             attempt_mod.attempt(
-                self.char1, raw, FakeAccount(),
+                self.char1, raw, FakeSponsor(),
                 on_message=lambda actor_text, room_text=None:
                     said.append(actor_text or ""))
         return "\n".join(s for s in said if s)

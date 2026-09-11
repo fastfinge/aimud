@@ -15,7 +15,7 @@ is the composition win showing up as deleted code rather than as an argument.
 from django.test import tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeAccount, as_json, immediately, replying
+from tests.support import FakeSponsor, as_json, immediately, replying
 from world import rulebooks as R
 from world import attempt as attempt_mod
 from world import kinds, standard_rules, verb_gen, verbs
@@ -63,7 +63,7 @@ class RunningTheAttempt(EvenniaTest):
                                        "room": "{actor} does it."}))
         with immediately(), replying(*answers):
             attempt_mod.attempt(
-                self.char1, raw, FakeAccount(),
+                self.char1, raw, FakeSponsor(),
                 on_message=lambda actor_text, room_text=None:
                     said.append(actor_text or ""))
         return " ".join(s for s in said if s)

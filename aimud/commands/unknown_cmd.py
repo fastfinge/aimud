@@ -23,8 +23,11 @@ from evennia.commands.cmdhandler import CMD_NOMATCH
 from evennia.commands.default.syscommands import SystemNoMatch
 
 
-def _get_account(caller):
-    return getattr(caller, "account", None) or caller
+def _sponsor_for(caller):
+    """Who pays for this attempt. See world.sponsor."""
+    from world import sponsor
+
+    return sponsor.of(caller)
 
 
 def _in_ai_world(room):
@@ -140,7 +143,7 @@ class CmdAIUnknown(SystemNoMatch):
             caller.msg("You're still trying to do that...")
             return
 
-        account = _get_account(caller)
+        sponsor = _sponsor_for(caller)
         # A key is wanted before anything is attempted, because almost every
         # attempt ends at a model and being told so after the wait is worse
         # than being told so now.
@@ -156,7 +159,7 @@ class CmdAIUnknown(SystemNoMatch):
 
         if _verbs.canonical_verb(cmd_verb) not in _verbs.PIPELINE_VERBS:
             try:
-                account.get_openrouter_key()
+                sponsor.key()
             except ValueError as e:
                 caller.msg(str(e))
                 return
@@ -181,4 +184,4 @@ class CmdAIUnknown(SystemNoMatch):
             caller.msg(f"You try to {raw}...")
 
         from world.attempt import attempt
-        attempt(caller, raw, account, deliver, on_wait=waiting)
+        attempt(caller, raw, sponsor, deliver, on_wait=waiting)

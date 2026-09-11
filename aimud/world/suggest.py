@@ -586,7 +586,7 @@ def judgement_prompt(world_root):
     return "\n".join(lines)
 
 
-def judge(account, world_root, on_success, on_error):
+def judge(sponsor, world_root, on_success, on_error):
     """
     Async. One call, the whole queue, a verdict per entry.
 
@@ -609,7 +609,7 @@ def judge(account, world_root, on_success, on_error):
         on_success([], [])
         return
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except (AttributeError, ValueError) as err:
         on_error(str(err))
         return
@@ -649,7 +649,7 @@ def judge(account, world_root, on_success, on_error):
                 declined_now.append(rule_id)
         on_success(taken, declined_now)
 
-    llm.fetch(llm.ask, api_key, account.model_for("commands"), messages,
+    llm.fetch(llm.ask, sponsor, sponsor.model_for("commands"), messages,
               on_success=answered,
               on_error=lambda failure: on_error(failure.getErrorMessage()))
 

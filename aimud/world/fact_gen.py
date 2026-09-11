@@ -75,8 +75,8 @@ def _account_for(bank):
     """
     Whoever pays for distilling this character's memories. Main thread.
 
-    The world's creator, the same account that paid for every room in it.
-    Falls back to any account with a key, so a character orphaned from its
+    The world's creator, the same sponsor that paid for every room in it.
+    Falls back to any sponsor with a key, so a character orphaned from its
     world by a move does not simply stop being thought about.
     """
     from evennia.objects.models import ObjectDB
@@ -88,15 +88,17 @@ def _account_for(bank):
         character = ObjectDB.objects.filter(id=owner).first()
         location = getattr(character, "location", None) if character else None
         world_root = location.db.world_root if location is not None else None
-        creator = world_root.db.world_creator if world_root is not None else None
+        from world import sponsor as sponsor_mod
+
+        creator = sponsor_mod.creator_of(world_root)
         if creator is not None and creator.db.openrouter_api_key:
             return creator
 
     from evennia.accounts.models import AccountDB
 
-    for account in AccountDB.objects.all():
-        if account.db.openrouter_api_key:
-            return account
+    for sponsor in AccountDB.objects.all():
+        if sponsor.account.db.openrouter_api_key:
+            return sponsor
     return None
 
 
@@ -129,15 +131,15 @@ def distil(banks=None, on_done=None):
         if not summaries:
             return _next()
 
-        account = _account_for(bank)
-        if account is None:
-            return _finish("no account with an API key")
+        sponsor = _account_for(bank)
+        if sponsor is None:
+            return _finish("no sponsor with an API key")
         try:
-            api_key = account.get_openrouter_key()
+            sponsor.key()          # refuse early rather than mid-prompt
         except ValueError:
             return _finish("no API key")
 
-        model = account.model_for("memory")
+        model = sponsor.model_for("memory")
         messages = [
             {"role": "system",
              "content": _SYSTEM_PROMPT.replace("{max_facts}", str(MAX_FACTS))},
@@ -162,7 +164,7 @@ def distil(banks=None, on_done=None):
             memory.store_facts(bank, facts, through,
                                on_done=lambda _n: _next())
 
-        llm.fetch(llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT,
+        llm.fetch(llm.ask, sponsor, model, messages, llm.SLOW_TIMEOUT,
                   on_success=_answered, on_error=lambda _f: _next())
 
     def _finish(why):

@@ -4,6 +4,7 @@ World management commands: worlds, worldedit, worldremove, worldreset.
 
 from commands.command import Command
 from world import lore
+from world import sponsor as sponsor_mod
 
 
 def _get_account(caller):
@@ -272,7 +273,7 @@ class CmdNPCGen(Command):
 
         account = _get_account(caller)
         try:
-            account.get_openrouter_key()
+            sponsor_mod.of_account(account).key()
         except ValueError as e:
             caller.msg(str(e))
             return
@@ -449,7 +450,7 @@ class CmdWorldReset(Command):
 
         # Fail before destroying anything, not after.
         try:
-            account.get_openrouter_key()
+            sponsor_mod.of_account(account).key()
         except ValueError as e:
             caller.msg(str(e))
             return

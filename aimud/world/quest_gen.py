@@ -149,16 +149,16 @@ def _surroundings(npc, target):
     )
 
 
-def formalise(account, npc, target, request, offer, consequence, on_success, on_error):
+def formalise(sponsor, npc, target, request, offer, consequence, on_success, on_error):
     """
     Async. Turn a spoken request into a testable quest.
 
     Calls on_success({"title", "goal", "reward", "punishment"}) or
     on_error(msg) in the main thread.
     """
-    model = account.model_for("quests", "commands")
+    model = sponsor.model_for("quests", "commands")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -202,7 +202,7 @@ def formalise(account, npc, target, request, offer, consequence, on_success, on_
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    llm.fetch(llm.ask, api_key, model, messages,
+    llm.fetch(llm.ask, sponsor, model, messages,
               on_success=_done, on_error=_fail)
 
 
@@ -235,15 +235,15 @@ life's ambition. Return an empty list if what they want cannot be expressed
 this way."""
 
 
-def formalise_goal(account, npc, want, on_success, on_error):
+def formalise_goal(sponsor, npc, want, on_success, on_error):
     """
     Async. Turn a character's stated want into testable conditions.
 
     Calls on_success([condition, ...]) or on_error(msg) in the main thread.
     """
-    model = account.model_for("quests", "commands")
+    model = sponsor.model_for("quests", "commands")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -274,5 +274,5 @@ def formalise_goal(account, npc, want, on_success, on_error):
         except Exception as exc:
             on_error(str(exc))
 
-    llm.fetch(llm.ask, api_key, model, messages,
+    llm.fetch(llm.ask, sponsor, model, messages,
               on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))

@@ -53,11 +53,24 @@ MODELS_PER_PAGE = 10
 # OpenRouter fetch
 # ---------------------------------------------------------------------------
 
-def _fetch_models_sync(api_key):
+def _sponsor_of(account):
+    """
+    A sponsor for an account with no world behind it.
+
+    This menu is where somebody picks the models their worlds will use,
+    and it runs before any world exists -- so there is nothing to read a
+    payer off, and the person choosing is the person who will pay.
+    """
+    from world import sponsor
+
+    return sponsor.of_account(account)
+
+
+def _fetch_models_sync(sponsor):
     """Runs in a thread; returns list of model dicts sorted by id."""
     from world import llm
 
-    return llm.models(api_key)
+    return llm.models(sponsor)
 
 
 def _get_account(caller):
@@ -68,8 +81,9 @@ def _get_account(caller):
 def start_model_menu(caller):
     """Entry point called by CmdModels.  Fetches model list if needed, then opens the menu."""
     account = _get_account(caller)
+    sponsor = _sponsor_of(account)
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()
     except ValueError as e:
         caller.msg(str(e))
         return
@@ -89,7 +103,7 @@ def start_model_menu(caller):
 
     from world import llm
 
-    llm.fetch(_fetch_models_sync, api_key,
+    llm.fetch(_fetch_models_sync, sponsor,
               on_success=on_success, on_error=on_error)
 
 

@@ -461,14 +461,14 @@ class AskingTwiceAndNoMore(EvenniaTest):
         kinds.admit(self.root, ["spacecraft.n.01"], "vent", True)
 
     def try_it(self, raw, reply):
-        from tests.support import FakeAccount, as_json, immediately, replying
+        from tests.support import FakeSponsor, as_json, immediately, replying
         from world import attempt as attempt_mod
 
         said = []
         with immediately(), replying(
                 as_json(reply) if isinstance(reply, dict) else reply) as script:
             attempt_mod.attempt(
-                self.char1, raw, FakeAccount(),
+                self.char1, raw, FakeSponsor(),
                 on_message=lambda a, r=None: said.append(a or ""))
             self.asked = script.count
         return " ".join(s for s in said if s)
@@ -529,11 +529,11 @@ class AskingTwiceAndNoMore(EvenniaTest):
         half its vocabulary. That path ends in `on_error` and never reaches the
         tally.
         """
-        from tests.support import FakeAccount, immediately, replying
+        from tests.support import FakeSponsor, immediately, replying
         from world import attempt as attempt_mod, llm, rule_gen
 
         with immediately(), replying(llm.LLMError("no route to host")):
-            attempt_mod.attempt(self.char1, "vent Kestrel", FakeAccount(),
+            attempt_mod.attempt(self.char1, "vent Kestrel", FakeSponsor(),
                                 on_message=lambda a, r=None: None)
         self.assertEqual(rule_gen.fruitless(self.root, "vent"), 0)
 

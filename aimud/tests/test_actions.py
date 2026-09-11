@@ -248,13 +248,13 @@ class TheSilentNoOpIsGone(EvenniaTest):
         self.room1.db.is_ai_room = True
 
     def attempt(self, raw):
-        from tests.support import FakeAccount, immediately, replying
+        from tests.support import FakeSponsor, immediately, replying
         from world import attempt as attempt_mod
 
         said = []
         with immediately(), replying('{"valid": true, "effects": []}'):
             attempt_mod.attempt(
-                self.char1, raw, FakeAccount(),
+                self.char1, raw, FakeSponsor(),
                 on_message=lambda actor_text, room_text=None:
                     said.append(actor_text))
         return " ".join(s for s in said if s)
@@ -288,12 +288,12 @@ class AskingWhatAnActionTakes(EvenniaTest):
         self.room1.db.is_ai_room = True
 
     def ask(self, reply, bound=None):
-        from tests.support import FakeAccount, as_json, immediately, replying
+        from tests.support import FakeSponsor, as_json, immediately, replying
 
         got = []
         with immediately(), replying(
                 as_json(reply) if isinstance(reply, dict) else reply):
-            actions.learn(FakeAccount(), self.root, "power",
+            actions.learn(FakeSponsor(), self.root, "power",
                           bound if bound is not None else {},
                           self.char1,
                           on_success=got.append,
@@ -341,11 +341,11 @@ class AskingWhatAnActionTakes(EvenniaTest):
     def test_an_action_already_declared_is_not_asked_about_again(self):
         actions.declare(self.root, "power",
                         [{"role": "direct", "optional": True}])
-        from tests.support import FakeAccount, immediately, replying
+        from tests.support import FakeSponsor, immediately, replying
 
         got = []
         with immediately(), replying("{}") as script:
-            actions.learn(FakeAccount(), self.root, "power", {}, self.char1,
+            actions.learn(FakeSponsor(), self.root, "power", {}, self.char1,
                           on_success=got.append,
                           on_error=lambda err: self.fail(err))
             self.assertEqual(script.count, 0, "nothing should have been asked")

@@ -11,6 +11,7 @@ from evennia.utils.evmenu import EvMenu
 
 from commands.command import Command
 from world import lore
+from world import sponsor as sponsor_mod
 
 #: Kept on the character while the wizard is open, so answers survive being
 #: interrupted by the line editor and come back when it closes.
@@ -97,7 +98,7 @@ class CmdWorldgen(Command):
         account = getattr(caller, "account", None) or caller
 
         try:
-            account.get_openrouter_key()
+            sponsor_mod.of_account(account).key()
         except ValueError as e:
             caller.msg(str(e))
             return
@@ -331,7 +332,7 @@ def node_generate(caller, raw_string, **kwargs):
 
     from world.worldgen import generate_first_room
 
-    generate_first_room(account, dict(draft), on_success, on_error,
+    generate_first_room(sponsor_mod.of_account(account), dict(draft), on_success, on_error,
                         creator_character=caller)
     setattr(caller.ndb, DRAFT, None)
     return "", []

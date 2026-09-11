@@ -25,7 +25,7 @@ from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaCommandTest, EvenniaTest
 
 from commands.world_cmds import CmdEffects
-from tests.support import FakeAccount, as_json, immediately, replying
+from tests.support import FakeSponsor, as_json, immediately, replying
 from world import attempt as attempt_mod
 from world import checks, conditions as C, effects, standard_rules, verbs
 from world import rulebooks as R
@@ -201,7 +201,7 @@ class ShowingTheRoll(EvenniaTest):
                 as_json({"applies_to": [{"role": "direct"}]}),
                 as_json({"actor": "You heave at it.", "room": "{actor} heaves."})):
             attempt_mod.attempt(
-                self.char1, "force gate", FakeAccount(),
+                self.char1, "force gate", FakeSponsor(),
                 on_message=lambda actor_text, room_text=None:
                     said.append(actor_text or ""))
         return "\n".join(s for s in said if s)
@@ -234,7 +234,7 @@ class ShowingTheRoll(EvenniaTest):
         with immediately(), replying(
                 as_json({"actor": "It heaves at the gate.", "room": ""})):
             attempt_mod.attempt(
-                self.char2, "force gate", FakeAccount(),
+                self.char2, "force gate", FakeSponsor(),
                 on_message=lambda actor_text, room_text=None:
                     said.append(actor_text or ""))
         self.assertNotIn("against 12", "\n".join(said))

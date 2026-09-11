@@ -1043,14 +1043,14 @@ def _guide(source, facet):
     return lore.guidance_block(source, facet)
 
 
-def _generate_plan(account, api_key, world_description, guidance, on_done):
+def _generate_plan(sponsor, world_description, guidance, on_done):
     """
     Async. Ask for the world's zones and singleton room types.
 
     Failure is not fatal: a world with no plan simply generates without zone
     guidance, so on_done is always called.
     """
-    model = account.model_for("rooms")
+    model = sponsor.model_for("rooms")
     messages = [
         {"role": "system", "content": _PLAN_SYSTEM_PROMPT},
         {"role": "user",
@@ -1077,7 +1077,7 @@ def _generate_plan(account, api_key, world_description, guidance, on_done):
         except Exception:
             on_done({})
 
-    llm.fetch(llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT,
+    llm.fetch(llm.ask, sponsor, model, messages, llm.SLOW_TIMEOUT,
               on_success=_done, on_error=lambda _f: on_done({}))
 
 
@@ -1090,7 +1090,7 @@ def _generate_plan(account, api_key, world_description, guidance, on_done):
 _PLANNING = set()
 
 
-def plan_zone(account, world_root, zone_id):
+def plan_zone(sponsor, world_root, zone_id):
     """
     Async, fire-and-forget. Find out what one area of a world actually is.
 
@@ -1115,7 +1115,7 @@ def plan_zone(account, world_root, zone_id):
     if ticket in _PLANNING:
         return
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError:
         return
     _PLANNING.add(ticket)
@@ -1161,11 +1161,11 @@ def plan_zone(account, world_root, zone_id):
     def _failed(_reason):
         _PLANNING.discard(ticket)
 
-    llm.fetch(llm.ask, api_key, account.model_for("rooms"), messages,
+    llm.fetch(llm.ask, sponsor, sponsor.model_for("rooms"), messages,
               llm.SLOW_TIMEOUT, on_success=_done, on_error=_failed)
 
 
-def _generate_name(account, api_key, world_description, context, source_room,
+def _generate_name(sponsor, world_description, context, source_room,
                    exit_name, hint, on_success, on_error, attempts=3):
     """
     Async. Name the room, retrying while validation rejects the answer.
@@ -1175,7 +1175,7 @@ def _generate_name(account, api_key, world_description, context, source_room,
     """
     from world import coords, zones
 
-    model = account.model_for("naming", "rooms")
+    model = sponsor.model_for("naming", "rooms")
     world_root = source_room.db.world_root
     existing = _nearby_names(source_room, exit_name)
     source_category = source_room.db.room_category
@@ -1244,7 +1244,7 @@ def _generate_name(account, api_key, world_description, context, source_room,
                 ], complaint)
             on_success(data)
 
-        llm.fetch(llm.ask, api_key, model, convo, llm.SLOW_TIMEOUT,
+        llm.fetch(llm.ask, sponsor, model, convo, llm.SLOW_TIMEOUT,
                   on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
 
     def _retry(remaining, convo, complaint):
@@ -1300,10 +1300,10 @@ def _nearby_names(source_room, exit_name):
     return names
 
 
-def _generate_description(account, api_key, world_description, guidance, context,
+def _generate_description(sponsor, world_description, guidance, context,
                           name, room_type, category, on_success, on_error):
     """Async. Write the room's description, given the area around it."""
-    model = account.model_for("rooms")
+    model = sponsor.model_for("rooms")
     messages = [
         {"role": "system", "content": _DESC_SYSTEM_PROMPT},
         {
@@ -1330,7 +1330,7 @@ def _generate_description(account, api_key, world_description, guidance, context
         except Exception as exc:
             on_error(str(exc))
 
-    llm.fetch(llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT,
+    llm.fetch(llm.ask, sponsor, model, messages, llm.SLOW_TIMEOUT,
               on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
 
 
@@ -1341,7 +1341,7 @@ def _join_names(names):
     return f"{', '.join(names[:-1])} and {names[-1]}"
 
 
-def populate_room(account, room):
+def populate_room(sponsor, room):
     """
     Async, fire-and-forget. Give a finished room its loose contents.
 
@@ -1350,10 +1350,10 @@ def populate_room(account, room):
     an unfurnished room is a small loss, a stranded player is not.
     """
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError:
         return
-    model = account.model_for("contents", "items")
+    model = sponsor.model_for("contents", "items")
 
     from world import gear, kinds, lore, verbs
 
@@ -1409,11 +1409,11 @@ def populate_room(account, room):
             def arrived(npc):
                 room.msg_contents(f"You notice {npc.key} here.")
 
-            generate_npc(account=account, room=room,
+            generate_npc(sponsor=sponsor, room=room,
                          on_success=arrived,
                          on_error=lambda _err: None)
 
-    llm.fetch(llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT,
+    llm.fetch(llm.ask, sponsor, model, messages, llm.SLOW_TIMEOUT,
               on_success=_done, on_error=lambda _f: None)
 
 
@@ -1421,7 +1421,7 @@ def populate_room(account, room):
 # Public async API
 # ---------------------------------------------------------------------------
 
-def generate_first_room(account, spec, on_success, on_error,
+def generate_first_room(sponsor, spec, on_success, on_error,
                         creator_character=None):
     """
     Async. Generate the starting room for a new world.
@@ -1439,9 +1439,9 @@ def generate_first_room(account, spec, on_success, on_error,
     # Read off the spec: the world does not exist yet to be asked.
     rooms_guidance = _guide(spec, "rooms")
 
-    model = account.model_for("rooms")
+    model = sponsor.model_for("rooms")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -1491,7 +1491,7 @@ def generate_first_room(account, spec, on_success, on_error,
                 try:
                     room = _create_room(
                         name, description, exits, world_description, None, None,
-                        creator=account, room_type=room_type, category=category,
+                        creator=sponsor.account, room_type=room_type, category=category,
                         zone=zone, plan=plan, bonuses=bonuses,
                     )
 
@@ -1502,7 +1502,7 @@ def generate_first_room(account, spec, on_success, on_error,
 
                     lore.store(room, spec)
                     lore.apply_to_player(room, creator_character, spec)
-                    # Record this world on the account so `worlds` can list it,
+                    # Record this world on the sponsor so `worlds` can list it,
                     # and on the world so anything standing in it can find out
                     # whose key pays for what happens here. Both directions,
                     # because the two questions are asked from opposite ends:
@@ -1510,13 +1510,13 @@ def generate_first_room(account, spec, on_success, on_error,
                     # a room. See world.sponsor.
                     from world import sponsor as sponsor_mod
 
-                    created = account.db.created_worlds or []
+                    created = sponsor.account.db.created_worlds or []
                     created.append(room.id)
-                    account.db.created_worlds = created
-                    sponsor_mod.claim(room, account)
+                    sponsor.account.db.created_worlds = created
+                    sponsor_mod.claim(room, sponsor)
                     on_success(room)
-                    populate_room(account, room)
-                    plan_zone(account, room, room.db.zone)
+                    populate_room(sponsor, room)
+                    plan_zone(sponsor, room, room.db.zone)
                     # A first room the namer gave no exits would otherwise be
                     # a world of one room with nowhere to go.
                     ensure_frontier(room, near=room)
@@ -1524,18 +1524,18 @@ def generate_first_room(account, spec, on_success, on_error,
                     on_error(str(exc))
 
             _generate_description(
-                account, api_key, world_description, rooms_guidance,
+                sponsor, world_description, rooms_guidance,
                 "(this is the first room)", name, room_type, category,
                 on_success=finish, on_error=on_error,
             )
 
-        llm.fetch(llm.ask, api_key, model, messages, llm.SLOW_TIMEOUT,
+        llm.fetch(llm.ask, sponsor, model, messages, llm.SLOW_TIMEOUT,
                   on_success=with_name, on_error=lambda f: on_error(f.getErrorMessage()))
 
-    _generate_plan(account, api_key, world_description, rooms_guidance, with_plan)
+    _generate_plan(sponsor, world_description, rooms_guidance, with_plan)
 
 
-def generate_connected_room(account, world_description, source_room, exit_name,
+def generate_connected_room(sponsor, world_description, source_room, exit_name,
                             on_success, on_error, destination_hint=""):
     """
     Async. Generate the room reached by going through exit_name from source_room.
@@ -1547,7 +1547,7 @@ def generate_connected_room(account, world_description, source_room, exit_name,
     behind it consistent.
     """
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -1569,7 +1569,7 @@ def generate_connected_room(account, world_description, source_room, exit_name,
         exits = _allowed_exits(named.get("exits"), source_room, exit_name, reverse)
 
         _generate_description(
-            account, api_key, world_description, rooms_guidance, context, name,
+            sponsor, world_description, rooms_guidance, context, name,
             room_type, category,
             on_success=lambda description, bonuses=None: finish(
                 name, description, exits, room_type, category, zone,
@@ -1589,8 +1589,8 @@ def generate_connected_room(account, world_description, source_room, exit_name,
             # The player moves now; contents arrive behind them, and so does
             # any thinking about the place they have just walked into.
             on_success(room)
-            populate_room(account, room)
-            plan_zone(account, room.db.world_root, room.db.zone)
+            populate_room(sponsor, room)
+            plan_zone(sponsor, room.db.world_root, room.db.zone)
             # Last, and only if this room closed the world off: a world that
             # is still growing on its own is left alone.
             ensure_frontier(room.db.world_root, near=room)
@@ -1598,7 +1598,7 @@ def generate_connected_room(account, world_description, source_room, exit_name,
             on_error(str(exc))
 
     _generate_name(
-        account, api_key, world_description, context, source_room, exit_name,
+        sponsor, world_description, context, source_room, exit_name,
         destination_hint,
         on_success=with_name,
         on_error=on_error,

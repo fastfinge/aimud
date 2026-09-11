@@ -1051,14 +1051,14 @@ def notify_npcs(room, event_type, actor_name, text, exclude=None, actor=None):
 # Public async API
 # ---------------------------------------------------------------------------
 
-def generate_npc(account, room, on_success, on_error):
+def generate_npc(sponsor, room, on_success, on_error):
     """
     Async. Generate and spawn an NPC appropriate for the room.
     Calls on_success(npc_obj) or on_error(msg) in the main thread.
     """
-    model = account.model_for("npcs")
+    model = sponsor.model_for("npcs")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -1119,7 +1119,7 @@ def generate_npc(account, room, on_success, on_error):
                 )
             _spawn(data)
 
-        llm.fetch(llm.call, api_key, model, convo,
+        llm.fetch(llm.call, sponsor, model, convo,
                   on_success=_answered, on_error=_fail)
 
     def _spawn(data):
@@ -1167,7 +1167,7 @@ def generate_npc(account, room, on_success, on_error):
             # Nobody arrives naked and empty-handed. A second pass, the way a
             # finished room gets its contents: the character exists and can be
             # spoken to already, and their clothes catch up a moment later.
-            dress_npc(account, npc)
+            dress_npc(sponsor, npc)
         except Exception as exc:
             on_error(str(exc))
 
@@ -1177,7 +1177,7 @@ def generate_npc(account, room, on_success, on_error):
     _attempt(NAME_ATTEMPTS, messages)
 
 
-def dress_npc(account, npc):
+def dress_npc(sponsor, npc):
     """
     Async, fire-and-forget. Give a new character their clothes and belongings.
 
@@ -1193,10 +1193,10 @@ def dress_npc(account, npc):
     if room is None:
         return
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError:
         return
-    model = account.model_for("contents", "items", "npcs")
+    model = sponsor.model_for("contents", "items", "npcs")
 
     from world import gear, goals, kinds, lore, verbs
 
@@ -1247,20 +1247,20 @@ def dress_npc(account, npc):
             except Exception as exc:
                 logger.log_info(f"could not equip {npc.key}: {exc}")
 
-    llm.fetch(llm.call, api_key, model, messages,
+    llm.fetch(llm.call, sponsor, model, messages,
               on_success=_done, on_error=lambda _f: None)
 
 
-def generate_npc_idle(account, npc, room, on_success, on_error):
+def generate_npc_idle(sponsor, npc, room, on_success, on_error):
     """
     Async. Prompt the NPC to take a spontaneous, self-initiated action.
     Uses the same tool-calling infrastructure as generate_npc_reaction but
     asks the model what the NPC would do of its own accord right now.
     Calls on_success(list[{"name", "args"}]) or on_error(msg) in the main thread.
     """
-    model = account.model_for("dialogue")
+    model = sponsor.model_for("dialogue")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -1320,7 +1320,7 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
                 ),
             },
         ]
-        return llm.call(api_key, model, messages, tools=tools)
+        return llm.call(sponsor, model, messages, tools=tools)
 
     def _done(raw):
         try:
@@ -1353,14 +1353,14 @@ def generate_npc_idle(account, npc, room, on_success, on_error):
     llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
-def generate_npc_reaction(account, npc, room, on_success, on_error):
+def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
     """
     Async. Send the NPC's context + history to the dialogue model with tool-calling.
     Calls on_success(list[{"name", "args"}]) or on_error(msg) in the main thread.
     """
-    model = account.model_for("dialogue")
+    model = sponsor.model_for("dialogue")
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as e:
         on_error(str(e))
         return
@@ -1422,7 +1422,7 @@ def generate_npc_reaction(account, npc, room, on_success, on_error):
                 ),
             },
         ]
-        return llm.call(api_key, model, messages, tools=tools)
+        return llm.call(sponsor, model, messages, tools=tools)
 
     def _done(raw):
         try:

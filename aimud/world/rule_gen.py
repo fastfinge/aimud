@@ -548,7 +548,7 @@ def prompt(world_root, action, bound, actor, offered):
     return "\n".join(lines)
 
 
-def learn(account, world_root, action, bound, actor, on_success, on_error):
+def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
     """
     Async. Ask this world what `action` should do here, and file the answer.
 
@@ -557,11 +557,11 @@ def learn(account, world_root, action, bound, actor, on_success, on_error):
     goes on without a rule rather than with a wrong one.
     """
     try:
-        api_key = account.get_openrouter_key()
+        sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as err:
         on_error(str(err))
         return
-    model = account.model_for("commands")
+    model = sponsor.model_for("commands")
     offered = menu(world_root, bound, actor)
 
     system = _SYSTEM.replace("{conditions}", _CONDITIONS) \
@@ -594,7 +594,7 @@ def learn(account, world_root, action, bound, actor, on_success, on_error):
             note_fruitless(world_root, action)
         on_success([rulebooks.add(world_root, rule) for rule in kept])
 
-    llm.fetch(llm.ask, api_key, model, messages,
+    llm.fetch(llm.ask, sponsor, model, messages,
               on_success=answered,
               on_error=lambda failure: on_error(failure.getErrorMessage()))
 
