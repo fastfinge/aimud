@@ -1013,13 +1013,13 @@ def _memory_inputs(npc, room, room_title):
     memories most relevant to themselves -- and the prompt says everything
     twice. See memory.recall_sync.
     """
-    from world.memory import bank_for
+    from world.memory import where_for
 
     history = npc.db.action_history or []
     recent = history[-WORKING_MEMORY_EVENTS:]
     on_show = [_format_history([event]) for event in recent]
     cues = _recall_cues(npc, room, room_title)
-    return _format_history(recent), bank_for(npc), cues, on_show
+    return _format_history(recent), where_for(npc), cues, on_show
 
 
 def _format_history(history):

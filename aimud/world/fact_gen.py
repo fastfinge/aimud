@@ -71,34 +71,34 @@ def _parse_facts(content):
     return facts
 
 
-def _account_for(bank):
+def _account_for(where):
     """
-    Whoever pays for distilling this character's memories. Main thread.
+    Whoever pays for distilling these memories. Main thread.
 
     The world's creator, the same sponsor that paid for every room in it.
-    Falls back to any sponsor with a key, so a character orphaned from its
-    world by a move does not simply stop being thought about.
+    Reached directly now: a bank is named for a world rather than for one of
+    the characters standing in it, so finding the world no longer means
+    finding a character first and asking where they happen to be.
+
+    Falls back to any account with a key, so memories in a world whose maker
+    has gone are not simply never thought about again.
     """
     from evennia.objects.models import ObjectDB
 
-    from world import memory
+    from world import memory, sponsor as sponsor_mod
 
-    owner = memory._owner_id(bank)
+    owner = memory._owner_id(where.bank)
     if owner is not None:
-        character = ObjectDB.objects.filter(id=owner).first()
-        location = getattr(character, "location", None) if character else None
-        world_root = location.db.world_root if location is not None else None
-        from world import sponsor as sponsor_mod
-
+        world_root = ObjectDB.objects.filter(id=owner).first()
         creator = sponsor_mod.creator_of(world_root)
         if creator is not None and creator.db.openrouter_api_key:
             return creator
 
     from evennia.accounts.models import AccountDB
 
-    for sponsor in AccountDB.objects.all():
-        if sponsor.account.db.openrouter_api_key:
-            return sponsor
+    for account in AccountDB.objects.all():
+        if account.db.openrouter_api_key:
+            return account
     return None
 
 
@@ -112,7 +112,7 @@ def distil(banks=None, on_done=None):
     """
     from world import memory
 
-    queue = list(banks if banks is not None else memory.living_banks())
+    queue = list(banks if banks is not None else memory.living_places())
     tally = {"characters": 0, "facts": 0}
 
     def _next():
@@ -123,15 +123,15 @@ def distil(banks=None, on_done=None):
         if not quiet_enough_for_heavy_work():
             return _finish("interrupted; somebody is playing")
 
-        bank = queue.pop(0)
-        memory.distillable(bank, lambda summaries, through:
-                           _got(bank, summaries, through))
+        where = queue.pop(0)
+        memory.distillable(where, lambda summaries, through:
+                           _got(where, summaries, through))
 
-    def _got(bank, summaries, through):
+    def _got(where, summaries, through):
         if not summaries:
             return _next()
 
-        sponsor = _account_for(bank)
+        sponsor = _account_for(where)
         if sponsor is None:
             return _finish("no sponsor with an API key")
         try:
@@ -157,11 +157,11 @@ def distil(banks=None, on_done=None):
             if not facts:
                 # Nothing worth keeping, but the reading still counts: without
                 # moving the mark these same summaries come back every pass.
-                return memory.store_facts(bank, [], through,
+                return memory.store_facts(where, [], through,
                                           on_done=lambda _n: _next())
             tally["characters"] += 1
             tally["facts"] += len(facts)
-            memory.store_facts(bank, facts, through,
+            memory.store_facts(where, facts, through,
                                on_done=lambda _n: _next())
 
         llm.fetch(llm.ask, sponsor, model, messages, llm.SLOW_TIMEOUT,

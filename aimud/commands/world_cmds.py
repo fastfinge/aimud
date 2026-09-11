@@ -131,6 +131,15 @@ def _clear_world(root, account, destination=None, message=None):
     for character in _quest_holders(rooms, account):
         quests.forget_world(character, root_id, givers)
 
+    # And the memories of it, which are one file per world and go with it.
+    # Before the rooms are deleted, so the bank can still be named; and it is
+    # the reason memories are carved by world rather than by character, since
+    # the old shape left one file per person behind for a sweep to find.
+    from world import ledger, memory
+
+    memory.forget_world(root)
+    ledger.forget_world(account, root_id)
+
     for room in rooms:
         for obj in list(room.contents):
             if isinstance(obj, DefaultCharacter):

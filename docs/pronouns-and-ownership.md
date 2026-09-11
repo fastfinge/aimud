@@ -1103,9 +1103,10 @@ annotations.
 pinned off, `delete_bank` wired into `worldreset` and `worldremove`, an
 instance cache replacing the single global one.
 
-*Facts*: engine facts to `consolidate_fact(..., veracity="tool")`; the
-distillation re-pointed at `veracity="inferred"` and fed the triples;
-polyphonic recall on; `TripleStore` for ownership provenance only.
+*Facts*: the `note_fact` channel, the distillation re-pointed at
+`veracity="inferred"`, and polyphonic recall on. **Engine facts and
+`TripleStore` moved to P5**, where ownership gives them something to record --
+writing a fact channel with nothing to put through it would be a costume.
 
 Sequenced between P3 and P4 because it needs the record P3 builds and the reset
 P4 brings. The bank change is the reason to do it here: the old per-character
@@ -1127,6 +1128,13 @@ one a naive implementation fails.
 `set_owner` effect and its cascade; `rule_gen` prompt lines; `standard_rules`
 seeds and a raised `VERSION`; the `give` mechanic; `create_object` and
 `dress_npc` claiming.
+
+Also the half of Phase M that had nothing to record until now: engine facts
+through `memory.note_fact(..., veracity="tool")`, and `TripleStore` for
+ownership provenance -- `(sword, owned_by, Jessica)` with `supersede=True`, so
+a transfer closes the old owner by itself and `query(as_of=...)` still answers
+who it belonged to before. That is what §7.6 needs to let somebody mourn a
+sword that no longer exists.
 
 **Phase P6 -- possessive matching.** `bind` filtering on possessor; the refusal
 wording; `bulk` narrowing; `anatomy`'s carried-object fallback folded in.

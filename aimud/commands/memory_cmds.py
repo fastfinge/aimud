@@ -64,7 +64,7 @@ class CmdRemember(Command):
             )
             return
 
-        from world.memory import available, bank_for
+        from world.memory import available, where_for
 
         if not available():
             caller.msg("You find your memory of recent events oddly blank.")
@@ -83,7 +83,7 @@ class CmdRemember(Command):
         caller.ndb.recalling = True
 
         model = sponsor.model_for("memory", "dialogue")
-        bank = bank_for(caller)
+        where = where_for(caller)
         caller.msg("You cast your mind back...")
 
         def _fetch():
@@ -92,7 +92,7 @@ class CmdRemember(Command):
             from world import llm
             from world.memory import format_memories, recall_sync
 
-            memories = recall_sync(bank, question, top_k=8)
+            memories = recall_sync(where, question, top_k=8)
             if not memories:
                 return None
             messages = [

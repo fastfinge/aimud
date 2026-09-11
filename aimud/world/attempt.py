@@ -1059,8 +1059,7 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                     caller, room, later.get("effects") or [],
                     bound=bound, world_root=world_root)
 
-        _remember(caller, raw, bound, actor_text, extra, outcome=outcome,
-                  contested=result is not None)
+        _remember(caller, event, actor_text)
         # A contested attempt that came out badly is still a thing that
         # happened rather than a thing that was refused: the player was allowed
         # to try and the dice said no, which is not evidence of a missing rule.
@@ -1112,34 +1111,61 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
     )
 
 
-def _remember(caller, raw, bound, actor_text, changes, outcome="success",
-              contested=False):
+def _remember(caller, event, actor_text):
     """
     Record what the character did, and what it changed.
 
-    Goes into the actor's own bank whether or not anyone saw it: reading a
+    Goes into the actor's own memories whether or not anyone saw it: reading a
     letter alone in a room is still something you did, and "remember what did
     the notice say?" should find it. What other people in the room remember
     comes through the normal witnessing path, which only carries what was
     actually visible.
+
+    **Written from the event rather than from what was typed**, and that is
+    the whole change. `raw` is the player's literal keystrokes, so "hug her"
+    went into the bank as "I did: hug her" -- with the name only in a
+    parenthetical, and the pronoun in the part that gets searched. Recall here
+    is hybrid, embedding plus full-text, so that memory is not merely vague
+    later: it is unfindable, because it will not match a cue of "Jessica".
+
+    The same words also feed a regex fact extractor on every write, whose stop
+    list begins `i you he she it they` -- so `"I did: ..."` led with a word
+    that made the sentence contribute nothing at all. The prefix is gone and
+    the names are in.
     """
     from world.memory import remember
 
-    what = ", ".join(sorted(bound[r].key for r in bound)) or None
-    line = f"I tried to: {raw}" if contested else f"I did: {raw}"
-    if what:
-        line += f" (involving {what})"
+    involved = [obj for obj in event.participants() if obj is not caller]
+    names = ", ".join(sorted(str(obj.key) for obj in involved))
+
+    line = f"{caller.key} {'tried to' if event.contested else ''} {event.verb}"
+    line = " ".join(line.split())
+    if names:
+        line += f" {names}"
     # A failure is a thing that happened to you and worth remembering as one:
     # an NPC beaten off twice should know it before trying a third time, and
-    # "I did: attack the guard" on its own reads as a victory.
-    if contested:
-        line += (" and succeeded" if outcome in checks.GOOD
-                 else " and failed")
+    # "attacked the guard" on its own reads as a victory.
+    if event.contested:
+        line += (", and succeeded" if event.outcome in checks.GOOD
+                 else ", and failed")
     if actor_text:
         line += f" — {actor_text}"
-    if changes:
-        line += " " + " ".join(changes)
-    remember(caller, line, kind="did", importance=0.65)
+    if event.effects:
+        line += " " + " ".join(event.effects)
+
+    remember(
+        caller, line, kind="did", importance=0.65,
+        # What no extractor could supply, because we resolved it rather than
+        # guessing: exactly who and what this was about, by name and by id.
+        about=[(str(obj.key), f"#{obj.id}")
+               for obj in event.participants() if getattr(obj, "id", None)],
+        # Unread today. It is what lets a recalled memory be re-rendered with
+        # the names things have now rather than replayed as the sentence it
+        # was written as.
+        metadata={"verb": event.verb, "outcome": event.outcome,
+                  "roles": {role: obj.id for role, obj in event.roles.items()
+                            if getattr(obj, "id", None)}},
+    )
 
 
 def _release(caller, on_message, actor_text, event=None):
