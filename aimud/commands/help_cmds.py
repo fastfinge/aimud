@@ -48,6 +48,7 @@ from evennia.help.filehelp import FileHelpEntry
 #: one way a player would think to ask for the whole list. Evennia title-cases
 #: these for display, so nothing is lost by writing them the way it stores them.
 KIND_CATEGORY = "kinds"
+EFFECT_CATEGORY = "effects"
 AFFORDANCE_CATEGORY = "affordances"
 STATE_CATEGORY = "conditions"
 TRAIT_CATEGORY = "traits"
@@ -336,6 +337,64 @@ def _affordance_topics(world_root):
         locks=UNLISTED)) for verb in sorted(set(yes) | set(no))]
 
 
+def _effect_text(name, entry):
+    """What `help set_state` says."""
+    lines = [
+        f"|w{name}|n is one of the changes a rule can make. It "
+        f"{entry['means']}.",
+        "",
+        (f"Written as: |x{{\"type\": \"{name}\"}}|n, and it takes no other "
+         f"fields." if entry["takes"] == "nothing" else
+         f"Written as: |x{{\"type\": \"{name}\", ...}}|n, taking "
+         f"{entry['takes']}."),
+    ]
+    if entry.get("answers"):
+        lines += [
+            "",
+            "Its own output is the whole of what you read, so nothing is "
+            "written on top of it. That is what lets looking at something "
+            "cost nothing at all.",
+        ]
+    if not entry.get("backwards"):
+        lines += [
+            "",
+            "A character planning ahead cannot use this as a step, because "
+            "there is no way to read it backwards into something somebody "
+            "could want. That is a decision rather than a gap: nothing is "
+            "ever a goal to have been told something, or to have been seen "
+            "doing something.",
+        ]
+    else:
+        lines += [
+            "",
+            "A character planning ahead can use this as a step: it can be "
+            "read backwards into the thing somebody would want it for.",
+        ]
+    lines += ["", "|weffects <verb>|n says which of these a verb will make, "
+                  "and |wrules <verb>|n says in what order."]
+    return "\n".join(lines)
+
+
+def effect_topics():
+    """
+    Every change a rule can make, as (key, label, entry) triples.
+
+    The one set of topics here that is not per world. An effect is the
+    engine's vocabulary rather than a world's -- `set_state` means the same
+    thing in every world there will ever be -- so these read identically
+    wherever somebody is standing, and they are built from
+    `world.effects.VOCABULARY` so that adding an effect documents it for
+    nothing. That is the same bargain the other four registers strike, with
+    the register kept in code because this one is not invented as the game
+    runs.
+    """
+    from world import effects
+
+    return [(name, "effect", _entry(
+        name, EFFECT_CATEGORY, _effect_text(name, entry), locks=UNLISTED))
+        for name, entry in sorted(effects.VOCABULARY.items())]
+
+
 def world_topics(caller, world_root=None):
     """
     The help this world has taught itself, as {key: entry}.
@@ -420,7 +479,16 @@ class CmdAIHelp(default_cmds.CmdHelp):
         cmd_topics, db_topics, file_topics = super().collect_topics(caller, mode)
         permitted = self.can_list_topic if mode == "list" else self.can_read_topic
         merged = dict(file_topics)
-        for key, entry in world_topics(caller).items():
+
+        # The effect vocabulary first, and outside `world_topics`, because it
+        # is the only one of the registers that is not a world's own: it reads
+        # the same in Limbo as aboard a ship, and somebody looking up what
+        # `set_state` means should not have to be standing anywhere in
+        # particular to find out.
+        found = dict(world_topics(caller))
+        for key, _label, entry in effect_topics():
+            _place(found, key, "effect", entry)
+        for key, entry in found.items():
             if permitted(entry, caller):
                 merged.setdefault(key, entry)
         return cmd_topics, db_topics, merged

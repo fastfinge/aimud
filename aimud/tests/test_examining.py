@@ -13,16 +13,18 @@ a verb that could never be passed and a verb that was merely hard looked
 exactly alike from inside. You could only tell them apart by trying eleven
 times.
 
-One register under the answer to both: `effects.VOCABULARY` says what each
-sort of change means, `effects.say` renders a particular one, and `checks.odds`
-counts the faces of the die that go your way. Everything that has to put an
-effect into words reads the same entries, which is what stops them drifting
-into separate accounts of what `set_state` does.
+Three answers, and one register underneath all of them: `effects.VOCABULARY`
+says what each sort of change means, `effects.say` renders a particular one,
+and `checks.odds` counts the faces of the die that go your way. The `effects`
+command, `help <effect>` and `suggest.said` all read the same entries, which
+is what stops the three of them drifting into three different accounts of what
+`set_state` does.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
+from evennia.utils.test_resources import EvenniaCommandTest, EvenniaTest
 
+from commands.world_cmds import CmdEffects
 from tests.support import FakeAccount, as_json, immediately, replying
 from world import attempt as attempt_mod
 from world import checks, conditions as C, effects, standard_rules, verbs
@@ -240,6 +242,149 @@ class ShowingTheRoll(EvenniaTest):
     def test_an_uncontested_verb_shows_no_numbers(self):
         """Most verbs have no check, and a line about one would be noise."""
         self.assertEqual(checks.said(None), "")
+
+
+@tag("world")
+class WhatAVerbWillDo(EvenniaCommandTest):
+    """The command, against a world with something in it to read."""
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+        self.room1.db.is_ai_room = True
+        standard_rules.seed(self.root)
+
+    def said(self, args=""):
+        return self.call(CmdEffects(), args)
+
+    def burning(self):
+        R.add(self.root, R.blank(
+            action="burn", phase=R.CHECK, scope={"world": True},
+            about="direct", name="it must not already be burning",
+            conditions=[{"subject": "direct", "lacks": ["burning"]}]))
+        R.add(self.root, R.blank(
+            action="burn", phase=R.CARRY_OUT, scope={"world": True},
+            about="direct", name="burning a thing sets it alight",
+            effects=[{"type": "set_state", "role": "direct",
+                      "add": ["burning"]}]))
+
+    def test_outside_a_world_it_says_so(self):
+        self.room1.db.is_world_root = False
+        self.room1.attributes.remove("world_root")
+        self.assertIn("not in a generated world", self.said())
+
+    def test_it_says_what_the_verb_changes(self):
+        self.burning()
+        said = self.said("burn")
+        self.assertIn("makes what you act on burning", said)
+
+    def test_and_what_it_needs_first(self):
+        self.burning()
+        self.assertIn("is not burning", self.said("burn"))
+
+    def test_a_verb_that_does_nothing_says_that_out_loud(self):
+        """
+        Which is the point. A verb with conditions and no carry-out can be
+        refused and can never work, and reading that off a missing heading is
+        what this command exists to stop somebody having to do.
+        """
+        R.add(self.root, R.blank(
+            action="oil", phase=R.CHECK, scope={"world": True},
+            conditions=[{"subject": "direct", "lacks": ["oiled"]}]))
+        self.assertIn("has not worked out what it does", self.said("oil"))
+
+    def test_a_contest_says_what_it_is_against_and_the_odds(self):
+        R.add(self.root, R.blank(
+            action="force", phase=R.CARRY_OUT, scope={"world": True},
+            contest={"trait": "strength", "against": None, "difficulty": 12},
+            effects=[{"type": "set_state", "role": "direct",
+                      "add": ["forced"]}]))
+        said = self.said("force")
+        self.assertIn("strength", said)
+        self.assertIn("chances in 20", said)
+
+    def test_and_an_uncontested_verb_says_it_is_not_a_gamble(self):
+        self.burning()
+        self.assertIn("not contested", self.said("burn"))
+
+    def test_the_engines_own_rules_are_marked_as_such(self):
+        """
+        The distinction somebody meaning to change a world needs most: the
+        standard rules are the engine's and everything else is theirs.
+        """
+        self.burning()
+        self.assertIn("standard", self.said("burn"))
+
+    def test_a_verb_nobody_has_settled_says_how_to_settle_it(self):
+        self.assertIn("Nothing is known about it yet", self.said("launch"))
+
+    def test_with_no_verb_it_lists_them(self):
+        self.burning()
+        said = self.said()
+        self.assertIn("burn", said)
+        self.assertIn("1 change", said)
+
+    def test_a_world_that_has_worked_nothing_out_says_so(self):
+        self.assertIn("has not worked out what any verb does", self.said())
+
+    def test_affects_is_the_same_command(self):
+        self.assertIn("affects", CmdEffects.aliases)
+
+
+@tag("world")
+class HelpOnEveryChangeThereIs(EvenniaTest):
+    """
+    Built from the register, so an effect added documents itself.
+
+    The one set of topics in the game that is not per world: `set_state` means
+    the same thing in every world there will ever be, so these read alike
+    wherever somebody is standing -- unlike `help bottle`, which is a fact
+    about wherever they happen to be.
+    """
+
+    def topics(self):
+        from commands.help_cmds import effect_topics
+
+        return {key: entry for key, _label, entry in effect_topics()}
+
+    def test_there_is_one_for_every_effect(self):
+        self.assertEqual(sorted(self.topics()), sorted(effects.VOCABULARY))
+
+    def test_each_says_what_it_does_and_what_it_takes(self):
+        entry = self.topics()["set_state"]
+        self.assertIn("puts something into a condition", entry.entrytext)
+        self.assertIn("add", entry.entrytext)
+
+    def test_one_a_planner_cannot_read_backwards_says_so(self):
+        """11.1: an effect nobody can answer for is a hole in the planner, so
+        the two that genuinely have no answer say it rather than omit it."""
+        self.assertIn("cannot use this as a step",
+                      self.topics()["narrate"].entrytext)
+        self.assertIn("can use this as a step",
+                      self.topics()["set_state"].entrytext)
+
+    def test_they_are_reachable_outside_a_generated_world(self):
+        """
+        `world_topics` answers {} in Limbo, correctly -- those words describe a
+        particular world. These are the engine's, and somebody looking up what
+        `set_state` means should not have to be standing anywhere.
+        """
+        from commands.help_cmds import world_topics
+
+        self.assertEqual(world_topics(self.char1, world_root=None), {})
+        self.assertIn("set_state", self.topics())
+
+    def test_the_commands_own_help_lists_them(self):
+        """
+        Built rather than written, so a new effect appears here for nothing.
+        `help effects` finds the command before any category, so the command
+        is where the index has to live.
+        """
+        said = CmdEffects().get_help(self.char1, None)
+        for name in effects.VOCABULARY:
+            self.assertIn(name, said)
 
 
 @tag("unit")
