@@ -1,0 +1,532 @@
+{
+ "action_specs": {
+  "look": {
+   "action": "look",
+   "applies_to": [],
+   "means": "perceive with attention; direct one's gaze towards",
+   "sense": "look.v.01"
+  }
+ },
+ "attempt_counts": {
+  "look|kind:|done|player": {
+   "count": 1,
+   "last": 1789077915.3075442
+  }
+ },
+ "declined_suggestions": {},
+ "engine": "rulebooks",
+ "exported": "2026-09-11",
+ "kind_specs": {
+  "broom": {
+   "affordances": {
+    "get": true,
+    "sweep": true
+   },
+   "holds": []
+  },
+  "chalk": {
+   "affordances": {
+    "get": true,
+    "snap": true,
+    "write": true
+   },
+   "holds": [],
+   "states": [
+    "used"
+   ]
+  },
+  "chalkboard": {
+   "affordances": {
+    "get": false,
+    "read": true,
+    "wash": true,
+    "write": true
+   },
+   "holds": []
+  },
+  "clipboard": {
+   "affordances": {
+    "get": true
+   },
+   "holds": [
+    "on"
+   ]
+  },
+  "flyer": {
+   "affordances": {
+    "get": true,
+    "read": true
+   },
+   "holds": []
+  },
+  "folder": {
+   "affordances": {
+    "close": true,
+    "get": true,
+    "open": true,
+    "read": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "logbook": {
+   "affordances": {
+    "get": true,
+    "read": true,
+    "write": true
+   },
+   "holds": []
+  },
+  "notebook": {
+   "affordances": {
+    "close": false,
+    "get": true,
+    "open": true,
+    "read": true,
+    "write": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "slipper": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "stamp": {
+   "affordances": {
+    "get": true
+   },
+   "holds": []
+  }
+ },
+ "label": "pre-pronouns-05",
+ "pronoun_sets": {},
+ "rooms": 5,
+ "rule_counter": 5,
+ "rule_failures": {},
+ "rules": {
+  "r1": {
+   "about": "actor",
+   "action": null,
+   "born": 1789077915.2253218,
+   "conditions": [
+    {
+     "able": "acting",
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r1",
+   "listed": true,
+   "name": "you must be able to act",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "standard",
+   "when": [],
+   "why": ""
+  },
+  "r2": {
+   "about": "direct",
+   "action": null,
+   "born": 1789077915.243994,
+   "conditions": [
+    {
+     "reachable_by": "actor",
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r2",
+   "listed": true,
+   "name": "you must be able to reach what you act on",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "standard",
+   "when": [],
+   "why": ""
+  },
+  "r3": {
+   "about": "direct",
+   "action": "look",
+   "born": 1789077915.253434,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "action": "look",
+     "roles": {
+      "direct": "here"
+     },
+     "type": "try"
+    }
+   ],
+   "evidence": {},
+   "id": "r3",
+   "listed": true,
+   "name": "looking about you means looking at the room",
+   "outcome": null,
+   "overrides": null,
+   "phase": "instead",
+   "scope": {
+    "world": true
+   },
+   "source": "standard",
+   "when": [
+    {
+     "subject": "direct",
+     "unbound": true
+    }
+   ],
+   "why": ""
+  },
+  "r4": {
+   "about": "direct",
+   "action": "look",
+   "born": 1789077915.261925,
+   "conditions": [
+    {
+     "subject": "direct",
+     "visible_to": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r4",
+   "listed": true,
+   "name": "you must be able to see what you look at",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "standard",
+   "when": [],
+   "why": ""
+  },
+  "r5": {
+   "about": "direct",
+   "action": "look",
+   "born": 1789077915.2703953,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "role": "direct",
+     "type": "describe"
+    }
+   ],
+   "evidence": {},
+   "id": "r5",
+   "listed": true,
+   "name": "what looking at a thing shows",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "standard",
+   "when": [],
+   "why": ""
+  }
+ },
+ "state_groups": {
+  "assistance": {
+   "ends_on_move": true,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "markedness": {
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "wear": {
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  }
+ },
+ "state_vocabulary": {
+  "guided": {
+   "conflicts": [],
+   "group": "assistance",
+   "means": "receiving hands-on physical guidance from someone else"
+  },
+  "marked": {
+   "conflicts": [],
+   "group": "markedness",
+   "means": "has visible writing or drawings on it"
+  },
+  "used": {
+   "conflicts": [],
+   "group": "wear",
+   "means": "has been partially consumed or worn down through use"
+  }
+ },
+ "trait_vocabulary": {},
+ "verb_rules": {
+  "guide#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "guided"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "dead"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "nod": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "read#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "read"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "write#target": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "marked"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "used"
+     ],
+     "role": "target",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "target"
+     ]
+    },
+    "target": {
+     "has": [
+      "write"
+     ]
+    }
+   },
+   "valid": true
+  }
+ },
+ "verbs_without_rules": {},
+ "zones": {
+  "_world": {
+   "bounds": null,
+   "budget": 3,
+   "is_world": true,
+   "name": "{user}} is a western boy who has been enrolled in a so-ca...",
+   "parent": null,
+   "planned": true,
+   "purpose": "",
+   "room_types": [],
+   "rooms": [],
+   "singleton_types": [
+    "headmistress_office",
+    "reception_area",
+    "boys_dorm_room",
+    "canteen_hall",
+    "rusty_gate",
+    "supply_shed"
+   ],
+   "types_used": {}
+  },
+  "administrative_wing": {
+   "bounds": [
+    [
+     -1,
+     0,
+     0
+    ],
+    [
+     0,
+     1,
+     0
+    ]
+   ],
+   "budget": 6,
+   "name": "Administrative Wing",
+   "parent": "_world",
+   "planned": true,
+   "purpose": "Young self-appointed administrators try and fail to handle bureaucratic paperwork, enrollment forms, and disciplinary hearings in this haphazardly converted office suite.",
+   "room_types": [
+    "corridor",
+    "makeshift_office",
+    "reception_area",
+    "records_closet",
+    "headmistress_office",
+    "snack_break_corner"
+   ],
+   "rooms": [
+    5595,
+    5601,
+    5608
+   ],
+   "singleton_types": [
+    "reception_area",
+    "records_closet",
+    "headmistress_office",
+    "snack_break_corner"
+   ],
+   "types_used": {
+    "circulation": "Cluttered Administrative Hallway",
+    "makeshift_foyer": "Makeshift Reception Foyer",
+    "records_closet": "Records Closet"
+   }
+  },
+  "canteen_and_kitchen": {
+   "bounds": null,
+   "budget": 4,
+   "name": "Canteen and Kitchen",
+   "parent": "_world",
+   "planned": false,
+   "purpose": "A disorganized dining hall and kitchenette where questionable meals and local snacks are prepared and served with total unearned authority.",
+   "room_types": [
+    "canteen_hall",
+    "makeshift_kitchen",
+    "pantry",
+    "snack_counter"
+   ],
+   "rooms": [],
+   "singleton_types": [],
+   "types_used": {}
+  },
+  "classroom_wing": {
+   "bounds": [
+    [
+     1,
+     0,
+     0
+    ],
+    [
+     1,
+     1,
+     0
+    ]
+   ],
+   "budget": 8,
+   "name": "Classroom Wing",
+   "parent": "_world",
+   "planned": true,
+   "purpose": "Students endure disastrously incompetent lessons and erratic assignments dished out by overconfident young girls across stuffy, poorly converted rooms.",
+   "room_types": [
+    "makeshift_classroom",
+    "hallway",
+    "arts_crafts_room",
+    "study_hall",
+    "broken_ac_lounge"
+   ],
+   "rooms": [
+    5612,
+    5619
+   ],
+   "singleton_types": [
+    "arts_crafts_room",
+    "study_hall",
+    "broken_ac_lounge"
+   ],
+   "types_used": {
+    "circulation": "Drafty Classroom Breezeway",
+    "destination": "Improvised Algebra Classroom"
+   }
+  },
+  "courtyard_and_compound": {
+   "bounds": null,
+   "budget": 6,
+   "name": "Courtyard and Compound",
+   "parent": "_world",
+   "planned": false,
+   "purpose": "The tropical, overgrown exterior grounds where clumsy outdoor drills and failed recess activities take place.",
+   "room_types": [
+    "overgrown_courtyard",
+    "rusty_gate",
+    "covered_walkway",
+    "supply_shed",
+    "makeshift_playground"
+   ],
+   "rooms": [],
+   "singleton_types": [],
+   "types_used": {}
+  },
+  "dormitory_quarters": {
+   "bounds": null,
+   "budget": 7,
+   "name": "Dormitory Quarters",
+   "parent": "_world",
+   "planned": false,
+   "purpose": "Cluttered and humid living areas where the staff and the student board on-site in makeshift rooms.",
+   "room_types": [
+    "girls_dorm_room",
+    "boys_dorm_room",
+    "cluttered_common_room",
+    "shared_bathroom",
+    "hallway",
+    "balcony"
+   ],
+   "rooms": [],
+   "singleton_types": [],
+   "types_used": {}
+  }
+ }
+}

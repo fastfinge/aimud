@@ -153,13 +153,18 @@ class FakeSponsor:
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 
 
-def worlds():
+def worlds(generation=""):
     """
     Every exported world's registers, as plain dicts, by label.
 
     Real generated data, which is the point: a test that asserts against an
     example somebody invented proves something about the example. These came out
     of worlds that were played.
+
+    `generation` names a later export; without one this is the original corpus,
+    exported before the reset that ended the worlds which produced it. Each
+    generation is read on its own, because a ratio measured across two engines
+    is an average of two different things rather than a bigger sample.
 
     The corpus is interim -- it was produced by the engine the rulebook change
     replaces -- so a test reading it should assert a *property* over the whole
@@ -168,7 +173,8 @@ def worlds():
     replaced; the second is forty rewrites.
     """
     found = {}
-    for path in sorted((FIXTURES / "worlds").glob("world-*.json")):
+    where = FIXTURES / "worlds" / generation if generation else FIXTURES / "worlds"
+    for path in sorted(where.glob("world-*.json")):
         record = json.loads(path.read_text(encoding="utf-8"))
         found[record["label"]] = record
     return found

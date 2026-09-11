@@ -86,11 +86,29 @@ def _plain(value):
     return str(value)          # a dbref or anything else: its name will do
 
 
-def export():
+def export(generation=""):
+    """
+    Write every live world's registers out, as one generation of the corpus.
+
+    `generation` is a name for this run, and it exists because this script
+    deletes before it writes and a corpus is not replaceable. The worlds that
+    produced the first set were ended by the reset it was exported to survive;
+    re-running bare would have taken 326 rules out of the repository and put
+    264 different ones in their place, and nothing would have said so.
+
+    **A generation goes in its own directory, and that is not tidiness.**
+    `tests.support.worlds` globs `world-*.json` one level deep, so anything
+    written beside the first set joins it -- and the ratchet in
+    `test_rulecheck` measures ratios across whatever it finds. Two generations
+    in one pile is not a bigger measurement, it is an average of worlds built
+    by two different engines, which is no measurement at all. A subdirectory
+    is invisible to that glob and is read only by somebody who asks for it by
+    name.
+    """
     from evennia.objects.models import ObjectDB
 
-    out = HERE / "worlds"
-    out.mkdir(exist_ok=True)
+    out = HERE / "worlds" / generation if generation else HERE / "worlds"
+    out.mkdir(parents=True, exist_ok=True)
     for stale in out.glob("world-*.json"):
         stale.unlink()
 
@@ -100,7 +118,8 @@ def export():
 
     written = []
     for position, root in enumerate(roots, 1):
-        label = f"world-{position:02d}"
+        label = (f"{generation}-{position:02d}" if generation
+                 else f"world-{position:02d}")
         record = {
             "label": label,
             "exported": date.today().isoformat(),
@@ -117,7 +136,7 @@ def export():
         for name in REGISTERS:
             record[name] = _plain(getattr(root.db, name, None) or {})
 
-        path = out / f"{label}.json"
+        path = out / f"world-{position:02d}.json"
         path.write_text(json.dumps(record, indent=1, sort_keys=True) + "\n",
                         encoding="utf-8")
         written.append((label, path, record))
@@ -126,12 +145,14 @@ def export():
 
 
 def main():
+    generation = sys.argv[1].strip("-") if len(sys.argv) > 1 else ""
     _setup()
-    written = export()
-    print(f"{len(written)} world(s) -> {HERE / 'worlds'}\n")
+    written = export(generation)
+    where = (HERE / "worlds" / generation) if generation else (HERE / "worlds")
+    print(f"{len(written)} world(s) -> {where}\n")
     total_rules = total_kinds = total_states = 0
     for label, path, record in written:
-        rules = len(record["verb_rules"])
+        rules = len(record.get("rules") or record.get("verb_rules") or {})
         kinds = len(record["kind_specs"])
         states = len(record["state_vocabulary"])
         total_rules += rules

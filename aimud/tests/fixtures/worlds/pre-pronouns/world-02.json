@@ -1,0 +1,306 @@
+{
+ "action_specs": {},
+ "attempt_counts": {},
+ "declined_suggestions": {},
+ "engine": "verb_rules",
+ "exported": "2026-09-11",
+ "kind_specs": {},
+ "label": "pre-pronouns-02",
+ "pronoun_sets": {},
+ "rooms": 6,
+ "rule_counter": {},
+ "rule_failures": {},
+ "rules": {},
+ "state_groups": {
+  "openness": {
+   "ends_on_move": false,
+   "exclusive": true
+  }
+ },
+ "state_vocabulary": {
+  "open": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "unfastened or unsealed to allow access to the inside"
+  }
+ },
+ "trait_vocabulary": {},
+ "verb_rules": {
+  "ask#target:readable": {
+   "check": null,
+   "effects": [],
+   "reason": "Asking is an action directed at a person, not a general rule that applies to an inanimate object itself.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "check#direct:breakable,container,wet_able": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "check#direct:container,flammable,openable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "container"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "look#container:container,flammable,openable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "container": {
+     "is": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "nod#none": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "open#direct:container,flammable,openable,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:flammable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:container,flammable,openable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "container"
+     ],
+     "is": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  }
+ },
+ "verbs_without_rules": {},
+ "zones": {
+  "_world": {
+   "bounds": null,
+   "budget": 3,
+   "is_world": true,
+   "name": "<user> is on a guided tour of North Korea for westerners.",
+   "parent": null,
+   "planned": true,
+   "purpose": "",
+   "room_types": [],
+   "rooms": [],
+   "singleton_types": [
+    "revolving_restaurant",
+    "basement_bowling",
+    "foreign_languages_bookshop",
+    "mausoleum_chamber",
+    "blue_conference_hut",
+    "dmz_briefing_room",
+    "peace_museum",
+    "performance_hall"
+   ],
+   "types_used": {}
+  },
+  "kumsusan_palace_of_the_sun": {
+   "bounds": null,
+   "budget": 6,
+   "name": "Kumsusan Palace of the Sun",
+   "parent": "_world",
+   "planned": false,
+   "purpose": "A strictly regimented mausoleum pilgrimage where visitors submit to silent security checks before viewing embalmed leaders.",
+   "room_types": [
+    "palace_security",
+    "moving_walkway",
+    "marble_colonnade",
+    "mausoleum_chamber",
+    "relic_hall"
+   ],
+   "rooms": [],
+   "singleton_types": [],
+   "types_used": {}
+  },
+  "model_educational_and_cultural_showcases": {
+   "bounds": null,
+   "budget": 7,
+   "name": "Model Educational and Cultural Showcases",
+   "parent": "_world",
+   "planned": false,
+   "purpose": "Tourists witness immaculate musical performances and cooperative abundance staged for foreign approval.",
+   "room_types": [
+    "performance_hall",
+    "prodigy_classroom",
+    "model_greenhouse",
+    "farm_residence",
+    "communal_courtyard"
+   ],
+   "rooms": [],
+   "singleton_types": [],
+   "types_used": {}
+  },
+  "panmunjom_border_excursion": {
+   "bounds": null,
+   "budget": 6,
+   "name": "Panmunjom Border Excursion",
+   "parent": "_world",
+   "planned": false,
+   "purpose": "Minders and military officers guide the group along the border to inspect armistice huts and hear the northern perspective.",
+   "room_types": [
+    "highway_checkpoint",
+    "dmz_briefing_room",
+    "blue_conference_hut",
+    "peace_museum",
+    "observation_terrace"
+   ],
+   "rooms": [],
+   "singleton_types": [],
+   "types_used": {}
+  },
+  "pyongyang_monument_circuit": {
+   "bounds": [
+    [
+     0,
+     2,
+     0
+    ],
+    [
+     0,
+     4,
+     0
+    ]
+   ],
+   "budget": 8,
+   "name": "Pyongyang Monument Circuit",
+   "parent": "_world",
+   "planned": true,
+   "purpose": "Tourists are shuttled by charter bus between towering bronze statues, vast polished plazas, and chandelier-lit metro stations along a strictly choreographed propaganda route.",
+   "room_types": [
+    "tour_bus",
+    "grand_plaza",
+    "monument_base",
+    "marble_escalator",
+    "metro_platform",
+    "metro_car",
+    "foreign_languages_bookshop"
+   ],
+   "rooms": [
+    3441,
+    3446,
+    3454
+   ],
+   "singleton_types": [
+    "tour_bus",
+    "metro_car",
+    "foreign_languages_bookshop"
+   ],
+   "types_used": {
+    "circulation": "Pyongyang City Transit Arterial",
+    "grand-chollima-plaza": "Grand Chollima Plaza",
+    "tour_bus": "Charter Bus Loading Zone"
+   }
+  },
+  "yanggakdo_international_hotel": {
+   "bounds": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     1,
+     1,
+     0
+    ]
+   ],
+   "budget": 10,
+   "name": "Yanggakdo International Hotel",
+   "parent": "_world",
+   "planned": true,
+   "purpose": "Foreign tourists unwind, drink, and sleep under watchful minder surveillance within an isolated river-island hotel.",
+   "room_types": [
+    "hotel_lobby",
+    "hotel_corridor",
+    "guest_room",
+    "hotel_bar",
+    "basement_bowling",
+    "revolving_restaurant",
+    "elevator_bank",
+    "hotel_gift_shop"
+   ],
+   "rooms": [
+    3421,
+    3430,
+    3459
+   ],
+   "singleton_types": [
+    "hotel_lobby",
+    "revolving_restaurant",
+    "basement_bowling",
+    "hotel_bar",
+    "hotel_gift_shop"
+   ],
+   "types_used": {
+    "hotel-forecourt": "Yanggakdo Hotel Forecourt",
+    "hotel_bar": "The Hotel Bar",
+    "yanggakdo_hotel_lobby": "Yanggakdo Hotel Grand Lobby"
+   }
+  }
+ }
+}

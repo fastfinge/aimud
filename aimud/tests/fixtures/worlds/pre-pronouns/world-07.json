@@ -1,0 +1,5642 @@
+{
+ "action_specs": {
+  "buy": {
+   "action": "buy",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "source"
+    }
+   ],
+   "despite": [],
+   "means": "obtain by purchase; acquire by means of a financial transaction",
+   "sense": "buy.v.01"
+  },
+  "check": {
+   "action": "check",
+   "applies_to": [
+    {
+     "access": "visible",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "examine so as to determine accuracy, quality, or condition",
+   "sense": "check.v.01"
+  },
+  "climb": {
+   "action": "climb",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "go upward with gradual or continuous progress",
+   "sense": "climb.v.01"
+  },
+  "clip": {
+   "action": "clip",
+   "applies_to": [
+    {
+     "access": "carried",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "target"
+    }
+   ],
+   "despite": [],
+   "means": "attach with a clip",
+   "sense": "clip.v.03"
+  },
+  "close": {
+   "action": "close",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "move so that an opening or passage is obstructed; make shut",
+   "sense": "close.v.01"
+  },
+  "consult": {
+   "action": "consult",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "seek information from",
+   "sense": "consult.v.02"
+  },
+  "douse": {
+   "action": "douse",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "put out, as of a candle or a light",
+   "sense": "douse.v.01"
+  },
+  "drink": {
+   "action": "drink",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "take in liquids",
+   "sense": "drink.v.01"
+  },
+  "eat": {
+   "action": "eat",
+   "applies_to": [
+    {
+     "access": "carried",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "take in solid food",
+   "sense": "eat.v.01"
+  },
+  "enter": {
+   "action": "enter",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "to come or go into",
+   "sense": "enter.v.01"
+  },
+  "fee": {
+   "action": "fee",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "give a tip or gratuity to in return for a service, beyond the compensation agreed on",
+   "sense": "tip.v.03"
+  },
+  "fill": {
+   "action": "fill",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "source"
+    }
+   ],
+   "despite": [],
+   "means": "make full, also in a metaphorical sense",
+   "sense": "fill.v.01"
+  },
+  "forage": {
+   "action": "forage",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "collect or look around for (food)",
+   "sense": "scrounge.v.01"
+  },
+  "forge": {
+   "action": "forge",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "source"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "create by hammering",
+   "sense": "forge.v.01"
+  },
+  "get": {
+   "action": "get",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "source"
+    }
+   ],
+   "despite": [],
+   "means": "come into the possession of something concrete or abstract",
+   "sense": "get.v.01"
+  },
+  "give": {
+   "action": "give",
+   "applies_to": [
+    {
+     "access": "carried",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "target"
+    }
+   ],
+   "despite": [],
+   "means": "transfer possession of something concrete or abstract to somebody",
+   "sense": "give.v.03"
+  },
+  "grease": {
+   "action": "grease",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "applying grease, oil, or a similar lubricant to an object to reduce friction, silence squeaks, or make it slippery",
+   "sense": "grease.v.01"
+  },
+  "greet": {
+   "action": "greet",
+   "applies_to": [
+    {
+     "access": "visible",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "express greetings upon meeting someone",
+   "sense": "greet.v.01"
+  },
+  "hammer": {
+   "action": "hammer",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "beat with or as if with a hammer",
+   "sense": "hammer.v.01"
+  },
+  "hand": {
+   "action": "hand",
+   "applies_to": [
+    {
+     "access": "carried",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "target"
+    }
+   ],
+   "despite": [],
+   "means": "place into the hands or custody of",
+   "sense": "pass.v.05"
+  },
+  "hear": {
+   "action": "hear",
+   "applies_to": [
+    {
+     "access": "visible",
+     "optional": true,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "perceive (sound) via the auditory sense",
+   "sense": "hear.v.01"
+  },
+  "hook": {
+   "action": "hook",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "fasten with a hook",
+   "sense": "hook.v.01"
+  },
+  "insert": {
+   "action": "insert",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "container"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "target"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "source"
+    }
+   ],
+   "despite": [],
+   "means": "to put something inside something else",
+   "sense": ""
+  },
+  "jam": {
+   "action": "jam",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "get stuck and immobilized",
+   "sense": "jam.v.05"
+  },
+  "jump": {
+   "action": "jump",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "move forward by leaps and bounds",
+   "sense": "jump.v.01"
+  },
+  "lie": {
+   "action": "lie",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "container"
+    }
+   ],
+   "despite": [],
+   "means": "be lying, be prostrate; be in a horizontal position",
+   "sense": "lie.v.02"
+  },
+  "lift": {
+   "action": "lift",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "raise from a lower to a higher position",
+   "sense": "raise.v.02"
+  },
+  "light": {
+   "action": "light",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "cause to start burning; subject to fire or great heat",
+   "sense": "ignite.v.01"
+  },
+  "look": {
+   "action": "look",
+   "applies_to": [
+    {
+     "access": "visible",
+     "optional": true,
+     "role": "direct"
+    }
+   ],
+   "despite": [
+    "acting"
+   ],
+   "means": "to take in what something looks like",
+   "sense": ""
+  },
+  "nod": {
+   "action": "nod",
+   "applies_to": [],
+   "despite": [],
+   "means": "lower and raise the head, as to indicate assent or agreement or confirmation",
+   "sense": "nod.v.02"
+  },
+  "open": {
+   "action": "open",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "cause to open or to become open",
+   "sense": "open.v.01"
+  },
+  "place": {
+   "action": "place",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "container"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "target"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "source"
+    }
+   ],
+   "despite": [],
+   "means": "to set something down somewhere",
+   "sense": ""
+  },
+  "pry": {
+   "action": "pry",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "to move or force, especially in an effort to get something open; :",
+   "sense": "pry.v.01"
+  },
+  "pull": {
+   "action": "pull",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "apply force so as to cause motion towards the source of the motion",
+   "sense": "pull.v.04"
+  },
+  "push": {
+   "action": "push",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "move with force,",
+   "sense": "push.v.01"
+  },
+  "put": {
+   "action": "put",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "container"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "target"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "source"
+    }
+   ],
+   "despite": [],
+   "means": "to set something down somewhere, or whatever else this world means by it",
+   "sense": ""
+  },
+  "read": {
+   "action": "read",
+   "applies_to": [
+    {
+     "access": "visible",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "interpret something that is written or printed",
+   "sense": "read.v.01"
+  },
+  "record": {
+   "action": "record",
+   "applies_to": [
+    {
+     "access": "visible",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "make a record of; set down in permanent form",
+   "sense": "record.v.01"
+  },
+  "scrape": {
+   "action": "scrape",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "scratch repeatedly",
+   "sense": "scrape.v.01"
+  },
+  "search": {
+   "action": "search",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "direct"
+    },
+    {
+     "access": "visible",
+     "optional": true,
+     "role": "target"
+    }
+   ],
+   "despite": [],
+   "means": "subject to a search",
+   "sense": "search.v.04"
+  },
+  "set": {
+   "action": "set",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "put into a certain state; cause to be in a certain state",
+   "sense": "set.v.05"
+  },
+  "sharpen": {
+   "action": "sharpen",
+   "applies_to": [
+    {
+     "access": "carried",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "make sharp or sharper",
+   "sense": "sharpen.v.01"
+  },
+  "shrug": {
+   "action": "shrug",
+   "applies_to": [],
+   "despite": [],
+   "means": "raise one's shoulders to indicate indifference or resignation",
+   "sense": "shrug.v.01"
+  },
+  "sign": {
+   "action": "sign",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "mark with one's signature; write one's name (on)",
+   "sense": "sign.v.01"
+  },
+  "sit": {
+   "action": "sit",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "target"
+    }
+   ],
+   "despite": [],
+   "means": "take a seat",
+   "sense": "sit_down.v.01"
+  },
+  "smell": {
+   "action": "smell",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "inhale the odor of; perceive by the olfactory sense",
+   "sense": "smell.v.01"
+  },
+  "smoke": {
+   "action": "smoke",
+   "applies_to": [
+    {
+     "access": "carried",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "inhale and exhale smoke from cigarettes, cigars, pipes",
+   "sense": "smoke.v.01"
+  },
+  "stand": {
+   "action": "stand",
+   "applies_to": [],
+   "despite": [],
+   "means": "be standing; be upright",
+   "sense": "stand.v.01"
+  },
+  "tap": {
+   "action": "tap",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "strike lightly",
+   "sense": "tap.v.03"
+  },
+  "test": {
+   "action": "test",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "put to the test, as for its quality, or give experimental use to",
+   "sense": "test.v.01"
+  },
+  "try": {
+   "action": "try",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "make an effort or attempt",
+   "sense": "try.v.01"
+  },
+  "tuck": {
+   "action": "tuck",
+   "applies_to": [
+    {
+     "access": "carried",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "container"
+    }
+   ],
+   "despite": [],
+   "means": "fit snugly into",
+   "sense": "tuck.v.01"
+  },
+  "turn": {
+   "action": "turn",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "cause to move around or rotate",
+   "sense": "turn.v.04"
+  },
+  "wash": {
+   "action": "wash",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    }
+   ],
+   "despite": [],
+   "means": "cleanse with a cleaning agent, such as soap, and water",
+   "sense": "wash.v.03"
+  },
+  "wipe": {
+   "action": "wipe",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": false,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "source"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "rub with a circular motion",
+   "sense": "wipe.v.01"
+  },
+  "write": {
+   "action": "write",
+   "applies_to": [
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "direct"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "container"
+    },
+    {
+     "access": "touchable",
+     "optional": true,
+     "role": "target"
+    },
+    {
+     "access": "carried",
+     "optional": true,
+     "role": "instrument"
+    }
+   ],
+   "despite": [],
+   "means": "communicate or express by writing",
+   "sense": "write.v.02"
+  }
+ },
+ "attempt_counts": {
+  "buy|kind:lantern.n.01|done|player": {
+   "count": 1,
+   "last": 1789132124.8997152
+  },
+  "check|kind:boot|done|character": {
+   "count": 1,
+   "last": 1789132137.0085866
+  },
+  "check|kind:compass.n.01|done|player": {
+   "count": 1,
+   "last": 1789132675.021155
+  },
+  "check|kind:hook.n.05|done|character": {
+   "count": 1,
+   "last": 1789133360.610669
+  },
+  "climb|kind:column.n.07|done|player": {
+   "count": 2,
+   "last": 1789132453.0313334
+  },
+  "climb|kind:shaft.n.10|done|character": {
+   "count": 1,
+   "last": 1789133940.6476588
+  },
+  "clip|kind:tankard.n.01|not_admitted|character": {
+   "count": 1,
+   "last": 1789132020.3337677
+  },
+  "close|kind:cart.n.01|not_admitted|character": {
+   "count": 2,
+   "last": 1789133275.30154
+  },
+  "close|kind:door.n.01|done|character": {
+   "count": 1,
+   "last": 1789133679.0930574
+  },
+  "close|kind:handbook.n.01|done|character": {
+   "count": 1,
+   "last": 1789131822.904358
+  },
+  "close|kind:latch.n.01|done|character": {
+   "count": 1,
+   "last": 1789133467.5188992
+  },
+  "close|kind:ledger.n.01|done|character": {
+   "count": 4,
+   "last": 1789133963.287871
+  },
+  "close|kind:lid.n.02|refused|character": {
+   "count": 1,
+   "last": 1789132646.090365
+  },
+  "close|kind:pot|done|character": {
+   "count": 1,
+   "last": 1789133966.1956956
+  },
+  "close|kind:urn|done|character": {
+   "count": 1,
+   "last": 1789132641.6952453
+  },
+  "consult|kind:map.n.01|done|character": {
+   "count": 1,
+   "last": 1789132386.3643737
+  },
+  "douse|kind:lantern.n.01|done|player": {
+   "count": 1,
+   "last": 1789132170.551725
+  },
+  "douse|kind:pipe.n.01|done|player": {
+   "count": 1,
+   "last": 1789131857.9332457
+  },
+  "drink|kind:tankard.n.01|done|character": {
+   "count": 1,
+   "last": 1789131883.6509368
+  },
+  "drink|kind:tankard.n.01|no_object|character": {
+   "count": 12,
+   "last": 1789133305.9311419
+  },
+  "drink|kind:tankard.n.01|refused|character": {
+   "count": 5,
+   "last": 1789132782.390112
+  },
+  "drink|kind:waterskin.n.01|done|player": {
+   "count": 1,
+   "last": 1789131605.5023935
+  },
+  "drink|kind:waterskin.n.01|refused|player": {
+   "count": 1,
+   "last": 1789131611.7434037
+  },
+  "eat|kind:|done|player": {
+   "count": 1,
+   "last": 1789132609.2006345
+  },
+  "enter|kind:door.n.01|refused|character": {
+   "count": 1,
+   "last": 1789132913.611616
+  },
+  "enter|kind:shaft.n.10|done|character": {
+   "count": 1,
+   "last": 1789133530.700909
+  },
+  "fee|kind:block|not_admitted|character": {
+   "count": 2,
+   "last": 1789133994.7921457
+  },
+  "fill|kind:tankard.n.01|done|character": {
+   "count": 1,
+   "last": 1789131592.444456
+  },
+  "fill|kind:waterskin.n.01|done|player": {
+   "count": 1,
+   "last": 1789131624.3712978
+  },
+  "forage|kind:grove.n.01|done|player": {
+   "count": 3,
+   "last": 1789132539.4091277
+  },
+  "forage|kind:trowel.n.01|not_admitted|player": {
+   "count": 1,
+   "last": 1789132506.854048
+  },
+  "forge|kind:sword.n.01|done|player": {
+   "count": 2,
+   "last": 1789133113.2131593
+  },
+  "get|kind:opal.n.01|done|player": {
+   "count": 1,
+   "last": 1789132988.4719589
+  },
+  "give|kind:lamp|done|character": {
+   "count": 1,
+   "last": 1789133878.1584177
+  },
+  "grease|kind:wheel.n.01|refused|character": {
+   "count": 1,
+   "last": 1789132946.5203683
+  },
+  "greet|kind:person.n.01|done|player": {
+   "count": 1,
+   "last": 1789132301.7462132
+  },
+  "hammer|kind:piton.n.01|refused|character": {
+   "count": 2,
+   "last": 1789133674.317773
+  },
+  "hand|kind:handbook.n.01|no_object|character": {
+   "count": 1,
+   "last": 1789131633.752861
+  },
+  "hear|enclosure:head|done|character": {
+   "count": 1,
+   "last": 1789133639.9582467
+  },
+  "hear|kind:cornet.n.01|done|character": {
+   "count": 5,
+   "last": 1789133763.5836327
+  },
+  "hear|kind:door.n.01|done|character": {
+   "count": 2,
+   "last": 1789133436.9109545
+  },
+  "hear|kind:shaft.n.10|done|character": {
+   "count": 4,
+   "last": 1789133697.1160474
+  },
+  "hook|kind:cart.n.01|done|character": {
+   "count": 1,
+   "last": 1789132383.957059
+  },
+  "jam|kind:latch.n.02|done|character": {
+   "count": 1,
+   "last": 1789133460.167739
+  },
+  "jump|kind:chasm.n.01|done|player": {
+   "count": 1,
+   "last": 1789132907.7678082
+  },
+  "lie|kind:bale.n.01|not_admitted|character": {
+   "count": 1,
+   "last": 1789134052.4601328
+  },
+  "lift|kind:latch.n.01|done|character": {
+   "count": 1,
+   "last": 1789132802.0259945
+  },
+  "light|kind:lamp|done|character": {
+   "count": 12,
+   "last": 1789133416.0734043
+  },
+  "light|kind:lantern.n.01|done|character": {
+   "count": 1,
+   "last": 1789131917.633936
+  },
+  "light|kind:lantern.n.01|done|player": {
+   "count": 1,
+   "last": 1789132182.790728
+  },
+  "light|kind:lantern.n.01|refused|character": {
+   "count": 4,
+   "last": 1789133469.6115212
+  },
+  "light|kind:lantern.n.01|refused|player": {
+   "count": 2,
+   "last": 1789132155.713449
+  },
+  "light|kind:pipe.n.01|done|character": {
+   "count": 1,
+   "last": 1789131932.3143592
+  },
+  "light|kind:pipe.n.01|done|player": {
+   "count": 2,
+   "last": 1789132011.8368666
+  },
+  "light|kind:pipe.n.01|refused|character": {
+   "count": 1,
+   "last": 1789132458.2379994
+  },
+  "light|kind:torch.n.01|done|character": {
+   "count": 1,
+   "last": 1789133189.9946144
+  },
+  "light|kind:torch.n.01|refused|character": {
+   "count": 1,
+   "last": 1789133195.1624882
+  },
+  "look|kind:ash.n.01|done|character": {
+   "count": 1,
+   "last": 1789133076.2100532
+  },
+  "look|kind:camp.n.01|done|player": {
+   "count": 1,
+   "last": 1789131212.494907
+  },
+  "look|kind:chamber|done|character": {
+   "count": 5,
+   "last": 1789133999.9586146
+  },
+  "look|kind:circular.n.01|done|player": {
+   "count": 1,
+   "last": 1789131348.7425792
+  },
+  "look|kind:circulation.n.01|done|player": {
+   "count": 1,
+   "last": 1789132270.0307825
+  },
+  "look|kind:cornet.n.01|done|player": {
+   "count": 1,
+   "last": 1789131997.1407344
+  },
+  "look|kind:forge.n.01|done|player": {
+   "count": 1,
+   "last": 1789133133.3312407
+  },
+  "look|kind:grove.n.01|done|player": {
+   "count": 3,
+   "last": 1789132627.7017393
+  },
+  "look|kind:lamp|refused|character": {
+   "count": 1,
+   "last": 1789132076.5376122
+  },
+  "look|kind:latch.n.01|done|character": {
+   "count": 3,
+   "last": 1789133309.065733
+  },
+  "look|kind:lid.n.02|done|character": {
+   "count": 3,
+   "last": 1789133342.642623
+  },
+  "look|kind:lumber.n.01|done|character": {
+   "count": 1,
+   "last": 1789133656.174792
+  },
+  "look|kind:person.n.01|done|player": {
+   "count": 3,
+   "last": 1789132064.7333858
+  },
+  "look|kind:ration.n.01|done|character": {
+   "count": 1,
+   "last": 1789132341.049957
+  },
+  "look|kind:rope.n.01|done|character": {
+   "count": 1,
+   "last": 1789132562.8195
+  },
+  "look|kind:scraper.n.01|refused|character": {
+   "count": 1,
+   "last": 1789131944.6627824
+  },
+  "look|kind:shaft.n.10|done|character": {
+   "count": 2,
+   "last": 1789133977.312733
+  },
+  "look|kind:trench.n.01|refused|character": {
+   "count": 1,
+   "last": 1789133474.31917
+  },
+  "look|kind:urn|done|character": {
+   "count": 4,
+   "last": 1789133027.3904705
+  },
+  "look|kind:walk.n.05|done|player": {
+   "count": 1,
+   "last": 1789132911.9169438
+  },
+  "look|kind:wall.n.01|done|character": {
+   "count": 3,
+   "last": 1789132884.146885
+  },
+  "nod|enclosure:camp.n.01|done|player": {
+   "count": 1,
+   "last": 1789131374.140204
+  },
+  "open|kind:door.n.01|done|character": {
+   "count": 2,
+   "last": 1789134008.3423967
+  },
+  "open|kind:handbook.n.01|done|character": {
+   "count": 1,
+   "last": 1789132936.5100915
+  },
+  "open|kind:ledger.n.01|done|character": {
+   "count": 1,
+   "last": 1789132603.0225134
+  },
+  "open|kind:pot|done|character": {
+   "count": 1,
+   "last": 1789132888.6031446
+  },
+  "open|kind:urn|done|character": {
+   "count": 5,
+   "last": 1789133638.347979
+  },
+  "pry|kind:cart.n.01|refused|character": {
+   "count": 1,
+   "last": 1789133230.0433223
+  },
+  "pry|kind:latch.n.01|refused|character": {
+   "count": 1,
+   "last": 1789133373.3526707
+  },
+  "pry|kind:seam.n.01|refused|character": {
+   "count": 2,
+   "last": 1789133884.2366538
+  },
+  "pull|kind:piton.n.01|refused|character": {
+   "count": 1,
+   "last": 1789133249.9385285
+  },
+  "push|kind:cart.n.01|refused|character": {
+   "count": 18,
+   "last": 1789133724.8158214
+  },
+  "push|kind:cornet.n.01|done|character": {
+   "count": 1,
+   "last": 1789132647.9690373
+  },
+  "push|kind:door.n.01|done|character": {
+   "count": 1,
+   "last": 1789132728.680732
+  },
+  "put|kind:manifest.n.01|refused|character": {
+   "count": 1,
+   "last": 1789132789.0409832
+  },
+  "put|kind:pen.n.01|refused|character": {
+   "count": 1,
+   "last": 1789133918.9993637
+  },
+  "put|kind:pipe.n.01|refused|character": {
+   "count": 1,
+   "last": 1789133444.3724036
+  },
+  "put|kind:tankard.n.01|refused|character": {
+   "count": 1,
+   "last": 1789132837.9034684
+  },
+  "read|kind:circular.n.01|done|character": {
+   "count": 5,
+   "last": 1789133988.165607
+  },
+  "read|kind:circular.n.01|done|player": {
+   "count": 1,
+   "last": 1789131344.659338
+  },
+  "read|kind:handbook.n.01|done|character": {
+   "count": 2,
+   "last": 1789132944.896341
+  },
+  "read|kind:handbook.n.01|done|player": {
+   "count": 1,
+   "last": 1789131455.830575
+  },
+  "read|kind:lid.n.02|done|character": {
+   "count": 3,
+   "last": 1789133373.8928678
+  },
+  "read|kind:manifest.n.01|done|character": {
+   "count": 3,
+   "last": 1789133895.1845562
+  },
+  "read|kind:map.n.01|done|character": {
+   "count": 3,
+   "last": 1789133000.5206118
+  },
+  "read|kind:note.n.01|done|character": {
+   "count": 8,
+   "last": 1789134014.0278
+  },
+  "read|kind:tablet.n.01|done|character": {
+   "count": 1,
+   "last": 1789133646.0262015
+  },
+  "read|kind:wall.n.01|not_admitted|character": {
+   "count": 1,
+   "last": 1789132217.1562579
+  },
+  "record|kind:lantern.n.01|not_admitted|character": {
+   "count": 1,
+   "last": 1789132240.4825163
+  },
+  "scrape|kind:masonry.n.02|not_admitted|character": {
+   "count": 1,
+   "last": 1789133767.5049322
+  },
+  "scrape|kind:seam.n.01|done|character": {
+   "count": 1,
+   "last": 1789133748.9127116
+  },
+  "scrape|kind:wall.n.01|done|character": {
+   "count": 1,
+   "last": 1789132773.0355237
+  },
+  "scrape|kind:wall.n.01|refused|character": {
+   "count": 1,
+   "last": 1789132065.5605698
+  },
+  "search|kind:lamp|done|character": {
+   "count": 1,
+   "last": 1789132524.6618495
+  },
+  "search|kind:ledge.n.01|done|character": {
+   "count": 1,
+   "last": 1789132835.4966028
+  },
+  "search|kind:tunic|done|character": {
+   "count": 12,
+   "last": 1789132772.0365837
+  },
+  "search|kind:urn|done|character": {
+   "count": 2,
+   "last": 1789133479.8786302
+  },
+  "set|kind:piton.n.01|done|character": {
+   "count": 1,
+   "last": 1789133201.4005935
+  },
+  "set|kind:tankard.n.01|not_admitted|character": {
+   "count": 1,
+   "last": 1789132942.3673925
+  },
+  "sharpen|kind:shortsword|done|character": {
+   "count": 1,
+   "last": 1789133645.9740334
+  },
+  "shrug|enclosure:anteroom.n.01|done|player": {
+   "count": 1,
+   "last": 1789131481.2479644
+  },
+  "sign|kind:manifest.n.01|done|character": {
+   "count": 1,
+   "last": 1789133856.8740668
+  },
+  "sit|kind:bench.n.01|done|character": {
+   "count": 4,
+   "last": 1789132899.0396588
+  },
+  "sit|kind:bench.n.01|done|player": {
+   "count": 1,
+   "last": 1789131560.2460382
+  },
+  "smell|kind:ash.n.01|done|character": {
+   "count": 1,
+   "last": 1789133483.1360936
+  },
+  "smoke|kind:pipe.n.01|done|player": {
+   "count": 1,
+   "last": 1789131783.4555712
+  },
+  "smoke|kind:pipe.n.01|refused|player": {
+   "count": 1,
+   "last": 1789131727.377704
+  },
+  "stand|enclosure:finish.n.04|done|player": {
+   "count": 1,
+   "last": 1789131657.2995634
+  },
+  "tap|kind:trouser.n.01|done|character": {
+   "count": 1,
+   "last": 1789133352.6546223
+  },
+  "tap|kind:wall.n.01|done|character": {
+   "count": 1,
+   "last": 1789133676.5212567
+  },
+  "test|kind:piton.n.01|done|character": {
+   "count": 1,
+   "last": 1789133996.3016837
+  },
+  "try|kind:latch.n.01|done|character": {
+   "count": 1,
+   "last": 1789132581.27562
+  },
+  "try|kind:tunnel.n.01|not_admitted|character": {
+   "count": 1,
+   "last": 1789133886.201822
+  },
+  "tuck|kind:note.n.01|refused|character": {
+   "count": 1,
+   "last": 1789131603.4926333
+  },
+  "turn|kind:latch.n.01|done|character": {
+   "count": 2,
+   "last": 1789133367.224885
+  },
+  "wash|kind:wall.n.01|done|character": {
+   "count": 1,
+   "last": 1789132287.8187342
+  },
+  "wipe|kind:wall.n.01|done|character": {
+   "count": 1,
+   "last": 1789132863.4399428
+  },
+  "wipe|kind:wall.n.01|refused|character": {
+   "count": 1,
+   "last": 1789132317.066773
+  },
+  "write|kind:ledger.n.01|done|character": {
+   "count": 2,
+   "last": 1789132610.6258328
+  }
+ },
+ "declined_suggestions": {},
+ "engine": "rulebooks",
+ "exported": "2026-09-11",
+ "kind_specs": {
+  "amulet.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "apron.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "ash.n.01": {
+   "affordances": {
+    "get": true,
+    "scatter": true,
+    "sift": true,
+    "smell": true
+   },
+   "holds": []
+  },
+  "bale.n.01": {
+   "affordances": {
+    "burn": true,
+    "cut": true,
+    "get": true,
+    "lie": false
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "bar.n.03": {
+   "affordances": {
+    "get": true,
+    "pry": true,
+    "strike": true,
+    "wield": true
+   },
+   "holds": []
+  },
+  "baseball_glove.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "belt.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": [
+    "on"
+   ]
+  },
+  "bench.n.01": {
+   "affordances": {
+    "get": false,
+    "sit": true
+   },
+   "holds": [
+    "on"
+   ]
+  },
+  "block": {
+   "affordances": {
+    "fee": false,
+    "get": true,
+    "lick": true
+   },
+   "holds": [],
+   "under": "block.n.01"
+  },
+  "boot": {
+   "affordances": {
+    "check": true,
+    "get": true,
+    "wear": true
+   },
+   "holds": [],
+   "under": "boot.n.01"
+  },
+  "caltrop.n.01": {
+   "affordances": {
+    "get": true,
+    "throw": true
+   },
+   "holds": []
+  },
+  "can": {
+   "affordances": {
+    "close": true,
+    "fill": true,
+    "get": true,
+    "open": true,
+    "pour": true
+   },
+   "holds": [
+    "in"
+   ],
+   "under": "can.n.01"
+  },
+  "cart.n.01": {
+   "affordances": {
+    "close": false,
+    "get": false,
+    "hook": true,
+    "pry": true,
+    "pull": true,
+    "push": true
+   },
+   "holds": [
+    "in"
+   ],
+   "states": [
+    "hooked"
+   ]
+  },
+  "chalk.n.01": {
+   "affordances": {
+    "get": true,
+    "write": true
+   },
+   "holds": []
+  },
+  "chasm.n.01": {
+   "affordances": {
+    "enter": true,
+    "get": false,
+    "jump": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "circular.n.01": {
+   "affordances": {
+    "burn": true,
+    "get": true,
+    "read": true,
+    "tear": true
+   },
+   "holds": []
+  },
+  "column.n.07": {
+   "affordances": {
+    "climb": true,
+    "get": false
+   },
+   "holds": []
+  },
+  "compass.n.01": {
+   "affordances": {
+    "check": true,
+    "close": true,
+    "get": true,
+    "open": true
+   },
+   "holds": []
+  },
+  "cornet.n.01": {
+   "affordances": {
+    "get": true,
+    "hear": true,
+    "push": true,
+    "wield": true
+   },
+   "holds": []
+  },
+  "counter.n.01": {
+   "affordances": {
+    "get": false,
+    "wash": true
+   },
+   "holds": [
+    "on"
+   ]
+  },
+  "crowbar.n.01": {
+   "affordances": {
+    "get": true,
+    "pry": true,
+    "wield": true
+   },
+   "holds": []
+  },
+  "crystal.n.01": {
+   "affordances": {
+    "get": true,
+    "smell": true
+   },
+   "holds": []
+  },
+  "cuirass.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "dagger.n.01": {
+   "affordances": {
+    "cut": true,
+    "get": true,
+    "wield": true
+   },
+   "holds": []
+  },
+  "door.n.01": {
+   "affordances": {
+    "close": true,
+    "enter": true,
+    "get": false,
+    "hear": true,
+    "lock": true,
+    "open": true,
+    "push": true,
+    "unlock": true
+   },
+   "holds": [],
+   "states": [
+    "closed",
+    "open"
+   ]
+  },
+  "flask.n.01": {
+   "affordances": {
+    "close": true,
+    "drink": true,
+    "fill": true,
+    "get": true,
+    "open": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "frond.n.01": {
+   "affordances": {
+    "burn": true,
+    "eat": true,
+    "get": true
+   },
+   "holds": []
+  },
+  "fungus.n.01": {
+   "affordances": {
+    "eat": true,
+    "get": true
+   },
+   "holds": []
+  },
+  "gauntlet.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "grove.n.01": {
+   "affordances": {
+    "forage": true
+   },
+   "holds": []
+  },
+  "hammer": {
+   "affordances": {
+    "get": true,
+    "wield": true
+   },
+   "holds": [],
+   "under": "hammer.n.02"
+  },
+  "handbook.n.01": {
+   "affordances": {
+    "close": true,
+    "get": true,
+    "open": true,
+    "read": true
+   },
+   "holds": [],
+   "states": [
+    "closed",
+    "open"
+   ]
+  },
+  "hat.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "helmet.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "hook": {
+   "affordances": {
+    "get": true,
+    "wield": true
+   },
+   "holds": [],
+   "under": "hook.n.01"
+  },
+  "hook.n.05": {
+   "affordances": {
+    "check": true,
+    "get": true,
+    "throw": true,
+    "wield": true
+   },
+   "holds": []
+  },
+  "ingot.n.01": {
+   "affordances": {
+    "get": true
+   },
+   "holds": []
+  },
+  "jar.n.01": {
+   "affordances": {
+    "close": true,
+    "get": true,
+    "open": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "jerkin.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "knife": {
+   "affordances": {
+    "cut": true,
+    "get": true,
+    "slash": true,
+    "stab": true
+   },
+   "holds": [],
+   "under": "knife.n.01"
+  },
+  "lamp": {
+   "affordances": {
+    "fill": true,
+    "get": true,
+    "give": true,
+    "light": true,
+    "pour": true,
+    "search": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "lantern.n.01": {
+   "affordances": {
+    "buy": true,
+    "close": true,
+    "douse": true,
+    "get": true,
+    "light": true,
+    "open": true,
+    "record": false
+   },
+   "holds": [
+    "in"
+   ],
+   "states": [
+    "lit",
+    "unlit"
+   ]
+  },
+  "latch.n.01": {
+   "affordances": {
+    "close": true,
+    "get": false,
+    "lift": true,
+    "pry": true,
+    "pull": true,
+    "try": true,
+    "turn": true
+   },
+   "holds": [],
+   "states": [
+    "closed",
+    "turned"
+   ]
+  },
+  "latch.n.02": {
+   "affordances": {
+    "close": true,
+    "get": false,
+    "jam": true,
+    "open": true,
+    "pull": true
+   },
+   "holds": [],
+   "states": [
+    "jammed"
+   ]
+  },
+  "ledge.n.01": {
+   "affordances": {
+    "get": false,
+    "search": true
+   },
+   "holds": [
+    "on"
+   ]
+  },
+  "ledger.n.01": {
+   "affordances": {
+    "close": true,
+    "get": true,
+    "open": true,
+    "read": true,
+    "write": true
+   },
+   "holds": [],
+   "states": [
+    "closed",
+    "open"
+   ]
+  },
+  "lichen.n.01": {
+   "affordances": {
+    "eat": true,
+    "get": true
+   },
+   "holds": []
+  },
+  "lid.n.02": {
+   "affordances": {
+    "close": true,
+    "get": true,
+    "read": true
+   },
+   "holds": []
+  },
+  "lumber.n.01": {
+   "affordances": {
+    "climb": true,
+    "get": false
+   },
+   "holds": []
+  },
+  "machete.n.01": {
+   "affordances": {
+    "get": true,
+    "wield": true
+   },
+   "holds": []
+  },
+  "manifest.n.01": {
+   "affordances": {
+    "get": true,
+    "put": true,
+    "read": true,
+    "sign": true
+   },
+   "holds": [],
+   "states": [
+    "signed"
+   ]
+  },
+  "map.n.01": {
+   "affordances": {
+    "consult": true,
+    "get": true,
+    "read": true
+   },
+   "holds": []
+  },
+  "masonry.n.02": {
+   "affordances": {
+    "get": false,
+    "scrape": false
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "maul.n.01": {
+   "affordances": {
+    "get": true,
+    "wield": true
+   },
+   "holds": []
+  },
+  "mineral.n.01": {
+   "affordances": {
+    "burn": true,
+    "crush": true,
+    "get": true
+   },
+   "holds": []
+  },
+  "mushroom.n.01": {
+   "affordances": {
+    "eat": true,
+    "get": true
+   },
+   "holds": []
+  },
+  "note.n.01": {
+   "affordances": {
+    "burn": true,
+    "get": true,
+    "read": true,
+    "tear": true,
+    "tuck": true
+   },
+   "holds": []
+  },
+  "opal.n.01": {
+   "affordances": {
+    "get": true
+   },
+   "holds": []
+  },
+  "pen": {
+   "affordances": {
+    "get": true,
+    "write": true
+   },
+   "holds": [],
+   "under": "pen.n.01"
+  },
+  "pen.n.01": {
+   "affordances": {
+    "get": true,
+    "put": true,
+    "write": true
+   },
+   "holds": []
+  },
+  "person.n.01": {
+   "affordances": {
+    "greet": true
+   },
+   "holds": []
+  },
+  "pin": {
+   "affordances": {
+    "get": true
+   },
+   "holds": [],
+   "under": "pin.n.01"
+  },
+  "pipe.n.01": {
+   "affordances": {
+    "douse": true,
+    "get": true,
+    "light": true,
+    "put": true,
+    "smoke": true,
+    "wash": true
+   },
+   "holds": [
+    "in"
+   ],
+   "states": [
+    "lit",
+    "unlit"
+   ]
+  },
+  "pitchfork.n.01": {
+   "affordances": {
+    "get": true,
+    "wield": true
+   },
+   "holds": []
+  },
+  "piton.n.01": {
+   "affordances": {
+    "get": true,
+    "hammer": true,
+    "pull": true,
+    "set": true,
+    "test": true
+   },
+   "holds": [],
+   "states": [
+    "anchored"
+   ]
+  },
+  "pot": {
+   "affordances": {
+    "close": true,
+    "get": true,
+    "open": true
+   },
+   "holds": [
+    "in"
+   ],
+   "states": [
+    "closed",
+    "open"
+   ],
+   "under": "pot.n.01"
+  },
+  "pouch": {
+   "affordances": {
+    "close": true,
+    "get": true,
+    "open": true
+   },
+   "holds": [
+    "in"
+   ],
+   "under": "pouch.n.01"
+  },
+  "ration.n.01": {
+   "affordances": {
+    "eat": true,
+    "get": true,
+    "open": true
+   },
+   "holds": []
+  },
+  "ring.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "root": {
+   "affordances": {
+    "eat": true,
+    "get": true
+   },
+   "holds": []
+  },
+  "rope.n.01": {
+   "affordances": {
+    "get": true,
+    "tie": true,
+    "untie": true
+   },
+   "holds": []
+  },
+  "scraper.n.01": {
+   "affordances": {
+    "get": true,
+    "scrape": true
+   },
+   "holds": []
+  },
+  "seam.n.01": {
+   "affordances": {
+    "get": false,
+    "pry": true,
+    "scrape": true
+   },
+   "holds": []
+  },
+  "shaft.n.10": {
+   "affordances": {
+    "climb": true,
+    "enter": true,
+    "get": false,
+    "hear": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "shirt.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "shortsword": {
+   "affordances": {
+    "get": true,
+    "parry": true,
+    "sharpen": true,
+    "slash": true,
+    "thrust": true,
+    "wield": true
+   },
+   "holds": [],
+   "states": [
+    "sharp"
+   ],
+   "under": "sword.n.01"
+  },
+  "shovel": {
+   "affordances": {
+    "dig": true,
+    "get": true,
+    "hit": true
+   },
+   "holds": []
+  },
+  "sickle.n.01": {
+   "affordances": {
+    "cut": true,
+    "get": true,
+    "swing": true
+   },
+   "holds": []
+  },
+  "singlet.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "sock.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "spade": {
+   "affordances": {
+    "dig": true,
+    "get": true
+   },
+   "holds": []
+  },
+  "stick": {
+   "affordances": {
+    "get": true,
+    "wield": true
+   },
+   "holds": [],
+   "under": "walking_stick.n.01"
+  },
+  "sulfur.n.01": {
+   "affordances": {
+    "burn": true,
+    "crush": true,
+    "get": true
+   },
+   "holds": []
+  },
+  "sword.n.01": {
+   "affordances": {
+    "forge": true,
+    "get": true,
+    "wield": true
+   },
+   "holds": []
+  },
+  "tablet.n.01": {
+   "affordances": {
+    "get": true,
+    "read": true,
+    "wipe": true
+   },
+   "holds": []
+  },
+  "tankard.n.01": {
+   "affordances": {
+    "clip": false,
+    "drink": true,
+    "fill": true,
+    "get": true,
+    "put": true,
+    "set": false
+   },
+   "holds": [
+    "in"
+   ],
+   "states": [
+    "empty",
+    "full"
+   ]
+  },
+  "token.n.01": {
+   "affordances": {
+    "get": true
+   },
+   "holds": []
+  },
+  "tongs.n.01": {
+   "affordances": {
+    "get": true,
+    "wield": true
+   },
+   "holds": []
+  },
+  "torch.n.01": {
+   "affordances": {
+    "douse": true,
+    "get": true,
+    "light": true,
+    "wield": true
+   },
+   "holds": [],
+   "states": [
+    "lit"
+   ]
+  },
+  "trench.n.01": {
+   "affordances": {
+    "cross": true,
+    "enter": true,
+    "get": false,
+    "jump": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "trouser.n.01": {
+   "affordances": {
+    "get": true,
+    "tap": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "trowel.n.01": {
+   "affordances": {
+    "forage": false,
+    "get": true
+   },
+   "holds": []
+  },
+  "tunic": {
+   "affordances": {
+    "get": true,
+    "search": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "tunnel.n.01": {
+   "affordances": {
+    "enter": true,
+    "get": false,
+    "try": false
+   },
+   "holds": []
+  },
+  "urn": {
+   "affordances": {
+    "close": true,
+    "get": true,
+    "open": true,
+    "search": true
+   },
+   "holds": [
+    "in"
+   ],
+   "states": [
+    "closed",
+    "open"
+   ],
+   "under": "urn.n.01"
+  },
+  "vest.n.01": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "visitor.n.01": {
+   "affordances": {
+    "attack": true,
+    "get": false,
+    "pickpocket": true,
+    "speak": true,
+    "trade": true
+   },
+   "holds": []
+  },
+  "wall.n.01": {
+   "affordances": {
+    "get": false,
+    "read": false,
+    "scrape": true,
+    "tap": true,
+    "wash": true,
+    "wipe": true
+   },
+   "holds": [],
+   "states": [
+    "clean"
+   ]
+  },
+  "waterskin.n.01": {
+   "affordances": {
+    "close": true,
+    "drink": true,
+    "empty": true,
+    "fill": true,
+    "get": true,
+    "open": true
+   },
+   "holds": [
+    "in"
+   ],
+   "states": [
+    "empty",
+    "full"
+   ]
+  },
+  "weed.n.01": {
+   "affordances": {
+    "burn": true,
+    "get": true,
+    "smell": true,
+    "smoke": true
+   },
+   "holds": []
+  },
+  "wheel.n.01": {
+   "affordances": {
+    "get": true,
+    "grease": true,
+    "roll": true,
+    "turn": true
+   },
+   "holds": []
+  },
+  "whetstone.n.01": {
+   "affordances": {
+    "get": true,
+    "rub": true
+   },
+   "holds": []
+  },
+  "whistle.n.01": {
+   "affordances": {
+    "blow": true,
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  }
+ },
+ "label": "pre-pronouns-07",
+ "pronoun_sets": {},
+ "rooms": 32,
+ "rule_counter": 93,
+ "rule_failures": {},
+ "rules": {
+  "r1": {
+   "about": "actor",
+   "action": null,
+   "born": 1789131212.4051993,
+   "conditions": [
+    {
+     "able": "acting",
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r1",
+   "listed": true,
+   "name": "you must be able to act",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "standard",
+   "when": [],
+   "why": ""
+  },
+  "r10": {
+   "about": "target",
+   "action": "sit",
+   "born": 1789131552.2885175,
+   "conditions": [
+    {
+     "lacks": [
+      "sitting"
+     ],
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r10",
+   "listed": true,
+   "name": "you must not already be sitting down",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "seat.n.03"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r11": {
+   "about": "target",
+   "action": "sit",
+   "born": 1789131552.2885342,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "sitting"
+     ],
+     "remove": [],
+     "role": "actor",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r11",
+   "listed": true,
+   "name": "you take a seat",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "seat.n.03"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r12": {
+   "about": "direct",
+   "action": "fill",
+   "born": 1789131584.7104118,
+   "conditions": [
+    {
+     "lacks": [
+      "full"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r12",
+   "listed": true,
+   "name": "it must not already be full",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "container.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r13": {
+   "about": "direct",
+   "action": "fill",
+   "born": 1789131584.7104256,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "full"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r13",
+   "listed": true,
+   "name": "filling a container makes it full",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "container.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r14": {
+   "about": "direct",
+   "action": "drink",
+   "born": 1789131594.2886667,
+   "conditions": [
+    {
+     "lacks": [
+      "empty"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r14",
+   "listed": true,
+   "name": "it must not be empty",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "waterskin.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r15": {
+   "about": "direct",
+   "action": "drink",
+   "born": 1789131594.2886817,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r15",
+   "listed": true,
+   "name": "drinking from it empties it",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "waterskin.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r16": {
+   "about": "direct",
+   "action": "tuck",
+   "born": 1789131600.878375,
+   "conditions": [
+    {
+     "holds": [
+      "direct"
+     ],
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r16",
+   "listed": true,
+   "name": "you must be holding what you tuck",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r17": {
+   "about": "container",
+   "action": "tuck",
+   "born": 1789131600.8783815,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "preposition": "in",
+     "to": "container",
+     "type": "move_object"
+    }
+   ],
+   "evidence": {},
+   "id": "r17",
+   "listed": true,
+   "name": "tucking a thing puts it in the container",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r18": {
+   "about": "enclosure",
+   "action": "stand",
+   "born": 1789131657.2623296,
+   "conditions": [
+    {
+     "lacks": [
+      "standing"
+     ],
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r18",
+   "listed": true,
+   "name": "you must not already be standing",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r19": {
+   "about": "enclosure",
+   "action": "stand",
+   "born": 1789131657.2623355,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "standing"
+     ],
+     "remove": [],
+     "role": "actor",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r19",
+   "listed": true,
+   "name": "you stand up",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r2": {
+   "about": "direct",
+   "action": null,
+   "born": 1789131212.423412,
+   "conditions": [
+    {
+     "reachable_by": "actor",
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r2",
+   "listed": true,
+   "name": "you must be able to reach what you act on",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "standard",
+   "when": [
+    {
+     "subject": "direct",
+     "unbound": false
+    }
+   ],
+   "why": ""
+  },
+  "r20": {
+   "about": "direct",
+   "action": "smoke",
+   "born": 1789131727.3380377,
+   "conditions": [
+    {
+     "is": [
+      "lit"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r20",
+   "listed": true,
+   "name": "it must be lit",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "pipe.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r21": {
+   "about": "direct",
+   "action": "smoke",
+   "born": 1789131727.3380525,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r21",
+   "listed": true,
+   "name": "smoke the pipe",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "pipe.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r22": {
+   "about": "direct",
+   "action": "light",
+   "born": 1789131757.7767942,
+   "conditions": [
+    {
+     "lacks": [
+      "lit"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r22",
+   "listed": true,
+   "name": "it must not already be lit",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r23": {
+   "about": "direct",
+   "action": "light",
+   "born": 1789131757.7768004,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "lit"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r23",
+   "listed": true,
+   "name": "light the object",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r24": {
+   "about": "direct",
+   "action": "close",
+   "born": 1789131814.1410792,
+   "conditions": [
+    {
+     "lacks": [
+      "closed"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r24",
+   "listed": true,
+   "name": "it must not already be closed",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "book.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r25": {
+   "about": "direct",
+   "action": "close",
+   "born": 1789131814.1410959,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "closed"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r25",
+   "listed": true,
+   "name": "close the book",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "book.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r26": {
+   "about": "direct",
+   "action": "douse",
+   "born": 1789131846.365798,
+   "conditions": [
+    {
+     "is": [
+      "lit"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r26",
+   "listed": true,
+   "name": "it must be lit",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r27": {
+   "about": "direct",
+   "action": "douse",
+   "born": 1789131846.3658042,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "unlit"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r27",
+   "listed": true,
+   "name": "extinguish the fire",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r28": {
+   "about": "direct",
+   "action": "drink",
+   "born": 1789131877.7349918,
+   "conditions": [
+    {
+     "lacks": [
+      "empty"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r28",
+   "listed": true,
+   "name": "it must not be empty",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "drinking_vessel.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r29": {
+   "about": "direct",
+   "action": "drink",
+   "born": 1789131877.7350197,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r29",
+   "listed": true,
+   "name": "drinking empties the vessel",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "drinking_vessel.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r3": {
+   "about": "direct",
+   "action": "look",
+   "born": 1789131212.4331107,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "action": "look",
+     "roles": {
+      "direct": "here"
+     },
+     "type": "try"
+    }
+   ],
+   "evidence": {},
+   "id": "r3",
+   "listed": true,
+   "name": "looking about you means looking at the room",
+   "outcome": null,
+   "overrides": null,
+   "phase": "instead",
+   "scope": {
+    "world": true
+   },
+   "source": "standard",
+   "when": [
+    {
+     "subject": "direct",
+     "unbound": true
+    }
+   ],
+   "why": ""
+  },
+  "r30": {
+   "about": "direct",
+   "action": "clip",
+   "born": 1789132009.2974284,
+   "conditions": [
+    {
+     "holds": [
+      "direct"
+     ],
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r30",
+   "listed": true,
+   "name": "you must be holding what you want to clip",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r31": {
+   "about": "direct",
+   "action": "clip",
+   "born": 1789132009.2974339,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "preposition": "on",
+     "to": "target",
+     "type": "move_object"
+    }
+   ],
+   "evidence": {},
+   "id": "r31",
+   "listed": true,
+   "name": "clipping an item to something places it on that thing",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r32": {
+   "about": "direct",
+   "action": "scrape",
+   "born": 1789132062.1831388,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r32",
+   "listed": true,
+   "name": "scraping a wall simply makes a grating noise",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "wall.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r33": {
+   "about": "direct",
+   "action": "check",
+   "born": 1789132126.230724,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r33",
+   "listed": true,
+   "name": "checking something reveals its condition",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r34": {
+   "about": "direct",
+   "action": "search",
+   "born": 1789132151.2601798,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r34",
+   "listed": true,
+   "name": "searching a thing reveals what it holds",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r35": {
+   "about": "direct",
+   "action": "record",
+   "born": 1789132229.8573813,
+   "conditions": [
+    {
+     "affords": [
+      "record"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r35",
+   "listed": true,
+   "name": "it must be something you can record",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r36": {
+   "about": "direct",
+   "action": "record",
+   "born": 1789132229.8573942,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r36",
+   "listed": true,
+   "name": "recording it simply happens",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r37": {
+   "about": "direct",
+   "action": "wash",
+   "born": 1789132278.6778932,
+   "conditions": [
+    {
+     "affords": [
+      "wash"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r37",
+   "listed": true,
+   "name": "it must be something that can be washed",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r38": {
+   "about": "direct",
+   "action": "wash",
+   "born": 1789132278.677901,
+   "conditions": [
+    {
+     "lacks": [
+      "clean"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r38",
+   "listed": true,
+   "name": "it must not already be clean",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r39": {
+   "about": "direct",
+   "action": "wash",
+   "born": 1789132278.6779075,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "clean"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r39",
+   "listed": true,
+   "name": "wash the thing",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r4": {
+   "about": "direct",
+   "action": "look",
+   "born": 1789131212.4413893,
+   "conditions": [
+    {
+     "subject": "direct",
+     "visible_to": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r4",
+   "listed": true,
+   "name": "you must be able to see what you look at",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "standard",
+   "when": [
+    {
+     "subject": "direct",
+     "unbound": false
+    }
+   ],
+   "why": ""
+  },
+  "r40": {
+   "about": "direct",
+   "action": "greet",
+   "born": 1789132291.5072641,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r40",
+   "listed": true,
+   "name": "the greeting is heard",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "person.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r41": {
+   "about": "direct",
+   "action": "close",
+   "born": 1789132306.9902089,
+   "conditions": [
+    {
+     "lacks": [
+      "closed"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r41",
+   "listed": true,
+   "name": "it must not already be closed",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r42": {
+   "about": "direct",
+   "action": "close",
+   "born": 1789132306.9902165,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "closed"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r42",
+   "listed": true,
+   "name": "close the thing",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r43": {
+   "about": "direct",
+   "action": "wipe",
+   "born": 1789132313.7936475,
+   "conditions": [
+    {
+     "lacks": [
+      "clean"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r43",
+   "listed": true,
+   "name": "it must not already be clean",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r44": {
+   "about": "direct",
+   "action": "wipe",
+   "born": 1789132313.793656,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "clean"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r44",
+   "listed": true,
+   "name": "wiping it makes it clean",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r45": {
+   "about": "direct",
+   "action": "hook",
+   "born": 1789132370.0577893,
+   "conditions": [
+    {
+     "lacks": [
+      "hooked"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r45",
+   "listed": true,
+   "name": "it must not already be hooked",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "vehicle.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r46": {
+   "about": "direct",
+   "action": "hook",
+   "born": 1789132370.0578094,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "hooked"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r46",
+   "listed": true,
+   "name": "hook the vehicle",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "vehicle.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r47": {
+   "about": "direct",
+   "action": "consult",
+   "born": 1789132378.3148909,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r47",
+   "listed": true,
+   "name": "you consult the map",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "map.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r48": {
+   "about": "direct",
+   "action": "push",
+   "born": 1789132392.5126734,
+   "conditions": [
+    {
+     "is": [
+      "standing"
+     ],
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r48",
+   "listed": true,
+   "name": "they must be standing to push it",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "wheeled_vehicle.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r49": {
+   "about": "direct",
+   "action": "push",
+   "born": 1789132392.5126958,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r49",
+   "listed": true,
+   "name": "pushing a wheeled vehicle rolls it along",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "wheeled_vehicle.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r5": {
+   "about": "direct",
+   "action": "look",
+   "born": 1789131212.4505165,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "role": "direct",
+     "type": "describe"
+    }
+   ],
+   "evidence": {},
+   "id": "r5",
+   "listed": true,
+   "name": "what looking at a thing shows",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "standard",
+   "when": [],
+   "why": ""
+  },
+  "r50": {
+   "about": "direct",
+   "action": "climb",
+   "born": 1789132435.9167898,
+   "conditions": [
+    {
+     "affords": [
+      "climb"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r50",
+   "listed": true,
+   "name": "the target must afford climbing",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r51": {
+   "about": "direct",
+   "action": "climb",
+   "born": 1789132435.9168627,
+   "conditions": [],
+   "contest": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "athletics"
+   },
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r51",
+   "listed": true,
+   "name": "climbing the column",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "column.n.07"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r52": {
+   "about": "enclosure",
+   "action": "forage",
+   "born": 1789132499.3447678,
+   "conditions": [],
+   "contest": {
+    "against": null,
+    "difficulty": 10.0,
+    "trait": "survival"
+   },
+   "effects": [
+    {
+     "description": "Some knobby but edible roots, freshly dug from the earth.",
+     "name": "handful of edible roots",
+     "type": "create_object"
+    }
+   ],
+   "evidence": {},
+   "id": "r52",
+   "listed": true,
+   "name": "foraging in a grove yields edible roots",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "grove.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r53": {
+   "about": "direct",
+   "action": "try",
+   "born": 1789132569.7789388,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r53",
+   "listed": true,
+   "name": "trying a latch merely tests its movement",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "latch.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r54": {
+   "about": "direct",
+   "action": "open",
+   "born": 1789132591.4993231,
+   "conditions": [
+    {
+     "lacks": [
+      "open"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r54",
+   "listed": true,
+   "name": "it must not already be open",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r55": {
+   "about": "direct",
+   "action": "open",
+   "born": 1789132591.4993322,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r55",
+   "listed": true,
+   "name": "open the item",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r56": {
+   "about": "direct",
+   "action": "eat",
+   "born": 1789132598.044182,
+   "conditions": [
+    {
+     "holds": [
+      "direct"
+     ],
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r56",
+   "listed": true,
+   "name": "you must be holding it to eat it",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "root"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r57": {
+   "about": "direct",
+   "action": "eat",
+   "born": 1789132598.0441957,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "type": "destroy_object"
+    }
+   ],
+   "evidence": {},
+   "id": "r57",
+   "listed": true,
+   "name": "eating the root consumes it",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "root"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r58": {
+   "about": "direct",
+   "action": "hear",
+   "born": 1789132627.8516743,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r58",
+   "listed": true,
+   "name": "you hear what there is to hear",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r59": {
+   "about": "direct",
+   "action": "push",
+   "born": 1789132637.2570376,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r59",
+   "listed": true,
+   "name": "pushing a thing ordinarily just elicits a description of doing so",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r6": {
+   "about": "direct",
+   "action": "read",
+   "born": 1789131337.9808276,
+   "conditions": [
+    {
+     "affords": [
+      "read"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r6",
+   "listed": true,
+   "name": "it must have something written on it",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r60": {
+   "about": "direct",
+   "action": "turn",
+   "born": 1789132671.7053084,
+   "conditions": [
+    {
+     "lacks": [
+      "turned"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r60",
+   "listed": true,
+   "name": "it must not already be turned",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "latch.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r61": {
+   "about": "direct",
+   "action": "turn",
+   "born": 1789132671.7053328,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "turned"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r61",
+   "listed": true,
+   "name": "turn the latch",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "latch.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r62": {
+   "about": "direct",
+   "action": "put",
+   "born": 1789132785.7705648,
+   "conditions": [
+    {
+     "holds": [
+      "direct"
+     ],
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r62",
+   "listed": true,
+   "name": "you must be holding what you want to put",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r63": {
+   "about": "direct",
+   "action": "put",
+   "born": 1789132785.7705727,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "to": "room",
+     "type": "move_object"
+    }
+   ],
+   "evidence": {},
+   "id": "r63",
+   "listed": true,
+   "name": "putting a thing sets it down here",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r64": {
+   "about": "direct",
+   "action": "lift",
+   "born": 1789132796.0094998,
+   "conditions": [
+    {
+     "lacks": [
+      "lifted"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r64",
+   "listed": true,
+   "name": "it must not already be lifted",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "latch.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r65": {
+   "about": "direct",
+   "action": "lift",
+   "born": 1789132796.0095198,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "lifted"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r65",
+   "listed": true,
+   "name": "lift the latch",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "latch.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r66": {
+   "about": "direct",
+   "action": "grease",
+   "born": 1789132942.6376617,
+   "conditions": [
+    {
+     "lacks": [
+      "greasy"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r66",
+   "listed": true,
+   "name": "it must not already be greasy",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "mechanism.n.05"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r67": {
+   "about": "direct",
+   "action": "grease",
+   "born": 1789132942.637682,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "greasy"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r67",
+   "listed": true,
+   "name": "grease the mechanism",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "mechanism.n.05"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r68": {
+   "about": "direct",
+   "action": "get",
+   "born": 1789132980.9047508,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "to": "actor",
+     "type": "move_object"
+    }
+   ],
+   "evidence": {},
+   "id": "r68",
+   "listed": true,
+   "name": "it is taken",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r69": {
+   "about": "direct",
+   "action": "forge",
+   "born": 1789133083.2169554,
+   "conditions": [
+    {
+     "holds": [
+      "source"
+     ],
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r69",
+   "listed": true,
+   "name": "you must be holding the material you intend to forge",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "weapon.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r7": {
+   "about": "direct",
+   "action": "read",
+   "born": 1789131337.980838,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r7",
+   "listed": true,
+   "name": "read the text",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r70": {
+   "about": "direct",
+   "action": "forge",
+   "born": 1789133083.2169952,
+   "conditions": [],
+   "contest": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "smithing"
+   },
+   "effects": [
+    {
+     "name_role": "source",
+     "type": "destroy_object"
+    },
+    {
+     "name_role": "direct",
+     "to": "actor",
+     "type": "move_object"
+    }
+   ],
+   "evidence": {},
+   "id": "r70",
+   "listed": true,
+   "name": "forging consumes the raw material to produce the weapon",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "weapon.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r71": {
+   "about": "direct",
+   "action": "set",
+   "born": 1789133189.720994,
+   "conditions": [
+    {
+     "holds": [
+      "direct"
+     ],
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r71",
+   "listed": true,
+   "name": "they must be holding the piton",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "piton.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r72": {
+   "about": "direct",
+   "action": "set",
+   "born": 1789133189.7210157,
+   "conditions": [
+    {
+     "lacks": [
+      "anchored"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r72",
+   "listed": true,
+   "name": "it must not already be anchored",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "piton.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r73": {
+   "about": "direct",
+   "action": "set",
+   "born": 1789133189.7210293,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "anchored"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "name_role": "direct",
+     "to": "room",
+     "type": "move_object"
+    }
+   ],
+   "evidence": {},
+   "id": "r73",
+   "listed": true,
+   "name": "anchor the piton",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "piton.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r74": {
+   "about": "direct",
+   "action": "hammer",
+   "born": 1789133212.078762,
+   "conditions": [
+    {
+     "lacks": [
+      "anchored"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r74",
+   "listed": true,
+   "name": "it must not already be anchored",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "piton.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r75": {
+   "about": "direct",
+   "action": "hammer",
+   "born": 1789133212.0787942,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "anchored"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r75",
+   "listed": true,
+   "name": "hammering anchors the piton",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "piton.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r76": {
+   "about": "direct",
+   "action": "pry",
+   "born": 1789133226.2750397,
+   "conditions": [
+    {
+     "is": [
+      "closed"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r76",
+   "listed": true,
+   "name": "it must be closed",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r77": {
+   "about": "direct",
+   "action": "pry",
+   "born": 1789133226.275077,
+   "conditions": [],
+   "contest": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "athletics"
+   },
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r77",
+   "listed": true,
+   "name": "prying forces it open",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r78": {
+   "about": "direct",
+   "action": "pull",
+   "born": 1789133246.292626,
+   "conditions": [
+    {
+     "is": [
+      "anchored"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r78",
+   "listed": true,
+   "name": "it must be anchored to be pulled free",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "piton.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r79": {
+   "about": "direct",
+   "action": "pull",
+   "born": 1789133246.292655,
+   "conditions": [],
+   "contest": {
+    "against": null,
+    "difficulty": 12.0,
+    "trait": "athletics"
+   },
+   "effects": [
+    {
+     "name_role": "direct",
+     "to": "actor",
+     "type": "move_object"
+    },
+    {
+     "add": [
+      "unanchored"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r79",
+   "listed": true,
+   "name": "wrest the piton out of the stone",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "piton.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r8": {
+   "about": "direct",
+   "action": "nod",
+   "born": 1789131374.1234446,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r8",
+   "listed": true,
+   "name": "nodding is seen",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r80": {
+   "about": "direct",
+   "action": "tap",
+   "born": 1789133344.4795394,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r80",
+   "listed": true,
+   "name": "you tap the thing",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r81": {
+   "about": "direct",
+   "action": "jam",
+   "born": 1789133448.9022887,
+   "conditions": [
+    {
+     "lacks": [
+      "jammed"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r81",
+   "listed": true,
+   "name": "it must not already be jammed",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "catch.n.07"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r82": {
+   "about": "direct",
+   "action": "jam",
+   "born": 1789133448.9023054,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "jammed"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r82",
+   "listed": true,
+   "name": "jamming it immobilizes its mechanism",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "catch.n.07"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r83": {
+   "about": "direct",
+   "action": "smell",
+   "born": 1789133476.5426555,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r83",
+   "listed": true,
+   "name": "smelling something reveals its scent",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r84": {
+   "about": "direct",
+   "action": "sharpen",
+   "born": 1789133631.940726,
+   "conditions": [
+    {
+     "holds": [
+      "direct"
+     ],
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r84",
+   "listed": true,
+   "name": "you must be holding it",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "sword.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r85": {
+   "about": "direct",
+   "action": "sharpen",
+   "born": 1789133631.9407487,
+   "conditions": [
+    {
+     "lacks": [
+      "sharp"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r85",
+   "listed": true,
+   "name": "it must not already be sharp",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "sword.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r86": {
+   "about": "direct",
+   "action": "sharpen",
+   "born": 1789133631.940768,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "sharp"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r86",
+   "listed": true,
+   "name": "sharpen the sword",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "sword.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r87": {
+   "about": "direct",
+   "action": "scrape",
+   "born": 1789133738.2248373,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r87",
+   "listed": true,
+   "name": "scraping something scratches its surface",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r88": {
+   "about": "direct",
+   "action": "sign",
+   "born": 1789133847.3639493,
+   "conditions": [
+    {
+     "lacks": [
+      "signed"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r88",
+   "listed": true,
+   "name": "it must not already be signed",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "legal_document.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r89": {
+   "about": "direct",
+   "action": "sign",
+   "born": 1789133847.3639646,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "signed"
+     ],
+     "remove": [],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r89",
+   "listed": true,
+   "name": "sign the document",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "legal_document.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r9": {
+   "about": "enclosure",
+   "action": "shrug",
+   "born": 1789131481.23605,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r9",
+   "listed": true,
+   "name": "shrugging is simply narrated",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r90": {
+   "about": "direct",
+   "action": "test",
+   "born": 1789133987.6928225,
+   "conditions": [
+    {
+     "is": [
+      "anchored"
+     ],
+     "subject": "direct"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r90",
+   "listed": true,
+   "name": "it must be anchored",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "kind": "piton.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r91": {
+   "about": "direct",
+   "action": "test",
+   "born": 1789133987.6928558,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "type": "narrate"
+    }
+   ],
+   "evidence": {},
+   "id": "r91",
+   "listed": true,
+   "name": "testing an anchored piton checks its seating",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "kind": "piton.n.01"
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r92": {
+   "about": "enclosure",
+   "action": "lie",
+   "born": 1789134046.4497247,
+   "conditions": [
+    {
+     "lacks": [
+      "lying"
+     ],
+     "subject": "actor"
+    }
+   ],
+   "contest": null,
+   "effects": [],
+   "evidence": {},
+   "id": "r92",
+   "listed": true,
+   "name": "you must not already be lying down",
+   "outcome": null,
+   "overrides": null,
+   "phase": "check",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  },
+  "r93": {
+   "about": "enclosure",
+   "action": "lie",
+   "born": 1789134046.4497344,
+   "conditions": [],
+   "contest": null,
+   "effects": [
+    {
+     "add": [
+      "lying"
+     ],
+     "remove": [],
+     "role": "actor",
+     "type": "set_state"
+    }
+   ],
+   "evidence": {},
+   "id": "r93",
+   "listed": true,
+   "name": "lying changes your posture",
+   "outcome": null,
+   "overrides": null,
+   "phase": "carry_out",
+   "scope": {
+    "world": true
+   },
+   "source": "generated",
+   "when": [],
+   "why": ""
+  }
+ },
+ "state_groups": {
+  "attachment": {
+   "default": "",
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "cleanliness": {
+   "default": "",
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "elevation": {
+   "default": "",
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "fire": {
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "fullness": {
+   "default": "",
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "lubrication": {
+   "default": "",
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "openness": {
+   "default": "",
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "operability": {
+   "default": "",
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "placement": {
+   "default": "",
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "posture": {
+   "ends_on_move": true,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "rotation": {
+   "default": "",
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "sharpness": {
+   "default": "",
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "signature": {
+   "default": "",
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  }
+ },
+ "state_vocabulary": {
+  "anchored": {
+   "conflicts": [],
+   "group": "placement",
+   "means": "secured firmly in place"
+  },
+  "clean": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "free from dirt, marks, or stains"
+  },
+  "closed": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "shut and not open"
+  },
+  "dusty": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "covered with fine dirt or dust"
+  },
+  "empty": {
+   "conflicts": [],
+   "group": "fullness",
+   "means": "containing nothing"
+  },
+  "full": {
+   "conflicts": [],
+   "group": "fullness",
+   "means": "filled to capacity"
+  },
+  "greasy": {
+   "conflicts": [],
+   "group": "lubrication",
+   "means": "covered with grease or oil"
+  },
+  "hooked": {
+   "conflicts": [],
+   "group": "attachment",
+   "means": "fastened with a hook"
+  },
+  "jammed": {
+   "conflicts": [],
+   "group": "operability",
+   "means": "physically stuck and immobilized"
+  },
+  "lifted": {
+   "conflicts": [],
+   "group": "elevation",
+   "means": "raised to a higher position"
+  },
+  "lit": {
+   "conflicts": [],
+   "group": "fire",
+   "means": "ignited and actively burning"
+  },
+  "lying": {
+   "conflicts": [],
+   "group": "posture",
+   "means": "in a horizontal, prostrate position"
+  },
+  "open": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "open for reading or passage"
+  },
+  "sharp": {
+   "conflicts": [],
+   "group": "sharpness",
+   "means": "having a fine, honed edge"
+  },
+  "signed": {
+   "conflicts": [],
+   "group": "signature",
+   "means": "marked with a signature"
+  },
+  "sitting": {
+   "conflicts": [],
+   "group": "posture",
+   "means": "seated"
+  },
+  "standing": {
+   "conflicts": [],
+   "group": "posture",
+   "means": "standing upright on one's feet"
+  },
+  "turned": {
+   "conflicts": [],
+   "group": "rotation",
+   "means": "rotated from its original position"
+  },
+  "unanchored": {
+   "conflicts": [],
+   "group": "placement",
+   "means": "loose and not driven into a surface"
+  },
+  "unhooked": {
+   "conflicts": [],
+   "group": "attachment",
+   "means": "not fastened with a hook"
+  },
+  "unlit": {
+   "conflicts": [],
+   "group": "fire",
+   "means": "not ignited or actively burning"
+  }
+ },
+ "trait_vocabulary": {
+  "athletics": {
+   "means": "physical fitness, strength, and agility",
+   "name": "Athletics",
+   "trait_type": "gauge"
+  },
+  "light": {
+   "means": "",
+   "name": "Light",
+   "trait_type": "counter"
+  },
+  "smithing": {
+   "means": "skill at working metal and crafting weapons or armor",
+   "name": "Smithing",
+   "trait_type": "gauge"
+  },
+  "survival": {
+   "means": "skill at finding food and living off the land",
+   "name": "survival",
+   "trait_type": "gauge"
+  }
+ },
+ "verb_rules": {},
+ "verbs_without_rules": {
+  "buy": 1,
+  "climb": 1,
+  "enter": 2,
+  "fee": 2,
+  "give": 1,
+  "jump": 1,
+  "open": 1,
+  "set": 1,
+  "try": 1,
+  "write": 2
+ },
+ "zones": {
+  "_world": {
+   "bounds": null,
+   "budget": 3,
+   "is_world": true,
+   "kind": "",
+   "name": "The infinite dungeon is a magical fantasy dungeon contain...",
+   "parent": null,
+   "planned": true,
+   "purpose": "",
+   "room_types": [],
+   "rooms": [],
+   "singleton_types": [
+    "guild_hall",
+    "descent_gate",
+    "obsidian_vault",
+    "singularity_chamber"
+   ],
+   "states": [],
+   "types_used": {}
+  },
+  "outpost_agrarian_sector": {
+   "bounds": [
+    [
+     2,
+     1,
+     0
+    ],
+    [
+     2,
+     2,
+     0
+    ]
+   ],
+   "budget": 5,
+   "kind": "",
+   "name": "Outpost Agrarian Sector",
+   "parent": "_world",
+   "planned": true,
+   "purpose": "Adventurers acquire mounts, rent beasts of burden, and gather agricultural supplies cultivated in subterranean pastures.",
+   "room_types": [
+    "muddy_path",
+    "livestock_corral",
+    "fenced_pasture",
+    "tack_shed",
+    "watering_trough",
+    "feed_storage"
+   ],
+   "rooms": [
+    6505,
+    6512
+   ],
+   "singleton_types": [
+    "veterinary_station",
+    "manure_processing_pit",
+    "grain_windmill"
+   ],
+   "states": [],
+   "types_used": {
+    "livestock_corral": "The Livestock Corrals",
+    "perimeter_gate": "The Agrarian Perimeter Gate"
+   }
+  },
+  "outpost_periphery": {
+   "bounds": [
+    [
+     2,
+     -5,
+     0
+    ],
+    [
+     2,
+     -1,
+     0
+    ]
+   ],
+   "budget": 7,
+   "kind": "",
+   "name": "Outpost Periphery",
+   "parent": "_world",
+   "planned": true,
+   "purpose": "Adventurers navigate fortified checkpoints, supply caches, and waste-strewn outskirts connecting the safe outpost to the hostile dungeon depths.",
+   "room_types": [
+    "dusty_access_road",
+    "barricaded_checkpoint",
+    "perimeter_trench",
+    "patrol_path",
+    "refuse_heap",
+    "supply_siding"
+   ],
+   "rooms": [
+    6440,
+    6461,
+    6468,
+    6495,
+    6501
+   ],
+   "singleton_types": [
+    "perimeter_watchtower",
+    "quarantine_gate",
+    "scavenger_depot"
+   ],
+   "states": [],
+   "types_used": {
+    "barricaded_checkpoint": "The Outer Barricades",
+    "muster-ground-commons": "The Muster-Ground Commons",
+    "perimeter_trench": "The Perimeter Trenches",
+    "refuse_heap": "The Refuse Heap",
+    "threshold": "The Outpost Perimeter Gate"
+   }
+  },
+  "surface_outpost_staging_ground": {
+   "bounds": [
+    [
+     0,
+     0,
+     -1
+    ],
+    [
+     2,
+     2,
+     0
+    ]
+   ],
+   "budget": 7,
+   "kind": "",
+   "name": "Surface Outpost & Staging Ground",
+   "parent": "_world",
+   "planned": true,
+   "purpose": "A bustling surface encampment where adventurers purchase supplies, form expedition parties, and register before descending into the infinite dungeon.",
+   "room_types": [
+    "staging_camp",
+    "guild_hall",
+    "supply_depot",
+    "tavern_annex",
+    "descent_gate",
+    "checkpoint",
+    "training_yard"
+   ],
+   "rooms": [
+    6233,
+    6247,
+    6263,
+    6278,
+    6291,
+    6312,
+    6331
+   ],
+   "singleton_types": [
+    "guild_hall",
+    "supply_depot",
+    "tavern_annex",
+    "descent_gate"
+   ],
+   "states": [],
+   "types_used": {
+    "circulation": "Outer Loading Docks",
+    "descent_gate": "The Descent Gate",
+    "destination": "The Guild Hall Main Lounge",
+    "guild_hall_foyer": "The Guild Hall Foyer",
+    "staging_camp": "Central Staging Plaza",
+    "supply_depot": "The Supply Depot"
+   }
+  },
+  "the_abyssal_rift": {
+   "bounds": null,
+   "budget": 8,
+   "kind": "",
+   "name": "The Abyssal Rift",
+   "parent": "_world",
+   "planned": false,
+   "purpose": "Master delvers confront reality-warping horrors and eldritch puzzles to claim legendary artifacts.",
+   "room_types": [
+    "fractured_hall",
+    "void_rift",
+    "astral_dais",
+    "singularity_chamber",
+    "eldritch_sanctum"
+   ],
+   "rooms": [],
+   "singleton_types": [],
+   "states": [],
+   "types_used": {}
+  },
+  "the_magma_crucible": {
+   "bounds": [
+    [
+     3,
+     2,
+     0
+    ],
+    [
+     6,
+     5,
+     0
+    ]
+   ],
+   "budget": 12,
+   "kind": "",
+   "name": "The Magma Crucible",
+   "parent": "_world",
+   "planned": true,
+   "purpose": "High-tier adventurers navigate searing volcanic hazards to battle fire constructs, harvest rare ores, and access ancient elemental forging machinery.",
+   "room_types": [
+    "basalt_walkway",
+    "lava_channel",
+    "smelting_forge",
+    "obsidian_vault",
+    "ash_cavern",
+    "magma_vent",
+    "cooling_chamber"
+   ],
+   "rooms": [
+    6386,
+    6394,
+    6404,
+    6410,
+    6426,
+    6433,
+    6448
+   ],
+   "singleton_types": [
+    "smelting_forge",
+    "obsidian_vault"
+   ],
+   "states": [],
+   "types_used": {
+    "basalt_walkway": "The Scorched Basalt Walkway",
+    "circulation": "The Churning Lava Channels",
+    "luminous_fern_thicket": "The Luminous Fern Thicket",
+    "obsidian_bridge": "The Obsidian Bridge",
+    "obsidian_vault": "The Obsidian Vault",
+    "shimmering_heat_haze": "The Shimmering Heat Haze",
+    "smelting_forge": "The Great Smelting Forge"
+   }
+  },
+  "the_sunken_arboretum": {
+   "bounds": [
+    [
+     3,
+     0,
+     0
+    ],
+    [
+     5,
+     1,
+     0
+    ]
+   ],
+   "budget": 5,
+   "kind": "",
+   "name": "The Sunken Arboretum",
+   "parent": "_world",
+   "planned": true,
+   "purpose": "Adventurers navigate a subterranean jungle of bioluminescent flora and tangled giant roots to harvest rare alchemical reagents and battle venomous monstrosities.",
+   "room_types": [
+    "overgrown_tunnel",
+    "fungal_grotto",
+    "root_bridge",
+    "bioluminescent_clearing",
+    "spore_hollow",
+    "mossy_chasm",
+    "canopy_walkway"
+   ],
+   "rooms": [
+    6346,
+    6354,
+    6368,
+    6377,
+    6382
+   ],
+   "singleton_types": [
+    "ancient_heart_tree",
+    "overgrown_conservatory_gate",
+    "botanist_camp"
+   ],
+   "states": [],
+   "types_used": {
+    "mossy_chasm": "The Mossy Chasm",
+    "overgrown_gateway": "The Overgrown Gateway",
+    "pillar_grove": "The Pillar Grove",
+    "root_bridge": "The Root Bridge",
+    "spore_hollow": "The Spore Hollow"
+   }
+  },
+  "the_upper_catacombs": {
+   "bounds": [
+    [
+     -1,
+     0,
+     -2
+    ],
+    [
+     1,
+     2,
+     -2
+    ]
+   ],
+   "budget": 8,
+   "kind": "",
+   "name": "The Upper Catacombs",
+   "parent": "_world",
+   "planned": true,
+   "purpose": "Novice adventurers navigate dusty, trap-laden crypts to battle basic monsters, solve simple mechanical puzzles, and scavenge starter gear.",
+   "room_types": [
+    "stone_corridor",
+    "crypt_chamber",
+    "trapped_junction",
+    "tomb_alcove",
+    "goblin_nest",
+    "antechamber",
+    "looted_armory"
+   ],
+   "rooms": [
+    6252,
+    6259,
+    6304,
+    6308,
+    6362,
+    6457
+   ],
+   "singleton_types": [
+    "antechamber",
+    "looted_armory"
+   ],
+   "states": [],
+   "types_used": {
+    "antechamber": "The Dust-Choked Antechamber",
+    "crypt_chamber": "The Great Burial Chamber",
+    "slug": "The Iron-Bound Storage Alcove",
+    "stair_head": "The Landing of Whispers",
+    "stone_corridor": "Narrow Stone Corridor",
+    "tomb_alcove": "The Forgotten Tomb Alcove"
+   }
+  }
+ }
+}

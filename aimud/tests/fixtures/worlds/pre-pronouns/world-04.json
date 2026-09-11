@@ -1,0 +1,168 @@
+{
+ "action_specs": {},
+ "attempt_counts": {},
+ "declined_suggestions": {},
+ "engine": "verb_rules",
+ "exported": "2026-09-11",
+ "kind_specs": {
+  "fragment": {
+   "affordances": {
+    "get": true
+   },
+   "holds": []
+  },
+  "shard": {
+   "affordances": {
+    "get": true,
+    "wield": true
+   },
+   "holds": []
+  }
+ },
+ "label": "pre-pronouns-04",
+ "pronoun_sets": {},
+ "rooms": 3,
+ "rule_counter": {},
+ "rule_failures": {},
+ "rules": {},
+ "state_groups": {},
+ "state_vocabulary": {},
+ "trait_vocabulary": {},
+ "verb_rules": {
+  "wield#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "'wield' is a built-in verb that the game engine already handles; it cannot be defined as a rule.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  }
+ },
+ "verbs_without_rules": {},
+ "zones": {
+  "_world": {
+   "bounds": null,
+   "budget": 3,
+   "is_world": true,
+   "name": "<user> has crash-landed on an alien planet after a failed...",
+   "parent": null,
+   "planned": true,
+   "purpose": "",
+   "room_types": [],
+   "rooms": [],
+   "singleton_types": [
+    "crashed_ship_wreck",
+    "ai_core_room",
+    "ancient_obelisk"
+   ],
+   "types_used": {}
+  },
+  "ancient_ruins": {
+   "bounds": null,
+   "budget": 10,
+   "name": "Ancient Ruins",
+   "parent": "_world",
+   "planned": false,
+   "purpose": "Remains of an advanced alien civilization, filled with puzzles, traps, and valuable technology.",
+   "room_types": [
+    "stone_hall",
+    "puzzle_room",
+    "observation_deck",
+    "power_core"
+   ],
+   "rooms": [],
+   "singleton_types": [],
+   "types_used": {}
+  },
+  "crash_site": {
+   "bounds": [
+    [
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     2,
+     0
+    ]
+   ],
+   "budget": 3,
+   "name": "Crash Site",
+   "parent": "_world",
+   "planned": true,
+   "purpose": "The initial area where you explore the wreckage and gather supplies to begin your survival.",
+   "room_types": [
+    "wreckage",
+    "cockpit",
+    "debris_field"
+   ],
+   "rooms": [
+    5491,
+    5496,
+    5502
+   ],
+   "singleton_types": [
+    "wreckage",
+    "cockpit",
+    "debris_field"
+   ],
+   "types_used": {
+    "breach": "Wreckage Threshold",
+    "debris_field": "Debris Field Perimeter",
+    "rocky_outskirts": "Rocky Outskirts"
+   }
+  },
+  "the_crystal_caverns": {
+   "bounds": null,
+   "budget": 10,
+   "name": "The Crystal Caverns",
+   "parent": "_world",
+   "planned": false,
+   "purpose": "A network of glowing crystal caves deep underground, rich in rare minerals but home to dangerous crystal creatures.",
+   "room_types": [
+    "crystal_chamber",
+    "luminous_tunnel",
+    "crystal_vein",
+    "subterranean_lake"
+   ],
+   "rooms": [],
+   "singleton_types": [],
+   "types_used": {}
+  },
+  "the_fungal_forest": {
+   "bounds": null,
+   "budget": 12,
+   "name": "The Fungal Forest",
+   "parent": "_world",
+   "planned": false,
+   "purpose": "A dense forest of towering alien fungi, with spores that can heal or harm, and strange fungal creatures.",
+   "room_types": [
+    "mushroom_grove",
+    "spore_clearing",
+    "rotting_log",
+    "fungal_glade"
+   ],
+   "rooms": [],
+   "singleton_types": [],
+   "types_used": {}
+  },
+  "the_jagged_plains": {
+   "bounds": null,
+   "budget": 15,
+   "name": "The Jagged Plains",
+   "parent": "_world",
+   "planned": false,
+   "purpose": "A vast, windswept plain of sharp rocks and strange flora, with scattered resources and hostile native creatures.",
+   "room_types": [
+    "rocky_plain",
+    "thorn_bush",
+    "crevasse",
+    "alien_flower_field"
+   ],
+   "rooms": [],
+   "singleton_types": [],
+   "types_used": {}
+  }
+ }
+}
