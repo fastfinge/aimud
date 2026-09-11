@@ -29,21 +29,16 @@ actually be done to -- which the kinds now know, and which is the closest
 thing to a general answer there is.
 """
 
-#: What somebody types when they mean the lot. "lot" as well as "the lot",
-#: because noise words are gone by the time a phrase is tested here.
-WORDS = frozenset(["all", "everything", "every", "each", "both",
-                   "the lot", "lot"])
+from world import nounphrase
 
-#: And when they mean the people rather than the things.
-PEOPLE_WORDS = frozenset(["everyone", "everybody", "all of them"])
+#: What somebody types when they mean the lot, and when they mean the people
+#: rather than the things. Both in `world.nounphrase` with the rest of the
+#: grammar, because "all" is a quantifier wherever it is typed.
+WORDS = nounphrase.EVERYTHING
 
-#: The words that can be followed by what it is they mean all of.
-#:
-#: "All" on its own is the whole room; "every wrench" is a narrowing, and the
-#: difference matters more than it looks. Without this, "get every wrench" was
-#: a noun phrase nothing matched, so the world offered to invent an object
-#: called "every wrench" -- which is both the wrong answer and a paid one.
-QUANTIFIERS = frozenset(["all", "every", "each", "both", "any"])
+PEOPLE_WORDS = nounphrase.EVERYBODY
+
+QUANTIFIERS = nounphrase.QUANTIFIERS
 
 #: A ceiling, because "eat all" in a storeroom should not be a hundred model
 #: calls before anybody can type again. Deliberately small: past about here a
@@ -59,17 +54,10 @@ def split(phrase):
     (False, "wrench"). The second half is what narrows `matching`, and an empty
     one means the whole room -- which is what "all" has always meant.
     """
-    from world import verbs
-
-    text = verbs.plain(phrase)
-    if not text:
-        return False, ""
-    if text in WORDS or text in PEOPLE_WORDS:
-        return True, ""
-    head, _, rest = text.partition(" ")
-    if head in QUANTIFIERS and rest.strip():
-        return True, rest.strip()
-    return False, text
+    read = nounphrase.read(phrase)
+    if not read.means_everything:
+        return False, read.plain
+    return True, read.thing
 
 
 def wanted(phrase):
@@ -78,9 +66,7 @@ def wanted(phrase):
 
 
 def _people_meant(phrase):
-    from world import verbs
-
-    return verbs.plain(phrase) in PEOPLE_WORDS
+    return nounphrase.read(phrase).about_people
 
 
 def matching(caller, verb, phrase, where=None):

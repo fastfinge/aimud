@@ -42,6 +42,8 @@ lying about. That question is asked first, since nothing here can answer it
 
 import re
 
+from world import nounphrase
+
 #: Good enough to act on without asking. Reached by an exact word, a
 #: contained name, one plain typo, or a word that sounds the same.
 CONFIDENT = 0.86
@@ -164,8 +166,10 @@ def edit_ratio(a, b):
 # How well one phrase names another
 # ---------------------------------------------------------------------------
 
-_NOISE = frozenset(["the", "a", "an", "my", "your", "some", "that", "this",
-                    "of"])
+# One list, in world.nounphrase, plus the one word only this module drops:
+# "of" is grammar to a parser and noise to a scorer, since "chest of drawers"
+# and "chest drawers" name the same thing to anybody comparing them.
+_NOISE = nounphrase.MEANINGLESS | {"of"}
 
 
 def _words(text):

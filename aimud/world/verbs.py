@@ -23,7 +23,7 @@ import re
 
 from evennia.utils import logger
 
-from world import lexicon
+from world import lexicon, nounphrase
 
 # Prepositions that introduce a second noun, mapped to the role that noun
 # plays.  "unlock door with key" -> direct=door, instrument=key.
@@ -46,8 +46,9 @@ PREPOSITION_ROLES = {
     "about": "target",
 }
 
-# Words that carry no meaning in a command.
-_NOISE = frozenset(["the", "a", "an", "my", "your", "some", "that", "this"])
+# Words that carry no meaning in a command. One list, in world.nounphrase,
+# which is also where "my" stopped being noise and started being a claim.
+_NOISE = nounphrase.MEANINGLESS
 
 # Verb synonyms folded onto one canonical verb, so the cache does not
 # fragment into examine/inspect/study/peruse all meaning the same thing.
@@ -167,10 +168,18 @@ def parse(raw):
         # Both the phrase and the word that introduced it, together: a role
         # closed by the next preposition has to keep its own, or "put key in
         # box with care" would forget that the box was an "in".
+        #
+        # The phrase goes through the reader rather than being filtered here.
+        # Filtering here is what this used to do, and it could not tell a
+        # determiner in front of a noun from a pronoun standing in for one:
+        # with "mine" and "yours" in the list, "get mine" dropped every word
+        # it had and bound nothing at all.
         if current:
-            roles.setdefault(current_role, " ".join(current))
-            if current_word:
-                prepositions.setdefault(current_role, current_word)
+            phrase = nounphrase.read(" ".join(current)).plain
+            if phrase:
+                roles.setdefault(current_role, phrase)
+                if current_word:
+                    prepositions.setdefault(current_role, current_word)
 
     for word in words[1:]:
         if word in PREPOSITION_ROLES:
@@ -178,8 +187,6 @@ def parse(raw):
             current = []
             current_role = PREPOSITION_ROLES[word]
             current_word = word
-            continue
-        if word in _NOISE:
             continue
         if lexicon.is_only_adverb(word):
             # Wherever it fell.  An adverb belongs to the verb no matter which
@@ -206,49 +213,19 @@ def parse(raw):
 STRICT_SIMILARITY = 0.9
 FUZZY_SIMILARITY = 0.6
 
-#: The place and the person, which no search can find.
-#:
-#: A room does not appear in its own contents and a character is not in their
-#: own inventory, so `bind` answered None for both -- and an unbound noun is
-#: promoted, which is why "look here" conjured an object called "here" and why
-#: "mine here with the trowel" could not name the room it was standing in.
-#: Answered before anything is searched for, because there is nowhere to look.
-HERE_WORDS = frozenset(["here", "around", "room"])
-SELF_WORDS = frozenset(["me", "myself", "self"])
+#: The place and the person, which no search can find. See world.nounphrase.
+HERE_WORDS = nounphrase.HERE_WORDS
+SELF_WORDS = nounphrase.SELF_WORDS
 
-#: How somebody picks one of several things with the same name.
-#:
-#: Evennia's own answer is "2-wrench", which nobody types. A player who has
-#: just been shown three wrenches says "the second wrench", and a game that
-#: answers that has given them a menu rather than a list. `-1` is the last one,
-#: which is the only count anybody makes from the other end.
-#:
-#: Ordinals only, never the cardinals beside them: "the second wrench" is one
-#: wrench and "two wrenches" is two of them, and reading the second as the
-#: first would answer a request for a pair by handing over one thing.
-#:
-#: "other" counts as second, which is exact rather than approximate given the
-#: order `candidates` uses: what you are carrying comes first, so "the other
-#: wrench" with one in your hand is the one on the floor.
-ORDINALS = {
-    "first": 1, "1st": 1,
-    "second": 2, "2nd": 2, "other": 2,
-    "third": 3, "3rd": 3,
-    "fourth": 4, "4th": 4,
-    "fifth": 5, "5th": 5,
-    "sixth": 6, "6th": 6,
-    "seventh": 7, "7th": 7,
-    "eighth": 8, "8th": 8,
-    "ninth": 9, "9th": 9,
-    "tenth": 10, "10th": 10,
-    "last": -1, "final": -1,
-}
+#: How somebody picks one of several things with the same name. The table
+#: itself is in `world.nounphrase` with the rest of the grammar; the name
+#: stays here because `suggest` and the tests read it.
+ORDINALS = nounphrase.ORDINALS
 
 
 def plain(phrase):
     """A noun phrase with its noise words gone, for comparing against a list."""
-    return " ".join(w for w in re.findall(r"[a-z0-9']+", str(phrase or "").lower())
-                    if w and w not in _NOISE)
+    return nounphrase.read(phrase).plain
 
 
 def ordinal(phrase):
@@ -261,12 +238,7 @@ def ordinal(phrase):
     number counts, so "get first" is still somebody naming a thing called
     first rather than an empty request for the first of nothing.
     """
-    text = plain(phrase)
-    words = text.split()
-    if len(words) < 2:
-        return 0, text
-    which = ORDINALS.get(words[0], 0)
-    return (which, " ".join(words[1:])) if which else (0, text)
+    return nounphrase.read(phrase).counted
 
 
 def _words(text):

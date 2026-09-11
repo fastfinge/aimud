@@ -38,7 +38,7 @@ where somebody is being butchered still works.
 
 import re
 
-from world import lexicon
+from world import lexicon, nounphrase
 
 #: Parts, as head nouns and singular. Not only human ones: a world with
 #: beetles and birds in it has mandibles and wings, and they are no more
@@ -82,31 +82,16 @@ MODIFIERS = frozenset("""
     bare good bad free whole broken bruised outstretched open closed
 """.split())
 
-#: Owners that are said rather than named. First and second person mean
-#: whoever is speaking: a player typing "my hand" and an NPC thinking "your
-#: hand" are each talking about the one holding the conversation.
-SPEAKER = frozenset(["my", "mine", "our", "ours", "your", "yours", "own"])
-
-#: Third person, which needs somebody to point at. Nothing here tracks who
-#: was last mentioned, so these only resolve when there is exactly one
-#: candidate and the question answers itself.
-THIRD_PERSON = frozenset(["his", "her", "hers", "its", "their", "theirs"])
+#: Owners that are said rather than named. The sets live in
+#: `world.nounphrase` with the rest of the grammar and are re-exported here,
+#: object and all: `resolve_owner` tells them apart with `is`, so there has to
+#: be exactly one of each in the process.
+SPEAKER = nounphrase.SPEAKER
+THIRD_PERSON = nounphrase.THIRD_PERSON
 
 #: Dropped from the front of a phrase before anything is read into it.
-ARTICLES = frozenset(["the", "a", "an", "some", "that", "this", "those",
-                      "these"])
+ARTICLES = nounphrase.DETERMINERS
 
-#: A possessive: "Samuel's shoulder", "the innkeeper's hands", "Ris' badge".
-#: Matched against text that still has its apostrophes, which is the whole
-#: signal -- tokenising first turns "Samuel's" into two words and loses it.
-_POSSESSIVE = re.compile(r"^(?P<owner>.+?)['’]s?(?=\s)\s+(?P<tail>.+)$")
-
-#: "of" only turns a phrase around when what follows it is a person: "the
-#: back of her hand" is about a hand, while a "chest of drawers" is a chest
-#: and the "eye of the storm" is weather. The test is whether the tail claims
-#: ownership of anything, which a pronoun or a possessive does and a plain
-#: noun does not.
-_OWNED = re.compile(r"^(?:%s)\b|['’]s?\s" % "|".join(SPEAKER | THIRD_PERSON))
 
 
 def _words(text):
@@ -191,40 +176,28 @@ def split_owner(phrase):
 
     `stated` is the difference between a claim and a guess, and it decides
     what happens when the owner turns out not to be here. An apostrophe or a
-    pronoun states ownership outright. Bare adjacency -- "samuels shoulder",
-    typed by somebody who does not stop for punctuation -- only suggests it,
-    and is read that way only when the phrase ends in a part of a body, so
-    that "table leg" is not quietly taken to be a table's leg.
+    pronoun states ownership outright, and that half is ordinary grammar --
+    `world.nounphrase` reads it, here and everywhere else.
+
+    What stays here is the half that is not grammar at all. "samuels
+    shoulder", typed by somebody who does not stop for punctuation, only
+    *suggests* an owner, and the suggestion is worth acting on solely because
+    the phrase ends in a part of a body. That test is this module's knowledge
+    and no parser has it, which is why the fallback did not move.
     """
+    read = nounphrase.read(phrase)
+    if read.stated_possessor:
+        return read.possessor, read.thing, True
+
     text = " ".join((phrase or "").lower().replace("-", " ").split())
     if not text:
         return None, phrase, False
-
-    if " of " in text:
-        part, _, owner = text.rpartition(" of ")
-        if part and _OWNED.search(owner + " "):
-            # "the back of her hand": the owner is hers, the part is a hand.
-            return split_owner(owner)
-
-    words = text.split()
-    lead = words[0].strip("'’")
-    if len(words) > 1:
-        if lead in SPEAKER:
-            return SPEAKER, " ".join(words[1:]), True
-        if lead in THIRD_PERSON:
-            return THIRD_PERSON, " ".join(words[1:]), True
-
-    match = _POSSESSIVE.match(text)
-    if match:
-        owner = " ".join(w for w in match.group("owner").split()
-                         if w not in ARTICLES)
-        if owner:
-            return owner, match.group("tail"), True
 
     # No punctuation, but the phrase ends in somebody's shoulder and the
     # words in front of it are as likely to be their name as anything. Step
     # back over the part and whatever qualifies it, so that the name in
     # "yuna chois left hand" does not end up with a "left" stuck on it.
+    words = text.split()
     cut = len(words)
     while cut and (words[cut - 1] in MODIFIERS or is_part(words[cut - 1])):
         cut -= 1
