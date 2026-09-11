@@ -107,6 +107,21 @@ def known(world_root, slug):
     return _slug(slug) in vocabulary(world_root)
 
 
+def by_form(world_root, word, field="object"):
+    """
+    Every set whose `field` is this word.
+
+    More than one is normal rather than an error: "she/her" and a declared
+    "ze/her" both answer to "her", which is the case `register` allows on
+    purpose. Whoever asks gets the list and decides.
+    """
+    word = _slug(word)
+    if not word:
+        return []
+    return [dict(entry) for entry in vocabulary(world_root).values()
+            if entry.get(field) == word]
+
+
 def seed(world_root):
     """
     Write the seeded sets onto a world that has none.
@@ -172,9 +187,31 @@ def register(world_root, declared):
         stored = {name: dict(seeded) for name, seeded in SEEDED.items()}
     stored[slug] = entry
     world_root.db.pronoun_sets = stored
+    _teach_the_parser(world_root, entry)
     logger.log_info(
         f"pronouns: {world_root.key} learned {slug}/{entry['object']}")
     return slug
+
+
+def _teach_the_parser(world_root, entry):
+    """
+    Put a new set's words where `world.nounphrase` will find them.
+
+    A world that invents `ze/zir` has invented words the parser has never seen,
+    and "get zir sword" has to reach the branch "get her sword" reaches. The
+    grammar keeps its own tables and takes additions through `tables`; this is
+    the one door that has anything to add to them, so this is where the two
+    meet. Derived from the register and written only by `register`, so it
+    cannot drift from it.
+    """
+    from world import nounphrase
+
+    for attribute, fields in (("extra_possessives", ("adjective", "possessive")),
+                              ("extra_pronouns", ("object", "subject",
+                                                  "adjective", "possessive"))):
+        known = set(getattr(world_root.db, attribute, None) or ())
+        known |= {entry[field] for field in fields if entry.get(field)}
+        setattr(world_root.db, attribute, sorted(known))
 
 
 def clean(declared):

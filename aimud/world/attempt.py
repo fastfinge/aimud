@@ -207,7 +207,16 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
                  fuzzy)
         return
 
-    bound, unbound = verbs.bind_all(caller, parsed["roles"], fuzzy=fuzzy)
+    bound, unbound, questions = verbs.bind_all(
+        caller, parsed["roles"], fuzzy=fuzzy, verb=verb)
+
+    if questions:
+        # Several things here answer to a word that was used, and picking one
+        # would be acting on a stranger. Asked rather than guessed, and the
+        # attempt stops: nothing is promoted, nothing is conjured, and no
+        # model is paid to narrate an action nobody has settled the object of.
+        on_message(questions[0][1], "")
+        return
     waiter = _once(on_wait)
 
     if _mechanics(caller, verb, parsed, bound, on_message):

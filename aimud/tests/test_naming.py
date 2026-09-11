@@ -146,7 +146,7 @@ class TheTwoThingsNoSearchCanFind(Naming):
         this module's.
         """
         self.thing("Trowel", location=self.char1)
-        bound, unbound = verbs.bind_all(
+        bound, unbound, _questions = verbs.bind_all(
             self.char1, verbs.parse("mine here with the trowel")["roles"])
         self.assertEqual(unbound, [])
         self.assertIs(bound["direct"], self.room2)

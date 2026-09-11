@@ -381,7 +381,83 @@ def counted(caller, phrase):
     return found[which - 1] if which <= len(found) else None
 
 
-def bind(caller, phrase, fuzzy=False):
+def _world_of(caller):
+    room = getattr(caller, "location", None)
+    return getattr(room.db, "world_root", None) if room is not None else None
+
+
+def _in_scope(caller):
+    """Everything a pronoun could be about: the people here and what is in reach."""
+    from world import anatomy, relations
+
+    found = list(anatomy.people_near(caller))
+    for obj in relations.reachable(caller):
+        if obj not in found:
+            found.append(obj)
+    return found
+
+
+def _verb_allows(world_root, obj, verb):
+    """
+    Whether this sort of thing admits the verb at all.
+
+    The SHRDLU borrowing, and the cheapest useful half of it: "open it" after
+    looking at a candle and then a box prefers the box, because the candle's
+    kind has already said it does not open. Only a definite refusal filters --
+    silence means nobody has decided, and deciding it here is exactly what a
+    pronoun must not do.
+    """
+    if not verb:
+        return True
+    from world import kinds
+
+    try:
+        return kinds.admits(world_root, obj.db.kinds, verb) is not False
+    except Exception:
+        return True
+
+
+def pronoun_candidates(caller, form, verb=""):
+    """Everything in reach that this pronoun could mean, nearest first."""
+    from world import referents
+
+    world_root = _world_of(caller)
+    answering = [obj for obj in _in_scope(caller)
+                 if obj is not caller
+                 and form in referents.forms_of(obj, world_root)]
+    return [obj for obj in answering if _verb_allows(world_root, obj, verb)]
+
+
+def resolve_pronoun(caller, form, verb=""):
+    """
+    (object, question) for a pronoun somebody typed.
+
+    A question rather than a guess is the one place this deliberately breaks
+    `bind`'s usual contract. `bind` resolves an ambiguous NAME by taking the
+    oldest, because the alternative was a room filling up with chalkboards --
+    nothing matched, so another was conjured. A pronoun has no such failure
+    mode: nothing is ever conjured for "her", so asking costs nothing and
+    guessing costs acting on a stranger.
+    """
+    from world import choosing, referents
+
+    found = pronoun_candidates(caller, form, verb)
+    if not found:
+        return None, None
+    if len(found) == 1:
+        return found[0], None
+
+    # Several answer to the word, so the question is which was last meant.
+    # Still in reach and still able to be acted on, or it is no answer.
+    remembered = referents.recall(caller, form)
+    if remembered is not None and remembered in found:
+        return remembered, None
+
+    names = [obj.get_display_name(caller) for obj in found]
+    return None, choosing.question(form, names)
+
+
+def bind(caller, phrase, fuzzy=False, verb=""):
     """
     Find what a noun phrase refers to, searching outward from the character.
 
@@ -413,6 +489,15 @@ def bind(caller, phrase, fuzzy=False):
     if text in HERE_WORDS:
         return getattr(caller, "location", None)
 
+    # A phrase that is one pronoun and nothing else is not a name at all, and
+    # must never reach the search below -- what is not found there is
+    # conjured, and conjuring a thing called "her" is the worst answer
+    # available.
+    read = nounphrase.read(phrase, _world_of(caller))
+    if read.pronoun:
+        found, _question = resolve_pronoun(caller, read.pronoun, verb)
+        return found
+
     one_of_several = counted(caller, phrase)
     if one_of_several is not None:
         return one_of_several
@@ -436,22 +521,42 @@ def bind(caller, phrase, fuzzy=False):
     )
 
 
-def bind_all(caller, roles, fuzzy=False):
+def bind_all(caller, roles, fuzzy=False, verb=""):
     """
-    Bind every role. Returns (bound, unbound) -- {role: obj}, [role, ...].
+    Bind every role. Returns (bound, unbound, questions).
 
     Unbound roles are not an error by themselves: the noun may be a fixture
     that exists only in the room's description and can be promoted to a real
     object, which is the caller's decision to make.
+
+    A question is different and is not the caller's decision. It means several
+    things here answer to a word somebody used and the game has no business
+    picking one -- so the role is neither bound nor available for promoting,
+    and whoever typed it gets asked. See `world.choosing`.
     """
-    bound, unbound = {}, []
+    from world import referents
+
+    bound, unbound, questions = {}, [], []
+    world_root = _world_of(caller)
     for role, phrase in roles.items():
-        obj = bind(caller, phrase, fuzzy=fuzzy)
+        read = nounphrase.read(phrase, world_root)
+        if read.pronoun:
+            obj, asked = resolve_pronoun(caller, read.pronoun, verb)
+            if asked:
+                questions.append((role, asked))
+                continue
+        else:
+            obj = bind(caller, phrase, fuzzy=fuzzy, verb=verb)
         if obj is None:
             unbound.append(role)
         else:
             bound[role] = obj
-    return bound, unbound
+
+    # What was referred to, remembered, so the next "it" has an answer. One
+    # place, after everything has bound, so the table cannot disagree with
+    # what the attempt actually acted on.
+    referents.note_all(caller, bound, world_root)
+    return bound, unbound, questions
 
 
 # ---------------------------------------------------------------------------

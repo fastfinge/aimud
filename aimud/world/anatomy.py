@@ -209,19 +209,30 @@ def split_owner(phrase):
     return None, text, False
 
 
-def resolve_owner(caller, owner):
+def resolve_owner(caller, owner, word=""):
     """
     The person an owner phrase refers to, or None.
 
-    A pronoun in the first or second person is whoever is speaking. One in
-    the third person is only answered when a single other person is present,
-    because guessing which of three people "her" meant is how you end up
-    acting on a stranger.
+    A pronoun in the first or second person is whoever is speaking. One in the
+    third person used to be answered only when exactly one other person was
+    present -- which is as far as anything could get before there was a record
+    of what had just been referred to. There is one now, so "greet Jessica"
+    then "touch her arm" reaches Jessica even in a crowded room, and the old
+    rule stays underneath as what to do when nothing has been referred to yet.
     """
     if owner is SPEAKER:
         return caller
     if owner is THIRD_PERSON:
-        others = [p for p in people_near(caller) if p is not caller]
+        from world import referents
+
+        room = getattr(caller, "location", None)
+        world_root = getattr(room.db, "world_root", None) if room else None
+        here = people_near(caller)
+        remembered = referents.recall_by_set(caller, word, "adjective",
+                                             world_root)
+        if remembered is not None and remembered in here:
+            return remembered
+        others = [p for p in here if p is not caller]
         return others[0] if len(others) == 1 else None
 
     from world.naming import CONFIDENT, best_match
@@ -274,10 +285,11 @@ def instead_of_a_part(caller, phrase):
         return None, None
 
     owner, tail, stated = split_owner(phrase)
+    said = nounphrase.read(phrase).possessor_words
     if owner is None:
         return None, None
 
-    person = resolve_owner(caller, owner)
+    person = resolve_owner(caller, owner, said)
     if person is None:
         if not stated:
             return None, None   # only ever a guess; let it be conjured

@@ -65,6 +65,18 @@ SPEAKER = frozenset(["my", "mine", "our", "ours", "your", "yours", "own"])
 THIRD_PERSON = frozenset(["his", "her", "hers", "its", "their", "theirs"])
 POSSESSIVES = SPEAKER | THIRD_PERSON
 
+#: Pronouns standing in for a thing rather than in front of one: "hug her",
+#: "open it", "get all of them". English's own, which is what the seeded sets
+#: use; a world that invents a set adds its forms through `tables`, and
+#: `pronouns.register` is what puts them there.
+#:
+#: "you" and "me" are here for completeness and are answered elsewhere --
+#: `SELF_WORDS` catches the speaker before anything looks a pronoun up.
+OBJECT_PRONOUNS = frozenset(["me", "him", "her", "it", "them", "us", "you"])
+
+#: Every word that can stand in for a noun, whichever slot it fills.
+PRONOUN_WORDS = POSSESSIVES | OBJECT_PRONOUNS
+
 #: What says nothing about *what a thing is*, and so is dropped before a name
 #: is matched. Determiners, and a possessive in the person already holding the
 #: conversation: "my ball" is a ball, and which ball is a separate question
@@ -82,7 +94,12 @@ QUANTIFIERS = frozenset(["all", "every", "each", "both", "any"])
 #: And the plain words for the same thing, which take no noun after them.
 EVERYTHING = frozenset(["all", "everything", "every", "each", "both",
                         "the lot", "lot"])
-EVERYBODY = frozenset(["everyone", "everybody", "all of them"])
+#: "all of them" is deliberately NOT here. It used to be, and it meant people
+#: whatever had just been mentioned -- so "get all of them" after looking at a
+#: shelf of wrenches reached for the innkeeper. Whether "them" is people is a
+#: question about what "them" last meant, which `world.referents` answers and
+#: a word list cannot.
+EVERYBODY = frozenset(["everyone", "everybody"])
 
 #: How somebody picks one of several things with the same name. Ordinals only,
 #: never the cardinals beside them: "the second wrench" is one wrench and "two
@@ -133,6 +150,7 @@ _OWNED = re.compile(r"^(?:%s)\b|['’]s?\s" % "|".join(POSSESSIVES))
 OVERRIDABLE = {
     "determiners": "extra_determiners",
     "possessives": "extra_possessives",
+    "pronouns": "extra_pronouns",
     "quantifiers": "extra_quantifiers",
     "here_words": "extra_here_words",
     "self_words": "extra_self_words",
@@ -141,6 +159,7 @@ OVERRIDABLE = {
 _BUILT_IN = {
     "determiners": DETERMINERS,
     "possessives": POSSESSIVES,
+    "pronouns": PRONOUN_WORDS,
     "quantifiers": QUANTIFIERS,
     "here_words": HERE_WORDS,
     "self_words": SELF_WORDS,
@@ -303,8 +322,11 @@ def read(phrase, world_root=None):
     rest = [w for w in words_of(rest_text) if w not in words_that['determiners']]
     ordinal, rest = _take_ordinal(rest)
 
+    # A phrase that is one pronoun and nothing else is standing in for a
+    # thing rather than describing one, and `bind` resolves it against what
+    # was last referred to rather than against any name.
     pronoun = (words[0] if len(words) == 1
-               and words[0] in words_that['possessives'] else "")
+               and words[0] in words_that['pronouns'] else "")
     head = rest[-1] if rest else ""
     modifiers = rest[:-1] if len(rest) > 1 else []
 
