@@ -350,7 +350,7 @@ def total(character, ignoring=None):
     return found
 
 
-def recompute_room(room, ignoring=None):
+def recompute_room(room, ignoring=None, without=None):
     """
     Redo the sums for everybody standing here.
 
@@ -362,6 +362,19 @@ def recompute_room(room, ignoring=None):
     Still a checkpoint rather than a tick: it runs when a thing changes, not
     while it stays changed. A room where nothing happens costs nothing, which
     is the same bargain the rest of the game makes.
+
+    Two things can be on their way out, and they are not the same thing:
+
+    * `ignoring` is a **person** who is leaving, and need not be recounted
+      because they are about to be recounted where they arrive.
+    * `without` is an **item** that is leaving, and must not be counted at all
+      -- Evennia announces a departure before it happens, so a lamp being
+      carried out of a cellar is still in `contents` when we are told it is
+      going. Counting it would leave everybody lit by a lamp that has gone.
+
+    Getting those two confused is how the first version of this went wrong:
+    passing the lamp as `ignoring` skipped nobody, because a lamp is not a
+    person, and recounted everybody by the light of it.
     """
     from world.quests import is_person
 
@@ -369,7 +382,7 @@ def recompute_room(room, ignoring=None):
         return
     for obj in list(room.contents):
         if obj is not ignoring and is_person(obj):
-            recompute(obj)
+            recompute(obj, ignoring=without)
 
 
 def recompute(character, ignoring=None):
@@ -427,14 +440,25 @@ def sources(character, slug):
 
     For `score`, so that a defence of 9 says where the other four came from
     rather than looking like something the character was simply born with.
+
+    Which means it has to look exactly where `total()` looks. A `present`
+    source is not a belonging -- the room itself, or a fire burning in it --
+    and leaving those out would put the warmth in the figure and nothing
+    beside it to explain the warmth, which is the one failure this exists to
+    prevent.
     """
     from world import traits
 
     world_root = traits._world_root(character)
     slug = traits.resolve(world_root, slug)
+    room = getattr(character, "location", None)
+    looking = list(character.contents)
+    if room is not None:
+        looking.append(room)
+        looking.extend(room.contents)
     found = []
-    for obj in character.contents:
-        if not applies(obj, character):
+    for obj in looking:
+        if obj is character or not applies(obj, character):
             continue
         for granted, amount in bonuses(obj).items():
             if traits.resolve(world_root, granted) == slug and amount:

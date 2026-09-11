@@ -17,12 +17,12 @@ specific is stored on the specific thing, and neither is stored on the room.
 """
 
 import json
-import urllib.request
 
 from evennia.utils import logger
-from twisted.internet import threads
+from evennia.utils.dbserialize import deserialize
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+from world import llm
+
 
 _RULE_SYSTEM = """You define what a verb does in a text MUD, as a reusable rule.
 
@@ -291,23 +291,6 @@ odds, numbers or traits, and never say the word "check". The character does
 not know they were measured; they know the blade turned on a rivet."""
 
 
-def _call_openrouter(api_key, model, messages):
-    payload = {"model": model, "messages": messages}
-    # The sampling settings chosen for this job ride on the model choice. See
-    # world.model_params: only what the player actually set is sent.
-    from world.model_params import of as _settings
-
-    payload.update(_settings(model))
-    req = urllib.request.Request(
-        OPENROUTER_URL,
-        data=json.dumps(payload).encode(),
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode())["choices"][0]["message"]["content"]
-
-
 def _parse_json_object(content):
     """
     Parse a model response that should be a single JSON object.
@@ -326,9 +309,31 @@ def _parse_json_object(content):
 # ---------------------------------------------------------------------------
 
 def get_rule(world_root, key):
+    """
+    The rule this world has learned for that key, as plain Python.
+
+    Decoupled from the database on the way out, and that is not tidiness. An
+    Attribute hands back _SaverDict and _SaverList -- a MutableMapping and a
+    MutableSequence, neither of them a dict or a list -- and a rule is nested:
+    `requires` is a mapping, `effects` a list of mappings. Everything that
+    merely reads a rule is happy with those; `json.dumps` is not, and refuses
+    the whole structure with "Object of type _SaverDict is not JSON
+    serializable".
+
+    That matters because a rule goes into a prompt. `_kindred_block` writes
+    the ancestor verb's rule out as JSON, in the main thread, in the middle of
+    building the message for `learn_rule` -- so every verb that turned out to
+    be a way of doing something this world already knew died there, and took
+    the caller's hold on the object with it.
+
+    A shallow `dict(rule)` at each such place looks like the fix and is not:
+    it unwraps the outside and leaves every nested container exactly as it
+    was. So it is done once, properly, here.
+    """
     if not world_root:
         return None
-    return (world_root.db.verb_rules or {}).get(key)
+    rule = (world_root.db.verb_rules or {}).get(key)
+    return deserialize(rule) if rule is not None else None
 
 
 def store_rule(world_root, key, rule):
@@ -485,6 +490,53 @@ def _apply_renames(data, renames):
     return data
 
 
+def state_block(world_root, bound=None):
+    """
+    The states this world already has, as a generator should be shown them.
+
+    Shared by both generators, because they choose from the same vocabulary
+    and the whole reason to show it is that a word not shown gets coined
+    again under another name.
+
+    Each state is shown with the group it belongs to, and the groups are
+    listed again on their own, because a group can only be reused if it can
+    be seen. Left to guess, one rule called a group "power_state" and the
+    next "charge_status" -- so a thing could be active and uncharged at the
+    same moment, neither name knowing the other existed.
+
+    The conditions things of this sort have actually been in come first and
+    separately. A world's vocabulary runs to sixty states before long, and
+    sixty undifferentiated lines are not read -- which is how "shut" got
+    coined beside "closed" and "dormant" beside "inactive". The handful that
+    have ever been true of a bottle are worth putting in front of the rest.
+    """
+    from world import verbs
+
+    vocab = verbs.vocabulary(world_root)
+
+    def line(slug, info):
+        return (f"  {slug}: {info.get('means','')}"
+                f" (group: {verbs.group_of(world_root, slug) or 'none'};"
+                f" cancels: {', '.join(info.get('conflicts') or []) or 'nothing'})")
+
+    familiar = _states_of_kinds(world_root, bound)
+    near_text = "\n".join(line(slug, vocab[slug])
+                          for slug in sorted(familiar & set(vocab)))
+    vocab_text = "\n".join(
+        line(slug, info) for slug, info in sorted(vocab.items())
+        if slug not in familiar
+    ) or "  (none yet)"
+    group_text = ", ".join(sorted(verbs.groups(world_root))) or "(none yet)"
+
+    return (
+        (f"Conditions things of this sort have been in before, and the ones "
+         f"to reuse if any of them fit:\n{near_text}\n\n"
+         if near_text else "")
+        + f"Every other state this world uses:\n{vocab_text}\n\n"
+        + f"State groups already in use, to be reused rather than renamed: "
+          f"{group_text}\n\n")
+
+
 def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_error):
     """Async. Work out what this verb does to things of this kind."""
     model = account.model_for("commands")
@@ -495,31 +547,6 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
         return
 
     from world import checks, traits, verbs
-
-    vocab = verbs.vocabulary(world_root)
-    # Each state is shown with the group it belongs to, and the groups are
-    # listed again on their own, because a group can only be reused if it can
-    # be seen. Left to guess, one rule called a group "power_state" and the
-    # next "charge_status" -- so a thing could be active and uncharged at the
-    # same moment, neither name knowing the other existed.
-    def _line(slug, info):
-        return (f"  {slug}: {info.get('means','')}"
-                f" (group: {verbs.group_of(world_root, slug) or 'none'};"
-                f" cancels: {', '.join(info.get('conflicts') or []) or 'nothing'})")
-
-    # The conditions things of this sort have actually been in, shown first
-    # and separately. A world's vocabulary runs to sixty states before long,
-    # and sixty undifferentiated lines are not read -- which is how "shut" got
-    # coined beside "closed" and "dormant" beside "inactive". The handful that
-    # have ever been true of a bottle are worth putting in front of the rest.
-    familiar = _states_of_kinds(world_root, bound)
-    near_text = "\n".join(_line(slug, vocab[slug])
-                          for slug in sorted(familiar & set(vocab)))
-    vocab_text = "\n".join(
-        _line(slug, info) for slug, info in sorted(vocab.items())
-        if slug not in familiar
-    ) or "  (none yet)"
-    group_text = ", ".join(sorted(verbs.groups(world_root))) or "(none yet)"
 
     messages = [
         {"role": "system",
@@ -533,13 +560,8 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
                 f"The player typed: '{raw}'\n"
                 f"Verb: {verb}\n\n"
                 f"Things involved:\n{_describe_objects(bound, actor)}\n\n"
-                + (f"Conditions things of this sort have been in before, and "
-                   f"the ones to reuse if any of them fit:\n{near_text}\n\n"
-                   if near_text else "")
-                + f"Every other state this world uses:\n{vocab_text}\n\n"
-                f"State groups already in use, to be reused rather than "
-                f"renamed: {group_text}\n\n"
-                f"{traits.vocabulary_block(world_root)}"
+                + state_block(world_root, bound)
+                + f"{traits.vocabulary_block(world_root)}"
                 f"{_kindred_block(world_root, verb, bound)}"
                 f"Define '{verb}' as a rule for objects like these."
             ),
@@ -601,9 +623,8 @@ def learn_rule(account, world_root, verb, bound, actor, raw, on_success, on_erro
         except Exception as exc:
             on_error(str(exc))
 
-    threads.deferToThread(
-        _call_openrouter, api_key, model, messages
-    ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
+    llm.fetch(llm.ask, api_key, model, messages,
+              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
 
 
 _ADMISSION_SYSTEM = """You decide whether a sort of thing can be acted on at all.
@@ -672,9 +693,8 @@ def ask_admission(account, world_root, verb, rule, kind, on_answer, on_error):
         except Exception as exc:
             on_error(str(exc))
 
-    threads.deferToThread(
-        lambda: _call_openrouter(api_key, model, messages)
-    ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
+    llm.fetch(lambda: llm.ask(api_key, model, messages),
+              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
 
 
 def narrate(account, verb, bound, actor, raw, on_success, on_error, result=None):
@@ -734,6 +754,5 @@ def narrate(account, verb, bound, actor, raw, on_success, on_error, result=None)
         except Exception as exc:
             on_error(str(exc))
 
-    threads.deferToThread(
-        _call_openrouter, api_key, model, messages
-    ).addCallbacks(_done, lambda f: on_error(f.getErrorMessage()))
+    llm.fetch(llm.ask, api_key, model, messages,
+              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))

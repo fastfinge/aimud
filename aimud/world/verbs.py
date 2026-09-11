@@ -550,6 +550,19 @@ _ENGINE_VERBS = None
 #: them for ever and the player was told they were still trying.
 _COMMAND_VERBS = set()
 
+#: Verbs with a command of their own that the attempt pipeline owns anyway.
+#:
+#: `look` is a command, because typing it is how a player looks. What looking
+#: MEANS is a world's business -- whether the cave is dark, whether the ghost
+#: needs the right spectacles, whether the moon may be looked at without being
+#: touched -- and none of that could be said while the pipeline handed the verb
+#: straight back to `CmdAILook`. See docs/rulebooks-from-inform.md 8.1.
+#:
+#: Canonical verbs only. Everything folds through `VERB_SYNONYMS` before this is
+#: consulted, so one entry covers `l`, `x`, `examine`, `inspect`, `study` and
+#: `view`, and adding the spellings separately would be six chances to miss one.
+PIPELINE_VERBS = frozenset(["look"])
+
 
 def command_verbs():
     """The verbs the command set itself answers, by a name it will recognise."""
@@ -670,7 +683,7 @@ def _similar(a, b):
 #: same time and opening it cleared nothing.
 NEW_GROUP = {"exclusive": True, "ends_on_move": False,
              "prevents_acting": False, "prevents_moving": False,
-             "prevents_speaking": False}
+             "prevents_speaking": False, "default": ""}
 
 #: Groups every world starts with, and how they behave.
 #:
@@ -704,8 +717,25 @@ STATE_GROUPS = {
     "posture": {"exclusive": True, "ends_on_move": True},
     "wetness": {"exclusive": True, "ends_on_move": False},
     "fire":    {"exclusive": True, "ends_on_move": False},
+    # `default` is the member a thing is in until something puts it in another,
+    # and it is the answer to a fault that turned up in play: a rule required
+    # the target of `greet` to be `alive`, nothing anywhere sets `alive`, and so
+    # every character in the world was refused as not being alive.
+    #
+    # The state could have been written on to each character at creation, and
+    # should not be. Being alive is not a fact worth storing -- it is what is
+    # true of anything nothing has killed -- and storing it would print "Rina is
+    # alive" under every look, need backfilling on to every character that
+    # already exists, and drift the first time something forgot to set it. An
+    # implied default has none of those problems and costs one lookup.
+    #
+    # It also attacks a measured fault from the other end. 45 of 62 states in
+    # the exported corpus can be set and never unset, and a group with a default
+    # is a group whose other end always exists: `dead` cancels `alive` by
+    # exclusivity, and removing `dead` puts it back with no rule needed.
     "life_status": {"exclusive": True, "prevents_acting": True,
-                    "prevents_moving": True, "prevents_speaking": True},
+                    "prevents_moving": True, "prevents_speaking": True,
+                    "default": "alive"},
     "bonds":   {"exclusive": True, "prevents_moving": True},
     "gagged":  {"exclusive": True, "prevents_speaking": True},
 }
@@ -849,7 +879,8 @@ def refuse(character, gate, world_root=None):
     return f"You cannot {GATES[gate]} while {slug.replace('_', ' ')}."
 
 
-def register_group(world_root, group, exclusive=None, ends_on_move=None,
+def register_group(world_root, group, default=None, exclusive=None,
+                   ends_on_move=None,
                    prevents_acting=None, prevents_moving=None,
                    prevents_speaking=None):
     """
@@ -877,6 +908,8 @@ def register_group(world_root, group, exclusive=None, ends_on_move=None,
                 break
 
     entry = dict(known.get(group) or NEW_GROUP)
+    if default is not None:
+        entry["default"] = str(default or "")
     if exclusive is not None:
         entry["exclusive"] = bool(exclusive)
     if ends_on_move is not None:
@@ -1056,6 +1089,46 @@ def _synonym_group(world_root, slug, vocab):
     return None
 
 
+def _commonsense_group(world_root, slug, vocab):
+    """
+    The group an outside corpus thinks this state belongs with, or None.
+
+    `DistinctFrom` is definitionally what a group is -- "something that is A is
+    not B" -- so ConceptNet knows the ordinary pairs, open/closed, wet/dry,
+    locked/unlocked, that nobody should have to declare by hand.
+
+    **Ranked last on purpose, and behind a declaration rather than in front of
+    it.** The three tests above may overrule a declared group, and they have
+    earned that: spelling is certain, and WordNet is curated and
+    sense-disambiguated. This corpus is crowdsourced and its nodes are words
+    rather than senses, which is exactly why 7.1 says it may never hold a
+    position it can win from -- never a floor, never against what somebody
+    actually wrote down. So it only ever fills a silence.
+
+    The pair still has to be in this world. A world that has never heard of
+    `closed` gets no group for `open` out of this, for the same reason every
+    suggestion in this project wants evidence from the world it is about.
+    """
+    from world import commonsense
+
+    for other in commonsense.opposites(slug):
+        other = _slug_state(other)
+        if not other or other == slug or other not in vocab:
+            continue
+        found = group_of(world_root, other)
+        if found:
+            return found
+    return None
+
+
+def _slug_state(word):
+    """A word as a state slug: lower case, underscores, nothing else."""
+    import re
+
+    found = re.sub(r"[^a-z0-9_]+", "_", str(word or "").lower().strip())
+    return found.strip("_")
+
+
 def register_state(world_root, slug, means="", conflicts=(), group=None,
                    ends_on_move=None, prevents_acting=None,
                    prevents_moving=None, prevents_speaking=None):
@@ -1111,6 +1184,15 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
                                prevents_acting=prevents_acting,
                                prevents_moving=prevents_moving,
                                prevents_speaking=prevents_speaking)
+    else:
+        # Last of all, and only into a silence: a second corpus knows that open
+        # and closed answer one question, and nobody here has said so. It is
+        # placed after the declaration rather than among the three tests above
+        # because those are allowed to overrule what was declared and this is
+        # not -- see `_commonsense_group`.
+        outside = _commonsense_group(world_root, slug, vocab)
+        if outside:
+            group = register_group(world_root, outside)
 
     vocab[slug] = {
         "means": means,
@@ -1126,6 +1208,50 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
 #: item conjured as a "Brass Orrery" answers to "astrolabe" because somebody
 #: asked for one, and that must survive the bottle being emptied.
 STATE_ALIAS = "state"
+
+
+def implied_states(obj, world_root=None):
+    """
+    Everything true of a thing: what was written on it, plus group defaults.
+
+    A group may name the member a thing is in until something puts it in
+    another -- `life_status` defaults to `alive` -- and that member is implied
+    rather than stored. So a character nothing has killed is alive without
+    anybody writing it down, a character that has been killed is not, because
+    `dead` is a member of the same group, and removing `dead` makes them alive
+    again with no rule for it.
+
+    Kept apart from `states`, which stays the record of what was actually
+    written. The difference matters in exactly one place and it is a visible
+    one: `condition` prints what a thing is, and printing "It is alive" under
+    every character would be noise. What a *condition* tests is this.
+    """
+    now = set(states(obj))
+    if world_root is None:
+        # The same walk `blocked` does, and for the same reason: a caller deep
+        # in a condition often has the thing and not the world it belongs to.
+        room = obj if getattr(obj, "location", None) is None             else getattr(obj, "location", None)
+        world_root = getattr(getattr(room, "db", None), "world_root", None)
+
+    # The built-ins as well as the register, because a world that has never
+    # registered `life_status` still has characters in it, and the seeds are
+    # exactly the groups no world should have to discover for itself.
+    known = dict(STATE_GROUPS)
+    known.update(groups(world_root) or {})
+    for group, rules in known.items():
+        try:
+            fallback = str(rules.get("default") or "")
+        except AttributeError:
+            continue
+        if not fallback:
+            continue
+        members = group_members(world_root, group) | {
+            slug for slug, name in DEFAULT_STATE_GROUP.items()
+            if name == group}
+        if now & members:
+            continue          # already in one of them; nothing to imply
+        now.add(fallback)
+    return now
 
 
 def condition(obj, looker=None):
@@ -1212,13 +1338,19 @@ def apply_states(obj, add=(), remove=(), world_root=None):
     down here, because the conflict was declared when "wet" was registered.
     """
     current = states(obj)
-    vocab = vocabulary(world_root)
 
     for slug in remove:
         current.discard(slug)
     for slug in add:
+        # Registered on the way in, so that every caller gets the same
+        # guarantees rather than only the ones that remembered: a meaning, a
+        # group, a help entry, and the fold that turns "soaked" into the "wet"
+        # this world already has. Idempotent for a word already known, which
+        # is why `effects.py` registering first as well costs nothing.
+        slug = register_state(world_root, str(slug)) if world_root else slug
         if not slug:
             continue
+        vocab = vocabulary(world_root)
         for conflict in vocab.get(slug, {}).get("conflicts", []):
             current.discard(conflict)
         # Everything in an exclusive group cancels everything else in it, so
@@ -1338,8 +1470,19 @@ def requirements(requires):
     every world already playing has these clauses stored, and a rule is only
     written once.
     """
+    # The outer shape is checked as well as each clause inside it, for the
+    # same reason: this reads stored model output, and a model asked for
+    # role-keyed preconditions sometimes writes the list of conditions it
+    # would have written elsewhere. Read as a mapping that is an
+    # AttributeError deep inside a rulebook gather, which takes down an
+    # attempt rather than refusing one rule.
+    try:
+        requires = dict(requires or {})
+    except (TypeError, ValueError):
+        return {}
+
     clean = {}
-    for role, needed in (requires or {}).items():
+    for role, needed in requires.items():
         try:
             clause = dict(needed)
         except (TypeError, ValueError):
@@ -1430,108 +1573,23 @@ def check(requires, bound, actor, world_root=None):
     """
     Test a rule's preconditions. Returns None when met, else why not.
 
-    requires is {role: {"has": [affordance], "lacks": [state],
-    "is": [state], "holds": [name]}} where role may also be "actor".
+    The testing and the wording both live in `world.conditions` now. This is
+    the shape the attempt pipeline still calls it by: role-keyed `requires`
+    in, one sentence out, `None` when nothing is wrong.
 
-    The message is the point of this function as much as the verdict. It used
-    to say "X is not something you can do that to", which names neither what
-    was wanted nor what would have served -- so a player who tried to sit on a
-    bottle learned only that they could not, and an NPC told the same thing
-    asked for it again next turn. Every clause here now says which
-    requirement failed, and a missing affordance also says what the thing IS
-    good for, because that is the sentence that answers "then what can I do
-    with it?" without another attempt.
+    The message was always as much the point of this function as the verdict.
+    It used to say "X is not something you can do that to", which names
+    neither what was wanted nor what would have served, so a player who tried
+    to sit on a bottle learned only that they could not. Every clause now says
+    which requirement failed, and a missing affordance also says what the
+    thing IS good for -- the sentence that answers "then what can I do with
+    it?" without another attempt.
     """
-    complaints = []
+    from world import conditions
 
-    def note(text):
-        if text and text not in complaints:
-            complaints.append(text)
-
-    for role, needed in requirements(requires).items():
-        obj = actor if role == "actor" else bound.get(role)
-        if obj is None:
-            note("There is nothing here to do that to.")
-            continue
-
-        name, be, pronoun = _speak_of(obj, actor)
-        have = affordances(obj)
-        is_now = states(obj)
-
-        wanted, placement = _wanted_affordances(needed.get("has", []))
-
-        for affordance in wanted:
-            if affordance in have:
-                continue
-            # An affordance is a verb now, so the refusal is a verb too:
-            # "you cannot spray the can" rather than "the can is not
-            # sprayable", which was fine while affordances were adjectives
-            # and turned into "it is a buy, a crush and a open" the moment
-            # they stopped being.
-            said = f"You cannot {affordance} {_in_a_sentence(obj, actor)}."
-            # What it IS for. The hint the old message withheld: a bottle that
-            # cannot be sat on can still be drunk, broken and put things in.
-            if have:
-                from evennia.utils.utils import iter_to_str
-
-                said += f" You can {iter_to_str(sorted(have))} {pronoun.lower()}."
-            note(said)
-
-        for preposition in placement:
-            from world import kinds
-
-            if preposition in kinds.holds(world_root, obj.db.kinds):
-                continue
-            note(f"{_cap(name)} {be} not something things go {preposition}.")
-
-        for state in needed.get("is", []):
-            if state in is_now:
-                continue
-            # The meaning as well as the word, because half these words the
-            # world invented for itself and "not charged" is only useful to
-            # somebody who knows what this world charges.
-            means = (vocabulary(world_root).get(state) or {}).get("means") \
-                if world_root is not None else ""
-            note(f"{_cap(name)} {be} not {state}"
-                 + (f" ({means})." if means else "."))
-
-        for state in needed.get("lacks", []):
-            if state in is_now:
-                note(f"{_cap(name)} {be} already {state}.")
-
-        for carried in needed.get("holds", []):
-            # A rule may name another role here rather than an item, and for
-            # the verbs where holding matters it almost always does: "to throw
-            # it you must be holding it" is a condition about whatever is being
-            # thrown, which has no name until somebody throws something. Read
-            # literally it asks the player to carry an object called "direct",
-            # which nothing is and nothing can be -- so the rule could never be
-            # satisfied, and picking the thing up changed nothing.
-            role_wanted = bound.get(str(carried).strip().lower())
-            if role_wanted is not None:
-                if role_wanted not in obj.contents:
-                    held_name, _be, _pronoun = _speak_of(role_wanted, actor)
-                    note(f"{_cap(name)} {be} not holding {held_name}.")
-                continue
-
-            if not any(carried.lower() in o.key.lower() for o in obj.contents):
-                # A rule writes the item as a bare noun phrase ("brass key"),
-                # which needs an article to be said aloud. Any it already has
-                # is dropped first, so "a brass key" does not become "the a
-                # brass key".
-                wanted = re.sub(r"^(?:an?|the|some)\s+", "", carried.strip(),
-                                flags=re.IGNORECASE)
-                note(f"{_cap(name)} {be} not holding the {wanted}.")
-
-        # What is measurably true of a person, tested the same way as what is
-        # true of a thing. This is what lets a rule say "you need 10 stamina
-        # for that" rather than only "the door must be unlocked".
-        wanted_traits = needed.get("trait") or needed.get("traits")
-        if wanted_traits:
-            from world import traits as traits_mod
-
-            note(traits_mod.meets(obj, wanted_traits))
-
-    if not complaints:
-        return None
-    return " ".join(complaints[:MAX_COMPLAINTS])
+    said = conditions.complaints(
+        conditions.from_requires(requires),
+        conditions.context(bound, actor, world_root),
+        limit=MAX_COMPLAINTS,
+    )
+    return " ".join(said) if said else None

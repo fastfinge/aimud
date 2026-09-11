@@ -27,6 +27,18 @@ FAILURES_ALLOWED = 2
 #: not going somewhere.
 MAX_TRAVEL = 12
 
+#: How many times a wanted thing may turn into the thing wanted before it.
+#:
+#: "To launch, first power" is one step of this. "To power, first find the fuel
+#: rod; to find it, first open the locker" is three, and the honest reason to stop
+#: is not cost but trust: every link is read off an effect a model wrote, and this
+#: planner's whole safety argument is that it takes one step and looks again. A
+#: chain four deep built on four approximate effects is the long plan that fails
+#: silently at the end, which is the thing being avoided.
+#:
+#: Three, because the spaceship needs one and a lock with a key needs two.
+MAX_SUBGOALS = 3
+
 
 # ---------------------------------------------------------------------------
 # Trusting the rules
@@ -66,53 +78,21 @@ def note_failure(world_root, key):
 # ---------------------------------------------------------------------------
 
 def _effect_achieves(effect, condition, obj_name):
-    """Whether one effect would satisfy one goal condition about `obj_name`."""
-    etype = effect.get("type")
-    ctype = condition.get("type")
+    """
+    Whether one effect would satisfy one goal condition about `obj_name`.
 
-    if ctype == "state" and etype == "set_state":
-        wanted = {s.lower() for s in (condition.get("is") or [])}
-        added = {str(s).lower() for s in (effect.get("add") or [])}
-        if wanted and wanted <= added:
+    `world.conditions.achieves` does the reading. What stays here is the one
+    thing it cannot know: the planner may have resolved a condition that named
+    a *sort* of thing down to a particular one -- "a cake" to the nearest cake
+    -- and it is that name a `create_object` effect has to match.
+    """
+    from world import conditions as C
+
+    for part in C.from_goal(condition):
+        if obj_name and isinstance(part.get("subject"), dict):
+            part = dict(part, subject={"named": obj_name})
+        if C.achieves(effect, part):
             return True
-        unwanted = {s.lower() for s in (condition.get("lacks") or [])}
-        removed = {str(s).lower() for s in (effect.get("remove") or [])}
-        return bool(unwanted) and unwanted <= removed
-
-    if ctype == "trait" and etype == "set_trait":
-        if str(effect.get("trait", "")) != str(condition.get("trait", "")):
-            return False
-        # Which way the goal wants it to move, and which way this effect moves
-        # it. A rate counts: an effect that starts something draining is how a
-        # goal about a falling figure gets met, just not immediately.
-        low, high = condition.get("min"), condition.get("max")
-        wants_up = low is not None
-        change = effect.get("change")
-        rate = effect.get("rate")
-        if effect.get("set_to") is not None:
-            target = float(effect["set_to"])
-            return (low is None or target >= low) and (high is None or target <= high)
-        for amount in (change, rate):
-            if amount is None:
-                continue
-            try:
-                amount = float(amount)
-            except (TypeError, ValueError):
-                continue
-            if amount > 0 and wants_up:
-                return True
-            if amount < 0 and high is not None:
-                return True
-        return False
-
-    if ctype == "holds" and etype == "move_object":
-        return effect.get("to") == "actor"
-
-    if ctype == "gone" and etype == "destroy_object":
-        return True
-
-    if ctype == "exists" and etype == "create_object":
-        return obj_name.lower() in str(effect.get("name", "")).lower()
     return False
 
 
@@ -276,12 +256,18 @@ def _bind(actor, name):
     return verbs.bind(actor, name, fuzzy=True)
 
 
-def _for_condition(actor, world_root, condition):
+def _for_condition(actor, world_root, condition, depth=0):
     """
     One action that would advance `condition`, or None.
 
     Returns (action string, rule key or None). The rule key is what gets
     blamed if the action does not achieve what it promised.
+
+    `depth` counts how many wants deep this is: a goal is 0, the precondition of
+    a verb that would satisfy it is 1, and so on to `MAX_SUBGOALS`. Only the
+    state branch recurses, because that is the only one whose answer is a verb
+    with preconditions of its own -- walking somewhere and picking something up
+    are mechanics, and a mechanic has no rulebook to be refused by.
     """
     ctype = condition.get("type")
     name = condition.get("object", "")
@@ -367,7 +353,17 @@ def _for_condition(actor, world_root, condition):
             return (step, None) if step else (None, None)
         if obj.location is not actor:
             return f"get {obj.key}", None
-        if _bind(actor, recipient) is None:
+        target = _bind(actor, recipient)
+        if target is actor:
+            # A delivery to oneself, which is a want to be holding the thing,
+            # and it is held: there is nothing left to do. Goals made since
+            # this was understood are written down as `holds` on the way in;
+            # ones stored before that are not, and `_test` and this both bind
+            # the recipient by their own rules and can disagree about who it
+            # is. Offering the step anyway would spend the turn on a `give`
+            # that both implementations refuse without a word.
+            return None, None
+        if target is None:
             step = _step_towards_object(actor, recipient)
             return (step, None) if step else (None, None)
         return f"give {obj.key} to {recipient}", None
@@ -380,7 +376,7 @@ def _for_condition(actor, world_root, condition):
         if obj is None:
             step = _step_towards_object(actor, name)
             return (step, None) if step else (None, None)
-        return _verb_for(actor, world_root, condition, obj)
+        return _verb_for(actor, world_root, condition, obj, depth)
 
     return None, None
 
@@ -554,33 +550,155 @@ def _trait_step_by_object(actor, world_root, condition, slug):
     return None, None
 
 
-def _verb_for(actor, world_root, condition, obj):
+def _verb_for(actor, world_root, condition, obj, depth=0):
     """
     A verb the world already knows that would put `obj` into the wanted state.
 
-    Only rules whose preconditions currently hold are offered, so the planner
-    never proposes lighting something already alight, and never proposes an
-    action it has been told needs a key the character does not have.
-    """
-    from world import verb_gen
+    Two stores are searched, because a world mid-cutover holds both: the learned
+    verb rules, one per verb, and the rulebook, where everything written since
+    phase 7 lives. Reading only the first was a real blindness -- every check rule
+    a world has written since the rulebooks arrived was invisible here, so the
+    planner would propose launching a cold ship, watch the attempt be refused, and
+    blame the rule for not doing what it promised.
 
-    rules = (world_root.db.verb_rules or {}) if world_root else {}
-    # Success routes first, then the ones that only work by going wrong.
+    A verb whose own preconditions are unmet is not discarded. It becomes the
+    question "what would meet them", and that is the subgoal: `launch` refused for
+    want of power is the goal "the ship is powered" is the step `power`. One link
+    at a time and no more than `MAX_SUBGOALS` of them.
+    """
+    bound = {"direct": obj}
+
+    # Success routes first, then the ones that only work by going wrong. The
+    # blocked candidates are kept rather than dropped: if nothing is ready to go,
+    # the nearest thing to ready is what the next step should be about.
+    blocked = []
     for outcome in PLAN_OUTCOMES:
-        for key, rule in rules.items():
-            rule = dict(rule)
-            if not rule.get("valid", True) or unreliable(world_root, key):
-                continue
-            if not _rule_would_achieve(rule, condition, obj.key, outcome):
-                continue
-            if outcome == "failure" and _burns_itself_down(rule):
-                continue
-            bound = {"direct": obj}
-            if verbs.check(rule.get("requires"), bound, actor) is not None:
-                continue
-            verb = key.split("#", 1)[0]
-            return f"{verb} {obj.key}", key
+        for action, key, unmet in _candidates(actor, world_root, condition,
+                                              obj, outcome):
+            if not unmet:
+                return action, key
+            blocked.append((action, key, unmet))
+
+    if depth >= MAX_SUBGOALS:
+        return None, None
+    for _action, key, unmet in blocked:
+        for wanted in unmet:
+            step, blame = _towards(actor, world_root, wanted, bound, depth + 1)
+            if step:
+                # Blamed on the rule whose precondition this is in aid of, not on
+                # the one that will be run: if powering the ship does not leave it
+                # powered, the rule that says what powering does is the one that
+                # promised something it did not deliver.
+                return step, blame or key
+
+    # Nothing this world knows would do it. A word it has never been taught
+    # might, and trying one is how it finds out.
+    #
+    # Only at the top of the chain. Inside a subgoal the step is already resting
+    # on an effect somebody guessed at, and stacking a guess about vocabulary on
+    # top of that is two uncertainties deep for one turn.
+    if depth == 0:
+        for verb in untried_verbs(world_root, condition):
+            return f"{verb} {obj.key}", None
     return None, None
+
+
+def _towards(actor, world_root, condition, bound, depth):
+    """
+    One step towards a condition written in the condition language.
+
+    The bridge between the two vocabularies. A check rule refuses in conditions
+    and the planner plans in goals, so the condition is read back into a goal --
+    naming whatever the role was bound to, since `direct` means nothing to a
+    planner looking at the world next turn and the ship does.
+    """
+    from world import conditions
+
+    wanted = conditions.as_goal(condition, bound, actor)
+    if wanted is None:
+        return None, None
+    return _for_condition(actor, world_root, wanted, depth)
+
+
+def _candidates(actor, world_root, condition, obj, outcome):
+    """
+    Every verb that might bring this condition about, with what blocks each.
+
+    Yields `(action, rule key or None, unmet conditions)`. An empty list of unmet
+    conditions means it is ready to be done now.
+    """
+    from world import rulebooks, verb_gen
+
+    seen = set()
+    learned = (world_root.db.verb_rules or {}) if world_root else {}
+    for key, rule in learned.items():
+        rule = dict(rule)
+        if not rule.get("valid", True) or unreliable(world_root, key):
+            continue
+        if not _rule_would_achieve(rule, condition, obj.key, outcome):
+            continue
+        if outcome == "failure" and _burns_itself_down(rule):
+            continue
+        verb = key.split("#", 1)[0]
+        seen.add(verb)
+        if verbs.check(rule.get("requires"), {"direct": obj}, actor) is not None:
+            # The old shape hands back a sentence rather than conditions, so
+            # there is nothing to turn into a subgoal. Skipped, as before.
+            continue
+        yield (f"{verb} {obj.key}", key,
+               conditions_unmet_for(actor, world_root, verb, obj))
+
+    if outcome != "success":
+        return                    # a rulebook rule has no failure branch to read
+    for rule in rulebooks.all_rules(world_root):
+        if rule.get("phase") != rulebooks.CARRY_OUT:
+            continue
+        if not rule.get("listed", True):
+            continue
+        verb = rule.get("action")
+        if not verb or verb in seen:
+            continue
+        if not _achieves_any(rule.get("effects"), condition, obj.key):
+            continue
+        seen.add(verb)
+        yield (f"{verb} {obj.key}", None,
+               conditions_unmet_for(actor, world_root, verb, obj))
+
+
+def _achieves_any(effects, condition, obj_name):
+    """Whether any of these effects would bring the condition about."""
+    for effect in (effects or []):
+        try:
+            if _effect_achieves(dict(effect), condition, obj_name):
+                return True
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return False
+
+
+def conditions_unmet_for(actor, world_root, verb, obj):
+    """
+    The check conditions that would refuse this verb on this object right now.
+
+    Read out of the rulebooks rather than guessed, so the planner and the pipeline
+    cannot disagree about why something is refused: this gathers the same rules in
+    the same order that an actual attempt would.
+    """
+    from world import conditions, rulebooks
+
+    bound = {"direct": obj}
+    ctx = conditions.context(bound, actor, world_root, verb)
+    found = []
+    try:
+        book = rulebooks.for_attempt(world_root, verb, bound, actor,
+                                     phase=rulebooks.CHECK)
+    except Exception:
+        return []
+    for rule in book:
+        for condition in (rule.get("conditions") or []):
+            if not conditions.evaluate(condition, ctx):
+                found.append(dict(condition))
+    return found
 
 
 def plan_for(actor, world_root, goal):
@@ -630,6 +748,16 @@ def advise(actor, world_root, goal):
     action, _key, condition = plan_for(actor, world_root, goal)
     if action:
         _met, text = goals._test(condition, actor, world_root)
+        # Say so when the step is a word nobody has tried. The planner will
+        # offer one rather than give up, which is right -- and a player deciding
+        # whether to type it should know the world has never heard of it, since
+        # finding out is what costs something.
+        if is_a_guess(world_root, action):
+            verb = action.split(" ", 1)[0]
+            return action, (
+                f"Nothing here knows how to {text}. |w{verb}|n might be the "
+                f"word for it, but nobody has tried -- so the world would have "
+                f"to work out what it means.")
         return action, text
 
     outstanding = [text for met, text in goals.progress(goal, actor, world_root)
@@ -637,10 +765,76 @@ def advise(actor, world_root, goal):
     # Goal descriptions read as "be in Library", "be carrying brass lamp", so
     # they take a verb-phrase frame -- "closer to be in Library" does not.
     wanted = outstanding[0] if outstanding else "do that"
+
     return None, (
         f"Nothing you can do from here would help you {wanted}. "
         f"Whatever it needs may be somewhere you have not been yet."
     )
+
+
+# ---------------------------------------------------------------------------
+# A verb nobody has taught this world yet
+# ---------------------------------------------------------------------------
+
+def untried_verbs(world_root, condition, limit=3):
+    """
+    Verbs that might bring a wanted state about, which this world has no rule for.
+
+    Two lexical routes, cheapest first. The state usually names its own verb --
+    `powered` is what `power` leaves behind -- and when it does not, the
+    inverted causation relation answers the harder question: to make something
+    descend, fell it or lower it. See `lexicon.causing`.
+
+    **Nothing here is knowledge.** Every name is a guess that a verb exists and
+    means what its spelling suggests, and the world has to be asked before any of
+    it is true -- which costs a model call. So this is offered to a person who can
+    decide to spend it, through `advise`, and never taken by a character acting on
+    a tick. A planner that bought rules on a timer is the clock this design keeps
+    refusing, wearing a different hat.
+    """
+    from world import lexicon, rule_gen, suggest
+
+    wanted = ""
+    for clause in ("is",):
+        for state in (condition.get(clause) or []):
+            wanted = str(state)
+            break
+    if not wanted:
+        return []
+
+    plain = suggest._verb_for_state(wanted)
+    found = []
+    for verb in [plain] + lexicon.causing(plain, limit=limit):
+        if not verb or verb in found:
+            continue
+        if _world_knows(world_root, verb):
+            continue
+        # And not one this world has already tried to learn and failed. The
+        # attempt would now be refused for nothing rather than bought again, but
+        # a character would still spend a turn a tick on a word that cannot work.
+        if not rule_gen.worth_asking(world_root, verb):
+            continue
+        found.append(verb)
+    return found[:limit]
+
+
+def is_a_guess(world_root, action):
+    """Whether the verb of this step is one the world has never been taught."""
+    verb = str(action or "").split(" ", 1)[0]
+    return bool(verb) and not _world_knows(world_root, verb)
+
+
+def _world_knows(world_root, verb):
+    """Whether this world has already decided what a verb does."""
+    from world import rulebooks
+
+    learned = (world_root.db.verb_rules or {}) if world_root else {}
+    if any(key.split("#", 1)[0] == verb for key in learned):
+        return True
+    for rule in rulebooks.all_rules(world_root):
+        if rule.get("action") == verb and rule.get("listed", True):
+            return True
+    return verb in verbs.command_verbs()
 
 
 def check_outcome(actor, world_root, condition, rule_key):

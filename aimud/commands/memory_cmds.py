@@ -6,7 +6,6 @@ Their character was there, so the character is the one asked -- in plain
 English, and answered from that character's own memory bank alone.
 """
 
-from twisted.internet import threads
 
 from commands.command import Command
 
@@ -87,7 +86,7 @@ class CmdRemember(Command):
         def _fetch():
             # Recall and the model call share one trip into the thread pool,
             # keeping both off the reactor.
-            from world.verb_gen import _call_openrouter
+            from world import llm
             from world.memory import format_memories, recall_sync
 
             memories = recall_sync(bank, question, top_k=8)
@@ -103,7 +102,7 @@ class CmdRemember(Command):
                     ),
                 },
             ]
-            return _call_openrouter(api_key, model, messages)
+            return llm.ask(api_key, model, messages)
 
         def _done(answer):
             caller.ndb.recalling = False
@@ -116,7 +115,7 @@ class CmdRemember(Command):
             caller.ndb.recalling = False
             caller.msg(f"|rYou cannot gather your thoughts: {failure.getErrorMessage()}|n")
 
-        threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+        llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
 class CmdMemoryMaintenance(Command):

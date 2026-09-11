@@ -1,0 +1,132 @@
+{
+ "engine": "verb_rules",
+ "exported": "2026-09-10",
+ "kind_specs": {},
+ "label": "world-02",
+ "rooms": 6,
+ "rule_failures": {},
+ "state_groups": {
+  "openness": {
+   "ends_on_move": false,
+   "exclusive": true
+  }
+ },
+ "state_vocabulary": {
+  "open": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "unfastened or unsealed to allow access to the inside"
+  }
+ },
+ "trait_vocabulary": {},
+ "verb_rules": {
+  "ask#target:readable": {
+   "check": null,
+   "effects": [],
+   "reason": "Asking is an action directed at a person, not a general rule that applies to an inanimate object itself.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "check#direct:breakable,container,wet_able": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "check#direct:container,flammable,openable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "container"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "look#container:container,flammable,openable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "container": {
+     "is": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "nod#none": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "open#direct:container,flammable,openable,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:flammable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:container,flammable,openable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "container"
+     ],
+     "is": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  }
+ }
+}

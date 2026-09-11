@@ -470,7 +470,14 @@ class NPC(ObjectParent, DefaultObject):
         Released in a `finally` because a character that cannot say anything
         ever again is a worse failure than a duplicated line, and a tool
         raising is exactly how a guard gets left standing.
+
+        A tool that raises is logged and the turn goes on to the next one. A
+        character that spoke and then failed to pick up the cup it mentioned
+        still said what it said, and losing the sentence because of the cup
+        is the wrong half to throw away.
         """
+        from evennia.utils import logger
+
         # Reset idle probability whenever the NPC actually does something.
         if tool_calls:
             self.ndb.idle_probability = 0
@@ -480,8 +487,11 @@ class NPC(ObjectParent, DefaultObject):
             return
         try:
             for call in tool_calls:
-                self._execute_one(call.get("name", ""), call.get("args", {}),
-                                  room, _depth)
+                name = call.get("name", "")
+                try:
+                    self._execute_one(name, call.get("args", {}), room, _depth)
+                except Exception:
+                    logger.log_trace(f"{self.key}: tool {name!r} raised")
         finally:
             self.ndb.reacting = False
 
@@ -523,7 +533,7 @@ class NPC(ObjectParent, DefaultObject):
         def ready(conditions):
             from world import goals
 
-            clean = goals.sanitise(conditions)
+            clean = goals.sanitise(conditions, owner=self)
             if not clean:
                 logger.log_info(
                     f"{self.key}: wanted {want!r}, but it made no testable goal"

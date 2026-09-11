@@ -25,6 +25,36 @@ a verb can require of the world is also something a goal can ask for.
 CONDITION_TYPES = ("state", "holds", "worn", "trait", "placed", "in_room",
                    "exists", "gone", "delivered")
 
+#: How somebody refers to themselves. A want written in the first person and
+#: then formalised comes back with one of these where a name would go.
+_SELF_WORDS = frozenset([
+    "me", "myself", "self", "himself", "herself", "themselves", "itself",
+])
+
+
+def _names_owner(name, owner):
+    """
+    Whether a recipient a goal names is the character whose goal it is.
+
+    Deliberately strict: the character's own key, one of its aliases, or a
+    word that can only mean the speaker. Nothing looser. A character called
+    "Princess Joy" answers to "Joy" when spoken to, but a world may hold
+    somebody actually named Joy -- and `find_object` prefers an exact key
+    match over a partial one, so it would deliver to her. Guessing wider here
+    would quietly rewrite one goal into a different one.
+    """
+    wanted = str(name or "").strip().lower()
+    if not wanted or owner is None:
+        return False
+    if wanted in _SELF_WORDS:
+        return True
+    if wanted == str(getattr(owner, "key", "") or "").strip().lower():
+        return True
+    try:
+        return wanted in {str(alias).lower() for alias in owner.aliases.all()}
+    except AttributeError:
+        return False
+
 
 def _world_objects(world_root, actor):
     """Everything a goal could plausibly refer to, nearest first."""
@@ -81,27 +111,6 @@ def find_of_kind(world_root, actor, kind, actor_only=False):
     return None
 
 
-def _subject(condition, world_root, actor, actor_only=False):
-    """
-    What a condition is about: a named thing, or anything of a kind.
-
-    A condition may say `object` and mean that one, or say `kind` and mean any
-    of them. Returns (object, how to say it) so the label a player is shown
-    reads the way the want was made -- "be carrying the brass key" for one,
-    "be carrying a cake" for the other.
-    """
-    name = str(condition.get("object", "") or "").strip()
-    if name:
-        return find_object(world_root, actor, name), f"the {name}"
-
-    kind = str(condition.get("kind", "") or "").strip()
-    if kind:
-        article = "an" if kind[:1].lower() in "aeiou" else "a"
-        return (find_of_kind(world_root, actor, kind, actor_only),
-                f"{article} {kind}")
-    return None, "it"
-
-
 def find_object(world_root, actor, name):
     """
     Resolve a name a goal mentions to a real object anywhere in the world.
@@ -122,12 +131,18 @@ def find_object(world_root, actor, name):
     return None
 
 
-def sanitise(conditions):
+def sanitise(conditions, owner=None):
     """
     Keep only conditions this module can actually test.
 
     A goal that cannot be tested can never be completed, so an unrecognised
     condition is dropped rather than stored and silently failed forever.
+
+    `owner` is whose want this is, and is given only when the goal is somebody
+    acting on their own account rather than an errand somebody else set them.
+    It turns a delivery to oneself into what it actually means. A quest passes
+    no owner on purpose: there, a delivery to the person who asked is the
+    ordinary case and the whole point of the errand.
     """
     clean = []
     for raw in conditions or []:
@@ -153,105 +168,45 @@ def sanitise(conditions):
                     pass
         if ctype == "trait" and not entry.get("trait"):
             continue     # a trait goal that names no trait can never be tested
+        # "Have the letter brought to me" is a want to be carrying the letter,
+        # so it is written down as one. Nothing could carry out the other
+        # reading: `give` refuses a self recipient in the NPC's own tool and
+        # again in the command set, both silently, so the step would be a
+        # turn spent on a line nobody sees. And the test was already the same
+        # test -- `delivered` asks whether the thing is inside the recipient,
+        # which for oneself is exactly `holds` -- so the goal was either
+        # finished before it was set or finished by picking the thing up,
+        # while the character was described the whole time as trying to hand
+        # something to itself.
+        if ctype == "delivered" and _names_owner(entry.get("to"), owner):
+            entry.pop("to", None)
+            entry["type"] = "holds"
         clean.append(entry)
     return clean
 
 
 def _test(condition, actor, world_root):
-    """Evaluate one condition. Returns (met, human readable description)."""
-    from world import verbs
+    """
+    Evaluate one condition. Returns (met, how it reads as a want).
 
-    ctype = condition.get("type")
-    name = condition.get("object", "")
+    Kept as the shape the planner still asks by. Everything under it is
+    `world.conditions` now: one goal condition may be more than one there --
+    a `state` carrying both `is` and `lacks` is two -- so all of them have to
+    hold and all of them are said.
+    """
+    from world import conditions as C
 
-    if ctype == "in_room":
-        room_name = condition.get("room", "")
-        here = actor.location
-        title = (here.db.room_title or here.key) if here else ""
-        met = bool(room_name) and room_name.lower() in title.lower()
-        return met, f"be in {room_name}"
-
-    if ctype == "gone":
-        # True when nothing answers to it -- which for a kind means none of
-        # them are left anywhere, so "clear out the rats" ends when the last
-        # rat does rather than when one named rat does.
-        found, said = _subject(condition, world_root, actor)
-        return found is None, f"get rid of {said}"
-
-    if ctype == "trait":
-        # A want about the character rather than about the world. The same
-        # shape a verb rule requires, so anything a rule can demand of someone
-        # is something they can set out to become.
-        from world import traits
-
-        slug = condition.get("trait", "")
-        low, high = condition.get("min"), condition.get("max")
-        current = traits.value(actor, slug)
-        met = current is not None
-        if met and low is not None:
-            met = current >= low
-        if met and high is not None:
-            met = current <= high
-        label = slug.replace("_", " ")
-        if low is not None:
-            return met, f"get {label} to {traits._round(low)}"
-        if high is not None:
-            return met, f"get {label} down to {traits._round(high)}"
-        return met, f"have some {label}"
-
-    # A condition may name one thing or describe a sort of thing. "Holds" is
-    # the one that has to look in the actor's own hands rather than across the
-    # world, or wanting a cake would be satisfied by a cake on a far shelf.
-    obj, said = _subject(condition, world_root, actor,
-                         actor_only=(ctype == "holds"))
-
-    if ctype == "exists":
-        return obj is not None, f"bring {said} into being"
-
-    if ctype == "holds":
-        met = obj is not None and obj.location is actor
-        return met, f"be carrying {said}"
-
-    if ctype == "placed":
-        # Where a thing has been put, which is a different question from who
-        # is carrying it: a ledger in the safe is not a ledger in a pocket.
-        from world import relations
-
-        host_name = condition.get("host", "")
-        preposition = condition.get("preposition") or relations.DEFAULT
-        host = find_object(world_root, actor, host_name)
-        met = relations.test(obj, preposition, host)
-        return met, f"get {said} {preposition} {host_name}"
-
-    if ctype == "worn":
-        # Carrying a coat and having it on are different things, and a
-        # character who wants to look like somebody has to do the second.
-        met = obj is not None and obj.location is actor and bool(obj.db.worn)
-        return met, f"be wearing {said}"
-
-    if ctype == "delivered":
-        recipient_name = condition.get("to", "")
-        recipient = find_object(world_root, actor, recipient_name)
-        met = (obj is not None and recipient is not None
-               and obj.location is recipient)
-        return met, f"give {said} to {recipient_name}"
-
-    if ctype == "state":
-        wanted = condition.get("is") or []
-        unwanted = condition.get("lacks") or []
-        if obj is None:
-            return False, f"find {said}"
-        current = verbs.states(obj)
-        met = (all(s in current for s in wanted)
-               and not any(s in current for s in unwanted))
-        parts = []
-        if wanted:
-            parts.append(" and ".join(wanted))
-        if unwanted:
-            parts.append("not " + " or ".join(unwanted))
-        return met, f"make {said} {', '.join(parts)}"
-
-    return False, "do something impossible"
+    parts = C.from_goal(condition)
+    if not parts:
+        # A condition this game cannot check can never be completed, which is
+        # why `sanitise` drops them on the way in. One that got past it is
+        # reported unmet rather than silently true.
+        return False, "do something the game cannot check"
+    ctx = C.context(None, actor, world_root)
+    met = all(C.evaluate(part, ctx) for part in parts)
+    said = " and ".join(
+        part for part in (C.describe(p, ctx, C.WANT) for p in parts) if part)
+    return met, said
 
 
 def progress(conditions, actor, world_root):
@@ -267,7 +222,21 @@ def satisfied(conditions, actor, world_root):
 
 
 def describe(conditions, actor=None, world_root=None):
-    """A goal as a readable phrase, for prompts and quest listings."""
+    """
+    A goal as a readable phrase, for prompts and quest listings.
+
+    With nobody to test it against -- which is how every NPC prompt calls it,
+    `goals.describe(npc.db.goal)` -- it is said abstractly rather than
+    evaluated. That used to reach `actor.location` on `None` and raise for any
+    goal about being somewhere; it now reads "you are in the Library" and
+    costs nothing.
+    """
+    from world import conditions as C
+
     if not conditions:
         return "nothing in particular"
-    return ", then ".join(text for _met, text in progress(conditions, actor, world_root))
+    if actor is None:
+        said = [C.describe(part) for part in C.from_goals(conditions)]
+        return ", then ".join(p for p in said if p) or "nothing in particular"
+    return ", then ".join(text for _met, text in
+                          progress(conditions, actor, world_root))

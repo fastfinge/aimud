@@ -1,0 +1,529 @@
+{
+ "engine": "verb_rules",
+ "exported": "2026-09-10",
+ "kind_specs": {
+  "bag": {
+   "affordances": {
+    "close": true,
+    "get": true,
+    "open": true,
+    "wear": true
+   },
+   "holds": [
+    "in"
+   ]
+  },
+  "book": {
+   "affordances": {
+    "close": true,
+    "get": true,
+    "open": true,
+    "read": true
+   },
+   "holds": [],
+   "states": [
+    "open"
+   ]
+  },
+  "bow": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "bowl.n.01": {
+   "affordances": {
+    "drink": true,
+    "eat": false,
+    "get": true
+   },
+   "holds": [
+    "in"
+   ],
+   "states": [
+    "empty",
+    "full",
+    "half-empty"
+   ]
+  },
+  "bread": {
+   "affordances": {
+    "eat": true,
+    "get": true,
+    "hand": true
+   },
+   "holds": []
+  },
+  "cloak": {
+   "affordances": {
+    "get": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "desk": {
+   "affordances": {
+    "get": false,
+    "sit": true
+   },
+   "holds": [
+    "on"
+   ]
+  },
+  "directory": {
+   "affordances": {
+    "check": true,
+    "get": false,
+    "hand": true,
+    "read": true,
+    "stow": true
+   },
+   "holds": []
+  },
+  "flyer": {
+   "affordances": {
+    "get": true,
+    "read": true
+   },
+   "holds": []
+  },
+  "grimoire": {
+   "affordances": {
+    "close": true,
+    "get": true,
+    "open": true,
+    "read": true
+   },
+   "holds": [],
+   "states": [
+    "open"
+   ]
+  },
+  "index": {
+   "affordances": {
+    "close": true,
+    "get": false,
+    "open": true,
+    "read": true,
+    "search": true
+   },
+   "holds": []
+  },
+  "map": {
+   "affordances": {
+    "get": true,
+    "read": true
+   },
+   "holds": []
+  },
+  "pastry": {
+   "affordances": {
+    "eat": true,
+    "get": true
+   },
+   "holds": []
+  },
+  "pen": {
+   "affordances": {
+    "get": true,
+    "write": true
+   },
+   "holds": []
+  },
+  "prism": {
+   "affordances": {
+    "get": true,
+    "hear": true,
+    "read": true
+   },
+   "holds": []
+  },
+  "ribbon": {
+   "affordances": {
+    "get": true,
+    "tie": true,
+    "wear": true
+   },
+   "holds": []
+  },
+  "sachet": {
+   "affordances": {
+    "get": true,
+    "smell": true
+   },
+   "holds": []
+  },
+  "scroll": {
+   "affordances": {
+    "get": true,
+    "read": true,
+    "roll": true,
+    "unroll": true
+   },
+   "holds": []
+  },
+  "section": {
+   "affordances": {
+    "get": false,
+    "open": true,
+    "read": true,
+    "search": true
+   },
+   "holds": [
+    "in",
+    "on"
+   ]
+  },
+  "spoon": {
+   "affordances": {
+    "get": true
+   },
+   "holds": []
+  },
+  "sprig": {
+   "affordances": {
+    "burn": true,
+    "eat": true,
+    "get": true,
+    "smell": true,
+    "wave": true
+   },
+   "holds": []
+  },
+  "tray": {
+   "affordances": {
+    "get": true
+   },
+   "holds": [
+    "on"
+   ]
+  }
+ },
+ "label": "world-05",
+ "rooms": 8,
+ "rule_failures": {},
+ "state_groups": {
+  "fullness": {
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "openness": {
+   "ends_on_move": false,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  },
+  "posture": {
+   "ends_on_move": true,
+   "exclusive": true,
+   "prevents_acting": false,
+   "prevents_moving": false,
+   "prevents_speaking": false
+  }
+ },
+ "state_vocabulary": {
+  "closed": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "shut tight, interior inaccessible"
+  },
+  "empty": {
+   "conflicts": [],
+   "group": "fullness",
+   "means": "completely consumed or drained"
+  },
+  "full": {
+   "conflicts": [],
+   "group": "fullness",
+   "means": "filled to capacity"
+  },
+  "halfempty": {
+   "conflicts": [],
+   "group": "fullness",
+   "means": "partially consumed"
+  },
+  "open": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "not closed, contents or interior exposed"
+  },
+  "seated": {
+   "conflicts": [],
+   "group": "posture",
+   "means": "resting the body's weight on the buttocks or thighs"
+  }
+ },
+ "trait_vocabulary": {
+  "stamina": {
+   "base": 100,
+   "max": 100,
+   "means": "physical energy and satiety",
+   "min": 0,
+   "name": "Stamina",
+   "trait_type": "gauge"
+  }
+ },
+ "verb_rules": {
+  "check#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "read"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "drink#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "empty"
+     ],
+     "remove": [
+      "full",
+      "half-empty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "change": 5,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "drink"
+     ],
+     "lacks": [
+      "empty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "eat#direct": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "type": "destroy_object"
+    },
+    {
+     "change": 10,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    },
+    "direct": {
+     "has": [
+      "eat"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "hand#direct": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "preposition": "in",
+     "to": "target",
+     "type": "move_object"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "nod": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "nod#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "open#direct": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "open"
+     ],
+     "lacks": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "read"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct,target": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "read"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "read"
+     ],
+     "is": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "shrug": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "sigh": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "sit#target": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "seated"
+     ],
+     "role": "actor",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "lacks": [
+      "seated"
+     ]
+    },
+    "target": {
+     "has": [
+      "sit"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "stow#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "Stowing an item is simply putting it away in your inventory or a container, which is basic inventory management already handled by the game.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "wave#direct": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "holds": [
+      "direct"
+     ]
+    }
+   },
+   "valid": true
+  }
+ }
+}

@@ -129,6 +129,33 @@ def _resolve(effect, key, bound, room, actor):
     return obj
 
 
+#: Effects whose return value is the whole of what the player should read.
+#:
+#: Ordinarily an effect's text is an aside broadcast to the room -- "the candle
+#: is now lit" beside a narrated sentence somebody paid for. These are not
+#: asides: they ARE the answer, they go to whoever acted rather than to the
+#: room, and asking a model to narrate on top of one would both cost money and
+#: talk over the thing it was asked to describe.
+#:
+#: This is why `describe` is allowed to be the only effect in the vocabulary
+#: that `conditions.achieves` cannot read backwards. Nothing is ever a goal "to
+#: have been told something"; what an NPC wants from looking is whatever an
+#: `after` rule does next, and that is a `set_trait` or a `set_state` like any
+#: other. See docs/rulebooks-from-inform.md 8.1.
+SPEAKS_FOR_ITSELF = ("describe",)
+
+
+def speaks_for_itself(effects):
+    """Whether this rule's own effects are the answer the player reads."""
+    for effect in (effects or []):
+        try:
+            if str(effect.get("type") or "") in SPEAKS_FOR_ITSELF:
+                return True
+        except AttributeError:
+            continue
+    return False
+
+
 def _apply_one(actor, room, effect, bound, world_root):
     from world import verbs
 
@@ -145,6 +172,27 @@ def _apply_one(actor, room, effect, bound, world_root):
             return None
         where = "is now here" if location is room else "is now carried"
         return f"{obj.get_numbered_name(1, None, return_string=True)} {where}."
+
+    if etype == "describe":
+        # The one effect that changes nothing and only says something.
+        #
+        # Looking has to produce prose, and must not pay a model for it: the
+        # appearance is already assembled from the thing as written, the states
+        # it is in, and whatever is placed on it. So the carry-out rule for
+        # looking returns that, and `attempt` skips the narration call when a
+        # rule speaks for itself -- see SPEAKS_FOR_ITSELF below.
+        obj = _resolve(effect, "name", bound, room, actor)
+        if obj is None:
+            return None
+        said = obj.return_appearance(actor)
+        # The hook a look has always fired. Keeping it means everything hung on
+        # being examined -- an NPC noticing, a trap arming -- still happens now
+        # that the look arrives through the pipeline instead of the command.
+        try:
+            obj.at_desc(looker=actor)
+        except Exception as exc:
+            logger.log_info(f"at_desc failed on {obj}: {exc}")
+        return said
 
     if etype == "destroy_object":
         obj = _resolve(effect, "name", bound, room, actor)
@@ -180,6 +228,22 @@ def _apply_one(actor, room, effect, bound, world_root):
             ok, message = relations.place(obj, host, preposition, quiet=True)
             return message if ok else None
 
+        # Another room entirely, named the way a rule can name one. Until now
+        # `to` reached the actor, this room, or a role -- never a different
+        # place -- so a ship that launched could not put anything anywhere, and
+        # nor could a verb that sent a letter or emptied a bin.
+        if where not in ("actor", "room"):
+            from world import coords
+
+            elsewhere = coords.room_named(world_root, where)
+            if elsewhere is None:
+                return None
+            if not obj.move_to(elsewhere, quiet=True):
+                return None
+            relations.displace(obj)
+            label = obj.get_numbered_name(1, None, return_string=True)
+            return f"{label.capitalize()} is gone."
+
         destination = actor if where == "actor" else room
         if obj.move_to(destination, quiet=True):
             # It is in a hand or on a floor now, not on or in anything.
@@ -188,6 +252,43 @@ def _apply_one(actor, room, effect, bound, world_root):
             return (f"{actor.get_display_name(actor)} takes {label}." if destination is actor
                     else f"{label.capitalize()} is set down.")
         return None
+
+    if etype == "set_exit":
+        # Where a way out of here leads. The effect a launching ship needs: its
+        # airlock opened onto a landing pad a moment ago and opens onto a dock
+        # now, and nothing in the vocabulary could say so -- exits were built by
+        # `worldgen` and never touched again.
+        #
+        # Rooms are named rather than referenced. A dbref means nothing to
+        # whoever writes the rule and is wrong the moment a world is rebuilt,
+        # so the name a world calls a place is the only thing a rule may use.
+        from world import coords
+
+        name = str(effect.get("exit") or effect.get("name") or "").strip()
+        if not name:
+            return None
+        found = [e for e in room.exits
+                 if str(e.key or "").strip().lower() == name.lower()
+                 or name.lower() in [str(a).lower() for a in (e.aliases.all()
+                                                              or [])]]
+        if not found:
+            return None
+        exit_obj = found[0]
+
+        wanted = str(effect.get("to") or "").strip()
+        if not wanted:
+            return None
+        elsewhere = coords.room_named(world_root, wanted)
+        if elsewhere is None or elsewhere is room:
+            return None
+        if exit_obj.destination is elsewhere:
+            return None                 # already there; say nothing twice
+        exit_obj.destination = elsewhere
+        # A way that was waiting to be built no longer is: it leads somewhere
+        # real, and generating a second room behind it would strand this one.
+        exit_obj.db.pending_generation = False
+        return (f"{exit_obj.get_numbered_name(1, None, return_string=True)}"
+                f" leads somewhere else now.")
 
     if etype == "modify_object":
         obj = _resolve(effect, "name", bound, room, actor)

@@ -1,0 +1,1643 @@
+{
+ "engine": "verb_rules",
+ "exported": "2026-09-10",
+ "kind_specs": {},
+ "label": "world-01",
+ "rooms": 36,
+ "rule_failures": {},
+ "state_groups": {
+  "cleanliness": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "fire": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "foldedness": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "growth_status": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "openness": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "partedness": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "search_status": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "smoothness": {
+   "ends_on_move": false,
+   "exclusive": true
+  },
+  "wetness": {
+   "ends_on_move": false,
+   "exclusive": true
+  }
+ },
+ "state_vocabulary": {
+  "clean": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "free from dirt or stains"
+  },
+  "closed": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "shut and blocking access"
+  },
+  "crumpled": {
+   "conflicts": [],
+   "group": "smoothness",
+   "means": "wrinkled and crushed out of its original flat shape"
+  },
+  "dirty": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "covered or marked with an unclean substance"
+  },
+  "dry": {
+   "conflicts": [],
+   "group": "wetness",
+   "means": "free from moisture"
+  },
+  "dusty": {
+   "conflicts": [],
+   "group": "cleanliness",
+   "means": "covered with a layer of fine powder or dirt"
+  },
+  "folded": {
+   "conflicts": [],
+   "group": "foldedness",
+   "means": "bent over on itself so that one part of it covers another"
+  },
+  "growing": {
+   "conflicts": [],
+   "group": "growth_status",
+   "means": "rooted in the ground and living"
+  },
+  "harvested": {
+   "conflicts": [],
+   "group": "growth_status",
+   "means": "picked or cut from where it grew"
+  },
+  "lit": {
+   "conflicts": [],
+   "group": "fire",
+   "means": "burning and producing light"
+  },
+  "open": {
+   "conflicts": [],
+   "group": "openness",
+   "means": "allowing access to the inside or passage through"
+  },
+  "parted": {
+   "conflicts": [],
+   "group": "partedness",
+   "means": "pushed aside or separated to reveal what is behind or beneath"
+  },
+  "searched": {
+   "conflicts": [],
+   "group": "search_status",
+   "means": "has been thoroughly examined for hidden things"
+  },
+  "smooth": {
+   "conflicts": [],
+   "group": "smoothness",
+   "means": "flat and unwrinkled"
+  },
+  "unfolded": {
+   "conflicts": [],
+   "group": "foldedness",
+   "means": "opened out and flat"
+  },
+  "unlit": {
+   "conflicts": [],
+   "group": "fire",
+   "means": "not burning or producing light"
+  },
+  "wet": {
+   "conflicts": [],
+   "group": "wetness",
+   "means": "covered or soaked with liquid"
+  }
+ },
+ "trait_vocabulary": {
+  "perception": {
+   "base": 10,
+   "descs": {
+    "10": "observant",
+    "20": "eagle-eyed",
+    "5": "oblivious"
+   },
+   "means": "ability to notice hidden or subtle things",
+   "name": "Perception",
+   "trait_type": "counter"
+  },
+  "stamina": {
+   "base": 100,
+   "max": 100,
+   "means": "physical energy and endurance",
+   "min": 0,
+   "name": "Stamina",
+   "trait_type": "gauge"
+  },
+  "strength": {
+   "base": 10,
+   "descs": {
+    "10": "average",
+    "20": "strong",
+    "30": "mighty",
+    "5": "feeble"
+   },
+   "means": "physical power and muscle",
+   "min": 0,
+   "name": "Strength",
+   "trait_type": "counter"
+  }
+ },
+ "verb_rules": {
+  "clear#direct:breakable,flammable,wet_able,wieldable": {
+   "check": {
+    "against": null,
+    "difficulty": 10.0,
+    "trait": "strength"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -10,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "parted"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -2,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "lacks": [
+      "parted"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "clear#direct:edible,flammable,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "type": "destroy_object"
+    },
+    {
+     "change": -5,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "clearable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "clear#direct:flammable,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "Clearing a brush removes tangled hair and grime from its bristles, leaving it clean and ready to use again.",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "is": [
+      "dirty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "drink#direct:drinkable": {
+   "check": null,
+   "effects": [
+    {
+     "change": 10,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    },
+    {
+     "name_role": "direct",
+     "type": "destroy_object"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "drinkable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "eat#direct:breakable,edible": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "type": "destroy_object"
+    },
+    {
+     "change": 10,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "edible"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "eat#direct:edible": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "type": "destroy_object"
+    },
+    {
+     "change": 15,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "edible"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "eat#direct:edible,flammable,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "name_role": "direct",
+     "type": "destroy_object"
+    },
+    {
+     "change": 5,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "edible"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "find#direct:flammable,wet_able,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "An object must already be present and found to be acted upon, making 'find' invalid as a direct action on it.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "fold#direct:flammable,readable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "folded"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "foldable"
+     ],
+     "lacks": [
+      "folded"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "fold#direct:wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "folded"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "foldable"
+     ],
+     "lacks": [
+      "folded"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "gather#direct:edible": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "harvested"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "name_role": "direct",
+     "to": "actor",
+     "type": "move_object"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "harvestable"
+     ],
+     "is": [
+      "growing"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "gather#direct:edible,flammable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "harvested"
+     ],
+     "remove": [
+      "growing"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "name_role": "direct",
+     "to": "actor",
+     "type": "move_object"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "gatherable"
+     ],
+     "is": [
+      "growing"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "get#direct:container": {
+   "check": null,
+   "effects": [],
+   "reason": "Getting or taking an item is a fundamental engine command already handled by the game, not a custom verb rule.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:container,openable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "Getting or taking an item is a core game engine function and does not need to be defined as a custom rule.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:edible": {
+   "check": null,
+   "effects": [],
+   "reason": "The verb 'get' is simply a way of taking something in hand or into inventory, which is a core action already handled by the game engine.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:edible,flammable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already knows how to pick up and carry items, so 'get' does not need a custom rule.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:edible,flammable,sliceable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles taking, dropping, and holding items natively, so basic inventory commands like 'get' do not need custom rules.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:edible,flammable,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "harvested"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "name_role": "direct",
+     "to": "actor",
+     "type": "move_object"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "harvested"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "get#direct:edible,rollable,sliceable,throwable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already handles basic inventory management and taking objects into your possession, so picking up an item does not need a custom rule.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:flammable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game engine already knows how to get, take, and drop objects, so defining a verb for picking things up is unnecessary.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:flammable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "Getting or taking an object into inventory is a fundamental game engine action that is handled natively, not a custom verb rule.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:readable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "Getting, taking, and dropping items are fundamental inventory actions handled automatically by the game engine rather than defined as custom verbs.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already knows how to pick up and carry items, so getting or taking things is a built-in action that does not need a custom rule.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "get#direct:wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "The game already natively handles picking up, taking, and holding items, so basic inventory commands like 'get' do not need a custom rule.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "give#direct:container,flammable,openable|target:container,flammable,openable": {
+   "check": null,
+   "effects": [],
+   "reason": "Transferring items between characters is a fundamental inventory action handled by the game engine, not a custom object rule.",
+   "repeatable": true,
+   "requires": {},
+   "valid": false
+  },
+  "light#direct:breakable,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "lit"
+     ],
+     "remove": [
+      "unlit"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "lightable"
+     ],
+     "is": [
+      "unlit"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "lightly#direct:flammable,wet_able,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "\"Lightly\" is an adverb describing how an action is done, not a verb that can define an action itself.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "look#container:container,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "container": {
+     "has": [
+      "container"
+     ],
+     "lacks": [
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "look#direct:climbable,container,flammable,surface": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "look#direct:edible": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "look#direct:flammable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "look#target:breakable,container,flammable,openable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": false,
+   "requires": {},
+   "valid": true
+  },
+  "look#target:container,diggable,flammable,searchable,surface,wet_able": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "look#target:flammable,wet_able,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "measure#direct:plain": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "measurable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "nod#none": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "open#direct:container": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [
+      "closed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "is": [
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:container,flammable,openable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:container,openable,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [
+      "closed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "is": [
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "open#direct:container,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "open"
+     ],
+     "remove": [
+      "closed"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "openable"
+     ],
+     "lacks": [
+      "open"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "part#direct:edible,flammable,squeezable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "parted"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "partable"
+     ],
+     "lacks": [
+      "parted"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "pull#direct:edible,flammable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "Pulling an object to pick it up is a standard 'take' action already handled by the game, and a loose sprig is not attached to anything to require pulling.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "reach#container:container,flammable,openable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "searched"
+     ],
+     "role": "container",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "container": {
+     "has": [
+      "container"
+     ],
+     "lacks": [
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:flammable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:readable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "read#direct:readable,wieldable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "readable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "ring#direct:ringable,strikeable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "ringable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:container,diggable,flammable,searchable,surface,wet_able": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "searchable"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:container,openable,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "container"
+     ],
+     "lacks": [
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:container,wearable": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "container"
+     ],
+     "lacks": [
+      "closed"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:diggable,searchable,surface,wet_able": {
+   "check": {
+    "against": null,
+    "difficulty": 10.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -5,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "searchable"
+     ],
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:flammable,readable": {
+   "check": null,
+   "effects": [],
+   "reason": "A printed document is read rather than searched, as it is a flat object that cannot physically conceal hidden items.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "search#direct:plain": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "searched"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "has": [
+      "searchable"
+     ],
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#direct:sittable,surface": {
+   "check": {
+    "against": null,
+    "difficulty": 10.0,
+    "trait": "perception"
+   },
+   "effects": {
+    "failure": [
+     {
+      "change": -2,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ],
+    "success": [
+     {
+      "add": [
+       "searched"
+      ],
+      "role": "direct",
+      "type": "set_state"
+     },
+     {
+      "change": -1,
+      "role": "actor",
+      "trait": "stamina",
+      "type": "set_trait"
+     }
+    ]
+   },
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 2
+      }
+     }
+    },
+    "direct": {
+     "lacks": [
+      "searched"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "search#target:edible,flammable": {
+   "check": null,
+   "effects": [],
+   "reason": "Searching for more of an item is an action upon the surrounding location rather than the item itself, and rules cannot refer to the environment.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "set#direct:edible": {
+   "check": null,
+   "effects": [],
+   "reason": "Setting or placing an object down is already handled by the game's standard placement verbs.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "set#direct:resonant,ringable": {
+   "check": null,
+   "effects": [],
+   "reason": "Setting an object down is simply putting or dropping it, which is already handled by the game's basic inventory and placement mechanics.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "smooth#direct:climbable": {
+   "check": null,
+   "effects": [],
+   "reason": "A solid wrought iron lamppost cannot be smoothed out like crumpled paper or fabric.",
+   "repeatable": false,
+   "requires": {},
+   "valid": false
+  },
+  "smooth#direct:container,wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "smooth"
+     ],
+     "remove": [
+      "crumpled"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "smooth"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "smooth#direct:flammable,readable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "smooth"
+     ],
+     "remove": [
+      "crumpled"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "is": [
+      "crumpled"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "smooth#direct:plain": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "smooth"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "smoothable"
+     ],
+     "lacks": [
+      "smooth"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "smooth#direct:readable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "smooth"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": false,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "smooth"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "smooth#direct:sittable,surface,wet_able": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "surface"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "splash#direct:drinkable|target:sittable,surface,wet_able": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "wet"
+     ],
+     "role": "target",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "target": {
+     "has": [
+      "wet_able"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "splash#direct:sittable,surface,wet_able": {
+   "check": null,
+   "effects": [],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "wet_able",
+      "surface"
+     ],
+     "is": [
+      "wet"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "squeeze#direct:edible,flammable,squeezable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "dry"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "has": [
+      "squeezable"
+     ],
+     "lacks": [
+      "dry"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "sweep#direct:sittable,surface,wet_able": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean"
+     ],
+     "remove": [
+      "dirty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "change": -5,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "surface"
+     ],
+     "lacks": [
+      "clean"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "sweep#none": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "change": -5,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "sweepable"
+     ],
+     "lacks": [
+      "clean"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wash#direct:sittable,surface,wet_able": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "wet",
+      "clean"
+     ],
+     "remove": [
+      "dry",
+      "dirty"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "change": -5,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 5
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "wet_able"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "water#direct:container,diggable,flammable,searchable,surface,wet_able": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "wet"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "change": -2,
+     "role": "actor",
+     "trait": "stamina",
+     "type": "set_trait"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "actor": {
+     "trait": {
+      "stamina": {
+       "min": 2
+      }
+     }
+    },
+    "direct": {
+     "has": [
+      "wet_able"
+     ],
+     "lacks": [
+      "wet"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wipe#direct:climbable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "is": [
+      "dirty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wipe#direct:climbable,sittable,surface": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean",
+      "dry"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "wipe#direct:edible": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean",
+      "dry"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {},
+   "valid": true
+  },
+  "wipe#direct:readable,sittable,surface|instrument:flammable,wet_able,wieldable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    },
+    {
+     "add": [
+      "dirty"
+     ],
+     "role": "instrument",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "clean"
+     ]
+    },
+    "instrument": {
+     "lacks": [
+      "dirty"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wipe#direct:sittable,surface,wet_able": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "dry"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "is": [
+      "wet"
+     ]
+    }
+   },
+   "valid": true
+  },
+  "wipe#direct:wearable": {
+   "check": null,
+   "effects": [
+    {
+     "add": [
+      "clean"
+     ],
+     "role": "direct",
+     "type": "set_state"
+    }
+   ],
+   "reason": "",
+   "repeatable": true,
+   "requires": {
+    "direct": {
+     "lacks": [
+      "clean"
+     ]
+    }
+   },
+   "valid": true
+  }
+ }
+}

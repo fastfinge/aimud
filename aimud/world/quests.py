@@ -129,6 +129,8 @@ def offer(npc, character, title, description, conditions,
         )
         return None
 
+    # No owner: this errand is the player's to do, and a delivery back to
+    # the character who asked for it is the commonest shape an errand has.
     clean = goals.sanitise(conditions)
     if not clean:
         logger.log_info(f"quest offer from {npc.key} discarded: no testable goal")

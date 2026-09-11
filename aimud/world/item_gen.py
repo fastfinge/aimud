@@ -6,12 +6,8 @@ Two models are used (configured separately via the `models` command):
   items       — creates the object with name, description, and takeability
 """
 
-import json
-import urllib.request
+from world import llm
 
-from twisted.internet import threads
-
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 _EXISTENCE_SYSTEM_PROMPT = """You are a game master for a text MUD deciding if an object could plausibly exist in a room.
 Respond with JSON only: {"valid": true|false, "reason": "one sentence"}
@@ -40,6 +36,7 @@ Respond with a single JSON object — no other text:
   "kinds": [],
   "qualifiers": ["blue", "ceramic"],
   "sense": "",
+  "under": "",
   "holds": ["in"],
   "affordances": {"read": true, "burn": true},
   "states": ["dusty"],
@@ -61,6 +58,12 @@ filing both under "can" makes the world think you can drink from a paint
 sprayer. Same for a "watering can", a "walking stick", a "fire door". When in
 doubt ask whether the plain noun would do the same things; if it would not,
 the word stays in the kind.
+
+under is only for a kind the dictionary has never heard of -- a datapad, a
+holodeck, a hyperdrive. Those have no sort of thing above them, so nothing
+knows a datapad is a device, and a rule written about devices could never
+reach one. Name the nearest real sense when you are asked for one, and leave
+it empty otherwise, which is the ordinary case.
 
 qualifiers are the describing words you took off it — what makes this one
 different from the others of its kind. Colour, material, make, whose it is.
@@ -92,26 +95,6 @@ usually empty for a new object.
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
-
-def _call_openrouter(api_key, model, messages):
-    payload = {"model": model, "messages": messages}
-    # The sampling settings chosen for this job ride on the model choice. See
-    # world.model_params: only what the player actually set is sent.
-    from world.model_params import of as _settings
-
-    payload.update(_settings(model))
-    req = urllib.request.Request(
-        OPENROUTER_URL,
-        data=json.dumps(payload).encode(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read().decode())
-    return result["choices"][0]["message"]["content"]
 
 
 def _parse_json(content):
@@ -177,7 +160,7 @@ def validate_object_existence(account, room, object_name, on_valid, on_invalid, 
     ]
 
     def _fetch():
-        return _call_openrouter(api_key, model, messages)
+        return llm.ask(api_key, model, messages)
 
     def _done(content):
         try:
@@ -193,7 +176,7 @@ def validate_object_existence(account, room, object_name, on_valid, on_invalid, 
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+    llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
 def validate_object_takeable(account, room, obj, on_valid, on_invalid, on_error):
@@ -224,7 +207,7 @@ def validate_object_takeable(account, room, obj, on_valid, on_invalid, on_error)
     ]
 
     def _fetch():
-        return _call_openrouter(api_key, model, messages)
+        return llm.ask(api_key, model, messages)
 
     def _done(content):
         try:
@@ -240,7 +223,7 @@ def validate_object_takeable(account, room, obj, on_valid, on_invalid, on_error)
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+    llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
 def generate_item(account, room, object_name, on_success, on_error):
@@ -262,6 +245,11 @@ def generate_item(account, room, object_name, on_success, on_error):
     # a chest, a board, a bar. Empty for almost everything, and a sword or a
     # bottle never costs a token for it.
     which_sense = lexicon.sense_prompt(object_name)
+    # And for a noun no dictionary knows, what sort of thing it is at all --
+    # asked here because this is the one generator that is told the name in
+    # advance. The contents and clothing passes invent their own names, so they
+    # answer the `under` field in the spec instead.
+    which_anchor = lexicon.anchor_prompt(object_name)
 
     messages = [
         {"role": "system",
@@ -274,13 +262,14 @@ def generate_item(account, room, object_name, on_success, on_error):
                 f"{_world_and_room(room, 'items')}\n\n"
                 f"{gear.prompt_block(room.db.world_root if room else None)}"
                 f"{which_sense}"
+                f"{which_anchor}"
                 f"Generate the item the player is examining: '{object_name}'"
             ),
         },
     ]
 
     def _fetch():
-        return _call_openrouter(api_key, model, messages)
+        return llm.ask(api_key, model, messages)
 
     def _done(content):
         try:
@@ -317,7 +306,7 @@ def generate_item(account, room, object_name, on_success, on_error):
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    threads.deferToThread(_fetch).addCallbacks(_done, _fail)
+    llm.fetch(_fetch, on_success=_done, on_error=_fail)
 
 
 # ---------------------------------------------------------------------------

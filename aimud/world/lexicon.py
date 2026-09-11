@@ -104,8 +104,15 @@ def warm():
     half while the indices are built, and that second and a half should be
     spent while the server is starting rather than inside the first command
     somebody types.
+
+    The causation index is built here too, for the same reason and out of the
+    same pass: it walks every verb synset once, and doing that inside whichever
+    command first wanted a planner hint would be a visible pause for nothing.
     """
-    return _wordnet() is not None
+    ready = _wordnet() is not None
+    if ready:
+        _caused_by()
+    return ready
 
 
 def available():
@@ -288,6 +295,40 @@ def buckets(sense):
     )
 
 
+def word_of(sense):
+    """
+    The plain word a sense is about: "chest.n.02" -> "chest".
+
+    A synset id is written for a machine but it carries its own lemma, which
+    is the one part of it meant for a person -- and a person is who asks, since
+    this exists for `help chest` rather than for anything the game decides. No
+    corpus needed, and a bare noun (which is what a kind is when WordNet has
+    never heard of it) comes back as itself.
+    """
+    name = str(sense or "").strip().lower()
+    if not name:
+        return ""
+    return name.split(".")[0].replace("_", " ")
+
+
+def definition(sense):
+    """
+    What WordNet says a sense is, or "" when there is no corpus.
+
+    The gloss, which is the sentence that tells a box from a ribcage. Only ever
+    shown to a player: nothing in the game decides anything by it, which is the
+    rule this module keeps -- a lexicon is asked what a word can be, never what
+    it means here.
+    """
+    synset = _synset(sense)
+    if synset is None:
+        return ""
+    try:
+        return synset.definition() or ""
+    except Exception:
+        return ""
+
+
 def senses(word, pos="n", limit=12):
     """
     The senses a word has, as [(id, definition)], for a model to choose from.
@@ -307,6 +348,31 @@ def senses(word, pos="n", limit=12):
         return [(s.name(), s.definition()) for s in found]
     except Exception:
         return []
+
+
+def settled_noun_sense(word):
+    """
+    The sense a noun can be ground in without asking anybody, or "".
+
+    The counterpart of `needs_sense_choice`, and it follows from it. That
+    function's whole argument is that most ambiguity does not matter for
+    deciding what *sort of thing* something is: "book" has eleven senses and
+    ten of them are abstractions that "say nothing about what sort of object is
+    being made, so any of them would answer the same". If any of them would
+    answer the same, the first will do, and nobody needs to be asked.
+
+    So this is deliberately the frequency-ordered first sense -- the thing
+    `lexicon.py` warns against everywhere else -- and it is safe here for
+    exactly one reason: it is only reached for words whose senses do not
+    disagree about the answer being asked for. A word whose senses do disagree
+    goes to `sense_prompt` and a generator that can see the room.
+
+    Empty for a word with no senses at all, which is the case an anchor is for.
+    """
+    if not word or needs_sense_choice(word):
+        return ""
+    listed = senses(word, pos="n", limit=1)
+    return listed[0][0] if listed else ""
 
 
 def needs_sense_choice(word):
@@ -371,10 +437,23 @@ def implied_affordances(sense):
     into two. Anything the taxonomy can pin down is one less thing that can
     drift.
     """
+    return implied_by(ancestors(sense))
+
+
+def implied_by(senses):
+    """
+    The same, for a chain of senses somebody else worked out.
+
+    `world.kinds` follows an invented noun's anchor to get its ancestry, so it
+    arrives holding the senses rather than a name to look them up from. This
+    keeps the bucket tables in here, where they are defined, rather than having
+    another module reach in for them.
+    """
+    names = frozenset(senses or ())
     return frozenset(
         _BUCKET_AFFORDANCES[bucket]
-        for bucket in buckets(sense)
-        if bucket in _BUCKET_AFFORDANCES
+        for name, bucket in KIND_BUCKETS.items()
+        if name in names and bucket in _BUCKET_AFFORDANCES
     )
 
 
@@ -460,6 +539,76 @@ _MEASURES = frozenset("""
 # What a verb is a way of doing
 # ---------------------------------------------------------------------------
 
+def _verb_synsets(word, spread=2):
+    """
+    The senses a verb reference names: exact for an id, guessed for a word.
+
+    Everything below reads verb relations, and every one of them is only as
+    right as the sense it starts from. Given `launch.v.03` there is nothing to
+    guess. Given `launch` there is, and the guess is wrong often enough to
+    matter -- WordNet orders senses by how often they turned up in a 1990s
+    newspaper corpus, so the first sense of `launch` is `establish.v.01`, "set
+    up or found", and everything read from it is about founding institutions.
+
+    So the guess is narrow by default and every caller is written to prefer a
+    recorded id. `world.actions` records one per verb for exactly this reason.
+
+    How wide the guess may safely be depends on how common the relation is,
+    which is why `spread` is a parameter rather than a constant:
+
+        95.9% of verb synsets have a hypernym    -- dense
+         2.8% have an entailment                 -- sparse
+         1.6% have a cause                       -- very sparse
+
+    A dense relation is reachable from any sense, so a wide guess mostly finds
+    answers about the wrong sense: that is the `launch` -> `establish` ->
+    `open` road. A sparse one is different -- when 1.6% of senses have a cause
+    at all, a sense that has one is telling us something, and looking past the
+    first two costs almost no risk of finding the wrong thing. Measured: a
+    spread of four recovers `ring` -> `sound` and `break` -> `break`, and
+    anything beyond four adds nothing at all.
+    """
+    wordnet = _wordnet()
+    if wordnet is None or not word:
+        return []
+    word = str(word).strip()
+    exact = _synset(word)
+    if exact is not None:
+        return [exact]
+    try:
+        return wordnet.synsets(lemma(word, "v"), pos="v")[:spread]
+    except Exception:
+        return []
+
+
+def _related_verbs(word, relation, limit, keep_self=False, spread=2):
+    """
+    Words reached from `word` by a verb-to-verb relation, nearest first.
+
+    `keep_self` decides what happens when the relation leads back to the same
+    word, and the two answers are both right for different relations. Nothing
+    is served by reporting that opening is a way of opening, so an ancestor
+    that spells the same is dropped. But `open` *causing* `open` is the
+    causative pair -- the transitive verb beside the intransitive change it
+    produces -- and that is the single most useful thing this file can say
+    about a verb, so `causes` keeps it.
+    """
+    out = []
+    for synset in _verb_synsets(word, spread):
+        try:
+            found = getattr(synset, relation)()
+        except Exception:
+            continue
+        for other in found:
+            said = word_of(other.name())
+            if said in out:
+                continue
+            if not keep_self and said == word_of(word):
+                continue
+            out.append(said)
+    return out[:limit]
+
+
 def verb_ancestors(verb, limit=3):
     """
     The verbs a verb is a way of performing, nearest first.
@@ -473,18 +622,241 @@ def verb_ancestors(verb, limit=3):
     opening; it does not say that prying wants a crowbar, and a rule that
     inherited `open` wholesale would quietly lose the instrument. The caller
     puts this in a prompt beside the learned rule, never in place of it.
+
+    `verb` may be a recorded sense id, and should be wherever one is known.
+    Handed the bare word `launch` this answers `['open', 'propel']` -- `open`
+    because the commonest sense of launching is founding something, whose
+    hypernym is `open.v.02`. That is the world's `open` rule offered as the
+    starting point for writing `launch`, for a spacecraft. Handed
+    `launch.v.03` it answers about launching.
     """
+    return _related_verbs(verb, "hypernyms", limit)
+
+
+def entailments(verb, limit=3):
+    """
+    The verbs doing this one necessarily involves.
+
+    Snoring entails sleeping; soaping entails washing. Which makes it the one
+    verb relation that transfers a *precondition* soundly: if A cannot happen
+    without B, then whatever B requires, A requires. 408 pairs in all of
+    WordNet, and sense-disambiguated, so it is small and precise rather than
+    broad -- 17% of the verbs the exported worlds learned have one.
+    """
+    return _related_verbs(verb, "entailments", limit, spread=4)
+
+
+def causes(verb, limit=3):
+    """
+    The verbs this one brings about.
+
+    Only 220 pairs exist, and among the verbs these worlds actually learn they
+    are almost all one thing -- the causative pair, a transitive verb beside
+    the intransitive change it produces:
+
+        open  causes open.v.03      kill causes die.v.01
+        fill  causes fill.v.02      dry  causes dry.v.02
+
+    Which is the link this game has needed and never had: the verb a player
+    types, joined to the condition it leaves behind. `world.affordances`
+    already observes that "burn and burning are one idea correctly split
+    across two registers"; nothing anywhere computed it. This does, for a
+    tenth of every verb a world learns, for nothing.
+
+    Read the other way it answers a different and equally useful question --
+    which verbs would bring a condition about -- and there it is deliberately
+    many-to-one. See docs/rulebooks-from-inform.md 5.1 for why that makes it a
+    planner's index and emphatically not a test of whether two verbs are the
+    same word.
+    """
+    return _related_verbs(verb, "causes", limit, keep_self=True,
+                          spread=4)
+
+
+#: The whole causation relation, inverted, built once and kept.
+#:
+#: None until somebody asks. WordNet holds about 220 `causes` pairs in total, so
+#: inverted it is a dict of a couple of hundred entries -- small enough to hold
+#: and far too small to be worth storing on disk. What it costs is one pass over
+#: the verb synsets, which `warm()` already pays for at startup.
+_CAUSED_BY = None
+
+
+def causing(word, limit=3):
+    """
+    The verbs that would bring `word` about, nearest first.
+
+    `causes` read backwards, and the direction that is actually useful to a
+    planner: to make something descend, drop it or lower it or fell it. The spec
+    is emphatic that this is **not** a test of whether two verbs are the same
+    word -- dropping and felling are not synonyms and nothing here claims they
+    are. It is a list of candidates for a world that has no rule about descending
+    and might be taught one.
+
+    Deliberately many-to-one. A condition has several ways to be brought about,
+    and that is the point: a caller takes the first that suits and the rest are
+    there when it does not.
+    """
+    wanted = word_of(str(word or "")) if word else ""
+    if not wanted:
+        return []
+    return list(_caused_by().get(wanted) or [])[:limit]
+
+
+def _caused_by():
+    """The inverted index, built on first use."""
+    global _CAUSED_BY
+    if _CAUSED_BY is not None:
+        return _CAUSED_BY
+
     wordnet = _wordnet()
-    if wordnet is None or not verb:
-        return []
-    try:
-        found = wordnet.synsets(lemma(verb, "v"), pos="v")
-    except Exception:
-        return []
-    out = []
-    for synset in found[:2]:
-        for parent in synset.hypernyms():
-            word = parent.name().split(".")[0].replace("_", " ")
-            if word != verb and word not in out:
-                out.append(word)
-    return out[:limit]
+    with _LOCK:
+        if _CAUSED_BY is not None:
+            return _CAUSED_BY
+        index = {}
+        if wordnet is not None:
+            try:
+                for synset in wordnet.all_synsets("v"):
+                    causer = word_of(synset.name())
+                    for caused in synset.causes():
+                        said = word_of(caused.name())
+                        # A verb that causes itself is the causative pair, and
+                        # it is no use as a candidate: a world with no way to
+                        # make something open does not need to be told to open
+                        # it, it needs the rule it has not got.
+                        if not said or said == causer:
+                            continue
+                        entry = index.setdefault(said, [])
+                        if causer not in entry:
+                            entry.append(causer)
+            except Exception as err:
+                logger.log_info(f"causation index unavailable ({err})")
+        _CAUSED_BY = index
+    return _CAUSED_BY
+
+
+def verb_senses(verb, limit=5):
+    """
+    The senses a verb has, as [(id, definition)], for a model to choose from.
+
+    Capped, because verbs are far more polysemous than nouns: the verbs these
+    worlds learned have a median of six senses and a third have ten or more --
+    `break` has 59. The noun trick of asking only when senses straddle a kind
+    bucket does not transfer, since nearly every verb would qualify. WordNet
+    orders by corpus frequency, so the answer is almost always among the first
+    few, and five short glosses once per verb per world is a rounding error.
+    """
+    return senses(verb, pos="v", limit=limit)
+
+
+def verb_sense_prompt(verb):
+    """
+    A block asking a model which sense of a verb it means, or "" without one.
+
+    Unlike the noun version this is offered for nearly every verb rather than
+    for the ambiguous few, because 98 of the 100 verbs the exported worlds
+    learned have a WordNet sense and most of those have several. The two that do
+    not are an adverb the old parser mistook for a verb and a misspelling, which
+    is its own small argument for asking.
+
+    Empty for a verb with one sense or none, because a menu of one is not a
+    question -- and one is not rare: `power`, `airlock` and `blaster` all have
+    exactly one. `settled_sense` is what a caller uses in that case.
+    """
+    listed = verb_senses(verb)
+    if len(listed) < 2:
+        return ""          # nothing to choose; see `settled_sense`
+    lines = "\n".join(f"  {name} -- {definition}"
+                      for name, definition in listed)
+    return (
+        f'"{verb}" has more than one meaning. Set "sense" to whichever of '
+        f"these this world means by it, given what is going on:\n{lines}\n"
+        f"Copy the identifier exactly. If none of them fits, leave "
+        f'"sense" empty and say what it means in your own words instead.\n'
+    )
+
+
+def settled_sense(verb):
+    """
+    The verb's sense when there is only one, so nobody need be asked.
+
+    Paired with `verb_sense_prompt`, which is empty in exactly this case. A
+    verb with one sense has already been disambiguated by English.
+    """
+    listed = verb_senses(verb, limit=2)
+    return listed[0][0] if len(listed) == 1 else ""
+
+def suggested_anchors(phrase, limit=4):
+    """
+    Senses an invented noun might hang under, drawn from a second corpus.
+
+    WordNet cannot help here by definition: the words section 7 is about are the
+    ones it has never heard of. ConceptNet sometimes has -- it is crowdsourced,
+    so somebody has typed "a datapad is a device" -- and `IsA` read forward is
+    that typing. Folded back into real senses here, because a kind is a synset
+    and this corpus answers in words, which is exactly what it may not be
+    trusted for.
+
+    Advisory, and it only ever pre-fills a menu somebody still chooses from.
+    Empty without a corpus, which is the ordinary case and not a failure.
+    """
+    from world import commonsense
+
+    found = []
+    for word in commonsense.kinds_of(phrase, limit=limit * 2):
+        sense = settled_noun_sense(head_noun(word))
+        if sense and sense not in found:
+            found.append(sense)
+    return found[:limit]
+
+
+def anchor_prompt(phrase):
+    """
+    A block asking what sort of thing an invented noun is, or "" for a real one.
+
+    The awkward case, and the reason it needs its own function: a noun WordNet
+    has never heard of has no senses to choose between, so there is no menu of
+    *its* meanings to offer. What can be offered is the small closed set of
+    senses the taxonomy actually reads -- `KIND_BUCKETS`, which is what a floor
+    is computed from -- plus leave to name something more precise, since an
+    answer is checked against the dictionary before it is believed either way.
+
+    Coarse on purpose. A datapad and a holodeck both landing under
+    `device.n.01` is not a loss: each is still its own kind, with its own
+    affordances and its own rules, and the anchor exists only so that they have
+    a taxonomy above them at all -- a floor to inherit, a hypernym a rule can
+    be filed against, and something for `prune` to recognise.
+    """
+    word = head_noun(phrase)
+    if not word or ancestors(word) or settled_noun_sense(word):
+        return ""
+    if needs_sense_choice(word):
+        return ""              # it has senses; `sense_prompt` is asking
+    listed = "\n".join(
+        f"  {name} -- {definition(name)}" for name in sorted(KIND_BUCKETS))
+
+    # A second corpus sometimes has heard of the word, being crowdsourced
+    # rather than curated -- somebody has typed that a datapad is a device.
+    # Offered at the top as a suggestion rather than used as an answer: it is
+    # advisory everywhere, and the menu below stands whether or not anything
+    # is suggested.
+    # Not filtered against the menu. The first draft left out anything already
+    # listed, which threw away the whole value: pointing at the right entry of a
+    # menu of eleven is more use than adding a twelfth.
+    hint = ""
+    proposed = suggested_anchors(word)
+    if proposed:
+        said = "\n".join(f"  {name} -- {definition(name)}"
+                          for name in proposed)
+        hint = (f"Something outside the dictionary suggests it may be one "
+                f"of these, which is a guess rather than a fact:\n{said}\n")
+
+    return (
+        f'"{word}" is not a word the dictionary knows, so nothing is known '
+        f"about what sort of thing it is. Set \"under\" to whichever of these "
+        f"it most nearly is:\n{listed}\n"
+        f"{hint}"
+        f"A more precise sense is welcome if you know one -- any WordNet "
+        f"identifier will do, and one that does not exist is ignored. Copy it "
+        f"exactly.\n"
+    )

@@ -11,6 +11,30 @@ with a location in the game world (like Characters, Rooms, Exits).
 from evennia.objects.objects import DefaultObject
 
 
+def _recount_a_place(host, gear, leaving=None):
+    """
+    Redo the sums for everybody in `host`, when `host` is somewhere to stand.
+
+    `gear.recompute` answers for one person, and a room is not a person: it has
+    no traits of its own, so calling it on a room returns at the first line and
+    nothing happens. Which was fine while a room was only ever a backdrop, and
+    stopped being fine the moment a room could be worth something to whoever was
+    in it -- carrying a lit lamp into a cellar lit it for the carrier and left
+    everybody else standing there in the dark.
+
+    The state half of this was already covered: putting a lamp out calls
+    `recompute_room` from the `set_state` effect. This is the other half, where
+    nothing changed about the lamp and everything changed about where it is.
+    """
+    from evennia.objects.objects import DefaultRoom
+
+    if isinstance(host, DefaultRoom):
+        # `without`, not `ignoring`: the thing on its way out is an item to
+        # discount, not a person to skip. Evennia says so before it happens, so
+        # the lamp is still standing in the room when we are told it is going.
+        gear.recompute_room(host, without=leaving)
+
+
 class ObjectParent:
     """
     This is a mixin that can be used to override *all* entities inheriting at
@@ -90,6 +114,7 @@ class ObjectParent:
         from world import gear
 
         gear.recompute(self)
+        _recount_a_place(self, gear)
 
     def at_object_leave(self, moved_obj, target_location, **kwargs):
         """
@@ -104,6 +129,7 @@ class ObjectParent:
 
         gear.release(moved_obj)
         gear.recompute(self, ignoring=moved_obj)
+        _recount_a_place(self, gear, leaving=moved_obj)
 
 
 class Object(ObjectParent, DefaultObject):
