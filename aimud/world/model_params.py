@@ -164,20 +164,27 @@ def range_note(param):
 
 class ModelChoice(str):
     """
-    A model id that carries the settings chosen for the job it was picked for.
+    A model id that carries the settings chosen for the job it was picked for,
+    and the name of that job.
 
     It is a string, so every existing use of it -- the payload, the `or`
     fallback chains, log lines -- goes on working untouched. The settings ride
     along because the job's name is known where the model is resolved and not
     where the request is built, and threading it through every call site would
     be a great deal of noise for one dictionary.
+
+    The job's *name* rides along for the same reason and one more: the ledger
+    wants to say what a call was for, and "commands" or "dialogue" is known
+    only here. Without it every recorded call would say it was for a model,
+    which nobody needs telling.
     """
 
-    __slots__ = ("params",)
+    __slots__ = ("params", "job")
 
-    def __new__(cls, model_id, params=None):
+    def __new__(cls, model_id, params=None, job=""):
         choice = super().__new__(cls, model_id or "")
         choice.params = dict(params or {})
+        choice.job = str(job or "")
         return choice
 
 

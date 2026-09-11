@@ -196,7 +196,7 @@ class Account(DefaultAccount):
 
         primary = functions[0] if functions else "default"
         return ModelChoice(chosen or self.DEFAULT_MODEL,
-                           self.get_params_for(primary))
+                           self.get_params_for(primary), job=primary)
 
 
 class Guest(DefaultGuest):

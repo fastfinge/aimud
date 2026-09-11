@@ -35,6 +35,7 @@ def at_server_start():
     _place_unmapped_worlds()
     _ensure_quest_deadline_script()
     _ensure_memory_sleep_script()
+    _claim_unowned_worlds()
     _normalise_world_modes()
     _warm_lexicon()
 
@@ -86,6 +87,25 @@ def _warm_lexicon():
             "lexicon: no WordNet corpus; word endings, kinds and senses will "
             "be guessed rather than looked up"
         )
+
+
+def _claim_unowned_worlds():
+    """
+    Write the creator back-link onto worlds made before there was one.
+
+    An account has always listed the worlds it made; a world has never said
+    who made it, and that is the direction a room needs in order to find out
+    whose key pays for what happens in it. One pass over accounts, and only
+    worlds with no answer yet are touched, so this costs nothing on every
+    subsequent boot. See world.sponsor.
+    """
+    from world.sponsor import backfill
+
+    claimed = backfill()
+    if claimed:
+        from evennia.utils import logger
+
+        logger.log_info(f"sponsor: claimed {claimed} world(s) for their makers")
 
 
 def _normalise_world_modes():

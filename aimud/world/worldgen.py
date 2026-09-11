@@ -1502,10 +1502,18 @@ def generate_first_room(account, spec, on_success, on_error,
 
                     lore.store(room, spec)
                     lore.apply_to_player(room, creator_character, spec)
-                    # Record this world on the account so `worlds` can list it.
+                    # Record this world on the account so `worlds` can list it,
+                    # and on the world so anything standing in it can find out
+                    # whose key pays for what happens here. Both directions,
+                    # because the two questions are asked from opposite ends:
+                    # `worlds` starts from a player, and a sponsor starts from
+                    # a room. See world.sponsor.
+                    from world import sponsor as sponsor_mod
+
                     created = account.db.created_worlds or []
                     created.append(room.id)
                     account.db.created_worlds = created
+                    sponsor_mod.claim(room, account)
                     on_success(room)
                     populate_room(account, room)
                     plan_zone(account, room, room.db.zone)
