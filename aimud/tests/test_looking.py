@@ -117,12 +117,20 @@ class WhatLookingCosts(Looking):
         self.assertFalse((self.thing.db.ai_commands or {}).get("look"))
 
     def test_the_room_is_not_told_that_somebody_looked(self):
-        room_said = []
+        """
+        Looking still happens -- it is an action, it has a verb and an object,
+        and something wanting to play a sound for it later will want to know.
+        What it does not have is anything for the room to read, which is what
+        `seen` says and what used to be said by an empty string.
+        """
+        raised = []
         with immediately(), replying("{}"):
             attempt_mod.attempt(
                 self.char1, "look lantern", FakeSponsor(),
-                on_message=lambda a, r=None: room_said.append(r or ""))
-        self.assertEqual([r for r in room_said if r], [])
+                on_message=lambda a, event=None: raised.append(event))
+        seen = [event for event in raised
+                if event is not None and event.seen]
+        self.assertEqual(seen, [])
 
 
 @tag("world")

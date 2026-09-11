@@ -106,10 +106,11 @@ class CmdAIDrop(_DefaultDrop):
             self.msg("That can't be dropped.")
             return
         obj.at_drop(caller)
-        caller.location.msg_contents(
-            f"$You() $conj(drop) "
-            f"{obj.get_numbered_name(1, caller, return_string=True)}.",
-            from_obj=caller)
+        from world import events
+
+        events.deliver(events.Event(
+            actor=caller, verb="drop", roles={"direct": obj},
+            room_template="{actor} drops {direct}."))
 
     def _drop_everything(self, sort=""):
         """
@@ -153,16 +154,19 @@ class CmdAIDrop(_DefaultDrop):
             return
 
         if dropped:
+            from world import events
+
             names = iter_to_str([clothing.item_name(obj, caller)
                                  for obj in dropped])
-            actor = caller.get_display_name(caller)
-            caller.msg(f"You put down {names}.")
-            room.msg_contents(f"{actor} puts down {names}.", exclude=caller)
-
-            from world.npc_gen import notify_npcs
-
-            notify_npcs(room, "action", actor, f"{actor} puts down {names}.",
-                        exclude=caller, actor=caller)
+            # One event per thing dropped, delivered as one sentence. Each
+            # viewer gets the names chosen for them rather than the names
+            # chosen for whoever did it. See world.events.
+            events.deliver_many(
+                [events.Event(actor=caller, verb="drop",
+                              roles={"direct": obj},
+                              room_template="{actor} puts down {direct}.")
+                 for obj in dropped],
+                actor_text=f"You put down {names}.", actor=caller, room=room)
 
         if kept:
             names = iter_to_str([clothing.item_name(obj, caller)

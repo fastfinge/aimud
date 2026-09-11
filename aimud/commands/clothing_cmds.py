@@ -33,17 +33,11 @@ def _find_carried(caller, query, worn=None):
     return found[0] if isinstance(found, (list, tuple)) else found
 
 
-def _announce(caller, actor_text, room_text):
+def _announce(caller, actor_text, event=None):
     """Tell the wearer, and tell the room if there was anything to see."""
-    if actor_text:
-        caller.msg(actor_text)
-    room = caller.location
-    if room_text and room:
-        room.msg_contents(room_text, exclude=caller)
-        from world.npc_gen import notify_npcs
+    from world import events
 
-        notify_npcs(room, "action", caller.get_display_name(caller),
-                    room_text, exclude=caller, actor=caller)
+    events.show(actor_text, event, caller)
 
 
 class CmdWear(Command):

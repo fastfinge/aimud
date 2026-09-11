@@ -303,7 +303,9 @@ def put_on(character, garment, wearstyle=True):
     covered = [g for g in character.contents if g.db.covered_by is garment]
     tail = f", covering {iter_to_str([_garment_name(g, character) for g in covered])}" \
         if covered else ""
-    return True, f"You put on {label}{tail}.", f"{name} puts on {label}{tail}."
+    return (True, f"You put on {label}{tail}.",
+            _event(character, "wear", garment,
+                   "{actor} puts on {direct}" + f"{tail}."))
 
 
 def take_off(character, garment):
@@ -323,7 +325,9 @@ def take_off(character, garment):
     name = character.get_display_name(character)
     tail = f", revealing {iter_to_str([_garment_name(g, character) for g in revealed])}" \
         if revealed else ""
-    return True, f"You take off {label}{tail}.", f"{name} takes off {label}{tail}."
+    return (True, f"You take off {label}{tail}.",
+            _event(character, "remove", garment,
+                   "{actor} takes off {direct}" + f"{tail}."))
 
 
 def cover_with(character, garment, covering):
@@ -339,16 +343,17 @@ def cover_with(character, garment, covering):
         return _refuse("That is covered up already.")
 
     if not covering.db.worn:
-        worn_ok, actor_text, room_text = put_on(character, covering)
+        worn_ok, actor_text, event = put_on(character, covering)
         if not worn_ok:
-            return False, actor_text, room_text
+            return False, actor_text, event
     garment.db.covered_by = covering
 
     label = _garment_name(garment, character)
     over = _garment_name(covering, character)
-    name = character.get_display_name(character)
     return (True, f"You cover {label} with {over}.",
-            f"{name} covers {label} with {over}.")
+            _event(character, "cover", garment,
+                   "{actor} covers {direct} with {instrument}.",
+                   instrument=covering))
 
 
 def uncover(character, garment):
@@ -358,7 +363,9 @@ def uncover(character, garment):
     garment.db.covered_by = False
     label = _garment_name(garment, character)
     name = character.get_display_name(character)
-    return True, f"You uncover {label}.", f"{name} uncovers {label}."
+    return (True, f"You uncover {label}.",
+            _event(character, "uncover", garment,
+                   "{actor} uncovers {direct}."))
 
 
 # ---------------------------------------------------------------------------
@@ -404,8 +411,8 @@ def handle(caller, verb, bound, on_message):
 
 
 def _deliver(on_message, outcome):
-    _ok, actor_text, room_text = outcome
-    on_message(actor_text, room_text)
+    _ok, actor_text, event = outcome
+    on_message(actor_text, event)
 
 
 # ---------------------------------------------------------------------------

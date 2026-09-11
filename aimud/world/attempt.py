@@ -20,6 +20,7 @@ from evennia.utils import logger
 from world import checks
 from world import effects as effects_mod
 from world import counters, verb_gen, verbs
+from world import events as events_mod
 
 #: How many times one verb may become another before the world gives up. A
 #: redirect is a rule sending an action somewhere else, and two rules can send
@@ -156,8 +157,10 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
     """
     Try to perform `raw` as a verb.
 
-    on_message(actor_text, room_text) delivers the result; room_text may be
-    empty when nothing was visible from outside.  allow_effects, when given,
+    on_message(actor_text, event) delivers the result. The event is None when
+    nothing was visible from outside -- a refusal, or reading a letter alone
+    in a room -- and is otherwise what happened, for whoever wants to render
+    it. See `world.events`.  allow_effects, when given,
     filters which effect types may fire -- NPCs are handed a narrower set.
 
     on_wait() is called at most once, and only if the attempt is about to go
@@ -215,7 +218,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
         # would be acting on a stranger. Asked rather than guessed, and the
         # attempt stops: nothing is promoted, nothing is conjured, and no
         # model is paid to narrate an action nobody has settled the object of.
-        on_message(questions[0][1], "")
+        on_message(questions[0][1])
         return
     waiter = _once(on_wait)
 
@@ -231,7 +234,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
                 f"{caller.key} attempted {raw!r} but nothing matched "
                 f"{[parsed['roles'][r] for r in unbound]}"
             )
-            on_message("", "")
+            on_message("")
             return
 
         def resume():
@@ -301,9 +304,9 @@ def _in_turn(caller, sponsor, spread, on_message, allow_effects, on_wait,
             return
         obj, command = remaining[0]
 
-        def collected(actor_text, room_text=""):
+        def collected(actor_text, event=None):
             if actor_text:
-                results.append((obj, actor_text, room_text))
+                results.append((obj, actor_text, event))
             step(remaining[1:])
 
         if obj.pk is None:
@@ -327,11 +330,11 @@ def _report(caller, on_message, results):
     of a dozen arriving separately with the prompt between them.
     """
     if not results:
-        on_message("There is nothing here to do that to.", "")
+        on_message("There is nothing here to do that to.")
         return
-    actor_text = "\n".join(text for _obj, text, _room in results)
-    room_text = " ".join(text for _obj, _actor, text in results if text)
-    on_message(actor_text, room_text)
+    actor_text = "\n".join(text for _obj, text, _event in results)
+    gathered = [event for _obj, _text, event in results if event is not None]
+    on_message(actor_text, gathered or None)
 
 
 def _follow(caller, parsed, on_message):
@@ -342,20 +345,21 @@ def _follow(caller, parsed, on_message):
     wanted = (parsed["roles"].get("direct")
               or parsed["roles"].get("target") or "").strip()
     if not wanted:
-        on_message(unfollow(caller), "")
+        on_message(unfollow(caller))
         return
 
     target = _find_person(caller, wanted)
     if target is None:
-        on_message(f"You see no {wanted} here.", "")
+        on_message(f"You see no {wanted} here.")
         return
 
     started, message = follow(caller, target)
-    room_text = ""
+    event = None
     if started:
-        room_text = (f"{caller.get_display_name(caller)} begins following "
-                     f"{target.get_display_name(caller)}.")
-    on_message(message, room_text)
+        event = events_mod.Event(
+            actor=caller, verb="follow", roles={"direct": target},
+            room_template="{actor} begins following {direct}.")
+    on_message(message, event)
 
 
 def _promote(caller, room, sponsor, parsed, bound, unbound, resume, on_message,
@@ -393,7 +397,7 @@ def _promote(caller, room, sponsor, parsed, bound, unbound, resume, on_message,
         if complaint:
             # A near miss, put back to the player: "did you mean the
             # chalkboard?" is a better answer than a second chalkboard.
-            on_message(complaint, "")
+            on_message(complaint)
             return
         missing.append(role)
 
@@ -408,7 +412,7 @@ def _promote(caller, room, sponsor, parsed, bound, unbound, resume, on_message,
         # make sense of that here", which read as though the game had failed to
         # understand a sentence it understood perfectly well.
         named = [str(parsed["roles"][role]) for role in missing]
-        on_message("There is no " + " and no ".join(named) + " here.", "")
+        on_message("There is no " + " and no ".join(named) + " here.")
         return
 
     role = missing[0]
@@ -418,7 +422,7 @@ def _promote(caller, room, sponsor, parsed, bound, unbound, resume, on_message,
         resume()
 
     conjure(caller, room, sponsor, parsed["roles"][role], ready,
-            lambda message: on_message(message, ""), fuzzy=fuzzy)
+            lambda message: on_message(message), fuzzy=fuzzy)
 
 def _holder(obj, verb):
     """Who has this verb in flight against this object, or None."""
@@ -530,7 +534,7 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
         spelling = ""
     if spelling:
         caller.execute_cmd(f"{spelling} {rest}".strip())
-        on_message("", "")
+        on_message("")
         return
 
     # Learning a rule and writing a narration are network round trips, and the
@@ -541,13 +545,13 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
     anchor = _anchor(bound, caller)
     if anchor is not None:
         if _busy(anchor, verb):
-            on_message(_still_waiting(anchor, verb, caller), "")
+            on_message(_still_waiting(anchor, verb, caller))
             return
         _hold(anchor, verb, caller)
 
     done = []
 
-    def release(actor_text, room_text=""):
+    def release(actor_text, event=None):
         # At most once. The visible symptom of a second release is two answers
         # to one attempt; the invisible one is that the hold above is dropped
         # twice, so a release arriving late lets go of a hold somebody else is
@@ -558,7 +562,7 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
         done.append(True)
         if anchor is not None:
             _drop(anchor, verb)
-        _release(caller, on_message, actor_text, room_text)
+        _release(caller, on_message, actor_text, event)
 
     def guarded(step):
         """
@@ -928,14 +932,16 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                 _with_bindings(
                     caller, room, sponsor, raw,
                     str(again.get("action") or verb), wanted,
-                    lambda actor_text, room_text="": release(actor_text,
-                                                             room_text),
+                    lambda actor_text, event=None: release(actor_text, event),
                     allow_effects, waiter, redirects + 1)
                 return
         extra = effects_mod.apply(caller, room, aside.get("effects") or [],
                                   bound=bound, world_root=world_root)
         counters.note(world_root, verb, bound, caller, counters.DONE)
-        release(aside.get("name") or "", " ".join(extra).strip())
+        release(aside.get("name") or "",
+                events_mod.Event(actor=caller, room=room, verb=verb,
+                                 roles=bound, raw=raw,
+                                 room_template=" ".join(extra).strip()))
         return
 
     # CHECK. Every gathered rule, cumulatively, in specificity order. The
@@ -992,7 +998,10 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         # which is the exact figure a suggester weighs its proposals by.
         counters.note(world_root, verb, bound, caller, counters.DONE)
         release(cached.get("actor", ""),
-                _for_room(cached.get("room", ""), caller, raw))
+                events_mod.Event(
+                    actor=caller, room=room, verb=verb, roles=bound,
+                    outcome=outcome, raw=raw,
+                    room_template=events_mod.repair(cached.get("room", ""))))
         return
 
     # Whether this rule's own effects are the whole of the answer. Looking is
@@ -1033,8 +1042,11 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             actor_text = "\n".join(
                 part for part in [actor_text] + extra if part).strip()
             extra = []
-        spoken = _for_room(room_text, caller, raw)
-        visible = " ".join([spoken] + extra).strip()
+        template = " ".join([events_mod.repair(room_text)] + extra).strip()
+        event = events_mod.Event(
+            actor=caller, room=room, verb=verb, roles=bound,
+            outcome=outcome, effects=list(extra), raw=raw,
+            contested=result is not None, room_template=template)
         # AFTER. What follows from it having worked, gathered before any of
         # it landed so that nothing an after-rule does can set another one
         # going. Bounded by the action, which is how consequence happens here
@@ -1068,8 +1080,7 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         # handed "13 against 12" writes about dice instead of about a blade
         # turning at the last moment.
         rolled = "" if getattr(caller.db, "is_npc", False)             else checks.said(result)
-        release("\n".join(p for p in (actor_text, rolled) if p),
-                visible)
+        release("\n".join(p for p in (actor_text, rolled) if p), event)
         # The world just changed under everyone here, which is exactly when a
         # quest may have quietly become finished.
         from world.quests import review_room
@@ -1099,28 +1110,6 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         on_error=lambda err: release(f"|r{err}|n"),
         result=result,
     )
-
-
-def _for_room(template, actor, raw):
-    """
-    The third-person line the room sees, with the actor filled in.
-
-    The narration names whoever acted as the literal {actor}, so the right
-    name appears whoever it turns out to be -- and a cached narration stays
-    true when a different character repeats the action. A model that returns
-    nothing, or a bare fragment with no subject, is repaired here rather than
-    broadcast as "lights the candle." with nobody attached to it.
-    """
-    name = actor.get_display_name(actor)
-    text = (template or "").strip()
-    if not text:
-        return ""
-    if "{actor}" in text:
-        return text.replace("{actor}", name)
-    # A fragment starting with a verb: give it its subject back.
-    if text[:1].islower():
-        return f"{name} {text}"
-    return text
 
 
 def _remember(caller, raw, bound, actor_text, changes, outcome="success",
@@ -1153,6 +1142,6 @@ def _remember(caller, raw, bound, actor_text, changes, outcome="success",
     remember(caller, line, kind="did", importance=0.65)
 
 
-def _release(caller, on_message, actor_text, room_text=""):
+def _release(caller, on_message, actor_text, event=None):
     caller.ndb.attempting = None
-    on_message(actor_text, room_text)
+    on_message(actor_text, event)

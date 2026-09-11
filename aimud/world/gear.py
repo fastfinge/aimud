@@ -239,8 +239,22 @@ def _actor(character):
     return character.get_display_name(character)
 
 
+def _event(character, verb, obj, template, **roles):
+    """
+    One thing somebody did with what they are wearing or holding.
+
+    The room's half as an event rather than a sentence, so that each person
+    watching is told in their own words. See `world.events`.
+    """
+    from world import events
+
+    return events.Event(actor=character, verb=verb,
+                        roles={"direct": obj, **roles},
+                        room_template=template)
+
+
 def wield(character, obj):
-    """Take something in hand. Returns (ok, actor_text, room_text)."""
+    """Take something in hand. Returns (ok, actor_text, event)."""
     name = obj.get_display_name(character)
 
     if obj.location is not character:
@@ -258,18 +272,19 @@ def wield(character, obj):
     obj.db.wielded = True
     recompute(character)
     return (True, f"You take {name} in hand.",
-            f"{_actor(character)} takes {name} in hand.")
+            _event(character, "wield", obj, "{actor} takes {direct} in hand."))
 
 
 def unwield(character, obj):
-    """Stop holding something. Returns (ok, actor_text, room_text)."""
+    """Stop holding something. Returns (ok, actor_text, event)."""
     name = obj.get_display_name(character)
     if not obj.db.wielded:
         return False, f"You are not wielding {name}.", ""
 
     obj.attributes.remove("wielded")
     recompute(character)
-    return (True, f"You lower {name}.", f"{_actor(character)} lowers {name}.")
+    return (True, f"You lower {name}.",
+            _event(character, "unwield", obj, "{actor} lowers {direct}."))
 
 
 def release(obj, character=None):
@@ -317,8 +332,8 @@ def handle(caller, verb, bound, on_message):
 
 
 def _deliver(on_message, outcome):
-    _ok, actor_text, room_text = outcome
-    on_message(actor_text, room_text)
+    _ok, actor_text, event = outcome
+    on_message(actor_text, event)
 
 
 # ---------------------------------------------------------------------------

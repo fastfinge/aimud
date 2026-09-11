@@ -343,6 +343,21 @@ def context_line(obj, looker=None):
     return f"{preposition} {host.get_numbered_name(1, looker, return_string=True)}"
 
 
+def _event(caller, verb, roles, template):
+    """
+    One placement, as a thing that happened rather than as two sentences.
+
+    The template keeps its participants as slots so that each person in the
+    room can be told in their own words -- which is what makes "you" possible
+    for whoever is being handed something, and a pronoun possible later. See
+    `world.events`.
+    """
+    from world import events
+
+    return events.Event(actor=caller, verb=verb, roles=roles,
+                        room_template=template)
+
+
 # ---------------------------------------------------------------------------
 # The verbs this owns
 # ---------------------------------------------------------------------------
@@ -411,14 +426,15 @@ def handle(caller, verb, parsed, bound, on_message):
 
     ok, message = place(obj, host, preposition, quiet=True)
     if not ok:
-        on_message(message, "")
+        on_message(message)
         return True
 
-    name = caller.get_display_name(caller)
     label = obj.get_numbered_name(1, caller, return_string=True)
     where = host.get_numbered_name(1, caller, return_string=True)
-    on_message(f"You put {label} {preposition} {where}.",
-               f"{name} puts {label} {preposition} {where}.")
+    on_message(
+        f"You put {label} {preposition} {where}.",
+        _event(caller, "put", {"direct": obj, "container": host},
+               f"{{actor}} puts {{direct}} {preposition} {{container}}."))
     return True
 
 
@@ -440,7 +456,7 @@ def _take_from(caller, obj, host, on_message):
         # drawer comes to have a second key standing beside it.
         if is_shut(host):
             shut = host.get_numbered_name(1, caller, return_string=True)
-            on_message(f"{shut[:1].upper()}{shut[1:]} is closed.", "")
+            on_message(f"{shut[:1].upper()}{shut[1:]} is closed.")
             return True
         return False
     if not _is_thing(obj):
@@ -448,23 +464,24 @@ def _take_from(caller, obj, host, on_message):
     if host_of(obj) is not host:
         return False
     if obj.location is caller:
-        on_message("You already have that.", "")
+        on_message("You already have that.")
         return True
     preposition = preposition_of(obj)
     if preposition == DEFAULT and is_shut(host):
         shut = host.get_numbered_name(1, caller, return_string=True)
-        on_message(f"{shut[:1].upper()}{shut[1:]} is closed.", "")
+        on_message(f"{shut[:1].upper()}{shut[1:]} is closed.")
         return True
     if not obj.move_to(caller, quiet=True, move_type="get"):
-        on_message("You cannot take that.", "")
+        on_message("You cannot take that.")
         return True
     displace(obj)
     obj.at_get(caller)
-    name = caller.get_display_name(caller)
     label = obj.get_numbered_name(1, caller, return_string=True)
     where = host.get_numbered_name(1, caller, return_string=True)
-    on_message(f"You take {label} {preposition} {where}.",
-               f"{name} takes {label} {preposition} {where}.")
+    on_message(
+        f"You take {label} {preposition} {where}.",
+        _event(caller, "get", {"direct": obj, "source": host},
+               f"{{actor}} takes {{direct}} {preposition} {{source}}."))
     return True
 
 
@@ -472,15 +489,16 @@ def _set_down(caller, obj, room, on_message):
     """Put something on the floor of the room somebody is standing in."""
     label = obj.get_numbered_name(1, caller, return_string=True)
     if obj.location is room:
-        on_message(f"{label.capitalize()} is already here.", "")
+        on_message(f"{label.capitalize()} is already here.")
         return True
     if not obj.move_to(room, quiet=True, move_type="drop"):
-        on_message("You cannot put that down here.", "")
+        on_message("You cannot put that down here.")
         return True
     displace(obj)
     obj.at_drop(caller)
-    name = caller.get_display_name(caller)
-    on_message(f"You put down {label}.", f"{name} puts down {label}.")
+    on_message(f"You put down {label}.",
+               _event(caller, "drop", {"direct": obj},
+                      "{actor} puts down {direct}."))
     return True
 
 

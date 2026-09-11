@@ -166,17 +166,15 @@ class CmdAIUnknown(SystemNoMatch):
 
         caller.ndb.attempting = raw
 
-        def deliver(actor_text, room_text=""):
+        def deliver(actor_text, event=None):
+            # Everyone present sees what happened, each in their own words:
+            # what arrives here is the event rather than a finished sentence,
+            # so the room is not handed one person's view of it. See
+            # world.events.
+            from world import events
+
             caller.ndb.attempting = None
-            if actor_text:
-                caller.msg(actor_text)
-            if room_text:
-                # Everyone present sees what happened, which matters now that
-                # verbs actually change the world rather than only narrating.
-                room.msg_contents(room_text, exclude=[caller])
-                from world.npc_gen import notify_npcs
-                notify_npcs(room, "action", caller.get_display_name(caller),
-                            room_text, exclude=caller, actor=caller)
+            events.show(actor_text, event, caller)
 
         def waiting():
             # Only fires when the attempt actually has to go to a model, so a

@@ -1,6 +1,9 @@
 # Development plan: pronouns and ownership
 
-Status: proposed, and settled enough to build. Nothing below is written yet.
+Status: **phases S, P0, P1, P2 and P3 are built and merged to their branches**;
+P4 onward is proposed. Where the building turned up something the plan had
+wrong, the section says so rather than being quietly corrected -- §5.4 is the
+one that matters.
 
 Companion to `development-plan.md` (rulebooks) and `rules-and-rulebooks.md`.
 Its ground rules (§2 there) are acceptance criteria here too, unchanged.
@@ -127,10 +130,11 @@ rather than only the actor (§5.4).
 
 The content is five forms by however many sets a world has: thirty lines of
 table. **Evennia's own `$pron()`** (`evennia/utils/funcparser.py:1487`) is
-already installed and does per-recipient pronoun mapping through
-`msg_contents`; its *mechanism* is right and is reused, its *model* is a fixed
+already installed and shows the right *decomposition*; its *model* is a fixed
 four-way male/female/neutral/plural keyed off `.gender`, which is exactly what
-this game wants to stop being fixed. pronouns.page and pronoun.is publish data
+this game wants to stop being fixed. Its machinery turned out not to be
+reachable from where the rendering has to happen -- see §5.4 -- so what is
+borrowed is the five-slot shape and the conjugator, not the parser. pronouns.page and pronoun.is publish data
 as web resources with a neopronoun-list shape rather than a schema, and
 fetching them at runtime puts a network dependency in the parser.
 
@@ -422,18 +426,25 @@ Today `attempt._for_room` does `template.replace("{actor}", name)`, producing
 one string that `unknown_cmd.deliver` broadcasts.
 
 Instead, the template keeps `{actor}` and gains `{direct}`, `{target}` and so
-on -- one per role -- and delivery becomes
+on -- one per role -- and an **event** carries it, with the per-recipient loop
+in `world/events.py`.
 
-```python
-room.msg_contents(template, exclude=[caller], from_obj=caller,
-                  mapping={"actor": caller, **bound})
-```
+**An earlier draft of this section said to use `msg_contents` with a mapping
+and hook a `$who()` callable into it. That does not work, and the reason is
+worth recording so nobody tries it again.** `objects.py` builds its parser as
+`funcparser.FuncParser(funcparser.ACTOR_STANCE_CALLABLES)` -- a fixed dict --
+so a callable of ours is never consulted however
+`FUNCPARSER_OUTGOING_MESSAGES_MODULES` is set; that setting governs a
+different path. And `msg_contents`' own `{key}` substitution resolves through
+`get_display_name`, which is the same call that names things in an inventory
+listing and in a room's contents, so teaching *it* to answer "she" would put a
+pronoun in both.
 
-The pronoun decision hooks in as a **`$who(actor)` callable** in
-`server/conf/inlinefuncs.py`, which receives `caller`, `receiver` and `mapping`.
-Overriding `get_display_name` would also work and is worse: it fires for
-inventory listings, room contents and `look`, none of which want a pronoun, and
-it cannot tell which role it is filling.
+What is needed is a substitution that knows it is rendering a narration, knows
+which role each name fills, and knows who is reading. That is twenty lines and
+they live in `events.render`, with every name chosen by one function,
+`events.name_for`. P4 changes that function and nothing else moves.
+`msg_contents` stays exactly right for everything that is not an action.
 
 `{direct}`/`{target}` buy the second-person case for free: "She hands you the
 sword" to Britney and "She hands Britney the sword" to everyone else, from one

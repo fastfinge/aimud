@@ -929,19 +929,24 @@ class NPC(ObjectParent, DefaultObject):
             "modify_object", "set_state", "set_trait",
         } - NPC_FORBIDDEN_EFFECTS
 
-        def deliver(actor_text, room_text=""):
+        def deliver(actor_text, event=None):
             # Effects have already been applied by the time this is called,
             # so this is the first moment anything may ask what the attempt
             # achieved. Both texts empty means the attempt was refused before
             # it did anything -- nothing here matched what was named -- and
             # there is no outcome to judge a rule by.
-            if on_done is not None and (actor_text or room_text):
+            seen = event is not None and getattr(event, "seen", False)
+            if on_done is not None and (actor_text or seen):
                 on_done()
 
             # Only the third-person line is usable here. The actor line is
             # written to whoever acted ("You touch a match to the wick"), and
             # broadcasting that would tell the room it had done the thing.
-            visible = room_text
+            from world import events as events_mod
+
+            visible = (events_mod.render(events_mod.repair(event.room_template),
+                                         None, event)
+                       if event is not None and event.seen else "")
             if not visible:
                 # Nothing happened in the room, so there is nothing to show
                 # anyone -- but if the world said why, the character has to
