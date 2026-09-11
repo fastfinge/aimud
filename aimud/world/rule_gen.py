@@ -32,7 +32,7 @@ into a measurement.
 
 from evennia.utils import logger
 
-from world import llm, rulebooks
+from world import effects, llm, rulebooks
 
 #: How far up the taxonomy a rule may be filed, by depth from the root. A
 #: scope is too general exactly when it is too near the top, which makes the
@@ -72,10 +72,14 @@ ASKS_ALLOWED = 2
 #: What a generated rule may say. Anything else is dropped and logged: a
 #: condition nothing can evaluate and an effect nothing can apply are both
 #: rules that will never do anything, and the place to catch them is here.
+#:
+#: Read off `effects.VOCABULARY` rather than written out again, because the
+#: two lists had already drifted: `stop` was permitted here and applied by
+#: nothing anywhere, so a rule that used it would have been accepted, stored
+#: and silently done nothing for the life of the world. One list, kept beside
+#: the code that applies it, cannot drift from itself.
 PHASES = rulebooks.PHASES
-EFFECTS = ("set_state", "set_trait", "create_object", "destroy_object",
-           "move_object", "modify_object", "modify_room", "move_actor",
-           "set_exit", "describe", "narrate", "try", "stop")
+EFFECTS = tuple(sorted(effects.VOCABULARY))
 
 
 # ---------------------------------------------------------------------------

@@ -1044,6 +1044,16 @@ class CmdRules(Command):
         said = rule.get("name") or ""
         if not said and rule.get("conditions"):
             said = conditions.describe(rule["conditions"][0])
+        # A rule's name is what somebody called it, and a name is allowed to be
+        # wrong -- half the phase 13 corpus was named for the refusal and
+        # written as the requirement. What it DOES is not a matter of naming,
+        # so a rule that changes something says so here whatever it is called.
+        # `effects <verb>` is the whole page of this; this is the line of it.
+        if not said and not rule.get("conditions"):
+            from world import effects, rulecheck
+
+            doing = rulecheck.effects_of(rule)
+            said = effects.say(doing[0]) if doing else ""
         where = rulebooks.said_scope(rule.get("scope"), root)
         note = f" |x({', '.join(marks)})|n" if marks else ""
         return f"{where} -- {said}{note}"
@@ -1114,6 +1124,217 @@ class CmdRules(Command):
         lines.append("")
         lines.append("|xType |wrules <verb>|x for one verb in firing order.|n")
         return "\n".join(lines)
+
+
+
+class CmdEffects(Command):
+    """
+    What a verb will actually do.
+
+    Usage:
+      effects
+      effects <verb>
+
+    |wrules|n answers "which rule wins and why", which is the question you
+    have when something surprises you. This is the other one, and the one
+    asked first: what happens if I type this. A rule's conditions were always
+    printed in plain words and its effects never were, so the one thing a
+    person most wants to know about a verb was readable only as JSON.
+
+    With no argument, every verb this world can do something with, and how
+    many things each does.
+
+    With a verb, what it needs before it will work, what it changes, what
+    follows afterwards, and -- where the verb is a gamble rather than a
+    certainty -- what it is measured against and how many chances in twenty go
+    your way. That last is why a verb that can never be passed and a verb that
+    is merely hard stop looking alike.
+
+    Ordered the way the world runs them, and marked with where each rule
+    applies, so a rule about this one chest is visibly ahead of a rule about
+    chests.
+
+    |whelp <effect>|n -- |whelp set_state|n, |whelp move_object|n -- says what
+    one sort of change means, and the list of them is in |whelp effects|n.
+    """
+
+    key = "effects"
+    aliases = ["affects"]
+    locks = "cmd:all()"
+    help_category = "World"
+
+    def get_help(self, caller, cmdset):
+        """
+        The docstring, with the effect vocabulary listed under it.
+
+        Built rather than written, so that an effect added to
+        `world.effects.VOCABULARY` documents itself here and in `help
+        <effect>` without anybody remembering to. The vocabulary is the
+        engine's rather than a world's, so this reads the same everywhere --
+        unlike `help bottle`, which is a fact about wherever you happen to be.
+        """
+        from world import effects as effects_mod
+
+        lines = [self.__doc__.strip(), "",
+                 "The changes a rule in any world can make:", ""]
+        for name in sorted(effects_mod.VOCABULARY):
+            entry = effects_mod.VOCABULARY[name]
+            lines.append(f"  |w{name}|n")
+            lines.append(f"      {entry['means']}")
+        lines += ["", "Each has an entry of its own -- |whelp set_state|n."]
+        return "\n".join(lines)
+
+    def func(self):
+        root = _current_world_root(self.caller)
+        if root is None:
+            self.caller.msg("You are not in a generated world.")
+            return
+        from world import standard_rules, verbs
+
+        standard_rules.seed(root)
+        asked = self.args.strip()
+        if asked:
+            self.caller.msg(self._one(root, verbs.canonical_verb(asked)))
+        else:
+            self.caller.msg(self._every(root))
+
+    def _every(self, root):
+        """
+        Every verb this world has worked out something to do, and how much.
+
+        The world's own only. Every world is seeded with what looking means,
+        and listing that under "what this world can do" would be the engine
+        taking credit -- and would make the empty answer, which a new world
+        should give, impossible to reach. `effects look` still answers.
+        """
+        from world import rulebooks, rulecheck, standard_rules
+
+        doing = {}
+        for rule in rulebooks.all_rules(root):
+            if not rule.get("listed", True):
+                continue
+            if standard_rules.is_standard(rule):
+                continue
+            if rule.get("phase") not in (rulebooks.CARRY_OUT, rulebooks.AFTER):
+                continue
+            action = rule.get("action")
+            if not action:
+                continue
+            doing.setdefault(action, 0)
+            doing[action] += len(rulecheck.effects_of(rule))
+
+        if not doing:
+            return ("This world has not worked out what any verb does yet. "
+                    "Try one on something and it will.")
+        counted = (f"|w{len(doing)} verbs|n" if len(doing) != 1
+                   else "|wone verb|n")
+        lines = [f"{counted} this world can do something with. "
+                 f"|weffects <verb>|n says what.", ""]
+        for action in sorted(doing):
+            changes = doing[action]
+            lines.append(f"  |w{action}|n |x-- {changes} "
+                         f"{'change' if changes == 1 else 'changes'}|n")
+        return "\n".join(lines)
+
+    def _one(self, root, verb):
+        """One verb, in the order the world runs it."""
+        from world import actions, checks, conditions, effects as effects_mod
+        from world import rulebooks, rulecheck
+
+        lines = [f"|w{verb}|n"]
+        declared = actions.spec(root, verb)
+        if declared and declared.get("means"):
+            lines.append(f"  |x{declared['means']}|n")
+
+        from world import standard_rules
+
+        found = [r for r in rulebooks.all_rules(root)
+                 if r.get("action") in (None, verb)]
+        listed = [r for r in found if r.get("listed", True)]
+        # Every verb gathers the standard rules, so "nothing is known about
+        # this" is never literally true, and the distinction that matters is a
+        # different one: whether this WORLD has decided anything, or whether
+        # what you are reading is only what the engine gives everybody.
+        its_own = [r for r in listed if not standard_rules.is_standard(r)
+                   and r.get("action") == verb]
+        said = {
+            rulebooks.INSTEAD: "instead of it",
+            rulebooks.CHECK: "it will not work unless",
+            rulebooks.CARRY_OUT: "it does",
+            rulebooks.AFTER: "and afterwards",
+        }
+        for phase in rulebooks.PHASES:
+            here = sorted((r for r in listed if r.get("phase") == phase),
+                          key=lambda r: rulebooks.rank(r, None, root))
+            if not here:
+                if phase == rulebooks.CARRY_OUT:
+                    # Worth saying out loud rather than leaving as a gap in the
+                    # page. A verb with conditions and nothing to do is a verb
+                    # that can be refused and can never work, and reading that
+                    # off a missing heading is exactly what this command exists
+                    # to stop somebody having to do.
+                    #
+                    # Two different nothings, and the difference is what to do
+                    # next: a verb this world has never been asked about is
+                    # settled by typing it, and one it has been asked about and
+                    # written only refusals for will not be.
+                    why = ("Nothing is known about it yet -- typing it at "
+                           "something is what settles that" if not its_own
+                           else "nothing -- this world has not worked out "
+                                "what it does yet")
+                    lines += ["", "  |yit does|n", f"    |r{why}|n"]
+                continue
+            lines += ["", f"  |y{said[phase]}|n"]
+            for rule in here:
+                lines += self._rule(root, rule, phase)
+
+        contest = next((r.get("contest") for r in listed
+                        if r.get("phase") == rulebooks.CARRY_OUT
+                        and r.get("contest")), None)
+        chance = checks.prospect(self.caller, contest, {}, root) \
+            if contest else None
+        if chance:
+            lines += ["", "  " + checks.said_prospect(chance)]
+        elif any(r.get("phase") == rulebooks.CARRY_OUT for r in listed):
+            lines += ["", "  |xnot contested: it works or it is refused, "
+                          "never a matter of luck|n"]
+        return "\n".join(lines)
+
+    def _rule(self, root, rule, phase):
+        """
+        One rule as the lines under a phase heading.
+
+        Marked with where it applies, and marked again when it came with the
+        world rather than being learned in it -- which is the distinction
+        somebody meaning to change a world needs most, because the standard
+        rules are the engine's and everything else is theirs.
+        """
+        from world import conditions, effects as effects_mod
+        from world import rulebooks, rulecheck, standard_rules
+
+        standard = standard_rules.is_standard(rule)
+        where = rulebooks.said_scope(rule.get("scope"), root)
+        mark = f"|x({where}, standard)|n" if standard else f"|x({where})|n"
+
+        out = []
+        for condition in (rule.get("conditions") or []):
+            out.append(f"    {conditions.describe(condition)} {mark}")
+        for effect in rulecheck.effects_of(rule):
+            out.append(f"    {effects_mod.say(effect)} {mark}")
+        if not out:
+            # A rule with neither -- an `instead` that only refuses -- still
+            # has a name, and the name is the whole of what it says.
+            out.append(f"    {rule.get('name') or 'nothing'} {mark}")
+
+        # A standard rule's guards are machinery rather than meaning. Every
+        # verb in the world gathers the same two, so printing "only when
+        # somebody said what you act on" under all of them is noise on a page
+        # that exists to be read.
+        if not standard:
+            for guard in (rule.get("when") or []):
+                out.append(f"      |xonly when "
+                           f"{conditions.describe(guard)}|n")
+        return out
 
 
 class CmdWorldOpen(Command):

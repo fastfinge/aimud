@@ -511,18 +511,15 @@ def said(rule, world_root=None):
             f"  {where}  -- {rule.get('name') or ''}")
     lines = [head]
 
+    # Through `effects.say`, which is the one place an effect is put into
+    # words. This grew a third of a renderer of its own -- two types spelled
+    # out and an `else` that printed the bare type for everything else -- and
+    # two accounts of what `set_state` means is one more than this design
+    # allows anywhere.
+    from world import effects
+
     for effect in (rule.get("effects") or []):
-        kind = str(effect.get("type") or "")
-        if kind == "set_state":
-            adds = ", ".join(effect.get("add") or []) or "nothing"
-            gone = ", ".join(effect.get("remove") or [])
-            lines.append(f"    would add: {adds}"
-                         + (f", remove: {gone}" if gone else ""))
-        elif kind == "try":
-            lines.append(f"    would redirect: {effect.get('action')} -> "
-                         f"the enclosing place")
-        else:
-            lines.append(f"    would: {kind}")
+        lines.append(f"    would {effects.say(effect)}")
     for condition in (rule.get("conditions") or []):
         lines.append(f"    would require: {conditions.describe(condition)}")
     if rule.get("overrides"):
