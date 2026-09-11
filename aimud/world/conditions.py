@@ -1089,19 +1089,31 @@ def achieves(effect, condition):
         return False
 
     if name == "in_room" and etype == "move_actor":
-        # The loosest answer in here, and deliberately so. `move_actor` names an
-        # exit -- {"exit": "north"} -- not a destination, so whether it reaches
-        # the dock depends on where north leads, which is a fact about the world
-        # and not about the effect. This function is handed an effect and a
-        # condition and nothing else, on purpose, and answers "would that shape
-        # help"; the step is checked when it is taken.
+        # Read exactly when the effect named a room, and optimistically when it
+        # named a way out.
         #
-        # So the planner may try a door that turns out to go elsewhere, and
-        # learn by trying. The alternative -- letting `move_actor` name the room
-        # as well as the way -- is worth doing the day a goal about being
-        # somewhere is planned wrongly often enough to notice, and not before.
-        # Contrast `set_exit` above, which names its room and is read exactly.
+        # `move_actor` may now say either -- {"to": "the Chapel"} as well as
+        # {"exit": "north"} -- and the two deserve different answers. A room is
+        # a destination and can be compared with the one the goal wants. An exit
+        # is not: where north leads is a fact about the world rather than about
+        # the effect, and this function is handed an effect and a condition and
+        # nothing else, on purpose. It answers "would that shape help", and the
+        # step is checked when it is taken -- so the planner may try a door that
+        # turns out to go elsewhere, and learn by trying.
+        named = str(effect.get("to") or "").strip().lower()
+        if named:
+            return named == str(value or "").strip().lower()
         return True
+
+    # `narrate` and `describe` are the two output-only effects, and neither
+    # can be read backwards because neither changes anything. Said here rather
+    # than left to fall off the end, because 11.1 holds that an effect nobody
+    # can answer for is a hole in the planner -- so the two that genuinely have
+    # no answer are on the record as decisions. Nothing is ever a goal to have
+    # been told something, or to have been seen doing something; what an NPC
+    # wants from either is whatever an `after` rule does next.
+    if etype in ("narrate", "describe"):
+        return False
 
     return False
 

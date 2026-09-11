@@ -160,6 +160,73 @@ class ReadingWhatCameBack(SimpleTestCase):
         self.assertTrue(complaints)
 
 
+@tag("unit")
+class TheCheckThatCanNeverPass(SimpleTestCase):
+    """
+    A check rule demanding the very state its own carry-out rule adds.
+
+    The commonest fault in the phase 13 soak corpus by a long way: 56 of 135
+    generated check rules across the two new worlds. Every one is the same
+    slip -- "you cannot oil what is already oiled" written as `is: ["oiled"]`
+    where it had to be `lacks: ["oiled"]` -- and the verb is dead from the
+    moment it is learned. `open` was refused 41 times in one world and
+    succeeded never.
+
+    Refused rather than reversed. Turning a condition round on a model's
+    behalf would be this code deciding what a world meant; declining to
+    install one leaves the verb doing what it did before the rule existed
+    instead of nothing at all, for ever.
+    """
+
+    def setUp(self):
+        self.offered = [("world", "everywhere", {"world": True})]
+
+    def keep(self, *rules):
+        return rule_gen.validate({"rules": list(rules)}, self.offered, "oil")
+
+    def adds_oiled(self):
+        return {"phase": "carry_out", "scope": "world",
+                "effects": [{"type": "set_state", "role": "direct",
+                             "add": ["oiled"]}]}
+
+    def test_it_is_refused_when_the_carry_out_is_in_the_same_reply(self):
+        kept, complaints = self.keep(
+            {"phase": "check", "scope": "world",
+             "name": "It is already well-oiled.",
+             "conditions": [{"subject": "direct", "is": ["oiled"]}]},
+            self.adds_oiled())
+        self.assertEqual([r["phase"] for r in kept], ["carry_out"])
+        self.assertTrue(any("could never fire" in c for c in complaints))
+
+    def test_the_right_way_round_is_kept(self):
+        kept, complaints = self.keep(
+            {"phase": "check", "scope": "world",
+             "name": "it must not already be oiled",
+             "conditions": [{"subject": "direct", "lacks": ["oiled"]}]},
+            self.adds_oiled())
+        self.assertEqual(len(kept), 2)
+        self.assertEqual(complaints, [])
+
+    def test_a_requirement_the_verb_does_not_produce_is_kept(self):
+        kept, complaints = self.keep(
+            {"phase": "check", "scope": "world",
+             "conditions": [{"subject": "direct", "is": ["assembled"]}]},
+            self.adds_oiled())
+        self.assertEqual(len(kept), 2)
+        self.assertEqual(complaints, [])
+
+    def test_with_no_carry_out_anywhere_nothing_is_refused(self):
+        """
+        The test needs something to compare against. A check rule arriving on
+        its own, for a verb the world has no carry-out rule for, is judged on
+        its shape like any other.
+        """
+        kept, _complaints = self.keep(
+            {"phase": "check", "scope": "world",
+             "conditions": [{"subject": "direct", "is": ["oiled"]}]})
+        self.assertEqual(len(kept), 1)
+
+
 @tag("world")
 class TheSpaceshipExample(EvenniaTest):
     """
@@ -426,3 +493,88 @@ class AFreshWorldLearningAVerb(EvenniaTest):
                           if r["source"] == "generated"], [])
         self.assertNotIn("powered", verbs.states(self.pad))
 
+
+
+@tag("world")
+class TheCarryOutTheWorldAlreadyHeld(EvenniaTest):
+    """
+    The same refusal, when the two rules arrive in two separate calls -- which
+    is as often as not, since a verb is asked about again the next time
+    somebody uses it on a different sort of thing.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+        self.offered = [("world", "everywhere", {"world": True})]
+        R.add(self.root, R.blank(
+            action="oil", phase=R.CARRY_OUT, scope={"world": True},
+            effects=[{"type": "set_state", "role": "direct",
+                      "add": ["oiled"]}]))
+
+    def test_a_check_against_a_rule_written_earlier_is_refused(self):
+        kept, complaints = rule_gen.validate(
+            {"rules": [{"phase": "check", "scope": "world",
+                        "name": "It is already well-oiled.",
+                        "conditions": [{"subject": "direct",
+                                        "is": ["oiled"]}]}]},
+            self.offered, "oil", self.root)
+        self.assertEqual(kept, [])
+        self.assertTrue(any("could never fire" in c for c in complaints))
+
+    def test_and_another_verbs_carry_out_is_no_business_of_its(self):
+        kept, _complaints = rule_gen.validate(
+            {"rules": [{"phase": "check", "scope": "world",
+                        "conditions": [{"subject": "direct",
+                                        "is": ["oiled"]}]}]},
+            self.offered, "wind", self.root)
+        self.assertEqual(len(kept), 1)
+
+
+@tag("unit")
+class TheGambleTheCutoverDropped(SimpleTestCase):
+    """
+    `contest` is what makes a verb a gamble rather than a certainty, and the
+    rulebook prompt stopped asking for one.
+
+    `verb_gen`'s old prompt had a whole paragraph about it; `rule_gen`'s
+    replacement has the field in its schema, `validate` reads it, `attempt`
+    rolls it -- and nothing ever told a model it existed. The soak corpus
+    reads 0 contested rules out of 303 across two worlds, where the interim
+    corpus written by the old prompt has 41 out of 326. Nobody had removed the
+    mechanism; it had simply stopped being offered.
+    """
+
+    def setUp(self):
+        self.offered = [("world", "everywhere", {"world": True})]
+
+    def keep(self, *rules):
+        return rule_gen.validate({"rules": list(rules)}, self.offered, "force")
+
+    def test_the_prompt_asks_for_one(self):
+        self.assertIn("contest", rule_gen._SYSTEM)
+        self.assertIn("gamble", rule_gen._SYSTEM)
+
+    def test_a_contest_survives_validation(self):
+        kept, _complaints = self.keep(
+            {"phase": "carry_out", "scope": "world",
+             "effects": [{"type": "set_state", "role": "direct",
+                          "add": ["forced"]}],
+             "contest": {"trait": "strength", "difficulty": 14}})
+        self.assertEqual(kept[0]["contest"],
+                         {"trait": "strength", "against": None,
+                          "difficulty": 14.0})
+
+    def test_a_contest_nothing_can_roll_leaves_the_verb_certain(self):
+        """
+        Deterministic is what the verb was before the rule existed; a
+        malformed roll against a target invented here is not.
+        """
+        kept, _complaints = self.keep(
+            {"phase": "carry_out", "scope": "world",
+             "effects": [{"type": "set_state", "role": "direct",
+                          "add": ["forced"]}],
+             "contest": {"sort of hard": True}})
+        self.assertIsNone(kept[0]["contest"])

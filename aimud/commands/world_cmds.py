@@ -801,6 +801,9 @@ class CmdRules(Command):
       rules reject <id>     decline one, and remember the refusal
       rules judge           ask a model to rule on the whole queue at once
       rules redeclare <verb>  forget what a verb takes, so it is asked again
+      rules suspend <id>    take a rule out of the book, keeping it readable
+      rules suspend dead    do that to every rule that provably cannot fire
+      rules restore <id>    put a suspended rule back in force
 
     Nothing here costs anything except |wjudge|n: the rest is read out of what
     the world already wrote down, and `suggest` derives from it without asking
@@ -813,6 +816,13 @@ class CmdRules(Command):
     question is stuck with an answer to a question nobody put. The commonest
     case is a verb that should work while you are dead. It costs one model call
     on the verb's next use, and it changes no rule.
+
+    |wsuspend|n is Inform's "is not listed in": the rule stays in the book and
+    stops applying, so a mistake is reversible and the world's history stays
+    legible. |wrules suspend dead|n does it to every rule |wworldcheck|n can
+    prove will never fire -- a check that demands the very condition its own
+    verb produces -- which is a set arrived at by reading the rules rather than
+    by anybody's judgement, and is why it can be done in one go.
     """
 
     key = "rules"
@@ -846,6 +856,12 @@ class CmdRules(Command):
             return
         if word in ("redeclare", "undeclare"):
             self.caller.msg(self._redeclare(root, rest))
+            return
+        if word == "suspend":
+            self.caller.msg(self._suspend(root, rest, listed=False))
+            return
+        if word in ("restore", "unsuspend"):
+            self.caller.msg(self._suspend(root, rest, listed=True))
             return
 
         if asked:
@@ -902,6 +918,61 @@ class CmdRules(Command):
 
         suggest.judge(_get_account(self.caller), root, on_success=done,
                       on_error=lambda err: self.caller.msg(f"|r{err}|n"))
+
+    def _suspend(self, root, asked, listed):
+        """
+        Take a rule out of the book, or put it back.
+
+        Never deleted: an unlisted rule is still readable, still says who wrote
+        it and why, and can be restored by whoever decides the suspension was
+        wrong. That is the repair this design offers instead of revision.
+        """
+        from world import rulebooks
+
+        asked = asked.strip()
+        if not asked:
+            return ("Which rule? |wrules <verb>|n lists them with their ids, "
+                    "and |wrules suspend dead|n takes out every one that "
+                    "provably cannot fire.")
+
+        if asked.lower() == "dead" and not listed:
+            return self._suspend_dead(root)
+
+        rule = rulebooks.set_listed(root, asked, listed)
+        if rule is None:
+            return f"There is no rule |w{asked}|n in this world."
+        state = "back in force" if listed else "suspended"
+        return (f"|w{rule['id']}|n is {state}: "
+                f"{rule.get('name') or '(unnamed)'}")
+
+    def _suspend_dead(self, root):
+        """
+        Take out every rule the scan proves can never fire.
+
+        One command because the set is not a matter of opinion: a check rule
+        demanding the exact condition its own verb produces admits only a thing
+        something else already did, and then does it again. 56 of 135 generated
+        check rules across the two phase 13 soak worlds are this, which is more
+        than anybody is going to suspend one at a time.
+        """
+        from world import rulebooks, rulecheck
+
+        findings = rulecheck.scan(rulecheck.of_world(root))
+        dead = [rule_id for rule_id, _action, _states, _name
+                in findings.get("self_defeating") or []]
+        if not dead:
+            return "Nothing in this world is provably dead."
+        done = [rulebooks.set_listed(root, rule_id, False)
+                for rule_id in dead]
+        verbs = sorted({r["action"] for r in done if r and r.get("action")})
+        lines = [
+            f"|w{len([r for r in done if r])}|n rules suspended, over "
+            f"{len(verbs)} verbs: {', '.join(verbs)}.",
+            "|xEach demanded the condition its own verb produces. They are "
+            "still in the book -- |wrules <verb>|n shows them marked "
+            "suspended, and |wrules restore <id>|n puts one back.|n",
+        ]
+        return "\n".join(lines)
 
     def _redeclare(self, root, asked):
         """

@@ -211,7 +211,22 @@ def scan(registers):
             # kept out of it rather than reported as the fault it used to be.
             by_verb.setdefault(verb_of(key), []).append((key, rule))
 
-    one_way = added - removed
+    # A state is unset by its own group as well as by a rule that says so.
+    # `verbs.apply_states` clears every other member of an exclusive group when
+    # one is set, so a world with rules for both `open` and `closed` has a way
+    # back from each with neither rule carrying a `remove` list -- and reading
+    # only the `remove` lists called 30 of 56 "one-way" states in the infinite
+    # dungeon one-way when they were nothing of the sort. This scan's headline
+    # figure was wrong in the direction that hides an improvement, which is the
+    # worst direction for a ratchet to be wrong in.
+    #
+    # Kept separate from `touched`, which is a different question: "can this be
+    # undone" is about the way back, and "has any rule ever mentioned this" is
+    # about dead vocabulary. A word that is only ever cancelled by a sibling is
+    # still a word nobody wrote a rule about.
+    undone = removed | _cancelled(added, vocabulary, groups)
+
+    one_way = added - undone
     unsettable = wanted - added
     touched = added | removed | wanted | forbidden
 
@@ -220,6 +235,8 @@ def scan(registers):
         "unsettable": sorted(unsettable),
         "dead_vocabulary": sorted(set(vocabulary) - touched),
         "pairs": pairs(one_way, unsettable, vocabulary, groups),
+        "self_defeating": self_defeating(registers.get("rules") or {}),
+        "ungrounded": ungrounded(registers.get("kind_specs") or {}),
         "inert": sorted(inert),
         "refusals": {kind: sorted(verbs) for kind, verbs in refusals.items()},
         "forked": forked(by_verb),
@@ -231,7 +248,7 @@ def scan(registers):
             "verbs": len({verb_of(key) for key in rules if verb_of(key)}),
             "filed": len([key for key in rules if key not in learned]),
             "states_set": len(added),
-            "states_unset": len(removed),
+            "states_unset": len(undone),
             "vocabulary": len(vocabulary),
         },
     }
@@ -267,6 +284,34 @@ def refusal_kind(rule):
     return REFUSAL_KINDS[2]
 
 
+def _cancelled(added, vocabulary, groups):
+    """
+    Every state that some rule undoes by setting a sibling of it.
+
+    Exclusivity is the cheapest way back there is and the one a world gets for
+    nothing: a group is a set of conditions only one of which can hold, so a
+    rule that sets one has unset the rest whether or not it mentions them.
+    """
+    members = {}
+    for slug in (vocabulary or {}):
+        group = group_of(slug, vocabulary)
+        if group:
+            members.setdefault(group, set()).add(slug)
+
+    undone = set()
+    for slug in added:
+        group = group_of(slug, vocabulary)
+        if not group:
+            continue
+        try:
+            exclusive = bool((groups.get(group) or {}).get("exclusive", True))
+        except AttributeError:
+            exclusive = True
+        if exclusive:
+            undone |= members.get(group, set()) - {slug}
+    return undone
+
+
 def group_of(state, vocabulary):
     try:
         return str((vocabulary.get(state) or {}).get("group") or "")
@@ -298,6 +343,96 @@ def pairs(one_way, unsettable, vocabulary, groups):
         for missing in sorted(unsettable):
             if group_of(missing, vocabulary) == group:
                 found.append((stuck, missing, group))
+    return found
+
+
+def self_defeating(rules):
+    """
+    Check rules that demand the very state their own verb brings about.
+
+    The commonest fault in the phase 13 soak corpus by a long way: 56 of 135
+    generated check rules across the two new worlds require the exact state
+    their action's carry-out rule adds. Every one is the same slip -- "you
+    cannot oil what is already oiled" written as `is: ["oiled"]` where it had
+    to be `lacks: ["oiled"]` -- and the rule it makes can never pass. The verb
+    is dead from the moment it is learned, which is why `open` was refused 41
+    times in one world and succeeded never.
+
+    Mechanical and provable, which is why it belongs here rather than in a
+    judgement: a check demanding what the carry-out produces admits only a
+    thing something else already did, and then does it again.
+
+    A suspended rule is out of its book and applies to nothing, so it is
+    neither a fault nor evidence of one -- which is what makes `rules suspend
+    dead` a repair rather than a gesture. Filtered on both sides: a carry-out
+    nobody has listed does not produce the state its own check would demand.
+
+    Returns [(rule id, action, [states], name), ...].
+    """
+    listed = {rule_id: rule for rule_id, rule in (rules or {}).items()
+              if hasattr(rule, "get") and rule.get("listed", True)}
+
+    produced = {}
+    for rule in listed.values():
+        if rule.get("phase") != "carry_out":
+            continue
+        for effect in effects_of(rule):
+            if effect.get("type") == "set_state":
+                produced.setdefault(rule.get("action"), set()).update(
+                    _states(effect, "add"))
+
+    found = []
+    for rule_id, rule in sorted(listed.items()):
+        if rule.get("phase") != "check":
+            continue
+        made = produced.get(rule.get("action")) or set()
+        if not made:
+            continue
+        wanted = set()
+        for condition in (rule.get("conditions") or []):
+            try:
+                wanted |= {str(v).lower() for v in (condition.get("is") or [])}
+            except AttributeError:
+                continue
+        clash = sorted(wanted & made)
+        if clash:
+            found.append((str(rule_id), str(rule.get("action") or ""), clash,
+                          str(rule.get("name") or "")))
+    return found
+
+
+def ungrounded(kind_specs):
+    """
+    Kinds with no taxonomy above them at all, real or anchored.
+
+    Phase 1's promise was that every kind in a fresh world has non-empty
+    ancestors. Across the two soak worlds 37 of 192 do not -- and they are not
+    the invented nouns the anchor mechanism was built for. They are `box`,
+    `key`, `knife`, `pen`, `shoe`, `wheel`: ordinary words WordNet knows
+    perfectly well, whose senses straddle a bucket, so `canonical` leaves them
+    as bare words and `needs_anchor` says no because they *have* senses.
+
+    A bare kind takes no floor from the taxonomy, prunes against nothing, and
+    can never be reached by a rule filed against a sort of thing. Worse, it
+    doubles: one world holds `box` and `box.n.01` as two kinds, with 36
+    attempts against the first and every rule filed against the second.
+
+    Told apart by spelling, which looks crude and is exact: a synset id has a
+    dot in it and a bare word does not, and `kinds.canonical` leaves a bare
+    word behind only when it could not ground one. Doing it this way keeps the
+    whole scan free of WordNet and of Evennia, which is what lets it run over a
+    fixture, in a tier A test, and in `baseline.py` with no database at all.
+    """
+    found = []
+    for kind, spec in sorted((kind_specs or {}).items()):
+        if "." in str(kind):
+            continue                     # a synset, which knows its own parents
+        try:
+            anchored = str((spec or {}).get("under") or "").strip()
+        except AttributeError:
+            anchored = ""
+        if not anchored:
+            found.append(str(kind))
     return found
 
 
@@ -377,6 +512,18 @@ def report(findings, name=""):
                      f"rulebooks.")
 
     trouble = []
+    if findings.get("self_defeating"):
+        dead = findings["self_defeating"]
+        verbs = sorted({action for _id, action, _states, _name in dead})
+        trouble.append(
+            f"{len(dead)} check rules require the very condition their own "
+            f"verb produces, so those {len(verbs)} verbs can never work: "
+            f"{_listed(verbs)}.")
+    if findings.get("ungrounded"):
+        trouble.append(
+            f"{len(findings['ungrounded'])} kinds have nothing above them in "
+            f"the taxonomy, so no rule about a sort of thing can reach them: "
+            f"{_listed(findings['ungrounded'])}.")
     if findings["one_way"]:
         trouble.append(
             f"{len(findings['one_way'])} conditions can be set and never "

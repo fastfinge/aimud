@@ -75,7 +75,7 @@ ASKS_ALLOWED = 2
 PHASES = rulebooks.PHASES
 EFFECTS = ("set_state", "set_trait", "create_object", "destroy_object",
            "move_object", "modify_object", "modify_room", "move_actor",
-           "set_exit", "describe", "try", "stop")
+           "set_exit", "describe", "narrate", "try", "stop")
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +167,7 @@ def too_general(scope, world_root=None):
 # Reading what came back
 # ---------------------------------------------------------------------------
 
-def validate(reply, offered, action):
+def validate(reply, offered, action, world_root=None):
     """
     The rules in a reply that are worth keeping, and what was wrong with the
     rest.
@@ -178,11 +178,15 @@ def validate(reply, offered, action):
     rule nothing can evaluate is a rule that will sit in the book forever
     doing nothing, and the cheapest place to catch it is before it is written
     down.
+
+    And one check that is about meaning rather than about shape, earned by
+    measurement: see `_self_defeating`.
     """
     from world import conditions
 
     scopes = {token: scope for token, _said, scope in offered}
     kept, complaints = [], []
+    produced = _states_produced(reply, world_root, action)
 
     try:
         given = list(reply.get("rules") or [])
@@ -219,17 +223,92 @@ def validate(reply, offered, action):
         if phase == rulebooks.CHECK and not conds:
             complaints.append("a check rule that checks nothing")
             continue
+        dead = _self_defeating(conds, produced)
+        if phase == rulebooks.CHECK and dead:
+            complaints.append(
+                f"a check rule demanding {', '.join(dead)}, which is what "
+                f"{action} itself produces -- it could never fire")
+            continue
         if phase in (rulebooks.CARRY_OUT, rulebooks.AFTER) and not effects:
             complaints.append(f"a {phase} rule that changes nothing")
             continue
+
+        # Through `checks.clean`, so that a contest nothing can roll leaves the
+        # verb deterministic -- which is what it was before the rule existed --
+        # rather than sitting in the book as a malformed roll against a target
+        # invented at the last moment.
+        from world import checks
 
         kept.append(rulebooks.blank(
             action=action, phase=phase, scope=scopes[token],
             about=str(entry.get("about") or "direct"),
             name=str(entry.get("name") or "").strip(),
             when=guards, conditions=conds, effects=effects,
-            contest=entry.get("contest"), source="generated"))
+            contest=checks.clean(entry.get("contest")), source="generated"))
     return kept, complaints
+
+
+def _states_produced(reply, world_root, action):
+    """
+    Every state this verb's carry-out rules put on the thing acted on.
+
+    Both halves: the rules in this reply, and the ones the world already
+    holds, because the two arrive in separate calls as often as not.
+    """
+    from world import rulecheck
+
+    found = set()
+    for entry in (reply.get("rules") or []) if hasattr(reply, "get") else []:
+        try:
+            if str(entry.get("phase") or "") != rulebooks.CARRY_OUT:
+                continue
+            for effect in (entry.get("effects") or []):
+                if str(effect.get("type") or "") == "set_state":
+                    found |= {str(s).lower() for s in (effect.get("add") or [])}
+        except (AttributeError, TypeError, ValueError):
+            continue
+    for rule in rulebooks.all_rules(world_root) if world_root else []:
+        if rule.get("phase") != rulebooks.CARRY_OUT:
+            continue
+        if rule.get("action") != action:
+            continue
+        for effect in rulecheck.effects_of(rule):
+            try:
+                if str(effect.get("type") or "") == "set_state":
+                    found |= {str(s).lower() for s in (effect.get("add") or [])}
+            except AttributeError:
+                continue
+    return found
+
+
+def _self_defeating(conds, produced):
+    """
+    The states a check rule demands that its own verb is what brings about.
+
+    The commonest fault in the phase 13 corpus by a long way, and it is
+    mechanical: 56 of 135 generated check rules across two soak worlds require
+    the exact state their own carry-out rule adds. Every one of them is the
+    same slip -- "you cannot oil what is already oiled" written as
+    `is: ["oiled"]` instead of `lacks: ["oiled"]` -- and the rule it makes can
+    never pass, so the verb is dead from the moment it is learned. `open` was
+    refused 41 times in one world and succeeded never.
+
+    Refused rather than corrected. Reversing a condition on a model's behalf
+    would be this code deciding what a world meant, which is exactly what it
+    must not do; declining to install one is the safe direction, and it leaves
+    the verb doing what it did before the rule existed instead of nothing at
+    all forever. The prompt above says the same thing in words, and this is
+    what catches the times that is not enough.
+    """
+    if not produced:
+        return []
+    wanted = set()
+    for condition in (conds or []):
+        try:
+            wanted |= {str(s).lower() for s in (condition.get("is") or [])}
+        except AttributeError:
+            continue
+    return sorted(wanted & produced)
 
 
 def _clean_conditions(given, conditions):
@@ -274,7 +353,7 @@ _SYSTEM = """You add one or two rules to a text MUD that already has some.
 Respond with a single JSON object — no other text:
 {"rules": [{"phase": "check", "scope": "<one of the scopes offered>",
             "about": "direct", "name": "one short sentence",
-            "conditions": [...], "effects": [...]}],
+            "conditions": [...], "effects": [...], "contest": null}],
  "new_states": [{"slug": "powered", "means": "running under its own power",
                  "group": "power"}],
  "new_traits": [],
@@ -284,10 +363,14 @@ A rule is one small fact about when something works, what it does, or what
 follows. Write the fewest that make this verb behave properly here. Two or
 three is normal; one is common.
 
+**name** is how the rule reads in the world's own rulebook, so write it as
+what must be so rather than as a complaint about what is not: "it must not
+already be oiled", never "it is already oiled".
+
 **phase** is one of:
-  check      a reason it will not work. These accumulate: every check rule
-             that applies must pass, so yours joins the ones already listed
-             rather than replacing them. Needs "conditions".
+  check      what must be TRUE before it will work. These accumulate: every
+             check rule that applies must pass, so yours joins the ones
+             already listed rather than replacing them. Needs "conditions".
   carry_out  what the verb actually does. Needs "effects".
   instead    this verb means something else here, and the ordinary meaning
              does not happen. Use it sparingly, and only when the meaning
@@ -309,8 +392,39 @@ the ship somebody is aboard and a rule about a model ship on a shelf.
 decided will be checked regardless. Restating it makes the refusal worse, not
 safer.
 
+**A check rule's conditions are the requirement, never the objection.** This is
+the one mistake worth spelling out, because it is easy to make and the rule it
+produces can never fire at all. Thinking "you cannot oil what is already oiled"
+and then writing {"subject": "direct", "is": ["oiled"]} says the opposite: that
+a thing must ALREADY be oiled before anybody may oil it. The condition has to
+be the negation -- {"subject": "direct", "lacks": ["oiled"]} -- and so does the
+name: "it must not already be oiled", not "it is already oiled".
+
+The test to apply to every check rule you write: where the carry-out rule adds
+a state, the check asks for its ABSENCE with "lacks", never its presence with
+"is". A check that demands the very state the verb produces is a verb nobody
+can ever use.
+
 {conditions}
 {effects}
+**contest** goes on a carry_out rule, and is what makes a verb a gamble
+instead of a certainty:
+  "contest": {"trait": "swordsmanship",
+              "against": {"role": "direct", "trait": "swordsmanship"}}
+  "contest": {"trait": "steadiness", "difficulty": 14}
+"trait" is the actor's figure that decides it. "against" opposes it with a
+figure of somebody else involved; "difficulty" opposes it with a fixed number,
+where 10 is even odds for somebody with none of the trait. A failed attempt
+runs no effects, and what the player reads says so.
+
+Give a contest ONLY where a capable person could plausibly fail and the
+failure would be worth reading: fighting, forcing, climbing, sneaking,
+stealing, persuading, working a delicate craft under pressure. NEVER for a
+verb that simply works -- reading a notice, opening an unlocked door, smelling
+bread, sitting down. Most verbs have none, and leaving it out entirely is the
+ordinary answer. But a world in which nothing whatever can be failed at is not
+a game, so when a verb genuinely is one, say so.
+
 **new_states** declares any state slug your rules used that the vocabulary
 below does not already have: its meaning, and its "group" if it belongs to
 one. A group is a set of states only one of which can be true at a time, so
@@ -327,9 +441,10 @@ what was missing. That is a useful answer and it is recorded; a rule that
 pretends with the wrong effect is not.
 """
 
-_CONDITIONS = """A condition is {"subject": ..., "<predicate>": ...}:
-  {"subject": "direct", "is": ["powered"]}          it is in that state
-  {"subject": "direct", "lacks": ["damaged"]}       it is not
+_CONDITIONS = """A condition is {"subject": ..., "<predicate>": ...}, and in a
+check rule it says what must hold before the verb may happen at all:
+  {"subject": "direct", "is": ["powered"]}          it must be in that state
+  {"subject": "direct", "lacks": ["damaged"]}       it must not be
   {"subject": "direct", "affords": ["read"]}        that can be done to it
   {"subject": "actor", "holds": ["direct"]}         they are carrying it
   {"subject": "actor", "wears": ["direct"]}         they have it on
@@ -344,15 +459,38 @@ _EFFECTS = """An effect is one of:
   {"type": "set_state", "role": "direct", "add": ["powered"], "remove": []}
   {"type": "set_trait", "role": "actor", "trait": "stamina", "change": -5}
   {"type": "move_object", "name_role": "direct", "to": "actor"}
+  {"type": "move_object", "name_role": "direct", "to": "room"}
+  {"type": "move_object", "name_role": "direct", "to": "container",
+                          "preposition": "in"}
   {"type": "move_object", "name_role": "direct", "to": "<a room's name>"}
   {"type": "set_exit", "exit": "airlock", "to": "<a room's name>"}
   {"type": "create_object", "name": "...", "description": "..."}
   {"type": "destroy_object", "name_role": "direct"}
+  {"type": "narrate"}
+  {"type": "move_actor", "exit": "north"}
+  {"type": "move_actor", "to": "<a room's name>"}
   {"type": "try", "action": "<verb>", "roles": {"direct": {"enclosure": "<kind>"}}}
-"set_exit" changes where a way out of this room leads, and "move_object" with a
-room's name sends a thing to another room entirely. Both name a room the way
-somebody reading would -- its name, never a number -- and do nothing at all if
-this world has no room by that name, so name one that exists.
+"move_object" puts a thing somewhere, and "to" is one of four things: "actor"
+(into their hands), "room" (down on the floor here), the ROLE of another thing
+involved -- with a "preposition" saying how it goes there, "in", "on", "under"
+or "behind" -- or the NAME of another room entirely. So a verb that posts a
+letter moves it to the container with "in", one that sets a cup on a table
+moves it to the target with "on", and one that sends a parcel away names the
+room. Never invent a state like "in_box" to stand in for this; where a thing
+is, is not a property of the thing, and the game tracks it properly.
+
+"set_exit" changes where a way out of this room leads. It and the room form of
+"move_object" both name a room the way somebody reading would -- its name,
+never a number -- and do nothing at all if this world has no room by that name,
+so name one that exists.
+
+"narrate" is for a verb whose whole result is that it was seen: smiling,
+humming, listening at a door, running a hand over the moss. The game writes
+what the player and the room read either way, so there is nothing here to say
+it with and nothing missing -- this is how a carry_out rule says "and that is
+all that happens", instead of the verb having no rule at all and being asked
+about again for ever. Use it alone and never beside another effect: a verb that
+changes something is described by what it changes.
 
 "try" is how a verb typed with no object comes to have one: aboard a ship,
 "launch" means launching the ship. Use it in an "instead" rule, guarded by
@@ -441,7 +579,7 @@ def learn(account, world_root, action, bound, actor, on_success, on_error):
         cannot = str(reply.get("cannot_say") or "").strip()
         if cannot:
             logger.log_info(f"rule_gen: {action} cannot_say -- {cannot}")
-        kept, complaints = validate(reply, offered, action)
+        kept, complaints = validate(reply, offered, action, world_root)
         for complaint in complaints:
             logger.log_info(f"rule_gen: {action} dropped -- {complaint}")
         _register_states(world_root, reply)
