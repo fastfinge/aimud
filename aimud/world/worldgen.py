@@ -1513,7 +1513,7 @@ def generate_first_room(sponsor, spec, on_success, on_error,
                     created = sponsor.account.db.created_worlds or []
                     created.append(room.id)
                     sponsor.account.db.created_worlds = created
-                    sponsor_mod.claim(room, sponsor)
+                    sponsor_mod.claim(room, sponsor.account)
                     on_success(room)
                     populate_room(sponsor, room)
                     plan_zone(sponsor, room, room.db.zone)

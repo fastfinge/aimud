@@ -42,25 +42,20 @@ def _is_player(obj):
     return getattr(obj, "account", None) is not None
 
 
-def _account_for(traversing_object, source_room):
+def _sponsor_for(traversing_object, source_room):
     """
-    An account whose API key can pay for the room beyond this exit.
+    Who pays for the room beyond this exit, and who is walking through it.
 
-    A player brings their own.  An NPC has none at all, so the cost falls to
-    whoever is in the room, and failing that to the world's creator -- the
-    same account that paid for every other room in it.
+    It used to be whoever was passing, then anybody in the room with a key,
+    then the world's creator. That is the same fault `npcs._find_account` had
+    and it is worse here, because it is silent: a visitor who steps through a
+    door in somebody else's world buys the room on the other side, and the
+    first they know of it is the bill. The world pays for its own rooms.
     """
-    account = getattr(traversing_object, "account", None)
-    if account and account.db.openrouter_api_key:
-        return account
-    for obj in (source_room.contents if source_room else []):
-        other = getattr(obj, "account", None)
-        if other and other.db.openrouter_api_key:
-            return other
-    world_root = source_room.db.world_root if source_room else None
     from world import sponsor
 
-    return sponsor.creator_of(world_root)
+    world_root = source_room.db.world_root if source_room else None
+    return sponsor.of_world(world_root, actor=traversing_object)
 
 
 class AIExit(ObjectParent, DefaultExit):
@@ -145,8 +140,8 @@ class AIExit(ObjectParent, DefaultExit):
             traversing_object.msg("This exit leads nowhere.")
             return
 
-        account = _account_for(traversing_object, source_room)
-        if account is None:
+        sponsor = _sponsor_for(traversing_object, source_room)
+        if not sponsor.answers:
             traversing_object.msg("There is no way through yet.")
             return
 
@@ -214,6 +209,6 @@ class AIExit(ObjectParent, DefaultExit):
 
         from world.worldgen import generate_connected_room
         generate_connected_room(
-            account, world_description, source_room, exit_key, on_success, on_error,
-            destination_hint=hint,
+            sponsor, world_description, source_room, exit_key, on_success,
+            on_error, destination_hint=hint,
         )

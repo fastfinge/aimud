@@ -488,8 +488,11 @@ class CmdWorldReset(Command):
             )
 
         from world.worldgen import generate_first_room
-        generate_first_room(account, spec, on_success, on_error,
-                            creator_character=caller)
+        # A reset builds a world that does not exist yet, so there is no
+        # world to read a payer off -- and whoever asked for it is the one who
+        # will own it. Same as the wizard, for the same reason.
+        generate_first_room(sponsor_mod.of_account(account), spec,
+                            on_success, on_error, creator_character=caller)
 
     def _target(self, worlds):
         """Resolve which world to reset, reporting any problem to the caller."""

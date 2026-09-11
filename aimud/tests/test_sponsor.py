@@ -11,10 +11,15 @@ and `key` raising is the difference between a generator deciding not to start
 and a generator being stopped halfway.
 """
 
+import ast
+import pathlib
+
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
 from world import sponsor
+
+GAME = pathlib.Path(__file__).resolve().parent.parent
 
 
 @tag("unit")
@@ -135,3 +140,59 @@ class FindingWhoPays(EvenniaTest):
         sponsor.claim(self.root, self.account)
         self.assertEqual(sponsor.of(self.char2).base_url,
                          "https://nano-gpt.com/api/v1")
+
+
+@tag("unit")
+class NobodyPassesAnAccountWhereASponsorGoes(SimpleTestCase):
+    """
+    The structural guard, written after the rename it would have caught.
+
+    Fifty call sites changed from an account to a sponsor, the whole suite was
+    green, and two were missed -- `worldreset` and the exit that builds the
+    room beyond a door. Neither raised until somebody used it, because an
+    Account and a Sponsor answer to enough of the same names to get a long way
+    in: `account.key` is a string where `sponsor.key` is a method, so the
+    failure was `'str' object is not callable`, several frames from the cause.
+
+    A test that runs the generators would not have found them either. They are
+    reached by one command and one door, and the ways in are what was missed.
+    """
+
+    def functions_taking_a_sponsor(self):
+        found = {}
+        for path in sorted((GAME / "world").glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    args = [a.arg for a in node.args.args]
+                    if args and args[0] == "sponsor":
+                        found[node.name] = path.name
+        return found
+
+    def test_no_caller_hands_one_an_account(self):
+        wanted = self.functions_taking_a_sponsor()
+        self.assertTrue(wanted, "nothing takes a sponsor; the check is stale")
+
+        offences = []
+        for where in ("world", "commands", "typeclasses"):
+            for path in sorted((GAME / where).glob("*.py")):
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    name = getattr(node.func, "attr",
+                                   getattr(node.func, "id", ""))
+                    if name not in wanted:
+                        continue
+                    given = []
+                    if node.args:
+                        given.append(node.args[0])
+                    given += [kw.value for kw in node.keywords
+                              if kw.arg == "sponsor"]
+                    for value in given:
+                        passed = getattr(value, "id",
+                                         getattr(value, "attr", None))
+                        if passed in ("account", "acct"):
+                            offences.append(
+                                f"{path.name}:{node.lineno} {name}({passed})")
+        self.assertEqual(offences, [], "\n" + "\n".join(offences))

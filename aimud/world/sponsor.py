@@ -231,8 +231,24 @@ def creator_of(world_root):
 
 
 def claim(world_root, account):
-    """Record who made a world, so nothing has to go looking again."""
+    """
+    Record who made a world, so nothing has to go looking again.
+
+    Refuses anything that is not an account, and says so. This goes into a
+    persistent attribute, so a wrong value is not a wrong value: it is a
+    `TypeError` from inside Evennia's pickler, several frames from whoever
+    passed it, with nothing in the message naming this function. Handed a
+    Sponsor rather than the account inside it -- which is one rename away and
+    happened -- the failure read `'NoneType' object is not callable`.
+    """
     if world_root is None or account is None:
+        return
+    if not hasattr(account, "db") or isinstance(account, Sponsor):
+        logger.log_err(
+            f"sponsor: refusing to record {type(account).__name__} as the "
+            f"maker of {getattr(world_root, 'key', world_root)!r}; that wants "
+            f"the account, not whatever is carrying it"
+        )
         return
     world_root.db.world_creator = account
 

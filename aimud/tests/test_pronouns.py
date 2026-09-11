@@ -288,3 +288,42 @@ class WhatAGeneratedCharacterGoesBy(EvenniaTest):
             possessive="hers", reflexive="herself", means="again"))
         self.assertEqual(len(pronouns.vocabulary(self.root)), 4)
         self.assertEqual(pronouns.of(npc, self.root)["object"], "her")
+
+
+@tag("world")
+class WhatTheRegisterRecords(EvenniaTest):
+    """
+    An empty attribute is the useful answer, not a missing one.
+
+    The seeded four are merged in by `vocabulary` and never written down, so
+    what a world stores is exactly what it invented. A world that has met
+    nobody the ordinary four did not cover records nothing -- which is what
+    the corpus should say about it, and what four identical entries in every
+    export would have hidden.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.room1.db.world_root = self.root
+
+    def test_a_world_that_invented_nothing_stores_nothing(self):
+        self.assertFalse(self.root.db.pronoun_sets)
+        self.assertEqual(len(pronouns.vocabulary(self.root)), 4)
+
+    def test_and_still_answers_for_every_seeded_set(self):
+        self.assertEqual(pronouns.get(self.root, "she")["object"], "her")
+
+    def test_inventing_one_records_only_that_one(self):
+        pronouns.register(self.root, a_set())
+        self.assertEqual(list(self.root.db.pronoun_sets), ["ze"])
+        self.assertEqual(len(pronouns.vocabulary(self.root)), 5)
+
+    def test_a_seeded_set_cannot_drift_from_the_code(self):
+        """
+        Merged rather than copied, so a world made a year ago answers with
+        whatever `SEEDED` says today.
+        """
+        pronouns.register(self.root, a_set())
+        self.assertEqual(pronouns.get(self.root, "they"),
+                         dict(pronouns.SEEDED["they"]))

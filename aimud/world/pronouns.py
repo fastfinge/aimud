@@ -85,14 +85,29 @@ def _slug(word):
 
 
 def vocabulary(world_root):
-    """{slug: set} for this world, seeded sets included."""
-    if world_root is None:
-        return dict(SEEDED)
-    stored = dict(world_root.db.pronoun_sets or {})
-    if not stored:
-        return dict(SEEDED)
+    """
+    {slug: set} for this world, seeded sets included.
+
+    The seeded four are merged in rather than written down, and the attribute
+    holds only what a world invented for itself. That is deliberate on both
+    counts. Merging means a world made before any of this existed answers
+    correctly with no backfill, and a seeded set cannot drift from the code
+    that defines it. Storing only what was invented means the register reads
+    as what it is -- an empty attribute says this world has met nobody the
+    ordinary four did not cover, which is the only interesting thing the
+    corpus could record about it.
+
+    An earlier draft had a `seed()` that wrote the four onto a world, and
+    nothing ever called it. That was the right instinct badly executed: it
+    would have put four identical entries in every world's export and told a
+    reader nothing.
+    """
+    stored = {}
+    if world_root is not None:
+        stored = {slug: dict(entry)
+                  for slug, entry in (world_root.db.pronoun_sets or {}).items()}
     found = dict(SEEDED)
-    found.update({slug: dict(entry) for slug, entry in stored.items()})
+    found.update(stored)
     return found
 
 
@@ -120,20 +135,6 @@ def by_form(world_root, word, field="object"):
         return []
     return [dict(entry) for entry in vocabulary(world_root).values()
             if entry.get(field) == word]
-
-
-def seed(world_root):
-    """
-    Write the seeded sets onto a world that has none.
-
-    Not required -- `vocabulary` answers with them either way -- and worth
-    doing so that `help` and the export see a world's register rather than an
-    empty attribute that behaves as though it were full.
-    """
-    if world_root is None or world_root.db.pronoun_sets:
-        return
-    world_root.db.pronoun_sets = {slug: dict(entry)
-                                  for slug, entry in SEEDED.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -182,9 +183,10 @@ def register(world_root, declared):
 
     vocabulary_mod.permit(world_root, slug, "pronoun")
 
+    # Only what this world invented. The seeded four are merged in by
+    # `vocabulary` and are not written down, so the attribute stays a record
+    # of what is unusual about this world rather than a copy of the defaults.
     stored = dict(world_root.db.pronoun_sets or {})
-    if not stored:
-        stored = {name: dict(seeded) for name, seeded in SEEDED.items()}
     stored[slug] = entry
     world_root.db.pronoun_sets = stored
     _teach_the_parser(world_root, entry)
