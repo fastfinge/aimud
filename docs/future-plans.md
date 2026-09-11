@@ -1,5 +1,9 @@
-These are plans for things I want to do later. Not fully scoped yet, still in the idea stage. But we should make current decisions that will allow for them later where possible.
+These are plans for things I want to do later. Not fully scoped yet, still in the idea stage. But we should make current decisions that will allow for them later where possible. Remove items from here when they're done.
 
+* activitypub: fediverse login instead of account system. Use https://codeberg.org/socialhome/federation or takahe https://github.com/jointakahe/takahe?
+    * allow logins from an activitypub account: better security, replace our account system, people get whatever security (two factor etc) there server offers?
+    * post to fediverse accounts from aimud?
+    * our characters can be fediverse actors?
 * show when busy: show something every 10-15 seconds when an LLM is processing for a player so they know things are happening and the mud didn't just crash
 * new action: rules can show player a menu with options to pick and get returned the result chosen
 * disambiguation uses Evennia's built-in functions to show players a menu to pick the object they meant or quit
@@ -22,7 +26,7 @@ the builders. Just depend on AIML here maybe? But replace support for JavaScript
 * allow changing the api url so players can use providers other than openrouter if they want (nano-gpt.com is the
 primary use case)
 * do something interesting with the web interface. Web editor? Examine stats in the browser? Prettier looking interface
-for playing in browser?
+for playing in browser? Ability to read help files and documentation online, with hyperlinks?
 * let characters use Evennia's built-in discord/IRC support so characters can reach out of their world
 * world import and export? Players can create interesting worlds and export them to be played by people on other aimud
 instances
@@ -30,7 +34,7 @@ instances
  expanding the hardcoded menu. Let them share plugins with other aimud owners. All the hardcoded lists and vocabularies
 should be extendable via plugin, so worlds can become unique in ways our models can't make them.
 * federation: I3 or IMC to let players chat with each other over different muds. Make it social without requiring one
-central mud for everyone.
+central mud for everyone. Or via activitypub? Or xmpp? Or matrix?
 * massive security audit: before hosting this for other people. Make sure API keys won't leak, money can't be spent
 unexpectedly, etc.
 * secure mud connections via SSL for remotely hosted worlds. Players shouldn't have to pass API keys over unencrypted connections unless they want to
@@ -38,4 +42,5 @@ unexpectedly, etc.
 * mcp servers: let other AI's play? Give generators and npcs new tools?
 * editor improvements: evennia's editor is based on vi and confusing. Let "@" on a blank line stop editing, the same way MOO does it. Support the local editor OOB protocol and MUD Client Protocol v2.1 for players who have better editors
 * Agent Client Protocol (ACP): let your coding agent or claude join you in the mud and help you make things? By its nature this mud welcomes players and bots on equal footing. The idea is have fun, no matter who or what you are.
-
+* Plural objects as a single bound thing: use wordnet or something for better pluralizing. Objects with a quantity trait that reduces and is plural. Somehow without hardcoding?
+* Co-ownership and institutional owners: worth having for corporations, countries, gangs, guilds, etc.
