@@ -284,8 +284,89 @@ def resolve(actor, spec, bound, world_root):
     return result
 
 
+def odds(standing, target):
+    """
+    How many of the die's twenty faces succeed, given a standing and a target.
+
+    Counted by asking `_band` about every face rather than by arithmetic, so
+    there is exactly one implementation of what a success is. That matters
+    more than it looks: the extremes overrule the sum, so the honest answer is
+    never nought and never twenty. A hopeless attempt is 1 in 20 and a trivial
+    one is 19 in 20, which is the whole reason for rolling -- a novice
+    occasionally beats an expert, and an expert occasionally fumbles.
+    """
+    try:
+        standing, target = float(standing), float(target)
+    except (TypeError, ValueError):
+        return 0
+    return sum(1 for die in range(1, DIE + 1)
+               if _band(die + standing - target, die) in GOOD)
+
+
+def prospect(actor, spec, bound, world_root):
+    """
+    What a contest would come to, without rolling it.
+
+    Everything `resolve` works out except the die: which figure of the actor's
+    decides it, what it is measured against, and how many faces in twenty go
+    their way. What `effects <verb>` prints, so that a verb nobody can pass and
+    a verb nobody can fail are told apart by reading rather than by trying it
+    eleven times.
+    """
+    spec = clean(spec)
+    if not spec:
+        return None
+    standing = _figure(actor, spec.get("trait"), world_root)
+    target, opposed_by = _target(actor, spec, bound or {}, world_root)
+    return {
+        "trait": spec.get("trait") or "",
+        "standing": standing,
+        "target": target,
+        "opposed_by": opposed_by,
+        "faces": odds(standing, target),
+    }
+
+
+def said_prospect(chance):
+    """A prospect as the line a person reads under a verb."""
+    if not chance:
+        return ""
+    trait = str(chance.get("trait") or "").replace("_", " ")
+    against = (f" against {chance['opposed_by']}" if chance.get("opposed_by")
+               else f" against {chance['target']:g}")
+    figure = (f"your {trait} of {chance['standing']:g}" if trait
+              else "an untrained attempt")
+    return (f"|xcontested: {figure}{against} -- "
+            f"{chance['faces']} chances in {DIE}|n")
+
+
+def said(result):
+    """
+    The roll as the player sees it, or "" when nothing was rolled.
+
+    `describe` below says the same thing to the log and says it in the log's
+    shorthand. This one is for whoever just rolled it, and it exists because a
+    world has to be examinable by the person playing in it: a verb that always
+    fails and a verb that is merely hard look identical from inside unless the
+    numbers are shown. Dimmed, because it sits under prose that was written to
+    be read first.
+    """
+    if not result:
+        return ""
+    trait = str(result.get("trait") or "").replace("_", " ")
+    figure = f"{trait} {result['standing']:g}" if trait else "untrained"
+    against = (f"{result['opposed_by']}'s {result['target']:g}"
+               if result.get("opposed_by") else f"{result['target']:g}")
+    landed = {"critical_success": "and then some",
+              "success": "which is enough",
+              "failure": "which is not enough",
+              "critical_failure": "nowhere near"}[result["outcome"]]
+    return (f"|x[{figure} + {result['die']} = {result['roll']:g} "
+            f"against {against} -- {landed}]|n")
+
+
 def describe(result):
-    """The roll as one line, for the log. Players are never shown this."""
+    """The roll as one line, for the log. See `said` for the player's."""
     if not result:
         return "no check"
     against = f" ({result['opposed_by']})" if result.get("opposed_by") else ""

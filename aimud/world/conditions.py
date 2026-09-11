@@ -415,7 +415,13 @@ def _abstractly(condition):
     if name == "lacks":
         return f"{subject} {be} not {nor}"
     if name == "affords":
-        return f"{subject} can be {listed}"
+        # "can be climb" is what gluing an affordance into that sentence gets
+        # you, and this module refuses to guess English morphology anywhere
+        # else -- so it is phrased the way the evaluated moods below already
+        # phrase it, which is grammatical for every verb without inflecting
+        # one. `affords` names a verb, never an adjective made out of one.
+        joined = " and ".join(_said(v) for v in _listed(value))
+        return f"{subject} {be} something you can {joined}"
     if name == "kind":
         from world import lexicon
 

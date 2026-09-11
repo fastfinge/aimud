@@ -129,6 +129,238 @@ def _resolve(effect, key, bound, room, actor):
     return obj
 
 
+# ---------------------------------------------------------------------------
+# What an effect is, in words
+# ---------------------------------------------------------------------------
+
+#: Every effect there is, and what each one means -- the register that makes
+#: the vocabulary readable instead of only runnable.
+#:
+#: This exists because a world was not examinable. `rules launch` printed what
+#: launching *required* and never what it *did*, so the one question a person
+#: most wants answered -- what will happen if I type this -- could only be
+#: answered by reading the JSON. Three things read this register now: the
+#: `effects` command, `help <effect>`, and `suggest.said`, which had grown a
+#: third-of-a-renderer of its own with an `else: would: <type>` at the bottom.
+#:
+#: Kept here, beside `_apply_one`, for the reason `actions.prompt_block` and
+#: `affordances.PROMPT` are kept beside what they describe: the sentence and
+#: the code have to be able to drift only together. Adding an effect without
+#: an entry here is caught by a test.
+#:
+#: Each entry says:
+#:   means      what it does, in one sentence, in the second person
+#:   takes      the fields it reads, for somebody writing one by hand
+#:   backwards  whether `conditions.achieves` can read it as a goal. An effect
+#:              nobody can read backwards is a hole in the planner (11.1), so
+#:              a `False` here is a decision on the record rather than a gap
+#:   answers    whether its own output is the whole of what the player reads,
+#:              so no narration is paid for on top. See SPEAKS_FOR_ITSELF.
+VOCABULARY = {
+    "set_state": {
+        "means": "puts something into a condition, or takes it out of one",
+        "takes": 'role, add: [...], remove: [...]',
+        "backwards": True, "answers": False,
+    },
+    "set_trait": {
+        "means": "moves a figure kept about a person, at once or over time",
+        "takes": 'role, trait, change / set_to, rate',
+        "backwards": True, "answers": False,
+    },
+    "create_object": {
+        "means": "brings something into being, here or in your hands",
+        "takes": 'name, description, location: "room" | "actor"',
+        "backwards": True, "answers": False,
+    },
+    "destroy_object": {
+        "means": "takes something out of the world for good",
+        "takes": "name_role",
+        "backwards": True, "answers": False,
+    },
+    "move_object": {
+        "means": "puts something somewhere else -- your hands, the floor, "
+                 "inside or on another thing, or another room entirely",
+        "takes": 'name_role, to: "actor" | "room" | <role> | <a room\'s name>, '
+                 "preposition",
+        "backwards": True, "answers": False,
+    },
+    "modify_object": {
+        "means": "changes what something is called or what it looks like",
+        "takes": "name_role, new_name, new_description, affordances",
+        "backwards": False, "answers": False,
+    },
+    "modify_room": {
+        "means": "changes what this place is called or what it looks like",
+        "takes": "new_name, new_description",
+        "backwards": False, "answers": False,
+    },
+    "move_actor": {
+        "means": "takes you somewhere, by a way out or by naming the place",
+        "takes": 'exit | to: <a room\'s name>',
+        "backwards": True, "answers": False,
+    },
+    "set_exit": {
+        "means": "changes where a way out of this room leads",
+        "takes": 'exit, to: <a room\'s name>',
+        "backwards": True, "answers": False,
+    },
+    "describe": {
+        "means": "shows what something looks like, and changes nothing",
+        "takes": "role",
+        "backwards": False, "answers": True,
+    },
+    "narrate": {
+        "means": "does nothing beyond being seen to happen -- for a verb "
+                 "whose whole result is that somebody watched you do it",
+        "takes": "nothing",
+        "backwards": False, "answers": False,
+    },
+    "try": {
+        "means": "means another verb instead, and runs it from the start",
+        "takes": "action, roles",
+        "backwards": False, "answers": False,
+    },
+}
+
+
+def known(etype):
+    """What this game knows about an effect type, or {} for one it does not."""
+    return dict(VOCABULARY.get(str(etype or "").strip()) or {})
+
+
+def _role_words(effect, key="name"):
+    """How to name whatever an effect is aimed at."""
+    from world import conditions
+
+    role = effect.get(key + "_role") or effect.get("role")
+    if role:
+        return conditions._SUBJECT_WORDS.get(str(role), str(role))
+    named = str(effect.get(key) or "").strip()
+    return named or "it"
+
+
+def _listed(values):
+    return ", ".join(str(v) for v in (values or []) if v)
+
+
+def say(effect):
+    """
+    One effect as a clause somebody can read: "makes what you act on burning".
+
+    Present tense and second person, because every reader of this is being told
+    what will happen to them if they type the verb. An effect this game does
+    not know is said as itself rather than hidden, which is the whole point of
+    a listing somebody is checking.
+    """
+    try:
+        etype = str(effect.get("type") or "").strip()
+    except AttributeError:
+        return "something unreadable"
+    what = _role_words(effect)
+
+    if etype == "set_state":
+        added, gone = _listed(effect.get("add")), _listed(effect.get("remove"))
+        if added and gone:
+            return f"makes {what} {added}, and no longer {gone}"
+        if added:
+            return f"makes {what} {added}"
+        if gone:
+            return f"leaves {what} no longer {gone}"
+        return f"changes nothing about {what}"
+
+    if etype == "set_trait":
+        trait = str(effect.get("trait") or "something").replace("_", " ")
+        who = _role_words(effect) if (effect.get("role")
+                                      or effect.get("name_role")) else "you"
+        parts = []
+        if effect.get("set_to") is not None:
+            parts.append(f"puts {who} at {effect['set_to']} {trait}")
+        change = effect.get("change")
+        if change:
+            try:
+                amount = float(change)
+            except (TypeError, ValueError):
+                amount = 0
+            way = "costs" if amount < 0 else "gains"
+            parts.append(f"{way} {who} {abs(amount):g} {trait}")
+        rate = effect.get("rate")
+        if rate:
+            try:
+                per = float(rate)
+            except (TypeError, ValueError):
+                per = 0
+            if per:
+                way = "drain" if per < 0 else "climb"
+                parts.append(f"sets {trait} to {way} by "
+                             f"{abs(per):g} a second")
+            else:
+                parts.append(f"stops {trait} drifting")
+        return ", and ".join(parts) or f"changes {who}'s {trait}"
+
+    if etype == "create_object":
+        return f"produces {str(effect.get('name') or 'something')}"
+
+    if etype == "destroy_object":
+        return f"destroys {what}"
+
+    if etype == "move_object":
+        where = str(effect.get("to") or "room").strip()
+        if where == "actor":
+            return f"puts {what} in your hands"
+        if where == "room":
+            return f"sets {what} down here"
+        from world import conditions
+
+        if where in conditions.ROLES:
+            preposition = str(effect.get("preposition") or "in")
+            return (f"puts {what} {preposition} "
+                    f"{conditions._SUBJECT_WORDS.get(where, where)}")
+        return f"sends {what} to {where}"
+
+    if etype == "modify_object":
+        said = []
+        if effect.get("new_name"):
+            said.append(f"renames {what} to {effect['new_name']}")
+        if effect.get("new_description"):
+            said.append(f"changes what {what} looks like")
+        if effect.get("affordances") is not None:
+            said.append(f"changes what can be done to {what}")
+        return ", and ".join(said) or f"changes {what}"
+
+    if etype == "modify_room":
+        said = []
+        if effect.get("new_name"):
+            said.append(f"renames this place to {effect['new_name']}")
+        if effect.get("new_description"):
+            said.append("changes what this place looks like")
+        return ", and ".join(said) or "changes this place"
+
+    if etype == "move_actor":
+        if effect.get("exit"):
+            return f"takes you {effect['exit']}"
+        if effect.get("to"):
+            return f"takes you to {effect['to']}"
+        return "takes you somewhere"
+
+    if etype == "set_exit":
+        way = str(effect.get("exit") or effect.get("name") or "a way out")
+        return f"makes {way} lead to {effect.get('to') or 'somewhere else'}"
+
+    if etype == "describe":
+        # Not "shows you what {what} looks like": the role words are written
+        # as subjects -- "what you act on" -- and that sentence comes out with
+        # two whats in it.
+        return f"describes {what}"
+
+    if etype == "narrate":
+        return "nothing but what you see happen"
+
+    if etype == "try":
+        return f"means {effect.get('action') or 'something else'} instead"
+
+    return f"does something this game calls {etype or 'nothing'}"
+
+
 #: Effects whose return value is the whole of what the player should read.
 #:
 #: Ordinarily an effect's text is an aside broadcast to the room -- "the candle
@@ -142,7 +374,8 @@ def _resolve(effect, key, bound, room, actor):
 #: have been told something"; what an NPC wants from looking is whatever an
 #: `after` rule does next, and that is a `set_trait` or a `set_state` like any
 #: other. See docs/rulebooks-from-inform.md 8.1.
-SPEAKS_FOR_ITSELF = ("describe",)
+SPEAKS_FOR_ITSELF = tuple(sorted(
+    name for name, entry in VOCABULARY.items() if entry.get("answers")))
 
 
 def speaks_for_itself(effects):

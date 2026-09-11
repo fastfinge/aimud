@@ -1044,7 +1044,23 @@ def _with_rule(caller, room, account, raw, verb, bound, rule, release,
         # happened rather than a thing that was refused: the player was allowed
         # to try and the dice said no, which is not evidence of a missing rule.
         counters.note(world_root, verb, bound, caller, counters.DONE)
-        release(actor_text, visible)
+
+        # And what the dice actually said, to whoever rolled them. Added here
+        # rather than a few lines up on purpose: the narration has already been
+        # cached and the memory already written, and neither wants a die roll
+        # in it -- the text is reused the next time anybody does this, and what
+        # a character remembers is what happened rather than how it was
+        # decided. Only the actor sees it; the room sees the prose.
+        #
+        # And only an actor who reads. An NPC's actor line goes into its
+        # working memory when nothing happened in the room, so a die roll here
+        # would come back as something the character believes it noticed --
+        # and `narration_hint` exists a file away precisely because a narrator
+        # handed "13 against 12" writes about dice instead of about a blade
+        # turning at the last moment.
+        rolled = "" if getattr(caller.db, "is_npc", False)             else checks.said(result)
+        release("\n".join(p for p in (actor_text, rolled) if p),
+                visible)
         # The world just changed under everyone here, which is exactly when a
         # quest may have quietly become finished.
         from world.quests import review_room
