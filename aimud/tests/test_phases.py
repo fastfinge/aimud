@@ -207,3 +207,152 @@ class ThePhasesInOrder(RunningTheAttempt):
                     as_json({"actor": "You read it.",
                              "room": "{actor} reads."}))
         self.assertIn("read", verbs.states(self.obj1))
+
+
+@tag("world")
+class RulesAboutAThingWhenThereIsNoThing(RunningTheAttempt):
+    """
+    The standard rules apply to every action, including the ones that name
+    nothing.
+
+    "You must be able to reach what you act on" has `action: null`, so a verb
+    that takes no object at all gathered it -- and `reachable_by` answers a
+    subject that is not there with "There is nothing here to do that to." So
+    `smile` was refused, in words that read as though the game had not
+    understood a word it had understood perfectly: a rule about a thing, asked
+    about no thing.
+
+    The fix is a `when` guard rather than a special case in the predicate,
+    because a rule that should not apply should not be gathered. That also
+    keeps `rules` honest: the guard is printable and the reason is readable.
+    """
+
+    def test_the_reach_rule_is_guarded_on_something_being_named(self):
+        standard_rules.seed(self.root)
+        reach = next(r for r in R.all_rules(self.root) if "reach" in r["name"])
+        self.assertEqual(reach["when"],
+                         [{"subject": "direct", "unbound": False}])
+
+    def test_it_is_not_gathered_for_a_verb_that_named_nothing(self):
+        standard_rules.seed(self.root)
+        gathered = R.for_attempt(self.root, "smile", {}, self.char1,
+                                 phase=R.CHECK)
+        self.assertNotIn("you must be able to reach what you act on",
+                         [r["name"] for r in gathered])
+
+    def test_and_is_gathered_the_moment_something_is(self):
+        standard_rules.seed(self.root)
+        gathered = R.for_attempt(self.root, "read", {"direct": self.obj1},
+                                 self.char1, phase=R.CHECK)
+        self.assertIn("you must be able to reach what you act on",
+                      [r["name"] for r in gathered])
+
+    def test_smiling_is_not_refused_for_reaching_nothing(self):
+        said = self.try_it("smile",
+                           as_json({"applies_to": []}),
+                           as_json({"rules": []}),
+                           as_json({"actor": "You smile.",
+                                    "room": "{actor} smiles."}))
+        self.assertNotIn("nothing here to do that to", said)
+        self.assertIn("You smile", said)
+
+
+@tag("world")
+class WhenTwoNounsAreBothStrangers(RunningTheAttempt):
+    """
+    A noun nothing answers to is promoted, not refused -- the room describes a
+    blackboard and nothing in the database does, so reaching for it makes it
+    real. That is right, and it used to be done one noun at a time: conjure the
+    first, then discover the second also needs inventing, then give up.
+
+    So "call mom on the phone", in a world with neither, left a `mom` standing
+    in the dungeon and answered "You cannot make sense of that here" -- which
+    both wasted a call on an object nobody wanted and blamed the player's
+    sentence for the world's not having a phone in it.
+    """
+
+    def test_nothing_is_made_when_two_things_would_have_to_be(self):
+        before = len(self.room1.contents)
+        said = self.try_it("call mom on phone",
+                           as_json({"applies_to": [{"role": "direct"}]}))
+        self.assertEqual(len(self.room1.contents), before,
+                         "nothing should have been conjured")
+        self.assertIn("no mom", said)
+        self.assertIn("no phone", said)
+
+    def test_and_the_refusal_is_about_the_world_rather_than_the_sentence(self):
+        said = self.try_it("call mom on phone",
+                           as_json({"applies_to": [{"role": "direct"}]}))
+        self.assertNotIn("make sense", said)
+
+
+@tag("world")
+class WhenTheStandardRulesThemselvesChange(RunningTheAttempt):
+    """
+    `worldreset` is this project's usual answer to a change in shape, and it is
+    the right one for a world's *own* rules: nobody can say what a world meant
+    by something it wrote, so a converted world is worth less than a fresh one.
+
+    These are not a world's own rules. They are the engine's, written in one
+    file, and a world holding last week's copy of them is holding a bug rather
+    than a decision -- which is why the seed carries a number and a world a
+    version behind has them replaced.
+    """
+
+    def test_a_current_world_is_left_alone(self):
+        standard_rules.seed(self.root)
+        before = len(R.all_rules(self.root))
+        self.assertEqual(standard_rules.seed(self.root), [])
+        self.assertEqual(len(R.all_rules(self.root)), before)
+
+    def test_a_world_a_version_behind_gets_the_new_ones(self):
+        standard_rules.seed(self.root)
+        setattr(self.root.db, standard_rules.VERSION_ATTR,
+                standard_rules.VERSION - 1)
+        self.assertTrue(standard_rules.seed(self.root))
+        standing = [r for r in R.all_rules(self.root)
+                    if standard_rules.is_standard(r)]
+        self.assertEqual(len(standing), len(standard_rules.STANDARD),
+                         "the old copies should have gone, not doubled up")
+
+    def test_and_keeps_what_it_wrote_for_itself(self):
+        standard_rules.seed(self.root)
+        R.add(self.root, R.blank(action="read", phase=R.CHECK,
+                                 name="a rule this world wrote"))
+        setattr(self.root.db, standard_rules.VERSION_ATTR,
+                standard_rules.VERSION - 1)
+        standard_rules.seed(self.root)
+        self.assertIn("a rule this world wrote",
+                      [r["name"] for r in R.all_rules(self.root)])
+
+    def test_a_declaration_the_engine_makes_is_replaced_too(self):
+        """
+        `actions.declare` is first-answer-wins on purpose, so a world that
+        guessed `put` before this file declared it would keep the guess for
+        ever -- which is the bug rather than the fix.
+        """
+        from world import actions
+
+        standard_rules.seed(self.root)
+        setattr(self.root.db, standard_rules.VERSION_ATTR,
+                standard_rules.VERSION - 1)
+        actions.declare(self.root, "put", [])          # the stale guess
+        store = dict(getattr(self.root.db, actions.ATTR, None) or {})
+        store["put"] = dict(store["put"], applies_to=[
+            {"role": "source", "access": "touchable", "optional": False}])
+        setattr(self.root.db, actions.ATTR, store)
+
+        standard_rules.seed(self.root)
+        declared = actions.spec(self.root, "put")
+        self.assertTrue(all(role["optional"]
+                            for role in declared["applies_to"]))
+
+    def test_and_a_declaration_the_world_made_is_not(self):
+        from world import actions
+
+        standard_rules.seed(self.root)
+        actions.declare(self.root, "launch", [{"role": "direct"}])
+        setattr(self.root.db, standard_rules.VERSION_ATTR,
+                standard_rules.VERSION - 1)
+        standard_rules.seed(self.root)
+        self.assertIsNotNone(actions.spec(self.root, "launch"))

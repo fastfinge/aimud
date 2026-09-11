@@ -72,6 +72,29 @@ ACCESS = (VISIBLE, TOUCHABLE, CARRIED)
 #: it is a claim worth making deliberately.
 DEFAULT_ACCESS = TOUCHABLE
 
+#: The three things a state can stop somebody doing, named from the action's
+#: side: which of them this action is allowed to happen in spite of.
+#:
+#: The standard rule "you must be able to act" applies to every action there
+#: is, and check rules are monotone by construction -- adding one can only make
+#: an action stricter, never looser (see the plan's ground rule 3). So there is
+#: no rule a world can write that lets a dead character do anything, which is
+#: correct for every verb except the ones whose entire purpose is to end the
+#: state: reviving, waking, being cut free, being ungagged. Without a way to
+#: say so, a world that kills somebody has no way to let them back, and the
+#: only alternatives are a hardcoded `respawn` command -- which decides
+#: permadeath for every world at once -- or nothing.
+#:
+#: This is Inform's "the can't-act-while-dead rule is not listed in the check
+#: rulebook for resurrecting", as data on the declaration rather than as a
+#: rule. It sits on the declaration for the same reason arity does: it is what
+#: every rule about the action was written against, and first answer stands.
+#:
+#: Read by `conditions._p_able`, which is the same shape `_p_reachable` already
+#: uses to excuse a role declared `visible` -- one predicate, consulting the
+#: declaration, in the phase the gate runs in.
+GATES = ("acting", "moving", "speaking")
+
 
 def _store(world_root):
     return dict(getattr(world_root.db, ATTR, None) or {}) if world_root else {}
@@ -117,7 +140,34 @@ def clean_roles(applies_to):
     return out
 
 
-def declare(world_root, action, applies_to=(), sense="", means=""):
+def clean_gates(despite):
+    """The gates a declaration waives, with anything unusable dropped."""
+    found = []
+    for name in (despite or []):
+        gate = str(name or "").strip().lower()
+        if gate in GATES and gate not in found:
+            found.append(gate)
+    return found
+
+
+def waives(world_root, action, gate):
+    """
+    Whether this action is one the world lets a stopped character take anyway.
+
+    False for everything unless a world said otherwise when it declared the
+    action, which is the point: permadeath is the default and a way back is a
+    decision a world makes deliberately and once.
+    """
+    settled = spec(world_root, action)
+    if not settled:
+        return False
+    try:
+        return str(gate) in (settled.get("despite") or [])
+    except AttributeError:
+        return False
+
+
+def declare(world_root, action, applies_to=(), sense="", means="", despite=()):
     """
     Settle what an action takes, once, and answer with what was settled.
 
@@ -147,6 +197,7 @@ def declare(world_root, action, applies_to=(), sense="", means=""):
         "sense": sense,
         "means": str(means or "").strip() or lexicon.definition(sense),
         "applies_to": clean_roles(applies_to),
+        "despite": clean_gates(despite),
     }
     if world_root:
         store = _store(world_root)
@@ -263,7 +314,8 @@ def prompt_block(world_root, action):
     lines = [
         f'Declare what "{action}" takes, as a JSON object:',
         '{"applies_to": [{"role": "direct", "access": "touchable",',
-        '                 "optional": false}], "sense": "", "means": ""}',
+        '                 "optional": false}], "sense": "", "means": "",',
+        '  "despite": []}',
         "",
         "role is one of: " + ", ".join(ROLES) + ". Leave the list empty for a",
         "verb that takes nothing -- shrugging, waiting. There is always somebody",
@@ -277,6 +329,22 @@ def prompt_block(world_root, action):
         "",
         "optional is for a role that may be left unsaid, where the world can",
         'work out what was meant: "launch" aboard a ship means the ship.',
+        "",
+        "despite is almost always the empty list, and you should need a",
+        "moment's thought before it is not. Some conditions stop a person",
+        "doing anything at all -- being dead, being tied up, being gagged --",
+        "and the game enforces that for every verb without being asked. Name a",
+        'gate here ("acting", "moving", "speaking") ONLY when this action is',
+        "the very thing that would end such a condition, or is the one kind of",
+        "effort still open to somebody in it:",
+        "",
+        '  reviving, resurrecting, waking  -> "acting"',
+        '  struggling, straining against a rope -> "moving"',
+        "",
+        "Never for an ordinary verb. A dead character who can still open doors",
+        "is not dead, and a world that says so has thrown away the only",
+        "consequence it had. If you are unsure, leave it empty: a world can",
+        "refuse an action and go on, and cannot take this back.",
     ]
     asked = lexicon.verb_sense_prompt(action)
     if asked:
@@ -356,7 +424,8 @@ def learn(account, world_root, action, bound, actor, on_success,
             return
         on_success(declare(world_root, action, applies_to=roles,
                            sense=str(reply.get("sense") or ""),
-                           means=str(reply.get("means") or "")))
+                           means=str(reply.get("means") or ""),
+                           despite=reply.get("despite") or []))
 
     llm.fetch(llm.ask, api_key, account.model_for("commands"), messages,
               on_success=answered,

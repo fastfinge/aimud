@@ -175,6 +175,24 @@ class Character(ObjectParent, DefaultCharacter):
 
         move_followers(self, source_location)
 
+        came_from_root = (source_location.db.world_root
+                          if source_location is not None else None)
+
+        # You stood up to walk here: posture does not travel. Settled against
+        # the world being left, since those are its states and its groups that
+        # say which of them end on a move.
+        from world.verbs import clear_on_move
+
+        clear_on_move(self, came_from_root or room.db.world_root)
+
+        # And nothing else travels either, when the walk was between worlds.
+        # Being killed in one world used to make a character dead in all of
+        # them -- see world/crossing.py. Before the sums below, because the
+        # traits they write are this world's.
+        from world import crossing
+
+        crossing.cross(self, came_from_root, room.db.world_root)
+
         # What this room is worth to them changed by walking into it, and what
         # they were worth to the room behind them changed by leaving. Both are
         # a fresh sum rather than an adjustment, so neither can drift, and a
@@ -183,11 +201,6 @@ class Character(ObjectParent, DefaultCharacter):
 
         recompute(self)
         recompute_room(source_location, ignoring=self)
-
-        # You stood up to walk here: posture does not travel.
-        from world.verbs import clear_on_move
-
-        clear_on_move(self, room.db.world_root)
 
         # Arriving puts every NPC here back in company, so they keep acting
         # for a while after this character wanders off again.

@@ -183,7 +183,7 @@ Respond with a single JSON object — no other text — matching:
 {
   "items": [
     {"name": "item name", "description": "1-2 sentences", "takeable": true,
-     "kind": "flyer", "holds": [],
+     "kind": "flyer", "under": "", "holds": [],
      "affordances": {"read": true}, "states": [], "clothing_type": "",
      "trait_bonuses": {}, "bonus_when": "", "bonus_while": ""}
   ],
@@ -198,6 +198,9 @@ room's fixtures, which are already in its description. Give 0 to 3, and prefer
 
 kind is the one common noun the item IS, singular and lowercase, with the
 describing words stripped off: a "Stained Slate Chalkboard" is a chalkboard.
+
+{anchor_rule}
+
 holds says where things go: ["in"] for anything hollow, ["on"] for anything
 with a top, [] for anything solid.
 
@@ -1352,12 +1355,13 @@ def populate_room(account, room):
         return
     model = account.model_for("contents", "items")
 
-    from world import gear, lore, verbs
+    from world import gear, kinds, lore, verbs
 
     messages = [
         {"role": "system",
          "content": _CONTENTS_SYSTEM_PROMPT.replace(
              "{naming_rule}", verbs.naming_rule()).replace(
+             "{anchor_rule}", kinds.anchor_rule()).replace(
              "{affordance_rule}", _affordance_rule())},
         {
             "role": "user",

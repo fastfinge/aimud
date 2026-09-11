@@ -194,6 +194,32 @@ def _apply_one(actor, room, effect, bound, world_root):
             logger.log_info(f"at_desc failed on {obj}: {exc}")
         return said
 
+    if etype == "narrate":
+        # A verb whose whole result is that it was seen: smiling, humming,
+        # listening at a door. It changes nothing and says nothing here, and
+        # both of those are the point.
+        #
+        # The gap it closes was measured rather than guessed. `rule_gen`
+        # refuses a carry_out rule with no effects, correctly -- a verb that
+        # reports success having changed nothing is the silent no-op this whole
+        # design exists to end -- so a purely expressive verb had no legal rule
+        # at all, was asked about twice, and was given up on. Across the two
+        # soak worlds that is `smile`, `nod`, `hum`, `hear`, `feel`, `tap` and
+        # `read`, and nine `cannot_say` answers saying so in as many words:
+        # "there is no effect available to output text".
+        #
+        # There is no such effect and there should not be. The report phase --
+        # the narration -- already writes what the player and the room read,
+        # for every verb, whether or not anything changed. What was missing was
+        # a way for a world to SAY that is all that happens, rather than
+        # leaving it to be inferred from an empty list. So this is a
+        # declaration and not a mechanism, which is why it is one word with no
+        # fields and why applying it does nothing.
+        #
+        # Unlike `describe` it does not speak for itself: there is a narration
+        # to pay for here, and it is the whole of the answer.
+        return None
+
     if etype == "destroy_object":
         obj = _resolve(effect, "name", bound, room, actor)
         if _protected(obj, room):
@@ -394,13 +420,34 @@ def _apply_one(actor, room, effect, bound, world_root):
 
     if etype == "move_actor":
         direction = str(effect.get("exit", "")).strip()
-        if not direction:
-            return None
-        from commands.look_take_cmds import _find_one
+        if direction:
+            from commands.look_take_cmds import _find_one
 
-        exit_obj, _ = _find_one(actor, direction, location=room)
-        if exit_obj and getattr(exit_obj, "destination", None) is not None:
-            exit_obj.at_traverse(actor, exit_obj.destination)
+            exit_obj, _ = _find_one(actor, direction, location=room)
+            if exit_obj and getattr(exit_obj, "destination", None) is not None:
+                exit_obj.at_traverse(actor, exit_obj.destination)
+            return None
+
+        # Or a room by name, which is the half 11.1 said to add "the day a goal
+        # about being somewhere is planned wrongly often enough to notice". The
+        # soak said it sooner and for a different reason: a world trying to
+        # write what reviving means answered `cannot_say` -- "I cannot move the
+        # actor to a saved starting location" -- so a world that kills somebody
+        # had no way at all to let them up again.
+        #
+        # Named the way `set_exit` and `move_object` name one, and for the same
+        # reason: a dbref means nothing to whoever writes the rule and is wrong
+        # the moment a world is rebuilt. A name nothing answers to does nothing
+        # at all rather than guessing.
+        from world import coords
+
+        wanted = str(effect.get("to") or "").strip()
+        if not wanted:
+            return None
+        elsewhere = coords.room_named(world_root, wanted)
+        if elsewhere is None or elsewhere is room:
+            return None
+        actor.move_to(elsewhere, quiet=False, move_type="teleport")
         return None
 
     return None

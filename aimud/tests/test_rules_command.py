@@ -114,3 +114,117 @@ class ListingRules(EvenniaCommandTest):
             if ugly == "|":
                 continue          # colour codes are |w and friends
             self.assertNotIn(ugly, said)
+
+
+@tag("world")
+class UnsayingWhatAVerbTakes(ListingRules):
+    """
+    `rules redeclare`, which is the deliberate exception to "first answer
+    stands".
+
+    An arity is settled once because every rule about the action was written
+    against it, and revising it silently would change what those rules mean
+    underneath them. But a world that settled it before the engine could ask a
+    question is stuck with an answer to a question nobody put -- which is what
+    happened to `respawn` and `resurrect` in the phase 13 playtest, declared
+    before an action could say it happens in spite of being dead.
+
+    So the same change, made out loud, by somebody who has decided to make it.
+    """
+
+    def test_what_a_verb_takes_can_be_unsaid(self):
+        actions.declare(self.root, "respawn", [{"role": "direct"}])
+        said = self.said("redeclare respawn")
+        self.assertIn("undeclared", said)
+        self.assertIsNone(actions.spec(self.root, "respawn"))
+
+    def test_its_rules_are_untouched(self):
+        actions.declare(self.root, "respawn", [{"role": "direct"}])
+        R.add(self.root, R.blank(action="respawn", phase=R.CARRY_OUT,
+                                 name="respawning brings you back"))
+        self.said("redeclare respawn")
+        self.assertIn("respawning brings you back", self.said("respawn"))
+
+    def test_a_verb_nobody_declared_says_so(self):
+        self.assertIn("Nothing has been declared",
+                      self.said("redeclare respawn"))
+
+    def test_it_wants_a_verb(self):
+        self.assertIn("Which verb", self.said("redeclare"))
+
+    def test_a_waiver_is_printed_where_it_is_set(self):
+        """
+        The one thing on a declaration that loosens rather than tightens, so
+        "why did that work while I was dead" has to be answerable from here.
+        """
+        actions.declare(self.root, "respawn", [{"role": "direct"}],
+                        despite=["acting"])
+        self.assertIn("works even when you cannot act",
+                      self.said("respawn"))
+
+    def test_and_not_where_it_is_not(self):
+        actions.declare(self.root, "shove", [{"role": "direct"}])
+        self.assertNotIn("works even when", self.said("shove"))
+
+
+@tag("world")
+class TakingARuleOutOfTheBook(ListingRules):
+    """
+    Inform's "is not listed in", as a command.
+
+    `rulebooks.set_listed` has been the repair this design offers instead of
+    revision since the cutover, and nothing could reach it. The phase 13 soak
+    is what made that matter: 56 of 135 generated check rules across two worlds
+    demand the exact condition their own verb produces, so those verbs are dead
+    and there was no way to say so short of a world reset.
+    """
+
+    def oiling(self, wanted="oiled"):
+        """A verb with a check that cannot pass and a carry-out that would."""
+        check = R.add(self.root, R.blank(
+            action="oil", phase=R.CHECK, scope={"world": True},
+            name="It is already well-oiled.",
+            conditions=[{"subject": "direct", "is": [wanted]}]))
+        R.add(self.root, R.blank(
+            action="oil", phase=R.CARRY_OUT, scope={"world": True},
+            name="oiling it makes it oiled",
+            effects=[{"type": "set_state", "role": "direct",
+                      "add": ["oiled"]}]))
+        return check
+
+    def test_one_rule_can_be_suspended_and_restored(self):
+        rule = self.oiling()
+        self.assertIn("suspended", self.said(f"suspend {rule['id']}"))
+        self.assertFalse(R.get(self.root, rule["id"])["listed"])
+        self.assertIn("back in force", self.said(f"restore {rule['id']}"))
+        self.assertTrue(R.get(self.root, rule["id"])["listed"])
+
+    def test_a_rule_that_is_not_there(self):
+        self.assertIn("no rule", self.said("suspend r99"))
+
+    def test_it_wants_an_id(self):
+        self.assertIn("Which rule", self.said("suspend"))
+
+    def test_every_dead_rule_at_once(self):
+        rule = self.oiling()
+        said = self.said("suspend dead")
+        self.assertIn("oil", said)
+        self.assertFalse(R.get(self.root, rule["id"])["listed"])
+
+    def test_and_nothing_that_is_merely_strict(self):
+        """
+        "To close it, it must be open" is right, and `close` adds `closed`.
+        Only a check demanding what its own verb produces is dead.
+        """
+        rule = R.add(self.root, R.blank(
+            action="close", phase=R.CHECK, scope={"world": True},
+            conditions=[{"subject": "direct", "is": ["open"]}]))
+        R.add(self.root, R.blank(
+            action="close", phase=R.CARRY_OUT, scope={"world": True},
+            effects=[{"type": "set_state", "role": "direct",
+                      "add": ["closed"]}]))
+        self.said("suspend dead")
+        self.assertTrue(R.get(self.root, rule["id"])["listed"])
+
+    def test_a_clean_world_says_so(self):
+        self.assertIn("provably dead", self.said("suspend dead"))

@@ -208,6 +208,31 @@ class SettlingAKind(SimpleTestCase):
         kinds.remember(root, "book.n.01", {}, under="weapon.n.01")
         self.assertNotIn("under", root.db.kind_specs["book.n.01"])
 
+    def test_a_word_whose_senses_disagree_takes_one_too(self):
+        """
+        Not only a word the dictionary has never heard of, which is what this
+        accepted before and is the narrower question `needs_anchor` answers.
+
+        `box` has senses and they straddle a bucket, so `canonical` leaves the
+        bare word -- and nothing anywhere ever chose between them, so the kind
+        sat with no taxonomy above it for good. 37 of 192 kinds across the two
+        phase 13 soak worlds are this, and they are `box`, `key`, `knife`,
+        `pen`, `shoe`, `wheel`: ordinary words, not invented ones.
+        """
+        root = FakeRoot()
+        kinds.remember(root, "box", {"get": True}, under="box.n.01")
+        self.assertEqual(root.db.kind_specs["box"]["under"], "box.n.01")
+
+    def test_and_then_a_rule_about_containers_can_reach_it(self):
+        """The whole point of an anchor, asserted on the case that was missing."""
+        root = FakeRoot({"box": {"under": "box.n.01"}})
+        self.assertTrue(kinds.is_a(root, "box", "container.n.01"))
+
+    def test_the_prompt_asks_for_both_cases(self):
+        rule = kinds.anchor_rule()
+        self.assertIn("never heard of", rule)
+        self.assertIn("several unrelated things", rule)
+
     def test_the_first_answer_still_stands(self):
         """Unchanged, and the reason is unchanged: revising a kind orphans
         every rule that was learned against its old affordances."""

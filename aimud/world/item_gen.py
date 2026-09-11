@@ -59,11 +59,7 @@ sprayer. Same for a "watering can", a "walking stick", a "fire door". When in
 doubt ask whether the plain noun would do the same things; if it would not,
 the word stays in the kind.
 
-under is only for a kind the dictionary has never heard of -- a datapad, a
-holodeck, a hyperdrive. Those have no sort of thing above them, so nothing
-knows a datapad is a device, and a rule written about devices could never
-reach one. Name the nearest real sense when you are asked for one, and leave
-it empty otherwise, which is the ordinary case.
+{anchor_rule}
 
 qualifiers are the describing words you took off it — what makes this one
 different from the others of its kind. Colour, material, make, whose it is.
@@ -251,10 +247,13 @@ def generate_item(account, room, object_name, on_success, on_error):
     # answer the `under` field in the spec instead.
     which_anchor = lexicon.anchor_prompt(object_name)
 
+    from world import kinds
+
     messages = [
         {"role": "system",
          "content": _ITEM_SYSTEM_PROMPT.replace(
              "{naming_rule}", verbs.naming_rule()).replace(
+             "{anchor_rule}", kinds.anchor_rule()).replace(
              "{affordance_rule}", af.PROMPT)},
         {
             "role": "user",

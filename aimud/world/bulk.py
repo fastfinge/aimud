@@ -29,11 +29,21 @@ actually be done to -- which the kinds now know, and which is the closest
 thing to a general answer there is.
 """
 
-#: What somebody types when they mean the lot.
-WORDS = frozenset(["all", "everything", "every", "each", "the lot"])
+#: What somebody types when they mean the lot. "lot" as well as "the lot",
+#: because noise words are gone by the time a phrase is tested here.
+WORDS = frozenset(["all", "everything", "every", "each", "both",
+                   "the lot", "lot"])
 
 #: And when they mean the people rather than the things.
 PEOPLE_WORDS = frozenset(["everyone", "everybody", "all of them"])
+
+#: The words that can be followed by what it is they mean all of.
+#:
+#: "All" on its own is the whole room; "every wrench" is a narrowing, and the
+#: difference matters more than it looks. Without this, "get every wrench" was
+#: a noun phrase nothing matched, so the world offered to invent an object
+#: called "every wrench" -- which is both the wrong answer and a paid one.
+QUANTIFIERS = frozenset(["all", "every", "each", "both", "any"])
 
 #: A ceiling, because "eat all" in a storeroom should not be a hundred model
 #: calls before anybody can type again. Deliberately small: past about here a
@@ -41,26 +51,49 @@ PEOPLE_WORDS = frozenset(["everyone", "everybody", "all of them"])
 LIMIT = 12
 
 
+def split(phrase):
+    """
+    (does it mean several, what sort) for a noun phrase.
+
+    "all" is (True, ""), "every wrench" is (True, "wrench"), "wrench" is
+    (False, "wrench"). The second half is what narrows `matching`, and an empty
+    one means the whole room -- which is what "all" has always meant.
+    """
+    from world import verbs
+
+    text = verbs.plain(phrase)
+    if not text:
+        return False, ""
+    if text in WORDS or text in PEOPLE_WORDS:
+        return True, ""
+    head, _, rest = text.partition(" ")
+    if head in QUANTIFIERS and rest.strip():
+        return True, rest.strip()
+    return False, text
+
+
 def wanted(phrase):
     """Whether a noun phrase means everything rather than something."""
-    text = str(phrase or "").lower().strip()
-    return text in WORDS or text in PEOPLE_WORDS
+    return split(phrase)[0]
 
 
 def _people_meant(phrase):
-    return str(phrase or "").lower().strip() in PEOPLE_WORDS
+    from world import verbs
+
+    return verbs.plain(phrase) in PEOPLE_WORDS
 
 
 def matching(caller, verb, phrase, where=None):
     """
     The things "all" means here, for this verb.
 
-    Narrowed three ways, in order of how sure each is. Whatever cannot be
-    acted on at all is dropped -- exits are map, not furniture. Whatever the
-    verb is refused on is dropped, because a kind that has already said a
-    bottle cannot be read should not be asked again twelve times. And people
-    are included only when the word was about people, so "eat all" in a busy
-    room does not begin with the innkeeper.
+    Narrowed four ways, in order of how sure each is. Whatever the phrase
+    named, when it named a sort at all -- "every wrench" is not every thing.
+    Whatever cannot be acted on at all is dropped -- exits are map, not
+    furniture. Whatever the verb is refused on is dropped, because a kind that
+    has already said a bottle cannot be read should not be asked again twelve
+    times. And people are included only when the word was about people, so
+    "eat all" in a busy room does not begin with the innkeeper.
     """
     from world import kinds, verbs
     from world.quests import is_person
@@ -72,12 +105,19 @@ def matching(caller, verb, phrase, where=None):
 
     world_root = getattr(getattr(room, "db", None), "world_root", None)
     people = _people_meant(phrase)
+    _all, sort = split(phrase)
 
     found = []
     for obj in list(getattr(where, "contents", []) or []):
         if obj is caller or getattr(obj, "destination", None) is not None:
             continue
         if is_person(obj) != people:
+            continue
+        # The same test a single noun is bound by, so "every wrench" reaches
+        # exactly what "wrench" would have reached, twelve times over. Strict,
+        # because a player who names a sort means it: a bulk action that swept
+        # in one thing nobody asked about would be worse than one that missed.
+        if sort and verbs.similarity(sort, obj.key) < verbs.STRICT_SIMILARITY:
             continue
         # A kind that has already settled the question keeps its answer. Only
         # a definite refusal is honoured: silence means nobody has decided,

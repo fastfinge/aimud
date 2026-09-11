@@ -22,14 +22,14 @@ from tests.support import FIXTURES, worlds
 from world import rulecheck
 
 
-def world(rules=None, vocabulary=None, groups=None, filed=None):
+def world(rules=None, vocabulary=None, groups=None, filed=None, kinds=None):
     """A world's registers, small enough to reason about."""
     return {
         "verb_rules": rules or {},
         "rules": filed or {},
         "state_vocabulary": vocabulary or {},
         "state_groups": groups or {},
-        "kind_specs": {},
+        "kind_specs": kinds or {},
     }
 
 
@@ -316,11 +316,19 @@ class TheRatchet(SimpleTestCase):
         Not a ratchet: these are the numbers `docs/` cites, and a test that
         reproduces them is what stops a document quoting a figure nothing can
         still produce.
+
+        One_way is 31 and the documents say 45, and the documents were wrong.
+        The scan read the `remove` lists and nothing else, so a state undone by
+        exclusivity -- which is every group with both its ends written, and is
+        the cheapest way back a world gets -- counted as one-way anyway. See
+        `_cancelled`. The 45 is kept in the docs beside the correction rather
+        than quietly overwritten, since every argument built on it was built on
+        the overcount.
         """
         totals = self.measured()
         self.assertEqual(totals["rules"], 326)
         self.assertEqual(totals["refused"], 85)
-        self.assertEqual(totals["one_way"], 45)
+        self.assertEqual(totals["one_way"], 31)
         self.assertEqual(totals["unsettable"], 7)
         self.assertEqual(totals["refused_needs_a_place"], 7)
 
@@ -453,3 +461,181 @@ class WhatASoakWouldCapture(SimpleTestCase):
         self.assertTrue(set(rulecheck.REGISTERS) <= self.exported(),
                         set(rulecheck.REGISTERS) - self.exported())
 
+
+
+@tag("unit")
+class TheWayBackAGroupGivesForNothing(SimpleTestCase):
+    """
+    A state is undone by its own group as well as by a rule saying so.
+
+    `verbs.apply_states` clears every other member of an exclusive group the
+    moment one is set, so a world with rules for both `open` and `closed` has
+    a way back from each without either rule carrying a `remove` list. The
+    scan read the `remove` lists and nothing else, which made this whole
+    module's headline figure an overcount -- 45 across the interim corpus
+    where the true number is 31, and 56 of 62 in the infinite dungeon where it
+    is 26.
+
+    Wrong in the worst possible direction for a ratchet: it hides an
+    improvement, so the design working looks like the design failing.
+    """
+
+    def vocabulary(self):
+        return {"open": {"group": "openness"}, "closed": {"group": "openness"}}
+
+    def test_an_exclusive_sibling_being_set_undoes_it(self):
+        found = rulecheck.scan(world(
+            filed={"r1": filed(action="open", effects=sets("open")),
+                   "r2": filed(action="close", effects=sets("closed"))},
+            vocabulary=self.vocabulary(),
+            groups={"openness": {"exclusive": True}}))
+        self.assertEqual(found["one_way"], [])
+
+    def test_a_group_that_is_not_exclusive_undoes_nothing(self):
+        found = rulecheck.scan(world(
+            filed={"r1": filed(action="open", effects=sets("open")),
+                   "r2": filed(action="close", effects=sets("closed"))},
+            vocabulary=self.vocabulary(),
+            groups={"openness": {"exclusive": False}}))
+        self.assertEqual(found["one_way"], ["closed", "open"])
+
+    def test_a_sibling_nothing_sets_is_no_help(self):
+        found = rulecheck.scan(world(
+            filed={"r1": filed(action="open", effects=sets("open"))},
+            vocabulary=self.vocabulary(),
+            groups={"openness": {"exclusive": True}}))
+        self.assertEqual(found["one_way"], ["open"])
+
+    def test_a_state_in_no_group_is_unchanged(self):
+        found = rulecheck.scan(world(
+            filed={"r1": filed(action="light", effects=sets("lit"))},
+            vocabulary={"lit": {}}))
+        self.assertEqual(found["one_way"], ["lit"])
+
+    def test_being_cancelled_is_not_being_mentioned(self):
+        """
+        Dead vocabulary asks a different question -- "has any rule ever named
+        this" -- and a word only ever cleared by a sibling is still a word
+        nobody wrote a rule about.
+        """
+        found = rulecheck.scan(world(
+            filed={"r1": filed(action="open", effects=sets("open"))},
+            vocabulary=self.vocabulary(),
+            groups={"openness": {"exclusive": True}}))
+        self.assertEqual(found["dead_vocabulary"], ["closed"])
+
+
+@tag("unit")
+class ACheckThatDemandsWhatItsOwnVerbProduces(SimpleTestCase):
+    """
+    The commonest fault in the phase 13 soak corpus, and it is mechanical.
+
+    56 of 135 generated check rules across the two new worlds require the exact
+    state their action's carry-out rule adds. Every one is the same slip: "you
+    cannot oil what is already oiled" written as `is: ["oiled"]` where it had
+    to be `lacks: ["oiled"]`. The rule can never pass, so the verb is dead from
+    the moment it is learned -- `open` was refused 41 times in one world and
+    succeeded never.
+    """
+
+    def book(self, wanted):
+        return world(filed={
+            "r1": filed(action="oil", phase="check",
+                        conditions=[{"subject": "direct", "is": [wanted]}],
+                        effects=[]),
+            "r2": filed(action="oil", phase="carry_out", effects=sets("oiled")),
+        })
+
+    def test_it_is_found(self):
+        found = rulecheck.scan(self.book("oiled"))["self_defeating"]
+        self.assertEqual([(f[1], f[2]) for f in found], [("oil", ["oiled"])])
+
+    def test_the_right_way_round_is_not(self):
+        book = world(filed={
+            "r1": filed(action="oil", phase="check",
+                        conditions=[{"subject": "direct", "lacks": ["oiled"]}],
+                        effects=[]),
+            "r2": filed(action="oil", phase="carry_out", effects=sets("oiled")),
+        })
+        self.assertEqual(rulecheck.scan(book)["self_defeating"], [])
+
+    def test_a_requirement_some_other_verb_meets_is_not(self):
+        """
+        "To close it, it must be open" is right, and `close` adds `closed`.
+        Only the verb's own product counts.
+        """
+        book = world(filed={
+            "r1": filed(action="close", phase="check",
+                        conditions=[{"subject": "direct", "is": ["open"]}],
+                        effects=[]),
+            "r2": filed(action="close", phase="carry_out",
+                        effects=sets("closed")),
+            "r3": filed(action="open", phase="carry_out", effects=sets("open")),
+        })
+        self.assertEqual(rulecheck.scan(book)["self_defeating"], [])
+
+    def test_it_is_the_first_thing_the_report_says(self):
+        said = rulecheck.report(rulecheck.scan(self.book("oiled")))
+        self.assertIn("1. 1 check rules require", said)
+        self.assertIn("oil", said)
+
+
+@tag("unit")
+class KindsWithNothingAboveThem(SimpleTestCase):
+    """
+    Phase 1 promised every kind in a fresh world has non-empty ancestors, real
+    or anchored. 37 of 192 in the two soak worlds do not, and they are not the
+    invented nouns the anchor was built for -- they are `box`, `key`, `knife`,
+    `pen`, `shoe`, `wheel`, whose senses straddle a bucket so `canonical`
+    leaves the bare word and `needs_anchor` says no because they *have* senses.
+
+    One world holds `box` and `box.n.01` as two separate kinds, with 36
+    attempts against the first and every rule filed against the second.
+    """
+
+    def test_a_bare_word_with_no_anchor_is_ungrounded(self):
+        found = rulecheck.scan(world(kinds={"box": {}, "box.n.01": {}}))
+        self.assertEqual(found["ungrounded"], ["box"])
+
+    def test_an_anchored_one_is_not(self):
+        found = rulecheck.scan(world(kinds={"datapad": {"under": "device.n.01"}}))
+        self.assertEqual(found["ungrounded"], [])
+
+    def test_the_report_says_what_it_costs(self):
+        said = rulecheck.report(rulecheck.scan(world(kinds={"box": {}})))
+        self.assertIn("no rule about a sort of thing can reach them", said)
+
+
+@tag("unit")
+class ASuspendedRuleIsNotAFault(SimpleTestCase):
+    """
+    A rule taken out of its book applies to nothing, so it is neither a fault
+    nor evidence of one -- which is what makes `rules suspend dead` a repair
+    rather than a gesture. It read as one, and the scan went on reporting 48
+    dead rules in a world where every one had just been retired.
+    """
+
+    def book(self, listed):
+        return world(filed={
+            "r1": filed(action="oil", phase="check", listed=listed,
+                        conditions=[{"subject": "direct", "is": ["oiled"]}],
+                        effects=[]),
+            "r2": filed(action="oil", phase="carry_out", effects=sets("oiled")),
+        })
+
+    def test_a_listed_one_is(self):
+        self.assertEqual(len(rulecheck.scan(self.book(True))["self_defeating"]), 1)
+
+    def test_a_suspended_one_is_not(self):
+        self.assertEqual(rulecheck.scan(self.book(False))["self_defeating"], [])
+
+    def test_and_a_suspended_carry_out_produces_nothing(self):
+        """Both sides. A carry-out nobody has listed sets no state."""
+        book = world(filed={
+            "r1": filed(action="oil", phase="check",
+                        conditions=[{"subject": "direct", "is": ["oiled"]}],
+                        effects=[]),
+            "r2": filed(action="oil", phase="carry_out", listed=False,
+                        effects=sets("oiled")),
+        })
+        self.assertEqual(rulecheck.scan(book)["self_defeating"], [])

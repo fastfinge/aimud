@@ -436,13 +436,13 @@ Respond with a single JSON object — no other text — matching:
   "worn": [
     {"name": "item name", "description": "1-2 sentences",
      "clothing_type": "top", "wearstyle": "",
-     "kind": "coat", "holds": [],
+     "kind": "coat", "under": "", "holds": [],
      "affordances": {"wear": true}, "states": [],
      "trait_bonuses": {}, "bonus_when": ""}
   ],
   "carried": [
     {"name": "item name", "description": "1-2 sentences", "takeable": true,
-     "kind": "letter", "holds": [],
+     "kind": "letter", "under": "", "holds": [],
      "affordances": {"read": true}, "states": [],
      "trait_bonuses": {}, "bonus_when": ""}
   ]
@@ -485,6 +485,8 @@ Every garment must afford "wear".
 kind is the one common noun the thing IS, singular and lowercase, with the
 describing words stripped off: a "Patched Wool Coat" is a coat. holds says
 where things go: ["in"] for a pouch, [] for anything solid.
+
+{anchor_rule}
 
 states are conditions currently true of it (patched, bloodstained, damp), usually empty.
 
@@ -1196,11 +1198,12 @@ def dress_npc(account, npc):
         return
     model = account.model_for("contents", "items", "npcs")
 
-    from world import gear, goals, lore, verbs
+    from world import gear, goals, kinds, lore, verbs
 
     system = _NPC_OUTFIT_SYSTEM.replace(
         "{garment_types}", ", ".join(clothing.GARMENT_TYPES)
     ).replace("{naming_rule}", verbs.naming_rule()
+    ).replace("{anchor_rule}", kinds.anchor_rule()
     ).replace("{affordance_rule}", _affordance_rule())
     messages = [
         {"role": "system", "content": system},

@@ -68,6 +68,20 @@ def _or_typo(caller, query):
     return obj, suggestion
 
 
+def _counted(caller, query):
+    """
+    The one of several things a query counted out, or None.
+
+    "The second wrench" is a count and not a name, and Evennia's own search
+    reads it as a name -- so it found nothing, and this game's answer to
+    finding nothing is to offer to invent it. A player who has just been shown
+    three wrenches and asks for the second should get the second.
+    """
+    from world import verbs
+
+    return verbs.counted(caller, query)
+
+
 def _find_one(caller, query, **search_kwargs):
     """
     Search with quiet=True and normalize the result.
@@ -190,7 +204,10 @@ class CmdAILook(_DefaultLook):
             return
 
         query = self.args.strip()
-        obj, multiple = _find_one(caller, query)
+        obj = _counted(caller, query)
+        multiple = False
+        if obj is None:
+            obj, multiple = _find_one(caller, query)
 
         if multiple:
             caller.search(query)  # let Evennia show disambiguation
@@ -297,6 +314,13 @@ class CmdAIGet(_DefaultGet):
     In AI worlds, trying to take something that doesn't exist may cause it to
     appear (if context allows) and then be picked up.  Whether an object can
     be taken is validated once by the AI and then cached on the object forever.
+
+    |wget <obj> with <tool>|n and |wget <obj> from <place>|n are not this
+    command's business and are handed to the rulebooks, which is the whole
+    difference between a world where tongs are for something and one where
+    "get the stone with the tongs" conjures an object called "stone with
+    tongs" -- which is what this did, because it read everything after the
+    verb as one name.
     """
 
     def func(self):
@@ -309,23 +333,40 @@ class CmdAIGet(_DefaultGet):
         query = self.args.strip()
         room = caller.location
 
+        # Anything but a plain noun is a sentence rather than a name. The
+        # pipeline knows what to do with a preposition and this command does
+        # not, so it goes there whole -- picking something up with a tool is a
+        # thing a world may have an opinion about, and taking it out of
+        # something is a placement the game already understands.
+        from world import verbs
+
+        parsed = verbs.parse(f"get {query}")
+        if set(parsed["roles"]) - {"direct"}:
+            self._through_the_rulebooks(caller, f"get {query}")
+            return
+
         # "Get all" is every takeable thing here, one at a time. Through the
         # same expander every other verb uses, so what "all" leaves out is
         # decided in one place -- exits, people, and anything whose kind has
         # already said it cannot be picked up.
         from world import bulk
 
-        if bulk.wanted(query):
+        several, sort = bulk.split(query)
+        if several:
             found = bulk.matching(caller, "get", query)
             takeable = [obj for obj in found if _takeable(obj, room) is not False]
             if not takeable:
-                caller.msg("There is nothing here to pick up.")
+                caller.msg(f"There is no {sort} here to pick up." if sort
+                           else "There is nothing here to pick up.")
                 return
             for obj in takeable:
                 self._take_existing(caller, obj, room)
             return
 
-        obj, multiple = _find_one(caller, query, location=room)
+        obj = _counted(caller, query)
+        multiple = False
+        if obj is None:
+            obj, multiple = _find_one(caller, query, location=room)
 
         if multiple:
             caller.search(query, location=room)  # let Evennia show disambiguation
@@ -343,6 +384,15 @@ class CmdAIGet(_DefaultGet):
             return
 
         self._take_existing(caller, obj, room)
+
+    def _through_the_rulebooks(self, caller, raw):
+        """Hand a get the command set cannot express to the attempt pipeline."""
+        from world import attempt as attempt_mod
+
+        attempt_mod.attempt(
+            caller, raw, _account_from(caller),
+            on_message=lambda actor_text, room_text=None:
+                caller.msg(actor_text) if actor_text else None)
 
     # -- object already in room --
 

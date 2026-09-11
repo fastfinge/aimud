@@ -140,6 +140,44 @@ def anchor(world_root, kind):
     return under if lexicon.ancestors(under) else ""
 
 
+#: How to ask for an anchor, kept beside the field it fills.
+#:
+#: Shown by every generator that names a kind, for the reason the soak
+#: measured: 37 of 192 kinds across the two phase 13 worlds had no taxonomy
+#: above them at all, and they were not the invented nouns this field was built
+#: for. They were `box`, `key`, `knife`, `pen`, `shoe`, `wheel` -- ordinary
+#: words the dictionary knows perfectly well, whose senses straddle a bucket,
+#: so `canonical` leaves the bare word behind and nothing ever asks which one
+#: was meant. One world ended up holding `box` and `box.n.01` as two separate
+#: kinds, with 36 attempts against the first and every rule filed against the
+#: second.
+#:
+#: `item_gen` alone could ask properly -- it is told the name in advance, so
+#: `lexicon.sense_prompt` can offer a menu of that word's senses. Everything
+#: else invents its names in the same reply, so the question has to be asked in
+#: general, in advance, as part of the shape. A wrong answer costs nothing:
+#: `anchor` and `remember` both check it against the dictionary before
+#: believing it, and an anchor WordNet does not recognise is discarded.
+ANCHOR_RULE = """under grounds the kind in the dictionary. Leave it "" when the
+kind is a plain noun whose meaning is not in doubt -- sword, bottle, lantern,
+door -- which is most of them. Give a WordNet sense id when either of these is
+true:
+  * the dictionary has never heard of the word: a datapad, a cinderstone, a
+    hyperdrive. Name the nearest real sort of thing it is -- "device.n.01",
+    "container.n.01", "tool.n.01", "weapon.n.01".
+  * the word means several unrelated things and which one matters: a box, a
+    key, a seal, a pen, a bar, a crane, a chest. Name the sense you mean --
+    "box.n.01" for the container, "key.n.01" for the thing that opens a lock,
+    "chest.n.02" for the one with a lid rather than the one with ribs.
+A kind with nothing above it can never be reached by a rule about that sort of
+thing, so a rule somebody writes about containers will not find your box."""
+
+
+def anchor_rule():
+    """The paragraph above, for a prompt to include."""
+    return ANCHOR_RULE
+
+
 def needs_anchor(kind):
     """
     Whether a kind has nothing above it and no sense to reach for.
@@ -354,8 +392,15 @@ def remember(world_root, kind, declared, accepts=(), under=""):
     # `container.n.01` is a container, and nothing else would have said so.
     from world import lexicon
 
+    # Any kind that came out of `canonical` bare takes an anchor, not only one
+    # the dictionary has never heard of. `needs_anchor` answers a narrower
+    # question -- whether to offer the bucket *menu* -- and using it here meant
+    # a word with senses that straddle a bucket was refused an anchor on the
+    # grounds that it had senses, while nothing anywhere ever chose between
+    # them. See ANCHOR_RULE: that is 37 of 192 kinds in the soak worlds.
     under = str(under or "").strip()
-    if world_root and under and needs_anchor(kind) and lexicon.ancestors(under):
+    grounded = bool(lexicon.ancestors(kind))
+    if world_root and under and not grounded and lexicon.ancestors(under):
         store = dict(getattr(world_root.db, ATTR, None) or {})
         store[kind] = dict(store.get(kind) or {}, under=under)
         setattr(world_root.db, ATTR, store)

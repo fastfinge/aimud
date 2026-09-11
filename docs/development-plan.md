@@ -286,6 +286,15 @@ some rule and removed by none**, and 7 states are required by a rule and settabl
 by nothing. World 3117 holds three complementary pairs -- `(open, closed)`,
 `(lit, unlit)`, `(smooth, crumpled)` -- each one missing rule seen from both ends.
 
+> **The 45 is an overcount and the true figure is 31 (50%).** The scan read
+> the `remove` list of every effect and nothing else, so a state undone by its
+> group's exclusivity -- which `verbs.apply_states` has honoured since groups
+> existed -- counted as one-way anyway. Found during the phase 13 soak and
+> fixed in `rulecheck._cancelled`; the original figure is left standing here
+> because the argument below was made from it, and because a measurement that
+> was quietly corrected teaches nobody anything. Every "72%" in these three
+> documents should be read as 50%.
+
 - `world/rulecheck.py`: one-way states, unreachable preconditions, dead
   vocabulary, exclusive-group violations, complementary pairs.
 - A `worldcheck` command shaped like `memcheck`: reports by default, acts when
@@ -879,6 +888,119 @@ it is better to say so now than to record a false improvement:
 A number going the wrong way is the most valuable thing this run can produce, so
 it should be easy to see. `worldcheck` reporting a ratchet break is better than a
 test failing silently in CI weeks later.
+
+### Phase 13 — what the first soak actually measured
+
+Two fresh worlds, run in `worldmode always` with a person playing alongside:
+**the infinite dungeon** (56 rooms, 253 rules of its own, 124 kinds, 125
+declared actions, 759 counted attempts) and **magical girl university** (17
+rooms, 40 rules, 68 kinds, 42 actions, 178 attempts). The distribution is as
+biased as this section predicted -- 89% of the dungeon's attempts came from
+characters and 11% from the player -- and the biased half is where the faults
+showed.
+
+| Measurement | Old corpus | Soak | |
+|---|---|---|---|
+| Rules per action-and-scope | 3.26 per verb | **1.22** and **1.11** per action+scope+phase | as designed |
+| Rules filed against a place at all | impossible | **1** of 293 | technically not zero |
+| Accepted rules with no effects | 32% | **0%** | fixed |
+| One-way states (set, never unset) | 31 of 62, not 45 -- see below | **26 of 62** and **11 of 15** | down, and flat |
+| States required but never settable | 7 | **2** and **1** | nearly zero |
+| Per-object specifics that differ | 0 of 65 | **3 of 115** and **2 of 33** | the mechanism survives its own test, barely |
+| Troponymy parents already known | 3% | **17%** and **10%** | up |
+| Verbs with a WordNet sense | 98 of 100 | **165 of 167** | held |
+| Contested rules | 41 of 326 | **0 of 293** | **gone** |
+| Attempts refused, of every kind | not measured | **64%** and **70%** | the headline fault |
+
+**The one-way figure was mis-measured, and the correction is larger than any
+result in the table.** `rulecheck.scan` read the `remove` lists of every effect
+and nothing else -- so a state undone by *exclusivity*, which is every group
+with both its ends written and is the cheapest way back a world gets, counted
+as one-way anyway. `verbs.apply_states` has cleared an exclusive group's other
+members since groups existed. The interim corpus measures 31 rather than 45,
+the dungeon 26 rather than 56, and the 72% quoted throughout these documents is
+50%. Wrong in the worst direction available: it hid an improvement, so the
+design working looked like the design failing. Fixed in `rulecheck._cancelled`,
+with the old figure left in place beside the correction wherever the argument
+was built on it.
+
+**Four faults, in the order of how much they cost.**
+
+1. **41% of every generated check rule is inverted and can never fire.** 56 of
+   135 across the two worlds require the exact state their own carry-out rule
+   adds: "you cannot oil what is already oiled" written as `is: ["oiled"]`
+   where it had to be `lacks: ["oiled"]`. Every one of those verbs is dead from
+   the moment it is learned -- `open` was refused 41 times in the university
+   and succeeded never; `tighten` and `oil` account for a hundred refusals in
+   the dungeon between them. This is most of the 64% refusal rate, and it is a
+   prompt bug: the `check` phase was described to the model as "a reason it
+   will not work", and the model wrote the reason where the requirement goes.
+   Three answers now -- the prompt says what a check's conditions are,
+   `rule_gen.validate` refuses a check that demands what its own verb produces,
+   and `rulecheck.self_defeating` reports the ones already written, with `rules
+   suspend dead` to retire them.
+
+2. **Nothing is contested.** 0 of 293 rules carry one, where the corpus written
+   by the old prompt has 41 of 326 -- and the narration cache bears it out: 148
+   narrations across the two worlds, all 148 filed under `success`, so the
+   four-outcome cache has never once been exercised. Nobody removed the
+   mechanism. `checks.py` rolls, `validate` reads the field, `rulebooks.blank`
+   stores it -- and `rule_gen`'s prompt, which replaced `verb_gen`'s at the
+   cutover, never mentions it. A whole dimension of the game was dropped by
+   omission. The paragraph is restored, and a contest is now cleaned through
+   `checks.clean` on the way in so a malformed one leaves the verb
+   deterministic.
+
+3. **19% of kinds have no taxonomy above them** -- 37 of 192, and they are not
+   the invented nouns the anchor mechanism was built for. They are `box`,
+   `key`, `knife`, `pen`, `shoe`, `wheel`: ordinary words whose senses straddle
+   a bucket, so `canonical` leaves the bare word and `needs_anchor` says no
+   because they *have* senses. Nothing ever chooses between them. A bare kind
+   takes no floor, prunes against nothing and can never be reached by a rule
+   about a sort of thing -- and it doubles: the dungeon holds `box` and
+   `box.n.01` as two kinds, with 36 attempts against the first and every rule
+   filed against the second. `item_gen` alone could ask properly, being the one
+   generator told the name in advance. So `kinds.ANCHOR_RULE` now asks every
+   generator that names a kind, and `remember` accepts an anchor for any kind
+   that came out bare rather than only for a word the dictionary has never
+   heard of.
+
+4. **`cannot_say` earned its keep, and named two gaps.** 40 entries in the log,
+   and two causes account for 17 of them. Nine are "there is no effect to
+   output text" -- `read`, `hear`, `feel`, `tap`, `hum`, `smile` -- which is a
+   verb whose whole result is that it was seen, and which had no legal
+   carry-out rule at all, because a carry-out with no effects is refused and
+   rightly. The report phase already writes what everybody reads; what was
+   missing was a way to *say* that is all that happens, and that is `narrate`.
+   Eight more are "I cannot move the direct object onto or into the target",
+   which `move_object` has been able to do since placement landed and which
+   `rule_gen`'s effect list simply did not mention. Both closed. A third,
+   smaller: `respawn` answered "I cannot move the actor to a saved starting
+   location", so `move_actor` now names a room as well as a way out -- which
+   §11.1 said to add "the day a goal about being somewhere is planned wrongly
+   often enough to notice", and the soak asked sooner for a different reason.
+
+**Not done, and recorded rather than closed.**
+
+* **A rule can still not be about a particular pair of things.** Three
+  `cannot_say` answers are a world wanting to say "when the pouch is offered to
+  the mycelium", and `rule_gen.menu` offers kinds, zones and the world but
+  never `{"object": id}`. Whether it should is a real question -- an
+  object-scope rule is the most specific thing a scope can express and the
+  least reusable -- and it wants deciding rather than adding.
+* **Giving something to somebody cannot be said.** `move_object` reaches the
+  actor, the room, a role's inside or surface, and another room; a person's
+  hands are none of those, and `relations.place` refuses a character as a host
+  on purpose. `hand`, `offer` and `present` all failed on it.
+* **Rules about places are still almost unwritten**: one in 293, filed
+  `about: enclosure`. The scope menu offers the room's kind and every zone
+  above it, and models take neither. Worth watching before concluding anything;
+  neither of these two worlds is a spaceship, and the case the design was drawn
+  around has not been played yet.
+* **The fixtures are not replaced.** These two worlds are a corpus of the new
+  engine and would be the right replacement -- but four of the faults above are
+  now fixed, so a corpus taken today would record the bugs rather than the
+  design. Worth re-running the soak and exporting then.
 
 ---
 

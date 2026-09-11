@@ -206,6 +206,68 @@ def parse(raw):
 STRICT_SIMILARITY = 0.9
 FUZZY_SIMILARITY = 0.6
 
+#: The place and the person, which no search can find.
+#:
+#: A room does not appear in its own contents and a character is not in their
+#: own inventory, so `bind` answered None for both -- and an unbound noun is
+#: promoted, which is why "look here" conjured an object called "here" and why
+#: "mine here with the trowel" could not name the room it was standing in.
+#: Answered before anything is searched for, because there is nowhere to look.
+HERE_WORDS = frozenset(["here", "around", "room"])
+SELF_WORDS = frozenset(["me", "myself", "self"])
+
+#: How somebody picks one of several things with the same name.
+#:
+#: Evennia's own answer is "2-wrench", which nobody types. A player who has
+#: just been shown three wrenches says "the second wrench", and a game that
+#: answers that has given them a menu rather than a list. `-1` is the last one,
+#: which is the only count anybody makes from the other end.
+#:
+#: Ordinals only, never the cardinals beside them: "the second wrench" is one
+#: wrench and "two wrenches" is two of them, and reading the second as the
+#: first would answer a request for a pair by handing over one thing.
+#:
+#: "other" counts as second, which is exact rather than approximate given the
+#: order `candidates` uses: what you are carrying comes first, so "the other
+#: wrench" with one in your hand is the one on the floor.
+ORDINALS = {
+    "first": 1, "1st": 1,
+    "second": 2, "2nd": 2, "other": 2,
+    "third": 3, "3rd": 3,
+    "fourth": 4, "4th": 4,
+    "fifth": 5, "5th": 5,
+    "sixth": 6, "6th": 6,
+    "seventh": 7, "7th": 7,
+    "eighth": 8, "8th": 8,
+    "ninth": 9, "9th": 9,
+    "tenth": 10, "10th": 10,
+    "last": -1, "final": -1,
+}
+
+
+def plain(phrase):
+    """A noun phrase with its noise words gone, for comparing against a list."""
+    return " ".join(w for w in re.findall(r"[a-z0-9']+", str(phrase or "").lower())
+                    if w and w not in _NOISE)
+
+
+def ordinal(phrase):
+    """
+    (which, rest) -- "the second wrench" is (2, "wrench"), "wrench" is (0, "wrench").
+
+    Zero means nobody counted, which is not the same as one: "wrench" takes
+    whichever wrench is nearest to hand, and "first wrench" takes the first of
+    them however many there are. Only a phrase with something left after the
+    number counts, so "get first" is still somebody naming a thing called
+    first rather than an empty request for the first of nothing.
+    """
+    text = plain(phrase)
+    words = text.split()
+    if len(words) < 2:
+        return 0, text
+    which = ORDINALS.get(words[0], 0)
+    return (which, " ".join(words[1:])) if which else (0, text)
+
 
 def _words(text):
     """
@@ -306,6 +368,47 @@ def _matches(caller, phrase, location):
     return found
 
 
+def candidates(caller, phrase):
+    """
+    Everything in reach that a noun phrase could mean, in counting order.
+
+    What the player is carrying first and then what is in the room, each
+    oldest first, which is the order anybody counting out loud would use.
+    One list rather than two, because "the second wrench" counts through
+    everything it can see and does not start again at the doorway.
+    """
+    found, seen = [], []
+    for location in (caller, getattr(caller, "location", None)):
+        if location is None:
+            continue
+        for obj in sorted(_matches(caller, phrase, location),
+                          key=lambda o: o.id):
+            if obj.id not in seen:
+                seen.append(obj.id)
+                found.append(obj)
+    return found
+
+
+def counted(caller, phrase):
+    """
+    The one of several things a phrase counted out, or None if it counted none.
+
+    Answers None for a phrase with no number in it, so a caller can fall
+    through to the ordinary search, and None again when the count runs off the
+    end -- asking for the fourth of three wrenches names nothing, and inventing
+    a fourth wrench to satisfy it would be the worst possible reading.
+    """
+    which, rest = ordinal(phrase)
+    if not which:
+        return None
+    found = candidates(caller, rest)
+    if not found:
+        return None
+    if which == -1:
+        return found[-1]
+    return found[which - 1] if which <= len(found) else None
+
+
 def bind(caller, phrase, fuzzy=False):
     """
     Find what a noun phrase refers to, searching outward from the character.
@@ -319,6 +422,10 @@ def bind(caller, phrase, fuzzy=False):
     an ambiguous noun is what let a room fill up with chalkboards: nothing
     matched, so another was conjured, which made the next match worse.
 
+    Unless the player counted, in which case they meant a particular one of
+    them and taking the oldest every time is how "get the second wrench" picks
+    up the first wrench twice.
+
     With `fuzzy`, a name only resembling the phrase will do. That is for NPCs,
     who name things from memory in their own words: better they wipe the
     chalkboard that is already there than hang a blackboard next to it.
@@ -326,10 +433,22 @@ def bind(caller, phrase, fuzzy=False):
     if not phrase:
         return None
 
+    # The two things no search can find, because neither is in anybody's
+    # contents: the room you are standing in and yourself.
+    text = plain(phrase)
+    if text in SELF_WORDS:
+        return caller
+    if text in HERE_WORDS:
+        return getattr(caller, "location", None)
+
+    one_of_several = counted(caller, phrase)
+    if one_of_several is not None:
+        return one_of_several
+
     for location in (caller, caller.location):
-        candidates = _matches(caller, phrase, location)
-        if candidates:
-            return min(candidates, key=lambda o: o.id)
+        found = _matches(caller, phrase, location)
+        if found:
+            return min(found, key=lambda o: o.id)
 
     # Then outward: on the table, under the rug, inside the open drawer. A
     # thing put down somewhere has to stay nameable, or putting it away would
@@ -1330,14 +1449,26 @@ def refresh_state_aliases(obj):
     return sorted(made)
 
 
-def apply_states(obj, add=(), remove=(), world_root=None):
+def apply_states(obj, add=(), remove=(), world_root=None, announce=True):
     """
     Change an object's condition, honouring declared conflicts.
 
     Adding "wet" removes "burning" without anyone having written that rule
     down here, because the conflict was declared when "wet" was registered.
+
+    **One door, and it speaks.** `traits.adjust` has told a character about
+    every figure that moved since traits existed, on the stated ground that a
+    number which changes silently is not a trait anyone can play with. States
+    are the other half of what is true of somebody and said nothing at all --
+    so a player could be killed mid-sentence and read only the narration ("you
+    lunge at them, they scramble onto the defensive"), and then meet a refusal
+    on every verb afterwards for a reason nothing had ever told them.
+
+    `announce` is for the one caller that is restoring a condition rather than
+    causing one, where the character already knows.
     """
     current = states(obj)
+    before = set(current)
 
     for slug in remove:
         current.discard(slug)
@@ -1362,7 +1493,71 @@ def apply_states(obj, add=(), remove=(), world_root=None):
 
     obj.db.states = sorted(current)
     refresh_state_aliases(obj)
+    if announce:
+        announce_states(obj, before, set(current), world_root)
     return obj.db.states
+
+
+def announce_states(obj, before, after, world_root=None):
+    """
+    Tell whoever this happened to what has changed about them.
+
+    People only. There is nobody in a lantern to tell, and what the room sees
+    a lantern do is the narration's business and is said there.
+
+    A group with a `default` has an other end, and saying it is the whole
+    difference between "you are no longer dead" and knowing you can act again.
+    A state cancelled by an exclusive one that replaced it says nothing of its
+    own: standing up has already been reported as standing up.
+
+    Returns the plain sentences, which is also what a character is given: they
+    read nothing, so the change reaches them as something they noticed.
+    """
+    from world.quests import is_person
+
+    if obj is None or not is_person(obj):
+        return []
+    gained, lost = sorted(after - before), sorted(before - after)
+    if not gained and not lost:
+        return []
+
+    vocab = vocabulary(world_root)
+
+    def said(slug, colour):
+        """The state as a phrase, with its meaning beside it when it has one."""
+        word = str(slug).replace("_", " ")
+        means = str((vocab.get(slug) or {}).get("means") or "").strip()
+        if not means:
+            return word
+        return f"{word} |x({means})|n" if colour else f"{word} ({means})"
+
+    def lines(colour):
+        out = [f"You are now {said(slug, colour)}." for slug in gained]
+        replaced = {group_of(world_root, slug) for slug in gained}
+        for slug in lost:
+            group = group_of(world_root, slug)
+            if group and group in replaced:
+                continue
+            back = str(group_rules(world_root, group).get("default") or "")
+            if back and back not in after:
+                out.append(f"You are {back.replace('_', ' ')} again.")
+            else:
+                out.append(f"You are no longer {said(slug, colour)}.")
+        return out
+
+    plain = lines(False)
+    if not plain:
+        return []
+
+    if getattr(obj, "db", None) is not None and obj.db.is_npc:
+        # A character reads nothing. Putting it in working memory is what makes
+        # the change reach their next thought, which is the point of telling
+        # them -- the same bargain `traits._announce` strikes.
+        if hasattr(obj, "_note_to_self"):
+            obj._note_to_self(" ".join(plain))
+        return plain
+    obj.msg("\n".join(f"|y{line}|n" for line in lines(True)))
+    return plain
 
 
 def clear_on_move(obj, world_root=None):

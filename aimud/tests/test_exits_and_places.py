@@ -273,3 +273,97 @@ def effects_shut_states():
     from world import relations
 
     return relations.SHUT
+
+
+@tag("world")
+class SendingSomebodySomewhereElse(TwoRooms):
+    """
+    `move_actor` naming a room as well as a way out.
+
+    11.1 recorded this as worth doing "the day a goal about being somewhere is
+    planned wrongly often enough to notice". The soak asked sooner and for a
+    different reason: a world trying to work out what reviving means answered
+    `cannot_say` -- "I cannot move the actor to a saved starting location" --
+    so a world that had killed somebody had no way at all to let them up again.
+    """
+
+    def test_a_room_by_name(self):
+        self.apply({"type": "move_actor", "to": "Engine Room"})
+        self.assertIs(self.char1.location, self.third)
+
+    def test_a_room_this_world_does_not_have_changes_nothing(self):
+        self.apply({"type": "move_actor", "to": "The Moon"})
+        self.assertIs(self.char1.location, self.room1)
+
+    def test_an_exit_still_works(self):
+        self.apply({"type": "move_actor", "exit": "airlock"})
+        self.assertIs(self.char1.location, self.room2)
+
+    def test_a_named_room_is_read_exactly(self):
+        """Where an exit is read optimistically. It names a destination."""
+        self.assertTrue(C.achieves(
+            {"type": "move_actor", "to": "Orbital Dock"},
+            {"subject": "actor", "in_room": "Orbital Dock"}))
+        self.assertFalse(C.achieves(
+            {"type": "move_actor", "to": "Engine Room"},
+            {"subject": "actor", "in_room": "Orbital Dock"}))
+
+
+@tag("world")
+class AVerbWhoseWholeResultIsBeingSeen(TwoRooms):
+    """
+    `narrate`, and the gap it was measured into existence by.
+
+    `rule_gen` refuses a carry_out rule with no effects, correctly -- a verb
+    reporting success having changed nothing is the silent no-op this design
+    exists to end -- so a purely expressive verb had no legal rule at all, was
+    asked about twice, and was given up on. Across the two soak worlds that is
+    `smile`, `nod`, `hum`, `hear`, `feel`, `tap` and `read`, with nine
+    `cannot_say` answers saying so in as many words: "there is no effect
+    available to output text describing what the player feels".
+
+    There is no such effect and there should not be: the report phase already
+    writes what everybody reads, for every verb. What was missing was a way for
+    a world to say that is all that happens.
+    """
+
+    def test_it_changes_nothing_and_says_nothing(self):
+        before = verbs.states(self.obj1)
+        self.assertEqual(self.apply({"type": "narrate"}), [])
+        self.assertEqual(verbs.states(self.obj1), before)
+
+    def test_it_does_not_speak_for_itself(self):
+        """
+        Unlike `describe`. There is a narration to pay for here and it is the
+        whole of the answer, so the report phase must still run.
+        """
+        self.assertFalse(effects.speaks_for_itself([{"type": "narrate"}]))
+
+    def test_and_achieves_nothing(self):
+        """
+        The assertion 11.1 asks for on every effect, made here as a decision
+        rather than left to fall off the end of the function. Nothing is ever a
+        goal to have been seen doing something.
+        """
+        for condition in ({"subject": "direct", "is": ["seen"]},
+                          {"subject": "actor", "trait": "poise", "min": 1},
+                          {"subject": "actor", "in_room": "Orbital Dock"}):
+            self.assertFalse(C.achieves({"type": "narrate"}, condition),
+                             condition)
+
+    def test_a_rule_that_only_narrates_is_not_inert(self):
+        """
+        Which is the whole point of saying it out loud. `rulecheck` counts a
+        carry-out rule with no effects as a fault, and it is one; a carry-out
+        rule that says the seeing is the whole of it is a decision.
+        """
+        from world import rulecheck
+
+        found = rulecheck.scan({
+            "verb_rules": {}, "state_vocabulary": {}, "state_groups": {},
+            "kind_specs": {},
+            "rules": {"r1": {"action": "smile", "phase": "carry_out",
+                             "scope": {"world": True}, "listed": True,
+                             "conditions": [],
+                             "effects": [{"type": "narrate"}]}}})
+        self.assertEqual(found["inert"], [])

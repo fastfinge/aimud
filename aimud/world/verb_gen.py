@@ -643,7 +643,19 @@ bottle can be smelled. A bottle cannot be read, cannot be worn, cannot be
 persuaded. If a player would expect something to happen, allow it.
 
 Answer for the ordinary case. A locked door is still the sort of thing that
-opens; being locked is a condition, and the game handles conditions."""
+opens; being locked is a condition, and the game handles conditions.
+
+PEOPLE ARE THE EXCEPTION TO THAT GENEROSITY, and the only one. A person can be
+spoken to, greeted, followed, thanked, struck, healed, kissed, robbed -- all
+the things one person does to another. A person is not material and not
+scenery: they cannot be eaten, drunk, worn, read, opened, filled, planted,
+sharpened, mined or harvested, however hungry anybody is. Refuse a verb that
+treats a person as a substance, a container, a surface or a tool. Everybody in
+this game is somebody a player has met, which is why the line is drawn here and
+nowhere else.
+
+A verb that is only a figure of speech is not admitted either: you can lose
+your temper, and you cannot lose it at a chair."""
 
 
 def ask_admission(account, world_root, verb, rule, kind, on_answer, on_error):
@@ -674,6 +686,16 @@ def ask_admission(account, world_root, verb, rule, kind, on_answer, on_error):
         except Exception:
             means = ""
 
+    # Asked in English rather than in synset ids. `person.n.01` names a sense
+    # and is not a word anybody uses, so "Can a person.n.01 be eaten?" asks a
+    # model to do lexicography before it can answer the question. The gloss
+    # comes with it, being the whole of what the sense means and free to send.
+    from world import lexicon
+
+    word = lexicon.word_of(kind) or str(kind)
+    gloss = lexicon.definition(kind)
+    asked = f"a {word} ({gloss})" if gloss else f"a {word}"
+
     messages = [
         {"role": "system", "content": _ADMISSION_SYSTEM},
         {
@@ -681,7 +703,7 @@ def ask_admission(account, world_root, verb, rule, kind, on_answer, on_error):
             "content": (
                 (f"In this world, '{verb}' means:\n{means}\n\n"
                  if means else "")
-                + f"Can a {kind} be {verb}ed?"
+                + f"Can {asked} be {verb}ed?"
             ),
         },
     ]
