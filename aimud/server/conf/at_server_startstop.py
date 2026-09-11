@@ -50,8 +50,9 @@ def at_server_start():
         from evennia.utils import logger
 
         logger.log_info(
-            f"memory: {len(stranded)} bank(s) belong to characters that no "
-            f"longer exist; clearing them up"
+            f"memory: {len(stranded)} bank(s) belong to nothing this game can "
+            f"read -- a world that is gone, or the per-character naming that "
+            f"came before one bank per world; clearing them up"
         )
 
     # Load the memory backend off the reactor now, rather than making the

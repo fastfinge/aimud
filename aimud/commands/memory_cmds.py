@@ -128,7 +128,7 @@ class CmdMemoryMaintenance(Command):
     Usage:
       memcheck            what would be done, changing nothing
       memcheck sleep      consolidate now
-      memcheck sweep      delete banks whose character is gone
+      memcheck sweep      delete banks nothing can read any more
       memcheck distil     turn recent summaries into what characters know
       memcheck all        all three
 
@@ -137,9 +137,10 @@ class CmdMemoryMaintenance(Command):
     never sleeps remembers only the last few days. It happens on a clock and
     at every server start; this is for doing it now.
 
-    Sweeping deletes the memories of characters that have been removed --
-    usually a whole world at once. Those banks are unreachable: a dbref is
-    never issued twice, so nothing will ever ask for them again.
+    Sweeping deletes memories nothing can reach any more: a world that has
+    been removed, and anything left under the naming that came before one
+    bank per world. A dbref is never issued twice, so nothing will ever ask
+    for either of them again.
 
     Distilling reads what sleeping wrote and asks the memory model what each
     character now knows. It is the only part of this that costs anything, so

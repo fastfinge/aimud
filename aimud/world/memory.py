@@ -910,7 +910,11 @@ def _is_ours(bank):
 
 def orphaned_banks():
     """
-    Banks whose character no longer exists. Main thread -- it reads the DB.
+    Banks nothing can read any more. Main thread -- it reads the DB.
+
+    Two sorts: a world that has been deleted, and anything under the old
+    per-character naming, which is orphaned by definition because what is in
+    it was written against a carving this game no longer uses.
 
     Reading the game database here rather than in the worker is the whole
     safety of this: the decision to delete is made where the answer is
@@ -1000,8 +1004,7 @@ def drop_banks(names, on_done=None):
     def _finished(removed):
         if removed:
             logger.log_info(
-                f"memory: deleted {len(removed)} memory bank(s) whose "
-                f"character no longer exists"
+                f"memory: deleted {len(removed)} unreadable memory bank(s)"
             )
         if on_done:
             on_done(removed)
