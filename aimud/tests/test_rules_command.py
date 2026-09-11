@@ -114,3 +114,54 @@ class ListingRules(EvenniaCommandTest):
             if ugly == "|":
                 continue          # colour codes are |w and friends
             self.assertNotIn(ugly, said)
+
+
+@tag("world")
+class UnsayingWhatAVerbTakes(ListingRules):
+    """
+    `rules redeclare`, which is the deliberate exception to "first answer
+    stands".
+
+    An arity is settled once because every rule about the action was written
+    against it, and revising it silently would change what those rules mean
+    underneath them. But a world that settled it before the engine could ask a
+    question is stuck with an answer to a question nobody put -- which is what
+    happened to `respawn` and `resurrect` in the phase 13 playtest, declared
+    before an action could say it happens in spite of being dead.
+
+    So the same change, made out loud, by somebody who has decided to make it.
+    """
+
+    def test_what_a_verb_takes_can_be_unsaid(self):
+        actions.declare(self.root, "respawn", [{"role": "direct"}])
+        said = self.said("redeclare respawn")
+        self.assertIn("undeclared", said)
+        self.assertIsNone(actions.spec(self.root, "respawn"))
+
+    def test_its_rules_are_untouched(self):
+        actions.declare(self.root, "respawn", [{"role": "direct"}])
+        R.add(self.root, R.blank(action="respawn", phase=R.CARRY_OUT,
+                                 name="respawning brings you back"))
+        self.said("redeclare respawn")
+        self.assertIn("respawning brings you back", self.said("respawn"))
+
+    def test_a_verb_nobody_declared_says_so(self):
+        self.assertIn("Nothing has been declared",
+                      self.said("redeclare respawn"))
+
+    def test_it_wants_a_verb(self):
+        self.assertIn("Which verb", self.said("redeclare"))
+
+    def test_a_waiver_is_printed_where_it_is_set(self):
+        """
+        The one thing on a declaration that loosens rather than tightens, so
+        "why did that work while I was dead" has to be answerable from here.
+        """
+        actions.declare(self.root, "respawn", [{"role": "direct"}],
+                        despite=["acting"])
+        self.assertIn("works even when you cannot act",
+                      self.said("respawn"))
+
+    def test_and_not_where_it_is_not(self):
+        actions.declare(self.root, "shove", [{"role": "direct"}])
+        self.assertNotIn("works even when", self.said("shove"))

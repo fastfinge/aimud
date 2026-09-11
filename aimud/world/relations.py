@@ -62,14 +62,24 @@ def _world_root(obj):
 
 
 def _is_thing(obj):
-    """True for an ordinary object -- not an exit, not a person."""
-    from evennia.objects.objects import DefaultCharacter
+    """
+    True for an ordinary object -- not an exit, not a person, not a place.
+
+    Rooms were left in, and that was wrong in a way nothing noticed until
+    something could name one: `host_of` promised None for a thing lying loose
+    on the floor and answered the room instead, so everything in every room in
+    the game read as being *in* something. A rule asking whether the key is in
+    the box was one confusion away from being told yes about a key on the
+    floor, and `put the lamp in here` would have been refused for the cellar
+    not holding things.
+    """
+    from evennia.objects.objects import DefaultCharacter, DefaultRoom
 
     if obj is None:
         return False
     if getattr(obj, "destination", None) is not None:
         return False
-    if isinstance(obj, DefaultCharacter) or obj.db.is_npc:
+    if isinstance(obj, (DefaultCharacter, DefaultRoom)) or obj.db.is_npc:
         return False
     return True
 
@@ -342,6 +352,14 @@ def context_line(obj, looker=None):
 #: exactly one thing, and the game already knows what.
 VERBS = ("put", "place", "insert", "drop")
 
+#: And the way back out again. Taking something off a shelf or out of an open
+#: drawer is the same mechanic read backwards, and it needs saying separately
+#: because `get` has a command of its own: that command reads everything after
+#: the verb as a name, so "get the key from the drawer" looked for a thing
+#: called "key from the drawer" and offered to invent one. Only reached for a
+#: `get` that named somewhere to get it from; the plain sort never comes here.
+TAKING = ("get", "remove", "extract")
+
 #: The roles a preposition can land in, and what it meant. The parser files
 #: "in the box" under `container` and "on the table" under `target`, so the
 #: preposition itself has to be read back off the parse to tell them apart.
@@ -358,6 +376,18 @@ def handle(caller, verb, parsed, bound, on_message):
     which used to cost a rule call and a narration to arrive at a wrong
     answer.
     """
+    # Taking, which is placement read backwards. Any of the three roles a
+    # preposition can put a host in will do -- "out of the drawer", "off the
+    # table", "in the box" -- because all three are ways of saying where the
+    # thing is now, and `_take_from` declines unless it really is there.
+    if verb in TAKING:
+        for role in ("source", "container", "target"):
+            host = bound.get(role)
+            if host is None:
+                continue
+            if _take_from(caller, bound.get("direct"), host, on_message):
+                return True
+
     if verb not in VERBS:
         return False
 
@@ -368,6 +398,14 @@ def handle(caller, verb, parsed, bound, on_message):
     preposition, host = _destination(parsed, bound)
     if host is None:
         return False        # no "in"/"on" phrase: an ordinary drop, not this
+
+    # "Put the lamp down here" names the room, which is not a container and
+    # not a mystery either: it is the plainest drop there is. Worth catching,
+    # because the alternative is refusing it for the cellar not holding
+    # things, or buying a `put` rule to be told the same.
+    if host is getattr(caller, "location", None):
+        return _set_down(caller, obj, host, on_message)
+
     if not _is_thing(host):
         return False
 
@@ -381,6 +419,68 @@ def handle(caller, verb, parsed, bound, on_message):
     where = host.get_numbered_name(1, caller, return_string=True)
     on_message(f"You put {label} {preposition} {where}.",
                f"{name} puts {label} {preposition} {where}.")
+    return True
+
+
+def _take_from(caller, obj, host, on_message):
+    """
+    Take something out of, off or from under whatever is holding it.
+
+    Declines -- by answering False -- when the thing named is not actually
+    there, which is what keeps "get the answer from the book" a question for a
+    world rather than a placement that failed.
+    """
+    if not _is_thing(host):
+        return False
+    if obj is None:
+        # Nothing bound, which for a shut container is not a mystery: reach
+        # stops at a lid, so what is inside cannot be named at all. Saying the
+        # drawer is closed is the answer; the alternative is "you see no key
+        # here" followed by an offer to invent one, which is how a closed
+        # drawer comes to have a second key standing beside it.
+        if is_shut(host):
+            shut = host.get_numbered_name(1, caller, return_string=True)
+            on_message(f"{shut[:1].upper()}{shut[1:]} is closed.", "")
+            return True
+        return False
+    if not _is_thing(obj):
+        return False
+    if host_of(obj) is not host:
+        return False
+    if obj.location is caller:
+        on_message("You already have that.", "")
+        return True
+    preposition = preposition_of(obj)
+    if preposition == DEFAULT and is_shut(host):
+        shut = host.get_numbered_name(1, caller, return_string=True)
+        on_message(f"{shut[:1].upper()}{shut[1:]} is closed.", "")
+        return True
+    if not obj.move_to(caller, quiet=True, move_type="get"):
+        on_message("You cannot take that.", "")
+        return True
+    displace(obj)
+    obj.at_get(caller)
+    name = caller.get_display_name(caller)
+    label = obj.get_numbered_name(1, caller, return_string=True)
+    where = host.get_numbered_name(1, caller, return_string=True)
+    on_message(f"You take {label} {preposition} {where}.",
+               f"{name} takes {label} {preposition} {where}.")
+    return True
+
+
+def _set_down(caller, obj, room, on_message):
+    """Put something on the floor of the room somebody is standing in."""
+    label = obj.get_numbered_name(1, caller, return_string=True)
+    if obj.location is room:
+        on_message(f"{label.capitalize()} is already here.", "")
+        return True
+    if not obj.move_to(room, quiet=True, move_type="drop"):
+        on_message("You cannot put that down here.", "")
+        return True
+    displace(obj)
+    obj.at_drop(caller)
+    name = caller.get_display_name(caller)
+    on_message(f"You put down {label}.", f"{name} puts down {label}.")
     return True
 
 

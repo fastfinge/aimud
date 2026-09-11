@@ -876,12 +876,22 @@ def _p_able(subject, value, condition, ctx, mood):
     were a hard-coded guard at the top of the attempt pipeline; as a rule they
     are one line in `rules`, they compose with everything else, and a world
     can add its own without anybody touching the pipeline.
+
+    **Unless the action was declared to happen in spite of this one.** Check
+    rules are monotone -- adding one can only make an action stricter -- so
+    nothing a world writes can let a dead character act, which is right for
+    every verb except the ones whose whole purpose is to end the state. A
+    world says so once, when it declares the action, and `actions.waives`
+    answers for it here. See `actions.GATES`; this is the same shape
+    `_p_reachable` below uses to excuse a role declared `visible`.
     """
-    from world import verbs
+    from world import actions, verbs
 
     gate = GATES.get(str(value), GATES["acting"])
     doing = {"acting": "do that", "moving": "move",
              "speaking": "speak"}.get(str(value), "do that")
+    if ctx.action and actions.waives(ctx.world_root, ctx.action, str(value)):
+        return True, ""
     if not subject.found:
         return True, ""
     stopped = verbs.blocked(subject.obj, gate, ctx.world_root)

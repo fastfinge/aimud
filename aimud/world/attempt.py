@@ -210,30 +210,7 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
     bound, unbound = verbs.bind_all(caller, parsed["roles"], fuzzy=fuzzy)
     waiter = _once(on_wait)
 
-    # Wearing is a mechanic, not something a world has to work out. Caught
-    # here, before any of the learning machinery, so a player's `wear` command
-    # and an NPC deciding to put its coat on reach the same code and the same
-    # limits -- and so no world ever invents its own private meaning for it.
-    # `handle` declines anything that is not really about clothes, and those
-    # go on through the ordinary pipeline.
-    from world import clothing, gear, relations
-
-    if clothing.handle(caller, verb, bound, on_message):
-        return
-
-    # Taking a thing in hand is a mechanic for exactly the reasons wearing is,
-    # and the generators have been calling things "wieldable" since before
-    # anything could be wielded. `handle` declines anything that is not really
-    # about wielding -- "draw the curtain" -- and those go on to the model.
-    if gear.handle(caller, verb, bound, on_message):
-        return
-
-    # Putting a thing in, on, under or behind another thing is a mechanic for
-    # the same reason wearing is: every one of those words means exactly one
-    # thing and the game already knows what. `handle` declines anything that
-    # is not really a placement -- "put out the fire" -- and those go on to
-    # the ordinary pipeline.
-    if relations.handle(caller, verb, parsed, bound, on_message):
+    if _mechanics(caller, verb, parsed, bound, on_message):
         return
 
     if unbound:
@@ -247,17 +224,49 @@ def attempt(caller, raw, account, on_message, allow_effects=None, on_wait=None,
             )
             on_message("", "")
             return
+
+        def resume():
+            # The mechanics get their say again, because they were asked with
+            # a role still empty and declined for that reason alone. "Put the
+            # coins in the pouch" with no coins yet is a placement the moment
+            # the coins exist -- and without this it went to the rulebooks
+            # instead, where `put` had been declared from whichever roles some
+            # earlier attempt happened to fill, and answered "Put at what?".
+            if _mechanics(caller, verb, parsed, bound, on_message):
+                return
+            _with_bindings(caller, room, account, raw, verb, bound,
+                           on_message, allow_effects, waiter)
+
         # A noun that is not an object yet may still be real -- fixtures live
         # in the room description until something reaches for them.
         waiter()
-        _promote(caller, room, account, parsed, bound, unbound,
-                 lambda: _with_bindings(caller, room, account, raw, verb, bound,
-                                        on_message, allow_effects, waiter),
+        _promote(caller, room, account, parsed, bound, unbound, resume,
                  on_message, fuzzy=fuzzy)
         return
 
     _with_bindings(caller, room, account, raw, verb, bound, on_message,
                    allow_effects, waiter)
+
+
+def _mechanics(caller, verb, parsed, bound, on_message):
+    """
+    The verbs the game itself answers for, before any of it is learned.
+
+    Three of them, and each is a mechanic rather than something a world has to
+    work out: every one of these words means exactly one thing and the game
+    already knows what. A player's `wear` command and an NPC deciding to put
+    its coat on reach the same code and the same limits, and no world ever
+    invents a private meaning for any of them.
+
+    Each `handle` declines anything that is not really its business -- "draw
+    the curtain", "put out the fire" -- and those go on through the ordinary
+    pipeline. True when one of them took the attempt.
+    """
+    from world import clothing, gear, relations
+
+    return bool(clothing.handle(caller, verb, bound, on_message)
+                or gear.handle(caller, verb, bound, on_message)
+                or relations.handle(caller, verb, parsed, bound, on_message))
 
 
 def _in_turn(caller, account, spread, on_message, allow_effects, on_wait,
@@ -353,27 +362,51 @@ def _promote(caller, room, account, parsed, bound, unbound, resume, on_message,
     The making itself is item_gen.conjure, which is also how a character that
     sets out to produce something gets there. One pipeline and one set of
     guards, whichever end it is entered from.
+
+    **Everything free is done before anything is bought.** Matching a noun
+    against what is already here costs nothing and making one costs a model
+    call, and the loop this replaces interleaved the two: it conjured the first
+    unbound noun and only then found that a second one also needed inventing.
+    So "call mom on the phone", in a world with neither, left a `mom` standing
+    in the dungeon and then answered that it made no sense of the sentence.
+    Both halves of that were wrong, and the order is why.
     """
     from world.item_gen import conjure
+    from world.naming import instead_of_creating
 
-    role = unbound[0]
+    missing = []
+    for role in unbound:
+        phrase = parsed["roles"][role]
+        found, complaint = instead_of_creating(caller, phrase, fuzzy=fuzzy)
+        if found is not None:
+            bound[role] = found
+            continue
+        if complaint:
+            # A near miss, put back to the player: "did you mean the
+            # chalkboard?" is a better answer than a second chalkboard.
+            on_message(complaint, "")
+            return
+        missing.append(role)
 
-    def ready(obj, created):
+    if not missing:
+        resume()
+        return
+
+    if len(missing) > 1:
+        # Two nouns that both need inventing is a sign the parse was wrong, or
+        # that the sentence is about somewhere else entirely. Said as what it
+        # is -- neither of these things is here -- rather than as "you cannot
+        # make sense of that here", which read as though the game had failed to
+        # understand a sentence it understood perfectly well.
+        named = [str(parsed["roles"][role]) for role in missing]
+        on_message("There is no " + " and no ".join(named) + " here.", "")
+        return
+
+    role = missing[0]
+
+    def ready(obj, _created):
         bound[role] = obj
-        remaining = unbound[1:]
-        if not remaining:
-            resume()
-            return
-        if created:
-            # Only one fixture is conjured per attempt; asking for two things
-            # that both need inventing is a sign the parse was wrong.
-            on_message("You cannot make sense of that here.", "")
-            return
-        # Finding something that was already there costs nothing, so the next
-        # noun still gets its turn -- and gets the near-name check too, which
-        # it did not when this walked the roles itself.
-        _promote(caller, room, account, parsed, bound, remaining, resume,
-                 on_message, fuzzy=fuzzy)
+        resume()
 
     conjure(caller, room, account, parsed["roles"][role], ready,
             lambda message: on_message(message, ""), fuzzy=fuzzy)
@@ -477,6 +510,14 @@ def _with_bindings(caller, room, account, raw, verb, bound, on_message,
     # the one entry. Getting that wrong is the bounce the comment above
     # describes, in the other direction.
     if verb in verbs.PIPELINE_VERBS:
+        spelling = ""
+    # And not a sentence the command set has no way to say. `get` takes a
+    # noun; "get the stone with the tongs" takes a noun and a tool, and handing
+    # that back drops the tool on the floor -- or, if the command hands it here
+    # for exactly that reason, passes it between the two of them for ever.
+    # Every role but `direct` is a preposition somebody typed, and a preposition
+    # is the mark of a question a command cannot answer.
+    if set(bound) - {"direct", "actor"}:
         spelling = ""
     if spelling:
         caller.execute_cmd(f"{spelling} {rest}".strip())

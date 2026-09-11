@@ -71,24 +71,74 @@ class CmdAIDrop(_DefaultDrop):
     """
 
     def func(self):
-        from world import bulk
+        from world import bulk, verbs
 
-        if bulk.wanted(self.args):
-            self._drop_everything()
+        several, sort = bulk.split(self.args)
+        if several:
+            self._drop_everything(sort)
+            return
+        # "Drop the second wrench" is a count, not a name. Evennia's own
+        # command reads it as one, looks for a thing called "second wrench"
+        # and finds none -- and handing it the name instead would only put the
+        # question back, since the whole reason to count is that several
+        # things answer to that name.
+        one_of_several = verbs.counted(self.caller, self.args)
+        if one_of_several is not None:
+            self._drop_one(one_of_several)
             return
         super().func()
 
-    def _drop_everything(self):
+    def _drop_one(self, obj):
+        """
+        Put down one particular thing, already chosen.
+
+        The same hooks and the same sentence Evennia's own command uses, which
+        is the point of writing it out rather than delegating: a counted drop
+        has to look exactly like an ordinary one to everything downstream.
+        """
+        caller = self.caller
+        if obj.location is not caller:
+            caller.msg(f"You aren't carrying {obj.get_numbered_name(1, caller, return_string=True)}.")
+            return
+        if not obj.at_pre_drop(caller):
+            return
+        if not obj.move_to(caller.location, quiet=True, move_type="drop"):
+            self.msg("That can't be dropped.")
+            return
+        obj.at_drop(caller)
+        caller.location.msg_contents(
+            f"$You() $conj(drop) "
+            f"{obj.get_numbered_name(1, caller, return_string=True)}.",
+            from_obj=caller)
+
+    def _drop_everything(self, sort=""):
+        """
+        Put down everything, or everything of one sort.
+
+        `sort` is what "drop every wrench" narrows to. Empty is the old
+        meaning -- the lot, clothes included -- and undressing happens only
+        then: taking a coat off to obey "drop every wrench" would be absurd.
+        """
         caller = self.caller
         room = caller.location
         if room is None:
             caller.msg("There is nowhere to put anything down.")
             return
 
-        _undress(caller)
+        from world import verbs
+
+        if not sort:
+            _undress(caller)
+
+        carried = [obj for obj in clothing.carried_by(caller)
+                   if not sort
+                   or verbs.similarity(sort, obj.key) >= verbs.STRICT_SIMILARITY]
+        if sort and not carried:
+            caller.msg(f"You are not carrying any {sort}.")
+            return
 
         dropped, kept = [], []
-        for obj in clothing.carried_by(caller):
+        for obj in carried:
             if not obj.at_pre_drop(caller):
                 kept.append(obj)
                 continue

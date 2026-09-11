@@ -800,11 +800,19 @@ class CmdRules(Command):
       rules accept <id>     put a suggestion into force
       rules reject <id>     decline one, and remember the refusal
       rules judge           ask a model to rule on the whole queue at once
+      rules redeclare <verb>  forget what a verb takes, so it is asked again
 
     Nothing here costs anything except |wjudge|n: the rest is read out of what
     the world already wrote down, and `suggest` derives from it without asking
     anybody. `judge` is the one call, and it asks a model to rule on rules it
     did not write, several at a time.
+
+    |wredeclare|n is the deliberate exception to "first answer stands". What a
+    verb takes is settled once, because every rule about it was written against
+    that answer -- but a world that settled it before the engine could ask a
+    question is stuck with an answer to a question nobody put. The commonest
+    case is a verb that should work while you are dead. It costs one model call
+    on the verb's next use, and it changes no rule.
     """
 
     key = "rules"
@@ -835,6 +843,9 @@ class CmdRules(Command):
             return
         if word == "judge":
             self._judge(root)
+            return
+        if word in ("redeclare", "undeclare"):
+            self.caller.msg(self._redeclare(root, rest))
             return
 
         if asked:
@@ -892,6 +903,36 @@ class CmdRules(Command):
         suggest.judge(_get_account(self.caller), root, on_success=done,
                       on_error=lambda err: self.caller.msg(f"|r{err}|n"))
 
+    def _redeclare(self, root, asked):
+        """
+        Drop what a verb was declared to take, so the next use asks again.
+
+        `actions.declare` is first-answer-wins on purpose: an arity is what
+        every rule about a verb was written against, and revising it silently
+        would change what those rules mean underneath them. This is the same
+        change made out loud, by somebody who has decided to make it.
+
+        Nothing but the declaration goes. The rules about the verb stay exactly
+        as they are, which is the right risk to leave with the person typing
+        this: they can read them with |wrules <verb>|n first.
+        """
+        from world import actions, verbs
+
+        action = verbs.canonical_verb(asked.strip().lower())
+        if not action:
+            return ("Which verb? |wrules redeclare respawn|n forgets what "
+                    "respawn takes, so the world is asked again next time "
+                    "somebody tries it.")
+        store = dict(getattr(root.db, actions.ATTR, None) or {})
+        if action not in store:
+            return f"Nothing has been declared about |w{action}|n."
+        store.pop(action)
+        setattr(root.db, actions.ATTR, store)
+        return (f"|w{action}|n is undeclared. The next time somebody tries it "
+                f"the world will be asked afresh what it takes.\n"
+                f"|xIts rules are untouched -- |wrules {action}|n shows "
+                f"them.|n")
+
     def _answer(self, root, rule_id, taking):
         """Take a proposal up, or decline it and remember that."""
         from world import suggest
@@ -947,6 +988,17 @@ class CmdRules(Command):
                 + (", optional)" if r["optional"] else ")")
                 for r in declared.get("applies_to") or []) or "nothing"
             lines.append(f"  takes {takes}")
+            # Worth printing where it is set, and only then: it is the one
+            # thing on a declaration that loosens rather than tightens, and
+            # "why did that work while I was dead" is a question `rules` has
+            # to be able to answer.
+            waived = declared.get("despite") or []
+            if waived:
+                doing = {"acting": "act", "moving": "move",
+                         "speaking": "speak"}
+                lines.append("  works even when you cannot "
+                             + " or ".join(doing.get(g, g)
+                                           for g in sorted(waived)))
             if declared.get("means"):
                 lines.append(f"  |x{declared['means']}|n")
         else:
