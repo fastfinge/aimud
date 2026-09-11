@@ -108,9 +108,6 @@ class NPC(ObjectParent, DefaultObject):
         self.db.is_npc = True
         self.db.action_history = []
         self.ensure_idle_script()
-        from world import kinds
-
-        kinds.ensure_person(self)
 
     def at_object_delete(self):
         """

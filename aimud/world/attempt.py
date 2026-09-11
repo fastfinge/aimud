@@ -681,7 +681,10 @@ def _admitted(caller, room, account, raw, verb, bound, rule, release,
     # bare aboard a ship asked whether a *person* can be launched, was told no,
     # and was refused before the redirect that gives it the ship could run.
     anchor = _anchor(bound)
-    obj_kinds = list(getattr(anchor.db, "kinds", None) or []) if anchor else []
+    # Through `kinds.of` rather than off the attribute, so that a character with
+    # nothing written down counts as a person here too -- "can a person be
+    # greeted" is a real question and worth asking once.
+    obj_kinds = kinds.of(anchor) if anchor is not None else []
 
     def proceed():
         _with_rule(caller, room, account, raw, verb, bound, rule, release,

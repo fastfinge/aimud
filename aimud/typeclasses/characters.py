@@ -37,13 +37,6 @@ class Character(ObjectParent, DefaultCharacter):
 
         kinds.ensure_person(self)
 
-    def at_init(self):
-        """And so is one that was made before people had kinds."""
-        super().at_init()
-        from world import kinds
-
-        kinds.ensure_person(self)
-
     def world_name(self, world_root=None):
         """
         What this character is called in a given world, if anything.

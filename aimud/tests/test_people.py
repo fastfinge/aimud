@@ -32,20 +32,37 @@ class APersonIsASortOfThing(EvenniaTest):
     def test_a_character_has_a_kind(self):
         self.assertEqual(kinds.of(self.char1), [kinds.PERSON])
 
-    def test_and_one_made_before_people_had_kinds_gets_one(self):
+    def test_and_one_made_before_people_had_kinds_counts_as_one(self):
         """
-        A world already in play cannot be asked to start again for this, so
-        `at_init` fills it in when the object is next loaded.
+        Derived, not written. A world already in play cannot be asked to start
+        again for this, and the first attempt at it -- filling the attribute in
+        from `at_init` -- broke the server: `at_init` runs inside
+        `cache_instance`, while the object is still being built and not yet
+        attached to a database, so the write raised `Cannot add "kinds":
+        instance is on database "None"`.
         """
         self.char1.db.kinds = []
-        self.char1.at_init()
         self.assertEqual(kinds.of(self.char1), [kinds.PERSON])
+
+    def test_and_nothing_was_written_to_get_that_answer(self):
+        self.char1.db.kinds = []
+        kinds.of(self.char1)
+        self.assertFalse(self.char1.db.kinds)
 
     def test_but_a_character_made_into_something_else_keeps_it(self):
         """First one wins, as for every other kind."""
         self.char1.db.kinds = ["ghost"]
-        self.char1.at_init()
         self.assertEqual(kinds.of(self.char1), ["ghost"])
+
+    def test_a_thing_that_is_not_a_person_is_not_one(self):
+        self.obj1.db.kinds = []
+        self.assertEqual(kinds.of(self.obj1), [])
+
+    def test_an_npc_counts_as_a_person_too(self):
+        """NPCs are not DefaultCharacter subclasses here, which has bitten before."""
+        self.obj2.db.is_npc = True
+        self.obj2.db.kinds = []
+        self.assertEqual(kinds.of(self.obj2), [kinds.PERSON])
 
     def test_so_a_rule_can_be_filed_against_people(self):
         from world import rulebooks as R
@@ -207,4 +224,46 @@ class WhatAdmissionIsAbout(EvenniaTest):
         """
         self.assertIs(self.attempt_mod._anchor({"direct": self.char2}),
                       self.char2)
+
+
+@tag("unit")
+class NothingWritesToTheDatabaseAtCacheLoad(SimpleTestCase):
+    """
+    `at_init` is called from inside `cache_instance`, while an object is still
+    being built and is not yet attached to a database. A write there raises
+    `Cannot add "kinds": instance is on database "None"` and takes the server's
+    start-up hooks down with it -- which is how a reload came to fail.
+
+    Evennia's own documentation says `at_init` is for non-persistent state. This
+    says it in a test, because the mistake reads as perfectly reasonable code and
+    fails nowhere near where it was written.
+    """
+
+    def test_no_typeclass_writes_a_persistent_attribute_in_at_init(self):
+        import ast
+        import pathlib as _pathlib
+
+        game = _pathlib.Path(__file__).resolve().parent.parent
+        offences = []
+        for path in sorted((game / "typeclasses").rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef,
+                                         ast.AsyncFunctionDef)):
+                    continue
+                if node.name != "at_init":
+                    continue
+                for inner in ast.walk(node):
+                    if not isinstance(inner, ast.Attribute):
+                        continue
+                    if not isinstance(inner.ctx, ast.Store):
+                        continue
+                    # `self.db.x = ...` and `self.attributes.add(...)` persist;
+                    # `self.ndb.x = ...` is exactly what at_init is for.
+                    owner = inner.value
+                    if isinstance(owner, ast.Attribute) and owner.attr == "db":
+                        offences.append(
+                            f"{path.name}:{inner.lineno} at_init writes "
+                            f"self.db.{inner.attr}")
+        self.assertEqual(offences, [], "\n" + "\n".join(offences))
 

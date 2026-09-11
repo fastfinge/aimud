@@ -213,21 +213,27 @@ PERSON = "person.n.01"
 
 def ensure_person(obj):
     """
-    Make sure a character has a kind, and answer with whether one was added.
+    Give a character its kind, at creation. Answers with whether one was added.
 
     Rooms have had kinds since phase 2 and objects since kinds existed; people
     had none. So no rule could be filed against `person.n.01`, the admission
     question never applied to anybody, and every character in a world counted as
     one question to the attempt counters rather than one per sort of person.
 
-    Called from `at_init` as well as at creation, because a world already in
-    play cannot be asked to start again for this, and `at_init` runs when an
-    object is loaded into the cache: one attribute read per load, one write per
-    character ever.
+    Creation only. The first version of this also ran from `at_init`, to catch
+    characters made before people had kinds, and that broke the server: `at_init`
+    is called from inside `cache_instance` while the object is still being built
+    and is not yet attached to a database, so writing an attribute there raises
+    `Cannot add "kinds": instance is on database "None"`. `at_init` is for
+    non-persistent state and nothing else.
+
+    Characters that already exist are covered by `of` below, which derives the
+    answer instead of storing it -- no write, no migration, and nothing that can
+    half-apply.
 
     Only when there is nothing there. A character somebody has made into a ghost
-    or a construct keeps whatever it was made, which is the same first-one-wins
-    rule every other kind follows.
+    keeps whatever it was made, which is the first-one-wins rule every other
+    kind follows.
     """
     if obj is None or obj.db.kinds:
         return False
@@ -520,15 +526,29 @@ def vocabulary(world_root):
 
 def of(obj):
     """
-    Every kind a thing is, as stored. Works for objects, rooms and zones alike.
+    Every kind a thing is. Works for objects, rooms and zones alike.
 
     One reader, because from here on the answer is asked of places as well as
     of things: a rule filed against `spacecraft.n.01` has to be able to match
     the room somebody is standing in.
+
+    A person with nothing written down is a person, which is derived here rather
+    than written on to every character that already exists. Same reasoning as the
+    implied `alive` state: a fact this obvious is not worth storing, storing it
+    would need a migration a world in play cannot afford, and a derived answer
+    cannot half-apply. A character given some other kind keeps it.
     """
     try:
-        return [str(k) for k in (obj.db.kinds or []) if k]
+        found = [str(k) for k in (obj.db.kinds or []) if k]
     except AttributeError:
+        return []
+    if found:
+        return found
+    from world.quests import is_person
+
+    try:
+        return [PERSON] if is_person(obj) else []
+    except Exception:
         return []
 
 

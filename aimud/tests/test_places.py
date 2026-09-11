@@ -256,5 +256,14 @@ class WhenARoomTypeIsUseless(SimpleTestCase):
             self.assertTrue(settled.startswith(expected), f"{slug} -> {settled}")
 
     def test_and_reading_kinds_off_something_that_has_none_is_empty(self):
+        """
+        `is_npc=False` matters, and is a trap worth naming: every attribute of a
+        bare `Mock` is itself a truthy `Mock`, so a stand-in with nothing said
+        about it reads as an NPC -- and `kinds.of` now answers `person.n.01` for
+        anything that is a person with no kinds of its own. A real object has
+        `db.is_npc` unset and falsy, so this is the mock lying rather than the
+        code being wrong.
+        """
         self.assertEqual(kinds.of(None), [])
-        self.assertEqual(kinds.of(mock.Mock(db=mock.Mock(kinds=None))), [])
+        self.assertEqual(
+            kinds.of(mock.Mock(db=mock.Mock(kinds=None, is_npc=False))), [])
