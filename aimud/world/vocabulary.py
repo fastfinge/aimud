@@ -36,13 +36,22 @@ from evennia.utils import logger
 
 #: The registers, in the order a word is looked for. Traits and states first,
 #: because those are the pair a claim can actually block.
-REGISTERS = ("trait", "state", "kind", "affordance")
+REGISTERS = ("trait", "state", "kind", "affordance", "pronoun")
 
 #: Which pairs may not share a word. Symmetric; only the one pair, and the
 #: reasoning is in the module docstring -- both answer "what is true of this
 #: thing now", so two registers holding one word hold two answers to one
 #: question.
 EXCLUSIVE = frozenset([frozenset(("trait", "state"))])
+
+
+def _pronouns_of(world_root):
+    from world import pronouns
+
+    try:
+        return set(pronouns.vocabulary(world_root))
+    except Exception:
+        return set()
 
 
 def _traits_of(world_root):
@@ -88,6 +97,7 @@ _READERS = {
     "state": _states_of,
     "kind": _kinds_of,
     "affordance": _affordances_of,
+    "pronoun": _pronouns_of,
 }
 
 

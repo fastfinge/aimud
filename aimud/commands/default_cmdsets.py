@@ -30,6 +30,7 @@ from commands.goal_cmds import CmdGoal
 from commands.help_cmds import CmdAIHelp
 from commands.memory_cmds import CmdMemoryMaintenance, CmdRemember
 from commands.name_cmds import CmdName
+from commands.pronoun_cmds import CmdPronouns
 from commands.quest_cmds import CmdQuests
 from commands.social_cmds import CmdAIEmote
 from commands.trait_cmds import CmdScore
@@ -79,6 +80,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdScore())
         self.add(CmdRemember())
         self.add(CmdName())
+        self.add(CmdPronouns())
         self.add(CmdQuests())
         self.add(CmdGoal())
         self.add(CmdWorldgen())

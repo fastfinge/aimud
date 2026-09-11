@@ -52,6 +52,7 @@ EFFECT_CATEGORY = "effects"
 AFFORDANCE_CATEGORY = "affordances"
 STATE_CATEGORY = "conditions"
 TRAIT_CATEGORY = "traits"
+PRONOUN_CATEGORY = "pronouns"
 
 #: Anyone may read them. They document a world the player is standing in.
 OPEN = "view:all();read:all()"
@@ -431,11 +432,51 @@ def world_topics(caller, world_root=None):
         # Keep both reachable by keying the trait on its own name.
         _place(topics, slug, "trait",
                _entry(slug, TRAIT_CATEGORY, _trait_text(caller, slug, entry)))
+    # Every form a set answers to, not only its name: somebody reading "she
+    # picks up the sword" and wondering what the game means by it will type
+    # `help she`, and somebody puzzled by "hers" will type that. One entry,
+    # filed under each of its words, so whichever they try finds it.
+    from world import pronouns as pronoun_mod
+
+    for slug, entry in (pronoun_mod.vocabulary(world_root) or {}).items():
+        text = _pronoun_text(slug, entry)
+        for form in sorted({entry.get(field, "") for field in pronoun_mod.FORMS}):
+            if form:
+                _place(topics, form, "pronoun",
+                       _entry(slug, PRONOUN_CATEGORY, text,
+                              aliases=[f for f in
+                                       {entry.get(x, "") for x in pronoun_mod.FORMS}
+                                       if f and f != form]))
+
     for key, label, entry in _kind_topics(world_root):
         _place(topics, key, label, entry)
     for key, label, entry in _affordance_topics(world_root):
         _place(topics, key, label, entry)
     return topics
+
+
+def _pronoun_text(slug, entry):
+    """What `help she` says."""
+    from world import pronouns as pronoun_mod
+
+    verb = "pick up" if entry.get("plural") else "picks up"
+    lines = [
+        f"|w{pronoun_mod.spelled(entry)}|n is a set of pronouns this world "
+        f"uses.",
+        "",
+        (entry.get("means") or "").strip(),
+        "",
+        "How it reads:",
+        f"  {entry.get('subject', '')} {verb} the sword",
+        f"  you hand {entry.get('object', '')} the sword",
+        f"  {entry.get('adjective', '')} sword",
+        f"  the sword is {entry.get('possessive', '')}",
+        f"  {entry.get('subject', '')} cut {entry.get('reflexive', '')}",
+        "",
+        f"Type |wpronouns {slug}|n to be called this, or |wpronouns|n to see "
+        f"every set this world keeps.",
+    ]
+    return "\n".join(line for line in lines if line is not None)
 
 
 class CmdAIHelp(default_cmds.CmdHelp):

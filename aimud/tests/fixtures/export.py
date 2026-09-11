@@ -46,6 +46,7 @@ REGISTERS = (
     "verb_rules",
     "kind_specs",
     "state_vocabulary",
+    "pronoun_sets",
     "state_groups",
     "trait_vocabulary",
     "rule_failures",

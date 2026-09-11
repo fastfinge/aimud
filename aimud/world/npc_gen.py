@@ -332,6 +332,8 @@ Respond with a single JSON object only — no other text:
   "name": "Character Name (1-3 words)",
   "description": "2-4 sentences: what they look like, and nothing else",
   "manner": "2-3 sentences: who they are and how they behave",
+  "pronouns": "she",
+  "new_pronoun_set": null,
   "goal": [ ... ],
   "traits": [{"slug": "swordsmanship", "value": 12}]
 }
@@ -372,6 +374,22 @@ It must NOT contain:
 
 If you find yourself writing "wearing", "dressed", "clad", "in a", "carries"
 or "holds", stop: that belongs to the clothing, not to the person.
+
+"pronouns" is what other people say about this character: one of the sets
+this world already keeps, by name. The sets are listed for you. Pick whichever
+suits the person you have written, and vary it across a world the way a real
+place varies.
+
+"new_pronoun_set" is for a character none of those sets suits -- a hive mind,
+a ship's computer, somebody who goes by a word this world has not met. Leave
+it null almost always. When you do give one, give it whole:
+{"subject": "ze", "object": "zir", "adjective": "zir", "possessive": "zirs",
+ "reflexive": "zirself", "plural": false,
+ "means": "one sentence on who this set is for"}
+and put its subject form in "pronouns" as well. A set missing any of those is
+discarded entire, because the missing form is a sentence written wrong every
+time it comes up afterwards. "plural" is whether the verb after it is plural:
+"they pick up the sword" is true, "she picks up the sword" is false.
 
 "manner" is the opposite and is never shown to players: temperament, habits,
 what they want, how they speak and treat people. Put the character there.
@@ -1063,7 +1081,7 @@ def generate_npc(sponsor, room, on_success, on_error):
         on_error(str(e))
         return
 
-    from world import lore, traits
+    from world import lore, pronouns, traits
 
     world_desc = lore.description(room)
     room_title = room.db.room_title or room.key
@@ -1086,6 +1104,7 @@ def generate_npc(sponsor, room, on_success, on_error):
                 f"World: {world_desc}\n\n"
                 f"{lore.guidance_block(room, 'npcs')}"
                 f"{traits.vocabulary_block(room.db.world_root)}"
+                f"{pronouns.vocabulary_block(room.db.world_root)}"
                 f"Room: [{room_title}]\n{room_desc}\n\n"
                 f"{taken}"
                 "Generate an NPC who would naturally be found here."
@@ -1142,6 +1161,17 @@ def generate_npc(sponsor, room, on_success, on_error):
             # players never see by looking, and which the character itself
             # needs in order to behave like anyone in particular.
             npc.db.manner = manner
+            # What other people will say about them. A set this world already
+            # keeps is used by name; a declared one is registered first and
+            # then given, because `give` refuses a word the register has never
+            # heard -- which is the discipline rather than an obstacle to it.
+            # A declaration that folds onto an existing set comes back as that
+            # set's slug, which is why the return value is what gets used.
+            wanted = str(data.get("pronouns", "") or "").strip()
+            declared = data.get("new_pronoun_set")
+            if declared:
+                wanted = pronouns.register(room.db.world_root, declared) or wanted
+            pronouns.give(npc, wanted, room.db.world_root)
             # What they are trying to bring about. The planner works at this
             # between conversations, so a character arrives already wanting
             # something rather than waiting to be given a purpose.
