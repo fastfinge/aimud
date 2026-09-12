@@ -654,7 +654,7 @@ class NPC(ObjectParent, DefaultObject):
                 # Asked out loud, so the room sees the arrangement being made.
                 # The offer now sits in their quest list, and they answer it on
                 # their own next turn.
-                self._aloud(room, f'{self.key} says, "{request}"')
+                self._aloud(room, '{actor} $pconj(say), "' + request + '"')
                 target.witness("say", self.key, request)
             else:
                 target.msg(f'{self.key} says, "|w{request}|n"')
@@ -663,9 +663,14 @@ class NPC(ObjectParent, DefaultObject):
                     f"Type |wquests|y to see the terms, then |wquests accept|y "
                     f"or |wquests decline|y to answer.|n"
                 )
-                self._aloud(
+                from world import events
+
+                self._acted(
                     room,
-                    f"{self.key} asks {target.get_display_name(self)} for a favour.",
+                    events.Event(actor=self, room=room, verb="ask",
+                                 roles={"target": target},
+                                 room_template=("{actor} $pconj(ask) {target} "
+                                                "for a favour.")),
                     exclude=[target])
             self._add_to_history("action", self.key,
                                  f"asked {target.get_display_name(self)} to {quest['title']}")
@@ -698,14 +703,15 @@ class NPC(ObjectParent, DefaultObject):
             quest, _message = quests.accept(self)
             if quest is None:
                 return
-            said = f"{self.key} agrees to {quest['giver']}'s request: {quest['title']}."
+            template = ("{actor} $pconj(agree) to "
+                        f"{quest['giver']}'s request: {quest['title']}.")
         else:
             quest, _message = quests.decline(self)
             if quest is None:
                 return
-            said = f"{self.key} turns down {quest['giver']}'s request."
+            template = f"{{actor}} $pconj(turn) down {quest['giver']}'s request."
 
-        self._aloud(room, said)
+        said = self._aloud(room, template, verb="answer")
         self._add_to_history("action", self.key, said)
 
         from world.npc_gen import notify_npcs
@@ -893,8 +899,9 @@ class NPC(ObjectParent, DefaultObject):
             if quest is not None and self.location:
                 self._aloud(
                     self.location,
-                    f"{self.key} gives up on {quest['giver']}'s errand: "
-                    f"{quest['title']}.")
+                    "{actor} $pconj(give) up on "
+                    f"{quest['giver']}'s errand: {quest['title']}.",
+                    verb="abandon")
 
         self.db.goal = []
         self.db.goal_stalls = 0
@@ -1009,8 +1016,12 @@ class NPC(ObjectParent, DefaultObject):
                 self._note_to_self(
                     f"{obj.get_display_name(self)} is already here")
                 return
-            said = f"{self.key} produces {obj.get_display_name(self)}."
-            self._aloud(room, said, about=obj)
+            from world import events
+
+            said = self._acted(room, events.Event(
+                actor=self, room=room, verb="create",
+                roles={"direct": obj},
+                room_template="{actor} $pconj(produce) {direct}."))
             self._add_to_history("action", self.key, said)
             self._notify_other_npcs(room, "action", said, 0)
 
@@ -1018,22 +1029,55 @@ class NPC(ObjectParent, DefaultObject):
                 lambda message: self._note_to_self(_as_noticed(message)),
                 fuzzy=True)
 
-    def _aloud(self, room, text, about=None, exclude=None):
+    def _aloud(self, room, template, verb="say", exclude=None):
         """
-        Do something the room can see, and be somebody "he" can mean after.
+        Say something the room hears, each hearer in their own words.
 
-        Speech, emotes and the handful of NPC acts that reach a room straight
-        through `msg_contents`. The recording is `events.noticed`, shared
-        with the player's own emote, because "him" meaning the barman and
-        "him" meaning another player are the same table and the same
-        question -- see that function for why any of this is needed.
+        Speech, emotes, and the quest arrangements that are the game saying
+        what has been agreed rather than an action on anything. A template
+        like everything else this character does -- `{actor} $pconj(say),
+        "..."` -- because a speaker named in full on every line is exactly
+        what pronouns are for, and because two lines running about one
+        speaker is the clearest case the centering rule has: the first names
+        Garrick Pyre and the second is "he".
+
+        The words themselves are not touched. A model wrote them and they may
+        contain anything, braces included; `events.render` leaves a slot it
+        does not recognise exactly as it found it.
         """
         from world import events
 
         if room is None:
-            return
-        room.msg_contents(text, exclude=exclude)
-        events.noticed(room, self, about=about, exclude=exclude)
+            return ""
+        return self._acted(
+            room, events.Event(actor=self, room=room, verb=verb,
+                               room_template=template),
+            exclude=exclude)
+
+    def _acted(self, room, event, exclude=None):
+        """
+        Do something the room watches, each watcher in their own words.
+
+        The acts this character performs by mechanic rather than through a
+        verb -- picking a thing up, handing it over, producing one -- and the
+        reason they travel as events and not as sentences: whoever was just
+        shown this character reads "she picks up the crowbar", and whoever is
+        handed the thing reads "to you". One sentence built here would have
+        chosen every name in it, once, for everybody, which is precisely what
+        `world.events` exists to stop.
+
+        Returns the rendering for nobody -- names throughout and no pronouns
+        -- which is what this character's own record and the other NPCs'
+        prompts want, since a model reading it has no attention to resolve a
+        pronoun with.
+        """
+        from world import events
+
+        if room is None:
+            return ""
+        template = events.repair(event.room_template)
+        events.show_the_room(event, template, exclude=exclude or ())
+        return events.render(template, None, event)
 
     def _execute_one(self, tool_name, args, room, _depth=0):
         from commands.look_take_cmds import _find_one
@@ -1049,16 +1093,19 @@ class NPC(ObjectParent, DefaultObject):
         if tool_name == "say":
             msg = str(args.get("message", "")).strip()
             if msg:
-                self._aloud(room, f'{self.key} says, "|w{msg}|n"')
+                self._aloud(room, '{actor} $pconj(say), "|w' + msg + '|n"')
                 self._add_to_history("say", self.key, msg)
                 self._notify_other_npcs(room, "say", msg, _depth)
 
         elif tool_name == "emote":
             action = str(args.get("action", "")).strip()
             if action:
-                self._aloud(room, f"{self.key} {action}")
+                # "grasps the tongs, testing the grip" is a sentence with its
+                # verb already conjugated for one person; `events.repair`
+                # wraps it so that it agrees with whoever is reading it too.
+                spoken = self._aloud(room, "{actor} " + action, verb="emote")
                 self._add_to_history("emote", self.key, action)
-                self._notify_other_npcs(room, "emote", f"{self.key} {action}", _depth)
+                self._notify_other_npcs(room, "emote", spoken, _depth)
 
         elif tool_name == "set_goal":
             self._set_goal(str(args.get("want", "")).strip(), room)
@@ -1088,10 +1135,12 @@ class NPC(ObjectParent, DefaultObject):
                 obj, _ = _find_one(self, obj_name, location=room)
                 if obj and obj is not self:
                     if obj.move_to(self, quiet=True):
-                        self._aloud(
-                            room,
-                            f"{self.key} picks up {obj.get_display_name(self)}.",
-                            about=obj)
+                        from world import events
+
+                        self._acted(room, events.Event(
+                            actor=self, room=room, verb="get",
+                            roles={"direct": obj},
+                            room_template="{actor} $pconj(pick) up {direct}."))
 
         elif tool_name == "give":
             obj_name = str(args.get("object_name", "")).strip()
@@ -1101,11 +1150,13 @@ class NPC(ObjectParent, DefaultObject):
                 recipient, _ = _find_one(self, recipient_name, location=room)
                 if obj and recipient and recipient is not self:
                     if obj.move_to(recipient, quiet=True):
-                        self._aloud(
-                            room,
-                            f"{self.key} gives {obj.get_display_name(self)} "
-                            f"to {recipient.get_display_name(self)}.",
-                            about=obj)
+                        from world import events
+
+                        self._acted(room, events.Event(
+                            actor=self, room=room, verb="give",
+                            roles={"direct": obj, "target": recipient},
+                            room_template=(
+                                "{actor} $pconj(give) {direct} to {target}.")))
 
         elif tool_name == "create":
             self._conjure(str(args.get("name", "")).strip(), room)
@@ -1121,8 +1172,15 @@ class NPC(ObjectParent, DefaultObject):
                     self, room, [{"type": "destroy_object", "name": obj_name}],
                     world_root=room.db.world_root,
                 )
+                from world import events
+
                 for line in said:
-                    self._aloud(room, f"{self.key} destroys something. {line}")
+                    # The effect layer's own sentence about what is gone; the
+                    # thing itself is deleted by now and cannot be a role.
+                    self._acted(room, events.Event(
+                        actor=self, room=room, verb="destroy",
+                        room_template=(
+                            "{actor} $pconj(destroy) something. " + line)))
 
         elif tool_name == "modify":
             obj_name = str(args.get("object_name", "")).strip()

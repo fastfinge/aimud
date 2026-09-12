@@ -129,15 +129,20 @@ class NoSiteBuildsItsOwnSentence(SimpleTestCase):
     is precisely what per-recipient rendering exists to stop.
     """
 
-    #: Where an action is narrated. Deliberately not every module: a quest
-    #: announcement and a room's "you notice a lamp here" are the game telling
-    #: somebody something rather than an action happening, they carry no verb
-    #: and no roles, and an event would be a costume on them.
+    #: Where an action is narrated. Deliberately not every module: a room's
+    #: "you notice a lamp here" is the game telling somebody something rather
+    #: than an action happening, it carries no verb and no roles, and an event
+    #: would be a costume on it.
+    #:
+    #: `npcs.py` is here because it was the module the P4 sweep missed -- its
+    #: `get` and `give` tool handlers built their own sentence, so an NPC
+    #: narrated itself by name for as long as it lived. It calls
+    #: `msg_contents` nowhere now, which is what this guard holds it to.
     NARRATING = (
         "world/attempt.py", "world/relations.py", "world/clothing.py",
         "world/gear.py", "world/events.py",
         "commands/drop_cmds.py", "commands/unknown_cmd.py",
-        "commands/clothing_cmds.py",
+        "commands/clothing_cmds.py", "typeclasses/npcs.py",
     )
 
     def test_nothing_broadcast_is_built_as_a_sentence(self):

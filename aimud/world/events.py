@@ -547,20 +547,29 @@ def noticed(room, actor, about=None, exclude=None):
     that can be picked up and "get all of them" after a barman talks must
     not mean barmen. Never noted for themselves: a table is what its owner
     was shown, and they did not watch their own speech.
+
+    Speech is also an utterance for the centering rule, and this is the only
+    place that can say so. Somebody who has just read "Barnaby Royston nods"
+    is thinking about Barnaby, so the next line about him is "he" -- which
+    is the difference between a barman who talks for twenty lines and is
+    never a pronoun afterwards, and one who is.
     """
     if room is None or actor is None:
         return
     world_root = getattr(room.db, "world_root", None)
     left_out = set(exclude or ())
+    said_of = [actor] + ([about] if about is not None else [])
     for viewer in list(getattr(room, "contents", []) or []):
         if viewer is actor or viewer in left_out or not hasattr(viewer, "msg"):
             continue
         referents.note(viewer, actor, world_root, last=False)
         if about is not None and about is not viewer:
             referents.note(viewer, about, world_root)
+        if _reads(viewer):
+            referents.was_told(viewer, said_of)
 
 
-def show_the_room(event, template=None):
+def show_the_room(event, template=None, exclude=()):
     """
     Everybody present but the actor reads the template in their own words.
 
@@ -568,14 +577,19 @@ def show_the_room(event, template=None):
     caller with its own arrangements for those (an NPC acting, which
     witnesses through a depth-capped path) can still have each watcher told
     in their own words rather than one sentence broadcast to all of them.
+
+    `exclude` leaves somebody out, for when they have already been told in
+    words of their own: being asked a favour is a message to the one person
+    being asked and a narration to everybody else.
     """
     actor, room = event.actor, event.room
     if room is None:
         return
     if template is None:
         template = repair(event.room_template)
+    left_out = set(exclude or ())
     for viewer in list(getattr(room, "contents", []) or []):
-        if viewer is actor or not hasattr(viewer, "msg"):
+        if viewer is actor or viewer in left_out or not hasattr(viewer, "msg"):
             continue
         line = render(template, viewer, event)
         if line:

@@ -196,3 +196,154 @@ class PronounsForAPlayerTalking(EvenniaTest, Stage):
     def test_and_the_speaker_is_not_told_about_themselves(self):
         self.jessica.at_say("Evening, all.")
         self.assertIsNone(referents.recall(self.jessica, "her"))
+
+
+@tag("world")
+class WhatAnNpcDoesReadsPerWatcher(EvenniaTest, Stage):
+    """
+    The bug as it was reported: an NPC narrating itself by name forever.
+
+        Olara Voss says, "See this? One pry, one pull."
+        Olara Voss picks up forged iron crowbar.
+        Olara Voss gives forged iron crowbar to Raldor.
+
+    Two things are wrong with that and they are one thing. `get` and `give`
+    built their own sentence, so no watcher could be shown "she" and the
+    person being handed the crowbar could not be shown "you"; and speech
+    established no centre, so even a rendered line afterwards had nothing to
+    be a pronoun about. `_acted` fixes the first and `events.noticed` the
+    second.
+
+    Then the same report again, about the lines that were left:
+
+        Garrick Pyre says, "Let's see what this ore can make."
+        Garrick Pyre says, "Cold iron doesn't sing until it's burning."
+
+    Speech and emotes were still sentences built here, so a speaker holding
+    the floor for a dozen lines was named in full on every one of them. They
+    are templates now too, which is also what makes "they say" possible for
+    a they/them character.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.rooted()
+        from evennia import create_object
+        from world import pronouns
+
+        from typeclasses.npcs import NPC
+
+        self.olara = create_object(NPC, key="Olara Voss", location=self.room1)
+        self.olara.db.is_npc = True
+        pronouns.give(self.olara, "she", self.room1)
+        self.crowbar = self.obj1
+        self.crowbar.key = "crowbar"
+        self.crowbar.location = self.room1
+        self.raldor = self.char1
+        self.raldor.key = "Raldor"
+        self.watcher = self.char2
+        for who in (self.raldor, self.watcher):
+            referents.clear(who)
+        self.heard = {}
+        for who in (self.raldor, self.watcher):
+            self.heard[who] = []
+            who.msg = lambda text="", _who=who, **kw: \
+                self.heard[_who].append(str(text))
+
+    def does(self, tool, **args):
+        self.olara._execute_one(tool, args, self.room1)
+
+    def test_the_first_thing_she_does_names_her(self):
+        """Nothing has been said yet, so there is no centre to carry."""
+        self.does("get", object_name="crowbar")
+        self.assertEqual(self.heard[self.watcher],
+                         ["Olara Voss picks up the crowbar."])
+
+    def test_but_after_she_has_spoken_she_is_she(self):
+        self.does("say", message="See this? One pry, one pull.")
+        self.does("get", object_name="crowbar")
+        self.assertEqual(self.heard[self.watcher][-1],
+                         "She picks up the crowbar.")
+
+    def test_an_emote_carries_the_same_attention(self):
+        self.does("emote", action="turns the crowbar over once")
+        self.does("get", object_name="crowbar")
+        self.assertEqual(self.heard[self.watcher][-1],
+                         "She picks up the crowbar.")
+
+    def test_whoever_is_handed_it_reads_you(self):
+        self.does("get", object_name="crowbar")
+        self.does("give", object_name="crowbar", recipient="Raldor")
+        self.assertEqual(self.heard[self.raldor][-1],
+                         "She gives the crowbar to you.")
+
+    def test_and_everybody_else_reads_the_name(self):
+        self.does("get", object_name="crowbar")
+        self.does("give", object_name="crowbar", recipient="Raldor")
+        self.assertEqual(self.heard[self.watcher][-1],
+                         "She gives the crowbar to Raldor.")
+
+    def test_the_thing_is_definite_and_no_slot_is_left_raw(self):
+        """
+        The two ways a template reaches a player wrong: an undetermined noun
+        ("picks up crowbar") and a slot nothing filled ("{direct}").
+        """
+        self.does("get", object_name="crowbar")
+        self.does("give", object_name="crowbar", recipient="Raldor")
+        for lines in self.heard.values():
+            for line in lines:
+                self.assertNotIn("{", line)
+                self.assertIn("the crowbar", line)
+
+    def test_she_is_not_told_her_own_line(self):
+        self.does("get", object_name="crowbar")
+        self.assertIsNone(referents.recall(self.olara, "her"))
+
+    def test_the_first_thing_she_says_names_her(self):
+        self.does("say", message="Let's see what this ore can make.")
+        self.assertEqual(
+            self.heard[self.watcher],
+            ['Olara Voss says, "|wLet\'s see what this ore can make.|n"'])
+
+    def test_and_the_next_line_is_she(self):
+        """The report: a speaker holding the floor, named on every line."""
+        self.does("say", message="Cold iron doesn't sing until it's burning.")
+        self.does("say", message="Now I can handle it right.")
+        self.assertEqual(self.heard[self.watcher][-1],
+                         'She says, "|wNow I can handle it right.|n"')
+
+    def test_an_emote_reads_the_same_way(self):
+        self.does("say", message="Watch this.")
+        self.does("emote", action="grasps the tongs, testing the weight")
+        self.assertEqual(self.heard[self.watcher][-1],
+                         "She grasps the tongs, testing the weight")
+
+    def test_and_its_verb_agrees_with_a_they_them_speaker(self):
+        """
+        What a hand-written sentence could never do: the emote comes back
+        conjugated for one person, and has to read correctly for anybody.
+        """
+        from world import pronouns
+
+        pronouns.give(self.olara, "they", self.room1)
+        self.does("say", message="Watch this.")
+        self.does("emote", action="grasps the tongs, testing the weight")
+        self.assertEqual(self.heard[self.watcher][-1],
+                         "They grasp the tongs, testing the weight")
+
+    def test_a_they_them_speaker_says_rather_than_saying(self):
+        self.does("say", message="Watch this.")
+        from world import pronouns
+
+        pronouns.give(self.olara, "they", self.room1)
+        self.does("say", message="Now watch this.")
+        self.assertEqual(self.heard[self.watcher][-1],
+                         'They say, "|wNow watch this.|n"')
+
+    def test_speech_still_makes_the_speaker_her(self):
+        """
+        The table the parser reads, which `events.noticed` used to write for
+        this path and `render` writes now. "hug her" has to reach Olara.
+        """
+        self.does("say", message="Watch this.")
+        self.assertIs(referents.recall(self.watcher, "her"), self.olara)

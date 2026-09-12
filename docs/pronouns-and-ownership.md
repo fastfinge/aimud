@@ -1180,6 +1180,56 @@ Three things it fixes:
   comes back "try" and "watches" "watch" with no exception table here -- and
   anything it cannot be certain of is left exactly as written.
 
+*What P4 missed, found in play* (`tests/test_it_and_npcs.py`). An NPC was
+still narrating itself by name on every line:
+
+```
+Olara Voss says, "See this? One pry, one pull."
+Olara Voss picks up forged iron crowbar.
+Olara Voss gives forged iron crowbar to Raldor.
+```
+
+§5.4's list of delivery sites ends with "`npcs.py`'s `get` and `give` tool
+handlers", and those two were the ones not moved -- they built a sentence and
+handed it to `_aloud`, so no watcher could be shown "she", the person being
+handed the crowbar could not be shown "you", and the object came out
+undetermined ("picks up forged iron crowbar") because a hand-written site
+never asked `plain_name` for an article. They are events now, with `create`
+and `destroy` beside them, through one `NPC._acted` that renders per watcher
+and returns the rendering for nobody for the records.
+
+**Two things the plan had wrong, both about speech.**
+
+* **Speech is an utterance for the centering rule, and nothing was saying
+  so.** §5.3 takes the state to be "the ranked participant list of the last
+  message the viewer was shown", and a speech line is a message they were
+  shown -- but it goes out through `events.noticed`, which wrote the parser's
+  half of the table and not the narrator's. So a barman could talk for twenty
+  lines and the next rendered line about him still had no centre to carry.
+  `noticed` writes `was_told` now, which is what makes "Garrick Pyre says ..."
+  followed by "He picks up the tongs" read the way it should.
+* **A speech tag is a narration too.** §5.4 put speech outside this work on
+  the grounds that it is not an action on an object, and in play that is the
+  most repetitive line in the game: a character holding the floor for a dozen
+  turns was named in full on every one of them. `say` and `emote` are
+  templates now -- `{actor} $pconj(say), "..."` and `{actor} ` plus whatever
+  the model wrote -- so the first line names Garrick Pyre and the second is
+  "he", and a they/them character gets "They say" and "They grasp the tongs"
+  rather than an emote conjugated for one person. `repair` does the second of
+  those for free: an emote arrives with its verb already conjugated, which is
+  exactly the defect `_ACTOR_VERB` was written for.
+
+  The quest arrangements an NPC announces out loud ("$pconj(ask) {target} for
+  a favour", agreeing, declining, giving up) went with them, since they reach
+  the room by the same path.
+
+  **A player's own speech is still Evennia's** `at_say`, which builds the line
+  per receiver with its own funcparser; only the `noticed` half of this
+  reaches it, so a player watching another player read "Jessica says" every
+  time and then "She picks up the sword". Worth finishing, and it is a
+  rewrite of `at_say` rather than a template change -- noted in
+  `future-plans.md`.
+
 **Phase P5 -- ownership.** `world/ownership.py`; the `owned_by` condition; the
 `set_owner` effect and its cascade; `rule_gen` prompt lines; `standard_rules`
 seeds and a raised `VERSION`; the `give` mechanic; `create_object` and
