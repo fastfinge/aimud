@@ -1,8 +1,7 @@
 # Development plan: pronouns and ownership
 
 Status: **phases S, P0, P1, P2, P3, M and P4 are built**; P5 onward is
-proposed. P4's world reset (§9) is still to be done by hand: `export.py`
-first, then `worldreset` on each world whose cached narrations predate it. Where the building turned up something the plan had
+proposed. P4's world reset has been completed. Where the building turned up something the plan had
 wrong, the section says so rather than being quietly corrected -- §5.4 is the
 one that matters.
 
