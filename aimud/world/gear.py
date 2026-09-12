@@ -244,16 +244,16 @@ def wield(character, obj):
     name = obj.get_display_name(character)
 
     if obj.location is not character:
-        return False, f"You are not carrying {name}.", ""
+        return False, f"You are not carrying {name}.", None
     if obj.db.wielded:
-        return False, f"You are already wielding {name}.", ""
+        return False, f"You are already wielding {name}.", None
     if obj.db.worn:
-        return False, f"You would have to take {name} off first.", ""
+        return False, f"You would have to take {name} off first.", None
 
     in_hand = wielded(character)
     if len(in_hand) >= WIELD_LIMIT:
         busy = ", ".join(o.get_display_name(character) for o in in_hand)
-        return False, f"Your hands are full: {busy}.", ""
+        return False, f"Your hands are full: {busy}.", None
 
     obj.db.wielded = True
     recompute(character)
@@ -265,7 +265,7 @@ def unwield(character, obj):
     """Stop holding something. Returns (ok, actor_text, event)."""
     name = obj.get_display_name(character)
     if not obj.db.wielded:
-        return False, f"You are not wielding {name}.", ""
+        return False, f"You are not wielding {name}.", None
 
     obj.attributes.remove("wielded")
     recompute(character)

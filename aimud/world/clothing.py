@@ -247,7 +247,17 @@ def inventory_line(character, looker=None):
 # ---------------------------------------------------------------------------
 
 def _refuse(text):
-    return False, text, ""
+    """
+    Nothing happened, and here is why. `(ok, actor_text, event)`.
+
+    `None` for the event and not `""`. The third slot used to be the room's
+    finished sentence, where an empty string honestly meant "the room sees
+    nothing"; P4 made it an event, and a string is not one. `events.show`
+    guards `None`, so the empty string went to `deliver`, which asked it for
+    its `.actor` -- and every refusal in this module, plus the success path
+    through the same delivery, died on it. `wear` did not work at all.
+    """
+    return False, text, None
 
 
 def _event(character, verb, garment, template, **roles):

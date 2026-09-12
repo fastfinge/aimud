@@ -14,7 +14,7 @@ from world import clothing
 
 def _find_carried(caller, query, worn=None):
     """
-    A thing the caller has on them, by name.
+    A thing the caller has on them, by name or by pronoun.
 
     Search is limited to their own contents: `wear` and `remove` are about
     what you already hold, and looking further afield would only find someone
@@ -22,12 +22,33 @@ def _find_carried(caller, query, worn=None):
 
     `worn` narrows to garments that are (or are not) currently being worn, so
     "remove hat" finds the one on your head rather than the spare in your bag.
+
+    A pronoun is resolved before the search, because `caller.search` looks
+    for a thing NAMED "it" and finds none -- the same gap `get` and `drop`
+    had. Narrowed by `worn` afterwards like any other candidate, so "remove
+    it" said of something not being worn is refused in words rather than
+    quietly finding a different garment.
     """
+    from world import nounphrase, referents
+
+    text = str(query or "").strip()
+    if not text:
+        return None
+
+    spoken = nounphrase.read(text).pronoun
+    if spoken:
+        found = referents.recall(caller, spoken)
+        if found is None or found.location is not caller:
+            return None
+        if worn is not None and bool(found.db.worn) != worn:
+            return None
+        return found
+
     candidates = [obj for obj in caller.contents
                   if worn is None or bool(obj.db.worn) == worn]
     if not candidates:
         return None
-    found = caller.search(query, candidates=candidates, quiet=True)
+    found = caller.search(text, candidates=candidates, quiet=True)
     if not found:
         return None
     return found[0] if isinstance(found, (list, tuple)) else found
@@ -35,8 +56,12 @@ def _find_carried(caller, query, worn=None):
 
 def _announce(caller, actor_text, event=None):
     """Tell the wearer, and tell the room if there was anything to see."""
-    from world import events
+    from world import events, verbs
 
+    if event is not None:
+        # So that "it" means this garment next time. Only on the paths that
+        # did something: a refusal has not referred to anything.
+        verbs.note_one(caller, event.roles.get("direct"))
     events.show(actor_text, event, caller)
 
 
