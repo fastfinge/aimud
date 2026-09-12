@@ -143,3 +143,86 @@ class TheDoorIsClosed(EvenniaTest):
                 on_success=got.append, on_error=got.append,
             )
         self.assertEqual(got, [], "if this fires, the seam is no longer needed")
+
+
+@tag("world")
+class NarratingATemplate(EvenniaTest):
+    """
+    What the narrator is asked for, since P4: a template with every
+    participant as a placeholder and the verb as `$pconj(...)`, so that one
+    cached reply can be read as "she", "you" or a name by whoever is
+    watching. The prompt is the only place a model learns that, so what it
+    says is held still here.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.root.db.world_root = self.root
+        self.sponsor = FakeSponsor()
+
+    def narrate(self, answer, bound=None):
+        got, failed = [], []
+        with immediately(), replying(answer) as recorder:
+            verb_gen.narrate(
+                self.sponsor, "hand",
+                bound if bound is not None else {"direct": self.obj1,
+                                                 "target": self.char2},
+                self.char1, "hand obj to char2",
+                on_success=lambda *parts: got.append(parts),
+                on_error=failed.append)
+        return (got[0] if got else None, failed[0] if failed else None,
+                recorder)
+
+    def test_the_prompt_lists_every_placeholder(self):
+        _got, _err, recorder = self.narrate(
+            as_json({"actor": "You hand it over.",
+                     "room": "{actor} $pconj(hand) {target} {direct}."}))
+        sent = recorder.sent()
+        self.assertIn("{direct}", sent)
+        self.assertIn("{target}", sent)
+        self.assertIn("$pconj(", sent)
+
+    def test_the_template_comes_back_untouched(self):
+        """
+        Filled in per viewer at delivery, never here: a name substituted now
+        would be shown to everybody for ever.
+        """
+        got, err, _ = self.narrate(
+            as_json({"actor": "You hand it over.",
+                     "room": "{actor} $pconj(hand) {target} {direct}."}))
+        self.assertIsNone(err)
+        self.assertEqual(got[1], "{actor} $pconj(hand) {target} {direct}.")
+
+    def test_and_renders_for_each_watcher(self):
+        """The whole point, end to end: one reply, three readings."""
+        from world import events, pronouns
+
+        got, _err, _ = self.narrate(
+            as_json({"actor": "You hand it over.",
+                     "room": "{actor} $pconj(hand) {target} {direct}."}))
+        pronouns.give(self.char1, "they", self.root)
+        event = events.Event(actor=self.char1, room=self.root, verb="hand",
+                             roles={"direct": self.obj1, "target": self.char2},
+                             room_template=got[1])
+        self.assertEqual(events.render(got[1], self.char2, event),
+                         f"{self.char1.key} hand you the {self.obj1.key}.")
+        self.assertEqual(events.render(got[1], None, event),
+                         f"{self.char1.key} hand {self.char2.key} "
+                         f"the {self.obj1.key}.")
+
+    def test_a_careless_reply_is_repaired_before_it_is_stored(self):
+        """
+        The template is stored and replayed, so a stray article or a
+        conjugated actor verb is permanent rather than a one-off. `repair`
+        runs on the way in for that reason -- paid once, not on every read.
+        """
+        from world import events
+
+        got, err, _ = self.narrate(
+            as_json({"actor": "You hand it over.",
+                     "room": "{actor} hands {target} the {direct}."}))
+        self.assertIsNone(err)
+        self.assertEqual(events.repair(got[1]),
+                         "{actor} $pconj(hand) {target} {direct}.")

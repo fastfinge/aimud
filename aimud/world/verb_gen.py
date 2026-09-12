@@ -235,7 +235,7 @@ _NARRATION_SYSTEM = """You narrate the result of an action in a text MUD, and sa
 
 Respond with a single JSON object — no other text — matching:
 {"actor": "what the acting character experiences, 1-3 sentences",
- "room": "one full sentence others in the room see, beginning {actor}",
+ "room": "one full sentence others in the room see, beginning {actor} $pconj(verb)",
  "effects": [ ... ],
  "difficulty": 0}
 
@@ -272,12 +272,27 @@ that object later turns up.
 "actor" is second person, addressed to whoever acted: "You unfold the flyer
 and the ink has run."
 
-"room" is third person and MUST refer to the acting character as the literal
-placeholder {actor}, never by a name and never as "he", "she" or "they" —
-the game substitutes whoever really did it, which may be someone else
-entirely when this text is shown again later. Write a whole sentence, not a
-fragment: "{actor} unfolds a damp flyer and frowns at it." — not "unfolds a
-damp flyer".
+"room" is third person and is a TEMPLATE, not a finished sentence. The game
+fills it in for each person watching, who may be told "she", "you" or a name
+depending on what they were just looking at, and the same text is shown again
+later when somebody else does this. So:
+
+- Refer to the acting character ONLY as the literal placeholder {actor}. Never
+  a name, never "he", "she" or "they".
+- Refer to every other thing involved ONLY by its role placeholder — the
+  user message lists them, such as {direct}, {target}, {container}, {source},
+  {instrument}. Never write its name, and never "it", "him" or "them". Write
+  the placeholder bare: the game supplies "the", so "{direct}" not "the
+  {direct}". For a possessive write {actor's} or {target's}.
+- Write every verb whose subject is {actor} as $pconj(verb), with the verb in
+  its base form: "{actor} $pconj(unfold) {direct} and $pconj(frown) at it."
+  The game conjugates it — "unfolds" for one person, "unfold" for someone who
+  goes by they. Verbs about anything else are written normally.
+- Write a whole sentence, not a fragment.
+
+Right: "{actor} $pconj(hand) {target} {direct} without a word."
+Wrong: "Jessica hands Britney the sword." — names; "{actor} hands {target}
+the {direct}." — a conjugated verb and an article on a placeholder.
 
 Both say what actually happened, including the outcome. Present tense.
 
@@ -407,6 +422,24 @@ def _lore(world_root, actor):
 
     return (f"{lore.description(world_root, actor)}\n\n"
             f"{lore.guidance_block(world_root, 'validation', actor)}").rstrip()
+
+
+def _placeholder_block(bound):
+    """
+    The placeholders this narration may use, and what each one stands for.
+
+    Told rather than left to be inferred from the role names above, because a
+    model shown "direct: sword" writes "the sword" far more readily than it
+    writes "{direct}", and a name in the template is shown to everybody for
+    ever -- the exact thing per-viewer rendering exists to prevent.
+    """
+    lines = ["{actor} — whoever did it"]
+    for role, obj in sorted(bound.items()):
+        if obj is None:
+            continue
+        lines.append(f"{{{role}}} — {getattr(obj, 'key', obj)}")
+    return ("Placeholders for the \"room\" line (use these, never the names):\n  "
+            + "\n  ".join(lines) + "\n\n")
 
 
 def _describe_objects(bound, actor):
@@ -745,6 +778,7 @@ def narrate(sponsor, verb, bound, actor, raw, on_success, on_error, result=None)
             "content": (
                 f"Action: '{raw}' (verb: {verb})\n\n"
                 f"Things involved:\n{_describe_objects(bound, actor)}\n\n"
+                f"{_placeholder_block(bound)}"
                 + (f"Outcome: {hint}\n\n" if hint else "")
                 + "Narrate the result."
             ),

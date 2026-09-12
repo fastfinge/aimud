@@ -434,7 +434,7 @@ def handle(caller, verb, parsed, bound, on_message):
     on_message(
         f"You put {label} {preposition} {where}.",
         _event(caller, "put", {"direct": obj, "container": host},
-               f"{{actor}} puts {{direct}} {preposition} {{container}}."))
+               f"{{actor}} $pconj(put) {{direct}} {preposition} {{container}}."))
     return True
 
 
@@ -481,7 +481,7 @@ def _take_from(caller, obj, host, on_message):
     on_message(
         f"You take {label} {preposition} {where}.",
         _event(caller, "get", {"direct": obj, "source": host},
-               f"{{actor}} takes {{direct}} {preposition} {{source}}."))
+               f"{{actor}} $pconj(take) {{direct}} {preposition} {{source}}."))
     return True
 
 
@@ -498,7 +498,7 @@ def _set_down(caller, obj, room, on_message):
     obj.at_drop(caller)
     on_message(f"You put down {label}.",
                _event(caller, "drop", {"direct": obj},
-                      "{actor} puts down {direct}."))
+                      "{actor} $pconj(put) down {direct}."))
     return True
 
 

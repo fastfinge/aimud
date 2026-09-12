@@ -224,27 +224,13 @@ def wielded(character):
     )
 
 
-def _actor(character):
-    """
-    Whoever did it, named, for the line the room is shown.
-
-    The room text of a mechanic is finished when it is written, exactly as it
-    is for wearing and for putting things down. Only a *learned* verb leaves
-    the actor as the literal {actor}, because that narration is cached and
-    replayed for whoever does the same thing next; these are neither cached
-    nor replayed, and a placeholder that reaches the room is not substituted
-    there -- it is a brace in a string Evennia is about to format, and the
-    room hears nothing at all.
-    """
-    return character.get_display_name(character)
-
-
 def _event(character, verb, obj, template, **roles):
     """
     One thing somebody did with what they are wearing or holding.
 
     The room's half as an event rather than a sentence, so that each person
-    watching is told in their own words. See `world.events`.
+    watching is told in their own words -- and the verb as `$pconj(...)`, so
+    that it agrees with whoever did it. See `world.events`.
     """
     from world import events
 
@@ -272,7 +258,7 @@ def wield(character, obj):
     obj.db.wielded = True
     recompute(character)
     return (True, f"You take {name} in hand.",
-            _event(character, "wield", obj, "{actor} takes {direct} in hand."))
+            _event(character, "wield", obj, "{actor} $pconj(take) {direct} in hand."))
 
 
 def unwield(character, obj):
@@ -284,7 +270,7 @@ def unwield(character, obj):
     obj.attributes.remove("wielded")
     recompute(character)
     return (True, f"You lower {name}.",
-            _event(character, "unwield", obj, "{actor} lowers {direct}."))
+            _event(character, "unwield", obj, "{actor} $pconj(lower) {direct}."))
 
 
 def release(obj, character=None):

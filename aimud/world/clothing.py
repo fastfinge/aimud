@@ -250,6 +250,26 @@ def _refuse(text):
     return False, text, ""
 
 
+def _event(character, verb, garment, template, **roles):
+    """
+    One thing somebody did with what they are wearing.
+
+    The room's half as an event rather than a sentence, so that each person
+    watching is told in their own words, with the verb as `$pconj(...)` so it
+    agrees with whoever did it. See `world.events`.
+
+    P3 wrote every call to this and never the function: wearing anything
+    raised a NameError that `attempt`'s broad except turned into "Something
+    went wrong doing that." Found by pyflakes, not by a test, which is the
+    argument for running pyflakes.
+    """
+    from world import events
+
+    return events.Event(actor=character, verb=verb,
+                        roles={"direct": garment, **roles},
+                        room_template=template)
+
+
 def _revalue(character):
     """
     Work out again what this character's gear is worth to them.
@@ -299,13 +319,12 @@ def put_on(character, garment, wearstyle=True):
     _revalue(character)
 
     label = _garment_name(garment, character)
-    name = character.get_display_name(character)
     covered = [g for g in character.contents if g.db.covered_by is garment]
     tail = f", covering {iter_to_str([_garment_name(g, character) for g in covered])}" \
         if covered else ""
     return (True, f"You put on {label}{tail}.",
             _event(character, "wear", garment,
-                   "{actor} puts on {direct}" + f"{tail}."))
+                   "{actor} $pconj(put) on {direct}" + f"{tail}."))
 
 
 def take_off(character, garment):
@@ -322,12 +341,11 @@ def take_off(character, garment):
     garment.remove(character, quiet=True)
     _revalue(character)
 
-    name = character.get_display_name(character)
     tail = f", revealing {iter_to_str([_garment_name(g, character) for g in revealed])}" \
         if revealed else ""
     return (True, f"You take off {label}{tail}.",
             _event(character, "remove", garment,
-                   "{actor} takes off {direct}" + f"{tail}."))
+                   "{actor} $pconj(take) off {direct}" + f"{tail}."))
 
 
 def cover_with(character, garment, covering):
@@ -352,7 +370,7 @@ def cover_with(character, garment, covering):
     over = _garment_name(covering, character)
     return (True, f"You cover {label} with {over}.",
             _event(character, "cover", garment,
-                   "{actor} covers {direct} with {instrument}.",
+                   "{actor} $pconj(cover) {direct} with {instrument}.",
                    instrument=covering))
 
 
@@ -362,10 +380,9 @@ def uncover(character, garment):
         return _refuse("That is not covered by anything.")
     garment.db.covered_by = False
     label = _garment_name(garment, character)
-    name = character.get_display_name(character)
     return (True, f"You uncover {label}.",
             _event(character, "uncover", garment,
-                   "{actor} uncovers {direct}."))
+                   "{actor} $pconj(uncover) {direct}."))
 
 
 # ---------------------------------------------------------------------------

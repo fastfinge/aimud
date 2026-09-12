@@ -86,10 +86,15 @@ class CmdRemember(Command):
         where = where_for(caller)
         caller.msg("You cast your mind back...")
 
+        # Imported here rather than inside `_fetch`, where an earlier version
+        # had it: `llm.fetch` below is called in this scope, and a name bound
+        # inside the inner function is not visible here. Every `recall` raised
+        # NameError before it reached the thread pool.
+        from world import llm
+
         def _fetch():
             # Recall and the model call share one trip into the thread pool,
             # keeping both off the reactor.
-            from world import llm
             from world.memory import format_memories, recall_sync
 
             memories = recall_sync(where, question, top_k=8)

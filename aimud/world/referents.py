@@ -31,8 +31,8 @@ attempted and on what is in reach, and neither is known here.
 ATTR = "referents"
 
 #: The slot the narrator writes and the parser never reads: the ranked
-#: participants of the last message this viewer was shown. Empty until P4,
-#: named now so the two halves of the table are visibly one thing.
+#: participants of the last message this viewer was shown. What
+#: `events.centre` chooses the next sentence's pronoun from.
 TOLD = "_told"
 
 #: The last thing referred to at all, whatever word was used for it, and what
@@ -78,7 +78,7 @@ def forms_of(obj, world_root=None):
         entry = pronouns.of(obj, world_root)
         return {entry.get("object", ""), entry.get("subject", "")} - {""}
 
-    return {"them"} if _is_plural(obj) else {"it"}
+    return {"them"} if is_plural(obj) else {"it"}
 
 
 def recall_by_set(caller, word, field, world_root=None):
@@ -100,7 +100,7 @@ def recall_by_set(caller, word, field, world_root=None):
     return None
 
 
-def _is_plural(obj):
+def is_plural(obj):
     """
     Whether a thing's name is plural: a pile of coins is "them".
 
@@ -117,19 +117,27 @@ def _is_plural(obj):
     return lexicon.lemma(word, "n") != word
 
 
-def note(caller, obj, world_root=None):
+def note(caller, obj, world_root=None, last=True):
     """
     Record that `obj` was just referred to, under every word that could mean it.
 
     Called after a successful bind rather than at each place a bind happens,
     so that there is one point at which the table can be wrong instead of
-    several.
+    several -- and by the narrator, for what a viewer was shown rather than
+    what they typed, which is the same table because "hug her" after
+    watching Jessica act means Jessica.
+
+    `last=False` records the words and not the thing: the narrator passes it
+    for the actor of a sentence, because somebody who watched Jessica pick
+    up a wrench and types "get all of them" means wrenches, not Jessicas.
     """
     if caller is None or obj is None:
         return
     table = _table(caller)
     for form in forms_of(obj, world_root):
         table[form] = obj
+    if not last:
+        return
 
     from world import kinds
 
@@ -173,7 +181,7 @@ def clear(caller):
 
 
 # ---------------------------------------------------------------------------
-# The other direction, which P4 fills in
+# The other direction: what the narrator has shown this viewer
 # ---------------------------------------------------------------------------
 
 def told(caller):
@@ -182,7 +190,13 @@ def told(caller):
 
 
 def was_told(caller, participants):
-    """Record what this viewer was just told, ranked. See the plan, §5.3."""
+    """
+    Record what this viewer was just told, ranked.
+
+    Written by `events.render` once per sentence per reader, and read by
+    `events.centre` for the next one. Never written for the actor's own
+    line, which is second person throughout and establishes no centre.
+    """
     if caller is None:
         return
     _table(caller)[TOLD] = list(participants or [])

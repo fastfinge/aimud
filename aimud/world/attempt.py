@@ -358,7 +358,7 @@ def _follow(caller, parsed, on_message):
     if started:
         event = events_mod.Event(
             actor=caller, verb="follow", roles={"direct": target},
-            room_template="{actor} begins following {direct}.")
+            room_template="{actor} $pconj(begin) following {direct}.")
     on_message(message, event)
 
 
@@ -1014,9 +1014,16 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         # the actor as {actor}, so the same narration reads correctly when
         # somebody else does the same thing to the same object later.
         #
+        # Repaired before it is stored, rather than on every read afterwards.
+        # An article before a placeholder or a conjugated actor verb is a
+        # permanent blemish on a stored template -- it is replayed to every
+        # later viewer -- so the fix is paid once, here, and `repair` is left
+        # at the delivery sites only to cover what was cached before P4.
+        #
         # Nothing is cached for a rule that speaks for itself: there is no
         # model reply to save, and the effect will say it again for nothing
         # next time -- which is the point of it.
+        room_text = events_mod.repair(room_text)
         if not speaks:
             _store_narration(bound, verb, outcome,
                              {"actor": actor_text, "room": room_text}, caller)

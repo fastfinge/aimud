@@ -110,7 +110,7 @@ class CmdAIDrop(_DefaultDrop):
 
         events.deliver(events.Event(
             actor=caller, verb="drop", roles={"direct": obj},
-            room_template="{actor} drops {direct}."))
+            room_template="{actor} $pconj(drop) {direct}."))
 
     def _drop_everything(self, sort=""):
         """
@@ -164,7 +164,7 @@ class CmdAIDrop(_DefaultDrop):
             events.deliver_many(
                 [events.Event(actor=caller, verb="drop",
                               roles={"direct": obj},
-                              room_template="{actor} puts down {direct}.")
+                              room_template="{actor} $pconj(put) down {direct}.")
                  for obj in dropped],
                 actor_text=f"You put down {names}.", actor=caller, room=room)
 

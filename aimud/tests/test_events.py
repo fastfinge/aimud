@@ -102,9 +102,15 @@ class Rendering(EvenniaTest):
         self.assertTrue(
             events.repair("lights the candle.").startswith("{actor}"))
 
-    def test_a_whole_sentence_is_left_alone(self):
-        text = "{actor} lights the candle."
-        self.assertEqual(events.repair(text), text)
+    def test_a_whole_sentence_keeps_its_words_but_not_its_agreement(self):
+        """
+        P3 asserted this was left alone. P4 wraps the actor's verb, because
+        "{actor} lights" agrees with nobody -- it is "lights" for a they/them
+        character who should get "light", and for the reader who should get
+        "you light". See `RepairingWhatTheModelSent` in test_centering.
+        """
+        self.assertEqual(events.repair("{actor} lights the candle."),
+                         "{actor} $pconj(light) the candle.")
 
     def test_nothing_stays_nothing(self):
         self.assertEqual(events.repair(""), "")

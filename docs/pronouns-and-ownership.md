@@ -1,7 +1,8 @@
 # Development plan: pronouns and ownership
 
-Status: **phases S, P0, P1, P2 and P3 are built and merged to their branches**;
-P4 onward is proposed. Where the building turned up something the plan had
+Status: **phases S, P0, P1, P2, P3, M and P4 are built**; P5 onward is
+proposed. P4's world reset (§9) is still to be done by hand: `export.py`
+first, then `worldreset` on each world whose cached narrations predate it. Where the building turned up something the plan had
 wrong, the section says so rather than being quietly corrected -- §5.4 is the
 one that matters.
 
@@ -1113,8 +1114,8 @@ P4 brings. The bank change is the reason to do it here: the old per-character
 banks are abandoned wholesale rather than migrated, and this is the one moment
 where abandoning everybody's memories is already the agreed price.
 
-**Phase P4 -- pronouns in narration.** `$who()` starts deciding: the centering
-rule (§5.2), the per-viewer ranked-participant slot (§5.3), the
+**Phase P4 -- pronouns in narration.** `events.render` starts deciding: the
+centering rule (§5.2), the per-viewer ranked-participant slot (§5.3), the
 per-surface-form budget, `$pconj` for agreement. Narration prompt rewritten for
 `{direct}`/`{target}` placeholders and `$pconj` verbs. **World reset here**, and
 `export.py` re-run *before* it.
@@ -1123,6 +1124,62 @@ The centering rule tests without a model: the input is two ranked participant
 lists, the output is which slot pronominalises. The three rows of §5.2's table
 are three cases, and the third -- no carry-over, therefore no pronoun -- is the
 one a naive implementation fails.
+
+*As built* (`tests/test_centering.py`). Three things the section above did not
+say, settled in the building:
+
+* **`$pconj` is ours, not funcparser's.** The template never reaches Evennia's
+  parser (§5.4), so `events.conjugate` reads `$pconj(verb[, role])` itself and
+  hands the English to `verb_actor_stance_components`. The spelling is kept so
+  a template written for one reads correctly in the other. Only the first
+  word is conjugated -- `$pconj(pick) up` and `$pconj(pick up)` both work --
+  and the reader as subject gets second person, so one template also yields
+  "You pick up the sword."
+* **A possessive is a slot form, `{target's}`** (or `{target}'s`, which a
+  model writes as readily). It takes the set's adjective form, spends it
+  against the budget, and the thing that follows it in the clause is rendered
+  bare -- "her sword", not "her the sword". Things are otherwise rendered
+  definite ("the sword"), which is what every hand-written site had before
+  the event carried the object instead of its label.
+* **Rendering writes the parser's half of the table too.** Having watched
+  Jessica hand Britney the sword, a viewer's "her" means Jessica and "it" the
+  sword -- noted lowest rank first so the direct object wins, and the actor
+  is not made "the last thing referred to", because "get all of them" after
+  watching somebody pick up a wrench means wrenches. Rendering for nobody
+  (`viewer=None`, what `notify_npcs` and the memory record get) chooses no
+  pronoun and writes nothing.
+
+The mechanics' hand-written templates (`clothing`, `gear`, `relations`,
+`drop_cmds`, `follow`) carry `$pconj` now, and an NPC's action is rendered per
+watcher like a player's rather than broadcast once. Two P3 defects turned up
+under pyflakes on the way -- `clothing._event` was called and never written,
+so wearing anything failed with "Something went wrong", and `recall` raised
+`NameError` before reaching the thread pool -- and are fixed.
+
+*Wiring the narrator* (`tests/test_verb_gen.py`,
+`tests/test_centering.py`). The prompt asks for a template, and a narrator
+does not always give one. What it gets wrong is not a one-off blemish: the
+template is what is stored, so it is replayed to every later viewer and to
+everybody who does the same thing afterwards. `events.repair` is therefore
+the one place to fix it, and `attempt._finish` runs it *before storage* so
+the repair is paid once rather than on every read -- the `repair` calls left
+at the delivery sites now only cover templates cached before P4.
+
+Three things it fixes:
+
+* **No subject** -- "lights the candle." -- which P3 already repaired.
+* **An article before a placeholder** -- "the {direct}", which renders "the
+  the sword", because the slot supplies its own determiner and must (the same
+  slot may come back "her" or "you"). The prompt forbids it and a model
+  writes it anyway; every sentence it has ever read has the article there.
+* **The actor's verb conjugated** -- "{actor} hands", which can never agree
+  with anybody: "hands" for a they/them character who should get "hand", and
+  "hands" for the reader themselves, who should get "you hand". Wrapping it
+  in `$pconj` is the difference between a template that works for one pronoun
+  set and one that works for all of them. The base form is recovered by
+  asking Evennia's conjugator which candidate produces the word -- so "tries"
+  comes back "try" and "watches" "watch" with no exception table here -- and
+  anything it cannot be certain of is left exactly as written.
 
 **Phase P5 -- ownership.** `world/ownership.py`; the `owned_by` condition; the
 `set_owner` effect and its cascade; `rule_gen` prompt lines; `standard_rules`

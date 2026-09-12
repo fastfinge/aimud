@@ -957,7 +957,10 @@ class NPC(ObjectParent, DefaultObject):
                 if actor_text:
                     self._note_to_self(_as_noticed(actor_text))
                 return
-            room.msg_contents(visible)
+            # Each watcher in their own words -- "she", "you", a name --
+            # rather than one sentence for all of them. `visible` below is
+            # the rendering for nobody: names throughout, for the records.
+            events_mod.show_the_room(event)
             # The NPC's own record; _add_to_history also writes to its memory.
             self._add_to_history("action", self.key, visible)
             # Others present witness it too, through the depth-capped path so
