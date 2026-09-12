@@ -529,6 +529,37 @@ def deliver(event, to_actor=True):
     _tell_the_characters(event, template)
 
 
+def noticed(room, actor, about=None, exclude=None):
+    """
+    Record that everybody here saw somebody do something.
+
+    For what reaches a room WITHOUT a template: speech, emotes, and the
+    handful of acts that go straight out through `msg_contents`. None of
+    those is an action on an object with words to fill in, so `render` never
+    sees them -- and `render` is the only thing that was writing the
+    referents table. Twenty lines of an innkeeper talking left "him" meaning
+    nobody.
+
+    `about` is the thing acted on, when there was one: somebody who picks a
+    tankard up has made it "it".
+
+    The actor is noted with `last=False`, because a person is not a thing
+    that can be picked up and "get all of them" after a barman talks must
+    not mean barmen. Never noted for themselves: a table is what its owner
+    was shown, and they did not watch their own speech.
+    """
+    if room is None or actor is None:
+        return
+    world_root = getattr(room.db, "world_root", None)
+    left_out = set(exclude or ())
+    for viewer in list(getattr(room, "contents", []) or []):
+        if viewer is actor or viewer in left_out or not hasattr(viewer, "msg"):
+            continue
+        referents.note(viewer, actor, world_root, last=False)
+        if about is not None and about is not viewer:
+            referents.note(viewer, about, world_root)
+
+
 def show_the_room(event, template=None):
     """
     Everybody present but the actor reads the template in their own words.

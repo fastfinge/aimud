@@ -86,6 +86,15 @@ class CmdAIDrop(_DefaultDrop):
         if one_of_several is not None:
             self._drop_one(one_of_several)
             return
+        # And "drop it" is a pronoun, which Evennia's command reads as a name
+        # and answers "You aren't carrying it." -- the thing it is carrying
+        # being a pipe, which is exactly what was just picked up. Resolved
+        # here for the same reason a count is: the pipeline that knows about
+        # pronouns is not the one this command inherits from.
+        spoken = verbs.bind_or_pronoun(self.caller, self.args, verb="drop")
+        if spoken is not None and spoken.location is self.caller:
+            self._drop_one(spoken)
+            return
         super().func()
 
     def _drop_one(self, obj):
@@ -106,8 +115,9 @@ class CmdAIDrop(_DefaultDrop):
             self.msg("That can't be dropped.")
             return
         obj.at_drop(caller)
-        from world import events
+        from world import events, verbs as _verbs
 
+        _verbs.note_one(caller, obj)
         events.deliver(events.Event(
             actor=caller, verb="drop", roles={"direct": obj},
             room_template="{actor} $pconj(drop) {direct}."))

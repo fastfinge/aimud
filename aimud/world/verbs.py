@@ -457,6 +457,48 @@ def resolve_pronoun(caller, form, verb=""):
     return None, choosing.question(form, names)
 
 
+def bind_or_pronoun(caller, phrase, verb=""):
+    """
+    What a player's phrase means, pronouns included.
+
+    For the game's own commands -- `get`, `drop` -- which are Evennia's
+    wearing a subclass and so never went near the pipeline that resolves
+    "it". `get pipe` then `drop it` answered "You aren't carrying it",
+    because Evennia searched the inventory for a thing named "it" and found
+    nothing. This is the one line of the pipeline they were missing.
+
+    Returns None when nothing answers, exactly as `bind` does, so a caller
+    falls through to its own not-found message.
+    """
+    from world import nounphrase, referents
+
+    text = str(phrase or "").strip()
+    if not text:
+        return None
+    word = nounphrase.read(text, _world_of(caller)).pronoun
+    if word:
+        found, _question = resolve_pronoun(caller, word, verb)
+        # The table before the room: "it" is a promise that both of us
+        # already know which one, and the last thing referred to is that
+        # promise kept. `resolve_pronoun` only asks the table when several
+        # candidates answer, which is right for a typed name and wrong here.
+        return referents.recall(caller, word) or found
+    return bind(caller, text, verb=verb)
+
+
+def note_one(caller, obj):
+    """
+    Record that a command acted on this, so "it" means it next time.
+
+    The single-object counterpart to `note_all`, for the commands that bind
+    their own object rather than going through `attempt`. Kept here beside
+    that one so there is one place where a binding becomes a referent.
+    """
+    from world import referents
+
+    referents.note(caller, obj, _world_of(caller))
+
+
 def bind(caller, phrase, fuzzy=False, verb=""):
     """
     Find what a noun phrase refers to, searching outward from the character.

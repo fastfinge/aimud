@@ -654,7 +654,7 @@ class NPC(ObjectParent, DefaultObject):
                 # Asked out loud, so the room sees the arrangement being made.
                 # The offer now sits in their quest list, and they answer it on
                 # their own next turn.
-                room.msg_contents(f'{self.key} says, "{request}"')
+                self._aloud(room, f'{self.key} says, "{request}"')
                 target.witness("say", self.key, request)
             else:
                 target.msg(f'{self.key} says, "|w{request}|n"')
@@ -663,7 +663,8 @@ class NPC(ObjectParent, DefaultObject):
                     f"Type |wquests|y to see the terms, then |wquests accept|y "
                     f"or |wquests decline|y to answer.|n"
                 )
-                room.msg_contents(
+                self._aloud(
+                    room,
                     f"{self.key} asks {target.get_display_name(self)} for a favour.",
                     exclude=[target])
             self._add_to_history("action", self.key,
@@ -704,7 +705,7 @@ class NPC(ObjectParent, DefaultObject):
                 return
             said = f"{self.key} turns down {quest['giver']}'s request."
 
-        room.msg_contents(said)
+        self._aloud(room, said)
         self._add_to_history("action", self.key, said)
 
         from world.npc_gen import notify_npcs
@@ -890,7 +891,8 @@ class NPC(ObjectParent, DefaultObject):
 
             quest, _message = quests.abandon(self, self.db.goal_from_quest)
             if quest is not None and self.location:
-                self.location.msg_contents(
+                self._aloud(
+                    self.location,
                     f"{self.key} gives up on {quest['giver']}'s errand: "
                     f"{quest['title']}.")
 
@@ -1008,13 +1010,30 @@ class NPC(ObjectParent, DefaultObject):
                     f"{obj.get_display_name(self)} is already here")
                 return
             said = f"{self.key} produces {obj.get_display_name(self)}."
-            room.msg_contents(said)
+            self._aloud(room, said, about=obj)
             self._add_to_history("action", self.key, said)
             self._notify_other_npcs(room, "action", said, 0)
 
         conjure(self, room, sponsor, name, ready,
                 lambda message: self._note_to_self(_as_noticed(message)),
                 fuzzy=True)
+
+    def _aloud(self, room, text, about=None, exclude=None):
+        """
+        Do something the room can see, and be somebody "he" can mean after.
+
+        Speech, emotes and the handful of NPC acts that reach a room straight
+        through `msg_contents`. The recording is `events.noticed`, shared
+        with the player's own emote, because "him" meaning the barman and
+        "him" meaning another player are the same table and the same
+        question -- see that function for why any of this is needed.
+        """
+        from world import events
+
+        if room is None:
+            return
+        room.msg_contents(text, exclude=exclude)
+        events.noticed(room, self, about=about, exclude=exclude)
 
     def _execute_one(self, tool_name, args, room, _depth=0):
         from commands.look_take_cmds import _find_one
@@ -1030,14 +1049,14 @@ class NPC(ObjectParent, DefaultObject):
         if tool_name == "say":
             msg = str(args.get("message", "")).strip()
             if msg:
-                room.msg_contents(f'{self.key} says, "|w{msg}|n"')
+                self._aloud(room, f'{self.key} says, "|w{msg}|n"')
                 self._add_to_history("say", self.key, msg)
                 self._notify_other_npcs(room, "say", msg, _depth)
 
         elif tool_name == "emote":
             action = str(args.get("action", "")).strip()
             if action:
-                room.msg_contents(f"{self.key} {action}")
+                self._aloud(room, f"{self.key} {action}")
                 self._add_to_history("emote", self.key, action)
                 self._notify_other_npcs(room, "emote", f"{self.key} {action}", _depth)
 
@@ -1069,9 +1088,10 @@ class NPC(ObjectParent, DefaultObject):
                 obj, _ = _find_one(self, obj_name, location=room)
                 if obj and obj is not self:
                     if obj.move_to(self, quiet=True):
-                        room.msg_contents(
-                            f"{self.key} picks up {obj.get_display_name(self)}."
-                        )
+                        self._aloud(
+                            room,
+                            f"{self.key} picks up {obj.get_display_name(self)}.",
+                            about=obj)
 
         elif tool_name == "give":
             obj_name = str(args.get("object_name", "")).strip()
@@ -1081,10 +1101,11 @@ class NPC(ObjectParent, DefaultObject):
                 recipient, _ = _find_one(self, recipient_name, location=room)
                 if obj and recipient and recipient is not self:
                     if obj.move_to(recipient, quiet=True):
-                        room.msg_contents(
+                        self._aloud(
+                            room,
                             f"{self.key} gives {obj.get_display_name(self)} "
-                            f"to {recipient.get_display_name(self)}."
-                        )
+                            f"to {recipient.get_display_name(self)}.",
+                            about=obj)
 
         elif tool_name == "create":
             self._conjure(str(args.get("name", "")).strip(), room)
@@ -1101,7 +1122,7 @@ class NPC(ObjectParent, DefaultObject):
                     world_root=room.db.world_root,
                 )
                 for line in said:
-                    room.msg_contents(f"{self.key} destroys something. {line}")
+                    self._aloud(room, f"{self.key} destroys something. {line}")
 
         elif tool_name == "modify":
             obj_name = str(args.get("object_name", "")).strip()

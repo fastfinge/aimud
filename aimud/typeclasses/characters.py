@@ -159,6 +159,15 @@ class Character(ObjectParent, DefaultCharacter):
         room = self.location
         if not room:
             return
+
+        # And so "her" means whoever just spoke. Speech is not an action on
+        # an object, so it has no template and `events.render` -- which is
+        # the only other thing that writes the referents table -- never sees
+        # it. See `events.noticed`, shared with poses and with the NPCs.
+        from world import events
+
+        events.noticed(room, self)
+
         from world.npc_gen import notify_npcs
 
         notify_npcs(room, "say", self.get_display_name(self), message,

@@ -141,6 +141,13 @@ def _release_gen_lock(room, key):
     room.ndb.generating_items = pending
 
 
+def _note(caller, obj):
+    """So that "it" means this next time. See `verbs.note_one`."""
+    from world import verbs
+
+    verbs.note_one(caller, obj)
+
+
 def _do_take(caller, obj):
     """Perform the physical take after all validation has passed."""
     if obj.location == caller:
@@ -154,6 +161,7 @@ def _do_take(caller, obj):
     if success:
         caller.msg(f"You pick up {obj.get_display_name(caller)}.")
         obj.at_get(caller)
+        _note(caller, obj)
         if room:
             from world.npc_gen import notify_npcs
             notify_npcs(room, "action", caller.get_display_name(caller),
@@ -368,6 +376,14 @@ class CmdAIGet(_DefaultGet):
 
         obj = _counted(caller, query)
         multiple = False
+        if obj is None:
+            # A pronoun first: `get it` after looking at something means that
+            # thing, and Evennia's search would look for a thing named "it".
+            from world import verbs as _verbs
+
+            obj = _verbs.bind_or_pronoun(caller, query, verb="get")
+            if obj is not None and obj.location is not room:
+                obj = None
         if obj is None:
             obj, multiple = _find_one(caller, query, location=room)
 

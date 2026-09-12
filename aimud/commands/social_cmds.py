@@ -33,6 +33,13 @@ class CmdAIEmote(CmdPose):
 
         room.msg_contents(text=(pose, {"type": "pose"}), from_obj=caller)
 
+        # And so "him" means whoever just posed. A pose is not an action on
+        # an object and has no template, so nothing else records it -- see
+        # events.noticed, which the NPCs' own speech shares.
+        from world import events
+
+        events.noticed(room, caller)
+
         # The pose already opens with the actor's name, and describe_event
         # notices that, so the event is recorded once rather than as
         # "Aria Delacroix Aria Delacroix bows deeply."
