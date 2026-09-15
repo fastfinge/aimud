@@ -45,7 +45,12 @@ SEEDED = "standard_rules_seeded"
 #:      no longer refused for not reaching it; the placement verbs are declared
 #:      rather than having an arity read off a figure of speech; and looking
 #:      happens in spite of the gates, so being dead is not being blind.
-VERSION = 2
+#: 3 -- ownership: taking something nobody owns claims it, and giving it hands
+#:      the owning over with it.
+#: 4 -- "you may not take what is not yours", shipped suspended; and whatever
+#:      a world did with `rules suspend` or `rules restore` to a standard rule
+#:      now survives the next edition, instead of being quietly undone by it.
+VERSION = 4
 VERSION_ATTR = "standard_rules_version"
 
 #: The action that reads the world rather than changing it. Named rather than
@@ -53,6 +58,12 @@ VERSION_ATTR = "standard_rules_version"
 #: `view`, `x` and `l` folds onto it and a typo here would seed rules that
 #: nothing ever gathers -- which fails by doing nothing, the worst way.
 LOOK = "look"
+
+#: The two actions ownership turns on, named for the same reason. Both are
+#: mechanics -- neither reaches a model -- and both run their after-rules
+#: through `attempt.consequences`, which is what makes a seeded rule about
+#: them fire at all.
+TAKE, GIVE = "get", "give"
 
 #: What every world knows before it has learned anything.
 #:
@@ -120,6 +131,60 @@ STANDARD = (
         "scope": {rulebooks.WORLD: True},
         "about": "direct",
         "effects": [{"type": "describe", "role": "direct"}],
+    },
+    {
+        # An `after` rule rather than a `carry_out` one, and that is the whole
+        # reason these are rules at all: a world that means "you may not take
+        # what is not yours" writes a check rule and puts it in front of this,
+        # and neither rule has to know the other exists. A guard welded into
+        # the get command could not be composed with, read, or replaced.
+        #
+        # "Nobody" covers the thing nobody has ever claimed and the thing whose
+        # owner has left the world, which is what makes a dead man's sword
+        # claimable and leaves a living woman's alone.
+        "name": "taking something nobody owns makes it yours",
+        "phase": rulebooks.AFTER,
+        "action": TAKE,
+        "scope": {rulebooks.WORLD: True},
+        "about": "direct",
+        "when": [{"subject": "direct", "owned_by": conditions.NOBODY}],
+        "effects": [{"type": "set_owner", "name_role": "direct",
+                     "to": "actor"}],
+    },
+    {
+        # And the other half: handing a thing over hands over the owning of
+        # it, contents and all. Here rather than inside the giving mechanic
+        # for the same reason -- a world where handing somebody your sword
+        # lends it rather than gives it says so by replacing this one rule.
+        "name": "giving something hands over the owning of it",
+        "phase": rulebooks.AFTER,
+        "action": GIVE,
+        "scope": {rulebooks.WORLD: True},
+        "about": "direct",
+        "effects": [{"type": "set_owner", "name_role": "direct",
+                     "to": "target"}],
+    },
+    {
+        # The one standard rule that ships suspended. Whether taking what is
+        # somebody's is refused or merely noticed is a decision about what
+        # sort of world this is -- a heist and a monastery answer it
+        # differently -- and it is a check rule in front of the claiming rule
+        # above precisely so that a world can make it with `rules restore`
+        # and neither rule has to know the other exists.
+        #
+        # Guarded on the thing being somebody's rather than conditioned on it
+        # being yours-or-nobody's, because the condition language has no "or":
+        # nobody's things are never gathered, and everything else must be
+        # yours. A dead owner's sword counts as nobody's, as it does above.
+        "name": "you may not take what is not yours",
+        "phase": rulebooks.CHECK,
+        "action": TAKE,
+        "scope": {rulebooks.WORLD: True},
+        "about": "direct",
+        "when": [{"subject": "direct", "unbound": False},
+                 {"subject": "direct", "owned_by": conditions.SOMEBODY}],
+        "conditions": [{"subject": "direct", "owned_by": "actor"}],
+        "listed": False,
     },
 )
 
@@ -192,6 +257,21 @@ DECLARED = (
         "means": "to put something inside something else",
         "applies_to": _PLACEMENT_ROLES,
     },
+    # Giving, declared for the sharper of the two reasons above. The mechanic
+    # in `world.ownership` answers every attempt whose nouns really are a
+    # thing and somebody to hand it to, and hands back the rest -- "give up",
+    # "give a speech", "give the door a shove" -- so what reaches the
+    # rulebooks is always the leftovers, and an arity read off *those* would
+    # have the game answering "Give to what?" to somebody giving up.
+    {
+        "action": GIVE,
+        "means": "to hand something to somebody, or whatever else this world "
+                 "means by it",
+        "applies_to": [
+            {"role": "direct", "access": "carried", "optional": True},
+            {"role": "target", "access": "visible", "optional": True},
+        ],
+    },
 )
 
 
@@ -210,6 +290,9 @@ def seed(world_root):
         return []
     from world import actions
 
+    # What this world decided about the last edition's rules, read before they
+    # go. See `_decisions`.
+    decided = _decisions(world_root)
     if held < VERSION:
         _retire(world_root)
     for spec in DECLARED:
@@ -217,11 +300,31 @@ def seed(world_root):
                         applies_to=spec["applies_to"],
                         means=spec.get("means", ""),
                         despite=spec.get("despite", ()))
-    added = [rulebooks.add(world_root, dict(rule, source="standard"))
+    added = [rulebooks.add(world_root, dict(
+                 rule, source="standard",
+                 listed=decided.get(rule["name"], rule.get("listed", True))))
              for rule in STANDARD]
     setattr(world_root.db, SEEDED, True)
     setattr(world_root.db, VERSION_ATTR, VERSION)
     return added
+
+
+def _decisions(world_root):
+    """
+    {name: listed} for the standard rules a world holds now.
+
+    `rules suspend` and `rules restore` are a world's own decisions about the
+    engine's rules, and a new edition is not a reason to undo them. That used
+    to happen: `_retire` deletes the old copies and the new ones arrived in
+    force, so a world that had suspended a standard rule found it back the
+    next time this file changed. It matters most for the rule that ships
+    suspended, where restoring it is how a world says what sort of place it
+    is. Matched by name, which is what a rule is to anybody reading `rules`;
+    a rule renamed between editions is a new rule, and gets its new default.
+    """
+    return {str(rule.get("name") or ""): bool(rule.get("listed", True))
+            for rule in rulebooks.all_rules(world_root)
+            if is_standard(rule)}
 
 
 def _retire(world_root):

@@ -89,12 +89,17 @@ class NothingDependsOnIt(SimpleTestCase):
         """
         The hand-written list is not a fallback; it is the first answer. It is
         also fuller than its own docstring's complaint suggests -- wings,
-        mandibles and beaks are all in it -- so the part used here is one that
-        genuinely is not.
+        mandibles and beaks are all in it.
+
+        `thorax` was the example here, and it is no longer one: the corpus is
+        asked last now and only about a word WordNet has never heard of, so a
+        thorax is answered by the dictionary whether or not this corpus
+        exists. What is left to demonstrate is a word neither of them knows,
+        which answers neutrally like every other lookup in this class.
         """
         self.assertTrue(anatomy.is_part("hand"))
         self.assertTrue(anatomy.is_part("mandible"))
-        self.assertFalse(anatomy.is_part("thorax"))
+        self.assertFalse(anatomy.is_part("gralk"))
 
     def test_an_anchor_menu_is_still_offered(self):
         said = lexicon.anchor_prompt("datapad")

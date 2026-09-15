@@ -452,6 +452,9 @@ check rule it says what must hold before the verb may happen at all:
   {"subject": "direct", "affords": ["read"]}        that can be done to it
   {"subject": "actor", "holds": ["direct"]}         they are carrying it
   {"subject": "actor", "wears": ["direct"]}         they have it on
+  {"subject": "direct", "owned_by": "actor"}        it is theirs
+  {"subject": "direct", "owned_by": "nobody"}       it is nobody's
+  {"subject": "direct", "owned_by": "somebody"}     it belongs to somebody
   {"subject": "actor", "trait": "piloting", "min": 10}
   {"subject": {"enclosure": "<a kind>"}, "is": ["powered"]}
   {"subject": {"zone": true}, "lacks": ["port_closed"]}
@@ -470,6 +473,8 @@ _EFFECTS = """An effect is one of:
   {"type": "set_exit", "exit": "airlock", "to": "<a room's name>"}
   {"type": "create_object", "name": "...", "description": "..."}
   {"type": "destroy_object", "name_role": "direct"}
+  {"type": "set_owner", "name_role": "direct", "to": "actor"}
+  {"type": "set_owner", "name_role": "direct", "to": "nobody"}
   {"type": "narrate"}
   {"type": "move_actor", "exit": "north"}
   {"type": "move_actor", "to": "<a room's name>"}
@@ -487,6 +492,14 @@ is, is not a property of the thing, and the game tracks it properly.
 "move_object" both name a room the way somebody reading would -- its name,
 never a number -- and do nothing at all if this world has no room by that name,
 so name one that exists.
+
+"owned_by" and "set_owner" are about whose a thing is, which is not where it
+is and not who is holding it: a sword somebody owns can be in a chest they do
+not own, in a room neither of them is in. An owner is always a person. Taking
+something nobody owns already makes it yours and giving it already hands it
+over -- both are rules this world starts with -- so write one of these only
+when the verb is genuinely about the claim: pawning a thing, surrendering it,
+staking it, abandoning it to whoever finds it ("to": "nobody").
 
 "narrate" is for a verb whose whole result is that it was seen: smiling,
 humming, listening at a door, running a hand over the moss. The game writes

@@ -1,7 +1,7 @@
 # Development plan: pronouns and ownership
 
-Status: **phases S, P0, P1, P2, P3, M and P4 are built**; P5 onward is
-proposed. P4's world reset has been completed. Where the building turned up something the plan had
+Status: **every phase is built** -- S, P0, P1, P2, P3, M, P4, P5, P6 and P7.
+P4's world reset has been completed. Where the building turned up something the plan had
 wrong, the section says so rather than being quietly corrected -- §5.4 is the
 one that matters.
 
@@ -605,6 +605,13 @@ There is no `give` command. NPCs have a `give` *tool* (`npcs.py:1064`) that
 calls `move_to` and prints a line; a player typing "give the sword to Jessica"
 falls through to the learned-verb pipeline and buys a model call to invent what
 giving means.
+
+> **Wrong, and found in the building.** Evennia ships `CmdGive` in the default
+> character cmdset, so a player's giving never reached the pipeline at all: it
+> reached a plain two-inventory move that cannot resolve a pronoun and knows
+> nothing about ownership. The conclusion below is unchanged and the reason for
+> it is stronger -- the command has to be replaced rather than merely
+> supplemented. See the P5 build notes in §9.
 
 Giving is a mechanic in the sense `put`, `wear` and `wield` are: it means one
 thing, the game knows what, and no world invents a private meaning. So it joins
@@ -1242,14 +1249,217 @@ a transfer closes the old owner by itself and `query(as_of=...)` still answers
 who it belonged to before. That is what §7.6 needs to let somebody mourn a
 sword that no longer exists.
 
+*As built* (`tests/test_ownership.py`). Five things the section above did not
+say, settled in the building.
+
+* **A mechanic had no way to reach its own after-rules, and two of the four
+  seeded claiming rules needed one.** §6.5 argues that taking and giving
+  should be rules rather than guards, so that a world can put "you may not
+  take what is not yours" in front of one without either rule knowing the
+  other exists. But `get` is a command and `give` is now a mechanic, and
+  neither goes anywhere near `_with_rule` -- so an `after` rule about either
+  would have been seeded into every world and fired in none of them, which is
+  the costume this phase exists not to write. `attempt.consequences(caller,
+  verb, bound)` runs the after phase, and only that phase, for something that
+  has already happened outside the pipeline; the taking command, taking out of
+  a container, the giving mechanic and the NPC's `get` and `give` tools all
+  call it. Instead and check are deliberately not run: whatever it was has
+  happened by the time anybody calls this, and a refusal arriving afterwards
+  would be a lie.
+
+* **The cascade must not read two empty records as a match.** §6.3's rule is
+  "if it is owned by the *previous* owner", and the previous owner of an
+  unowned chest is nobody -- so a naive `same owner?` test hands over every
+  unowned thing inside it, which is exactly the case the section says must
+  stay unowned. Written as "the thing had a previous owner, and it was this
+  one". The consequence worth stating: a thing carries its own answer, so
+  putting your pipe in your box is not what makes the pipe yours. Ownership is
+  written per object or it is not written at all.
+
+* **Rules three and four are one place, not two.** §6.5 names
+  `effects.create_object` and `dress_npc` separately, and both reach
+  `clothing.create`, which is the only function that knows who a thing was
+  made *for*. Anything made on a person is theirs -- the clothes a character
+  was generated wearing, what they were given to carry -- and anything made in
+  a room belongs to nobody until somebody picks it up, which is the difference
+  that matters: a chair that was always in the tavern is not the barman's.
+  `effects.create_object` claims for the actor on top of that, so a verb that
+  produces a candle on the floor in front of you produces *your* candle.
+
+* **There was a `give` command, and §6.6 says there is not.** Evennia ships
+  one in the default character cmdset, so the sentence "a player typing 'give
+  the sword to Jessica' falls through to the learned-verb pipeline" was never
+  true: it reached Evennia's own command, which searches two inventories and
+  moves the object. That command cannot resolve a pronoun ("give it to her"),
+  cannot read "give Jessica the crowbar", and knows nothing about ownership --
+  so a mechanic added without replacing it would have been reachable by NPCs
+  and by nothing a player could type. `commands/give_cmds.CmdAIGive` replaces
+  it and hands the sentence to the pipeline, exactly as `CmdAILook` does, and
+  leaves Evennia's behaviour alone outside a generated world. `give` therefore
+  joins `look` in `PIPELINE_VERBS`: the pipeline hands an engine verb back to
+  the command set, and with both ends of that handoff inside this game it
+  would otherwise bounce for ever. The mechanic fires Evennia's `at_pre_give`
+  and `at_give` hooks for the same reason the taking command fires `at_get` --
+  a thing that refuses to be given away has to go on refusing when the giving
+  arrives by a different door.
+
+* **`give` is ditransitive and the parser is not.** "give jessica the crowbar"
+  has two nouns and no preposition between them, so it reads as one long name
+  and binds to nothing -- and before this it went on to the promotion path,
+  where the answer was to conjure an object called "jessica crowbar". Split
+  inside the giving mechanic rather than in the grammar: it is the shape of
+  this one verb, and a parser that knew it would have to know it for every
+  ditransitive verb a world ever invents. Only people are considered for the
+  first half, so "give iron crowbar" is not read as giving something to
+  somebody called Iron.
+
+The provenance is two writes, because they answer two questions. The readable
+fact -- "iron crowbar owned_by Olara Voss" -- goes in at `veracity="tool"`,
+where recall finds it and where it outranks anything a distillation inferred.
+The triple is keyed by dbref rather than by name, which `supersede=True`
+makes necessary rather than tidy: two swords in a world are both called
+"sword", and closing "whatever shared a subject and a predicate" would have
+one sword's transfer ending the other's ownership. Triples live in
+`triples.db` inside the world's own bank directory, so they are deleted with
+the world like everything else, and `memory.triples_sync` says in its name
+that it must be called from a thread.
+
 **Phase P6 -- possessive matching.** `bind` filtering on possessor; the refusal
 wording; `bulk` narrowing; `anatomy`'s carried-object fallback folded in.
+
+*As built* (`tests/test_possessives.py`). The filter is one branch in `bind`,
+as §6.7 says, and `ownership.whose` is where it goes -- owned first, then
+merely carried, and nothing else considered. Five things the section did not
+say.
+
+* **A sword is part of something, according to the corpus.** `anatomy.is_part`
+  asked `commonsense.is_part_of_anything`, which answers yes for `sword` and
+  for `wrench` -- true of a scabbard and of a sprained ankle, and worth
+  nothing here. It was invisible while the only consequence was that "touch
+  her sword" resolved to *her*: an odd reading of an odd sentence, in a
+  branch reached only when something was about to be conjured. Once a
+  possessive is matched against what she owns it stops being odd and starts
+  being the whole feature failing, because the sword is never looked at. So
+  the corpus is now asked last and only about a word WordNet has never heard
+  of: the curated list answers first, then WordNet's own `body_part` /
+  `body_covering` / `animal_tissue` / `body_substance` roots, which cover
+  every thorax and proboscis the list was missing and cover them better. One
+  existing test asserted the old order and is updated with its reason.
+
+* **Two part tests, because the two callers need different things.**
+  `is_listed_part` is the curated list and nothing else, and it is what
+  `whose` gates on: it decides between reading "her hand" as *her* and
+  reading it as something she is carrying, where a false positive is a hand
+  mirror picked up instead of somebody being touched. `is_part` stays wide,
+  because it is asked at the other end -- just before a thing would be made
+  -- where a false positive costs nothing worse than a verb landing on the
+  person it was about. A word that is a part anywhere but on the list comes
+  through `whose`, finds nothing of hers, and reaches anatomy a moment later
+  anyway.
+
+* **"Which her?" is the same question about an owner.** §4.3 gives it for a
+  pronoun standing in for the thing; there is no reason a pronoun standing in
+  for its owner should be answered worse, and `resolve_owner`'s old third-
+  person branch simply gave up when more than one person was present.
+  `ownership.person_meant` returns `(person, question)` like
+  `verbs.resolve_pronoun`, `bind_all` carries the question the same way, and
+  the candidates are the people here whose *set* claims things with that word
+  -- so "his sword" no longer reaches Jessica because she is the only other
+  person in the room. The old single-other-person rule stays underneath, for
+  a world whose characters were never asked.
+
+* **An apostrophe is not always grammar.** Worlds call things "Captain's
+  Log", "Baker's Rack" and "Widow's Lamp", and every one of those parses as a
+  claim about somebody -- so read as a claim it finds nothing, is refused, and
+  a shelf of perfectly ordinary objects becomes unnameable. A written-out
+  possessor therefore gets one more question, and only a written-out one: is
+  there something here actually called that, confidently? "Captain's log"
+  scores 1.0 against a Captain's Log and can mean nothing else. The fallback
+  is deliberately not symmetrical -- "my ball" scores 0.9 against a Leather
+  Ball on somebody else's shelf, which is the exact answer this phase exists
+  to stop, so a pronoun possessive never gets it.
+
+* **`resolve_owner` moved out of `anatomy`.** §4.4 removed the naive
+  `SPEAKER`/`THIRD_PERSON` resolution and left the resolver where it was
+  written, which was fine while possession was anatomy's private business.
+  It is not any more -- `bind` and `bulk` both ask -- so it lives in
+  `world.ownership` beside the rest of whose-is-it, and `anatomy` calls it.
+  What stayed behind is the part that is genuinely about bodies: the list,
+  the unpunctuated "samuels shoulder" guess, and the severed-hand exception.
+
+The refusal names the owner in the words the claim was made in -- "You see no
+sword of hers here", "of yours", "of Jessica's" -- and is worded in
+`ownership.no_such` but *said* from `anatomy.instead_of_a_part`, because that
+is the one point every path passes through just before something would be
+conjured. Nothing is ever conjured for a possessive, which is the whole
+reason the phase is worth doing: a ball invented to satisfy "her ball" is
+indistinguishable from the ball she actually has until somebody looks.
 
 **Phase P7 -- what it is for.** One optional standard rule ("you may not take
 what is not yours", off by default), one NPC goal template ("recover what is
 mine"), and theft carried on the witnessing path so `notify_npcs` can say whose
 it was. Without this phase nothing in play changes, and it is the phase most
 likely to be cut under time pressure.
+
+*As built* (`tests/test_theft.py`). The rule, the template and the witnessing
+are each a few lines; four things the line above did not say took the rest.
+
+* **A suspended rule nothing reads is not a switch.** The rule is a check rule
+  on `get`, seeded with `listed: false`, and a world turns it on with `rules
+  restore <id>`. But `get` is a command and `give` a mechanic, and neither
+  goes near the check phase -- the same gap P5 found for after-rules, from the
+  other side. `attempt.permitted(caller, verb, bound)` runs the check phase,
+  and only that, before something happens outside the pipeline; the taking
+  command, taking out of a container, the NPC's `get` tool and
+  `ownership.give` all ask it. It runs *every* gathered check rule, not only
+  those naming the verb, because that is what the pipeline does -- which has
+  one consequence worth stating: "you must be able to act" now applies to the
+  taking command too, so somebody who cannot act cannot pick things up either.
+  An NPC refused is told why in working memory, as a refused `give` already
+  was.
+
+* **"Somebody" is a predicate value, because there is no "not".** The rule
+  wants "yours or nobody's", and the condition language has neither "or" nor
+  negation. So the rule is guarded by `{"owned_by": "somebody"}` -- gathered
+  only for a thing that is not claimable -- and conditioned on `{"owned_by":
+  "actor"}`. A dead owner's sword is nobody's under both, as it is for the
+  claiming rule. `rule_gen` lists the value beside `nobody`.
+
+* **Restoring it has to survive the next edition.** `seed` deletes the
+  standard rules and re-adds them whenever `VERSION` rises, so a world that had
+  restored this rule would have found it suspended again the next time
+  `standard_rules.py` changed -- and a world that had suspended one of the
+  others would have found it back in force, which was already true before this
+  phase and nobody had noticed. What a world did with `suspend` and `restore`
+  is now read before the old copies go and carried onto the new ones by name.
+  `VERSION` is 4.
+
+* **The owner is told by name, and wants it back only if they saw it.**
+  `ownership.witnessed_taking(sentence, taker, obj)` adds ", which belongs to
+  Olara Voss" to what the witnesses are handed -- never to what the room
+  reads, since whose a thing is is not something anybody can see. Three doors
+  call it: the taking command's `notify_npcs`, `events._tell_the_characters`
+  for anything that arrives as a `get` event (the pipeline, and taking out of
+  a container), and the NPC `get` tool, which told the other characters
+  nothing about picking things up before and now tells them only about this.
+  Naming the owner is also what makes an NPC owner answer, through
+  `addressed_by`, so no separate reaction had to be written. If the owner is
+  an NPC standing there, `want_back` gives them `goals.recover(obj)` -- to be
+  holding it again, which is met however it comes back -- unless they are
+  working at an errand somebody gave them, which is not dropped without a
+  word. Players are never given goals.
+
+What this does not do, noted rather than fixed: the planner reads a `holds`
+goal as "go to where it is lying and pick it up", and `_step_towards_object`
+searches rooms' contents, not people's. A crowbar in the thief's hands is
+lying nowhere, so the planner finds no step, the goal stalls, and after
+`NPC.GOAL_STALL_LIMIT` idle turns it is given up like any other goal that cannot
+be worked at. Until then it is in front of the dialogue model on every turn,
+which is where recovering property from a person belongs -- it is a
+conversation or a fight, not a step -- but it means the goal shapes what the
+character *says* and, for now, nothing it does unprompted. It is met, and
+cleared, the moment the thing is back in the owner's hands, however it got
+there.
 
 ---
 

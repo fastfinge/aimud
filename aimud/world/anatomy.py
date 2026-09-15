@@ -13,20 +13,28 @@ that happens to be nearby; it is part of somebody who is. Naming it is naming
 Samuel's shoulder" means touch Samuel, and answering it that way makes the
 verb work instead of littering the room.
 
-Three questions, in order, and none of them costs a model call:
+Two questions, in order, and neither of them costs a model call:
 
 * **Who does the phrase belong to?** "Samuel's", "her", "my" -- possession is
-  syntax, and syntax is free. An owner who is not here is a phrase about
-  nobody, and nothing gets made for it.
+  syntax, and syntax is free. Asked of `world.ownership`, which is where that
+  question lives now that it is everybody's: `verbs.bind` and `world.bulk`
+  both ask it, and an answer here that disagreed with theirs would be two
+  answers to one question. An owner who is not here is a phrase about nobody,
+  and nothing gets made for it.
 
 * **Is the tail one of their parts?** Judged on the head noun, so a "shoulder
-  bag" is a bag and the "back of her hand" is a hand. The vocabulary is
-  a list, which means it is incomplete by construction; `item_gen`'s
-  existence check carries the same rule in words for whatever the list
-  misses.
+  bag" is a bag and the "back of her hand" is a hand. The vocabulary is a
+  list, which means it is incomplete by construction -- so WordNet is asked
+  for whatever the list misses, and `item_gen`'s existence check carries the
+  same rule in words for whatever both of them miss.
 
-* **Is it something they are carrying?** Falls out of the same work for free.
-  "Samuel's hat" should find the hat he is wearing rather than run one off.
+**There was a third question, and it has moved.** "Samuel's hat" should find
+the hat he is wearing rather than run one off, and that used to be a search
+of his contents made right here, at the last moment before something was
+conjured. It happens in `verbs.bind` now, where every other noun is matched,
+against what he owns as well as what he is holding -- so by the time a phrase
+reaches this module the search has already failed, and what is left to do is
+refuse it in words that name him.
 
 Severed parts are deliberately left alone. A hand that has been cut off is an
 object like any other and arrives the way objects do -- from a verb's
@@ -84,8 +92,8 @@ MODIFIERS = frozenset("""
 
 #: Owners that are said rather than named. The sets live in
 #: `world.nounphrase` with the rest of the grammar and are re-exported here,
-#: object and all: `resolve_owner` tells them apart with `is`, so there has to
-#: be exactly one of each in the process.
+#: object and all: `ownership.person_meant` tells them apart with `is`, so
+#: there has to be exactly one of each in the process.
 SPEAKER = nounphrase.SPEAKER
 THIRD_PERSON = nounphrase.THIRD_PERSON
 
@@ -133,8 +141,54 @@ def head_noun(phrase):
     return _singular(words[-1]) if words else ""
 
 
+#: What WordNet calls the place a body part hangs. Four roots rather than one,
+#: because it files a carapace, a hide, blood and a hand in four different
+#: places and all four are things a creature is made of.
+BODY_ROOTS = frozenset([
+    "body_part.n.01", "body_covering.n.01", "animal_tissue.n.01",
+    "body_substance.n.01",
+])
+
+
+def is_listed_part(phrase):
+    """
+    True for a word this module names outright as part of a body.
+
+    The curated list and nothing else, for the one caller that needs to be
+    *sure*: `ownership.whose` decides between reading "her hand" as her and
+    reading it as something she is carrying, and a false positive there is a
+    hand mirror picked up instead of somebody being touched. Everything
+    wider goes through `is_part`, which is asked at the other end -- when a
+    thing is about to be conjured, where a false positive costs nothing worse
+    than a verb landing on the person it was about.
+    """
+    if not phrase:
+        return False
+    if set(_words(phrase)) & DETACHED:
+        return False
+    return head_noun(phrase) in PARTS
+
+
 def is_part(phrase):
-    """True if `phrase` names part of a body rather than a thing."""
+    """
+    True if `phrase` names part of a body rather than a thing.
+
+    Three answers in order of how sure each is. The hand-written list first,
+    which is the first answer and not a fallback. Then WordNet, because a
+    world with beetles and birds in it has thoraxes and probosces and this
+    list has about 120 nouns in it -- and WordNet files every one of them
+    under something in `BODY_ROOTS`, for every creature somebody invents
+    rather than only the ones whoever wrote the list thought of.
+
+    The commonsense corpus is asked last and only about a word WordNet has
+    never heard of, which is a narrower job than it used to have and a better
+    one. Asked about ordinary English it answers that a sword is part of
+    something and so is a wrench -- true of a scabbard and of a sprained
+    ankle, and worth nothing here: it reads "her sword" as anatomy, so the
+    verb lands on *her* and the sword she is carrying is never looked at.
+    That was invisible until a possessive could be matched against what
+    somebody owns, and it is the reason this order exists.
+    """
     if not phrase:
         return False
     words = set(_words(phrase))
@@ -144,12 +198,11 @@ def is_part(phrase):
     if noun in PARTS:
         return True
 
-    # A world with beetles and birds in it has mandibles and wings, and this
-    # list has about 120 nouns in it. `PartOf` is that fact already written
-    # down -- for every creature somebody invents, not only the ones whoever
-    # wrote the list thought of. Asked second and only when the list says no,
-    # so the common case costs nothing and a world with no corpus behaves
-    # exactly as it did.
+    senses = lexicon.senses(noun, "n")
+    if senses:
+        return any(BODY_ROOTS & lexicon.ancestors(name)
+                   for name, _definition in senses)
+
     from world import commonsense
 
     return commonsense.is_part_of_anything(noun)
@@ -209,38 +262,6 @@ def split_owner(phrase):
     return None, text, False
 
 
-def resolve_owner(caller, owner, word=""):
-    """
-    The person an owner phrase refers to, or None.
-
-    A pronoun in the first or second person is whoever is speaking. One in the
-    third person used to be answered only when exactly one other person was
-    present -- which is as far as anything could get before there was a record
-    of what had just been referred to. There is one now, so "greet Jessica"
-    then "touch her arm" reaches Jessica even in a crowded room, and the old
-    rule stays underneath as what to do when nothing has been referred to yet.
-    """
-    if owner is SPEAKER:
-        return caller
-    if owner is THIRD_PERSON:
-        from world import referents
-
-        room = getattr(caller, "location", None)
-        world_root = getattr(room.db, "world_root", None) if room else None
-        here = people_near(caller)
-        remembered = referents.recall_by_set(caller, word, "adjective",
-                                             world_root)
-        if remembered is not None and remembered in here:
-            return remembered
-        others = [p for p in here if p is not caller]
-        return others[0] if len(others) == 1 else None
-
-    from world.naming import CONFIDENT, best_match
-
-    person, score = best_match(caller, owner, candidates=people_near(caller))
-    return person if score >= CONFIDENT else None
-
-
 def instead_of_a_part(caller, phrase):
     """
     What to do about a phrase that names something of somebody's.
@@ -284,32 +305,31 @@ def instead_of_a_part(caller, phrase):
                 return obj, None
         return None, None
 
+    from world import ownership
+
     owner, tail, stated = split_owner(phrase)
     said = nounphrase.read(phrase).possessor_words
     if owner is None:
         return None, None
 
-    person = resolve_owner(caller, owner, said)
+    spoken = owner in (SPEAKER, THIRD_PERSON)
+    person, asked = ownership.person_meant(caller, owner, said)
     if person is None:
         if not stated:
             return None, None   # only ever a guess; let it be conjured
-        label = "them" if owner in (SPEAKER, THIRD_PERSON) else owner
-        return None, f"You see no {label} here."
+        if asked:
+            # Several people here go by that word. Asking which is better
+            # than picking, and better than a refusal that names nobody.
+            return None, asked
+        return None, (f"Whose {tail} do you mean?" if spoken
+                      else f"You see no {str(owner).title()} here.")
 
-    part = is_part(tail)
-
-    if part:
+    if is_part(tail):
         return person, None
 
-    # Not a part, but still theirs: the hat they are wearing, the ledger they
-    # carry. Finding it beats running off a second one.
-    from world.naming import PLAUSIBLE, best_match
-
-    carried = list(person.contents)
-    if carried:
-        obj, score = best_match(caller, tail, candidates=carried)
-        if obj is not None and score >= PLAUSIBLE:
-            return obj, None
-
-    whose = "your" if person is caller else f"{person.key}'s"
-    return None, f"You see no {whose} {tail} here."
+    # Not a part, and not anything of theirs either -- `verbs.bind` has
+    # already looked, because matching a possessive is what it does now, and
+    # what it could not find is not here. So this is the refusal, and the
+    # owner is named in it: "you see no hat here" is a lie when there are
+    # three on the floor and none of them is hers.
+    return None, ownership.no_such(caller, person, tail, spoken=spoken)

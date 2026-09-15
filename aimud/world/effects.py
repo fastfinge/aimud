@@ -184,6 +184,11 @@ VOCABULARY = {
                  "preposition",
         "backwards": True, "answers": False,
     },
+    "set_owner": {
+        "means": "makes something somebody's, or nobody's",
+        "takes": 'name_role, to: "actor" | <role> | "nobody", cascade',
+        "backwards": True, "answers": False,
+    },
     "modify_object": {
         "means": "changes what something is called or what it looks like",
         "takes": "name_role, new_name, new_description, affordances",
@@ -303,6 +308,17 @@ def say(effect):
     if etype == "destroy_object":
         return f"destroys {what}"
 
+    if etype == "set_owner":
+        where = str(effect.get("to") or "actor").strip()
+        if where == "nobody":
+            return f"leaves {what} belonging to nobody"
+        if where == "actor":
+            return f"makes {what} yours"
+        from world import conditions
+
+        return (f"makes {what} belong to "
+                f"{conditions._SUBJECT_WORDS.get(where, where)}")
+
     if etype == "move_object":
         where = str(effect.get("to") or "room").strip()
         if where == "actor":
@@ -403,6 +419,14 @@ def _apply_one(actor, room, effect, bound, world_root):
         obj = clothing.create(effect, location=location)
         if obj is None:
             return None
+        # Somebody made it, so it is theirs -- whether it landed in their hands
+        # or on the floor in front of them. A room furnishing itself comes
+        # through `clothing.create` with no actor at all and stays nobody's,
+        # which is the difference that matters: a chair that was always in the
+        # tavern is not the barman's property.
+        from world import ownership
+
+        ownership.claim(actor, obj)
         where = "is now here" if location is room else "is now carried"
         return f"{obj.get_numbered_name(1, None, return_string=True)} {where}."
 
@@ -459,6 +483,13 @@ def _apply_one(actor, room, effect, bound, world_root):
             return None
         label = obj.get_numbered_name(1, None, return_string=True)
         holder = obj.location
+        # Whose it was, closed rather than erased. The object is about to stop
+        # existing and its attributes with it, but what was recorded of it
+        # outlives both -- which is what lets somebody ask after a sword that
+        # was theirs and is not there. See world.ownership.forget.
+        from world import ownership
+
+        ownership.forget(obj)
         obj.delete()
         # A shattered shield protects nobody. Deletion is not a move, so the
         # hooks that keep gear honest do not fire for it.
@@ -466,6 +497,29 @@ def _apply_one(actor, room, effect, bound, world_root):
 
         gear.recompute(holder)
         return f"{label.capitalize()} is gone."
+
+    if etype == "set_owner":
+        # Whose a thing is, which is a fact about it and not a thing anybody
+        # can see happen -- so nothing is returned for the room to be told.
+        # A world that wants the handing-over narrated narrates the handing
+        # over; this is only the record of it.
+        from world import ownership
+
+        obj = _resolve(effect, "name", bound, room, actor)
+        if obj is None:
+            return None
+        where = str(effect.get("to", "actor")).strip()
+        owner = None
+        if where == "actor":
+            owner = actor
+        elif where != "nobody":
+            owner = bound.get(where)
+            if owner is None:
+                return None
+        cascade = effect.get("cascade")
+        ownership.set_owner(obj, owner,
+                            cascade=True if cascade is None else bool(cascade))
+        return None
 
     if etype == "move_object":
         from world import relations

@@ -777,6 +777,129 @@ def _note_fact_sync(where, subject, predicate, object_, veracity):
         return None
 
 
+# ---------------------------------------------------------------------------
+# Triples: what was true, and when it stopped being
+#
+# A second table and a second question. A fact says what is the case; a triple
+# says what was the case between two moments, which is the difference between
+# "the sword is Jessica's" and being able to answer who it belonged to before
+# she gave it away -- or before it was destroyed. `supersede` closes the open
+# triple sharing a subject and a predicate, which is exactly the semantics
+# ownership wants: a transfer ends the old owner without anybody saying so.
+#
+# **Bank-scoped, with no session at all.** The triples table has no session
+# column, so what goes in here is world history rather than one character's
+# belief, and prefixing subjects with a character id to fake the difference
+# would be inventing a scoping mechanism inside a column. Kept in the bank's
+# own directory so that deleting a world deletes its history with it, which is
+# the same bargain `bank_for` makes for everything else.
+#
+# **Nothing reads these into `recall`.** They are queried structurally --
+# subject, predicate, as of when -- because "what does Jessica own" is a
+# structured question rather than a fuzzy one. A caller asks and puts the
+# answer in a prompt deliberately; nothing here is automatic.
+#
+# See docs/pronouns-and-ownership.md 7.5.
+# ---------------------------------------------------------------------------
+
+def _triple_store(bank):
+    """The triple store for one world's bank. Must run in a thread."""
+    from pathlib import Path
+
+    from mnemosyne.core.triples import TripleStore
+
+    home = Path(_data_dir()) / "banks" / str(bank)
+    home.mkdir(parents=True, exist_ok=True)
+    return TripleStore(db_path=home / "triples.db")
+
+
+def _with_triples(bank, action):
+    """
+    Run `action(store)` against one world's triples. MUST be in a thread.
+
+    Under the same lock as everything else here, for the same reason: SQLite
+    connections are not shared between threads, and a burst of writes that
+    collide are writes that are silently lost.
+    """
+    if not bank:
+        return None
+    with _lock:
+        store = None
+        try:
+            store = _triple_store(bank)
+            return action(store)
+        except Exception as exc:
+            logger.log_info(f"memory: could not reach the triple store: {exc}")
+            return None
+        finally:
+            # Its own connection and nothing else. Not `_close_quietly`, which
+            # also drops the caches the ordinary memory path keeps -- a triple
+            # written here must not cost the next remembered event a
+            # reconnect, and a triple store holds one plain handle anyway.
+            conn = getattr(store, "conn", None)
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+
+def note_triple(where, subject, predicate, object_, supersede=True):
+    """
+    Record that this became true. Fire-and-forget.
+
+    `supersede` closes whatever was true of the same subject and predicate
+    before it, which is right for anything single-valued -- an owner, a
+    placement, an exclusive state -- and wrong for anything a subject may
+    hold several of at once.
+    """
+    if _closing or not available() or not (subject and predicate):
+        return
+
+    def _write(store):
+        return store.add(str(subject), str(predicate), str(object_),
+                         source="engine", supersede=bool(supersede))
+
+    threads.deferToThread(_with_triples, where.bank, _write).addErrback(_swallow)
+
+
+def end_triples(where, subject, predicate, object_=None):
+    """
+    Record that this stopped being true, without anything replacing it.
+
+    What destruction needs, and the reason a memory is never deleted because
+    its subject is gone: the triple is closed rather than removed, so `as_of`
+    still answers who the sword belonged to while there was a sword.
+    """
+    if _closing or not available() or not (subject and predicate):
+        return
+
+    def _write(store):
+        return store.end(str(subject), str(predicate),
+                         str(object_) if object_ else None)
+
+    threads.deferToThread(_with_triples, where.bank, _write).addErrback(_swallow)
+
+
+def triples_sync(where, subject=None, predicate=None, object_=None, as_of=None):
+    """
+    What was true, as of a moment or as of now. MUST run in a thread.
+
+    Synchronous and said so in the name, because every caller of this is
+    already inside one -- a prompt being built, a goal being tested -- and a
+    query that opened SQLite on the reactor would stall the whole game for the
+    length of it.
+    """
+    if not available():
+        return []
+
+    def _read(store):
+        return store.query(subject=subject, predicate=predicate,
+                           object=object_, as_of=as_of)
+
+    return _with_triples(where.bank, _read) or []
+
+
 def _store_facts_sync(where, facts, through):
     """Write distilled facts back, and move the mark. Must run in a thread."""
     def _run(instance):
@@ -939,6 +1062,18 @@ def orphaned_banks():
     return stranded
 
 
+def _data_dir():
+    """Where memories are kept, as configured or as defaulted."""
+    import os
+
+    data_dir = os.environ.get("MNEMOSYNE_DATA_DIR")
+    if not data_dir:
+        from django.conf import settings
+
+        data_dir = os.path.join(settings.GAME_DIR, "server", "memory")
+    return data_dir
+
+
 def _bank_names():
     """
     Every bank on disk, read straight off the directory. Main thread safe.
@@ -947,15 +1082,9 @@ def _bank_names():
     to delete, and it must not be the thing that imports the embedding stack
     onto the reactor.
     """
-    import os
     from pathlib import Path
 
-    data_dir = os.environ.get("MNEMOSYNE_DATA_DIR")
-    if not data_dir:
-        from django.conf import settings
-
-        data_dir = os.path.join(settings.GAME_DIR, "server", "memory")
-    banks = Path(data_dir) / "banks"
+    banks = Path(_data_dir()) / "banks"
     if not banks.is_dir():
         return []
     return sorted(

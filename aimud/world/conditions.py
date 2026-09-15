@@ -261,7 +261,7 @@ def _listed(value):
 def predicate_of(condition):
     """Which predicate a condition uses, and what it names."""
     for name in ("is", "lacks", "affords", "kind", "holds", "wears",
-                 "placed", "trait", "in_room", "exists", "gone",
+                 "owned_by", "placed", "trait", "in_room", "exists", "gone",
                  "able", "reachable_by", "visible_to", "leads_to", "never",
                  "unbound"):
         if name in condition:
@@ -430,6 +430,15 @@ def _abstractly(condition):
         return f"{subject} {be} holding {listed or 'it'}"
     if name == "wears":
         return f"{subject} {be} wearing {listed or 'it'}"
+    if name == "owned_by":
+        whose, through = _owner_wanted(value)
+        if whose == NOBODY:
+            return f"{subject} {be} nobody's"
+        if whose == SOMEBODY:
+            return f"{subject} {be} somebody's"
+        said = _SUBJECT_WORDS.get(whose, whose)
+        where = " or in something of theirs" if through else ""
+        return f"{subject} {'belong' if plural else 'belongs'} to {said}{where}"
     if name == "placed":
         try:
             preposition, host = next(iter(dict(value).items()))
@@ -750,6 +759,78 @@ def _p_gone(subject, value, condition, ctx, mood):
     return met, f"{_cap(said)} is still here."
 
 
+#: What "owned by nobody" is written as. A word rather than a null, because a
+#: rule saying it is making a claim -- this thing is going spare -- and
+#: `{"owned_by": null}` reads as somebody having forgotten to fill the field
+#: in.
+NOBODY = "nobody"
+
+#: What "owned by somebody" is written as: anybody at all, as long as it is not
+#: nobody. The guard on "you may not take what is not yours", which has to be
+#: gathered only for a thing somebody has a claim on -- and the condition
+#: language has no "not" to write that with.
+SOMEBODY = "somebody"
+
+
+def _p_owned_by(subject, value, condition, ctx, mood):
+    """
+    Whose the subject is.
+
+    The value is a role -- almost always `actor` -- or `nobody`, which is true
+    of a thing nobody has ever claimed and of a thing whose owner has left the
+    world. Those two are one answer here deliberately: to whoever is reaching
+    for it they are the same situation, and the standard rule that makes
+    picking a thing up yours wants both.
+
+    `{"role": "actor", "through": "containers"}` is the other form, and asks
+    the standing question instead: is this theirs, or is it inside something
+    that is. Not the default and never what a seeded rule uses -- if I own a
+    chest and you put your sword in it, the sword is still yours -- but a
+    world with a landlord or a ship's captain in it means exactly this, and
+    shipping the syntax is what keeps such a world from writing the inference
+    into every rule by hand. See docs/pronouns-and-ownership.md 6.3.
+    """
+    from world import ownership
+
+    if not subject.found:
+        return _missing(subject, condition, mood)
+
+    wanted, through = _owner_wanted(value)
+    if wanted == SOMEBODY:
+        met = not ownership.claimable(subject.obj)
+        if mood == WANT:
+            return met, f"see {_in_a_sentence(subject, ctx)} owned"
+        return met, f"{_cap(subject.name())} belongs to nobody."
+    if wanted == NOBODY:
+        met = ownership.claimable(subject.obj)
+        if mood == WANT:
+            return met, f"leave {_in_a_sentence(subject, ctx)} unclaimed"
+        held = ownership.owner_name(subject.obj) or "somebody else"
+        return met, f"{_cap(subject.name())} belongs to {held}."
+
+    owner = ctx.actor if wanted == "actor" else ctx.bound.get(wanted)
+    if owner is None:
+        # Nobody to be the owner, so nothing to be true: a rule about the
+        # target's property, asked of a sentence that named no target.
+        return True, ""
+    met = (ownership.owns_through_containers(owner, subject.obj) if through
+           else ownership.owns(owner, subject.obj))
+
+    whose = "yours" if owner is ctx.actor else \
+        f"{owner.get_display_name(ctx.actor)}'s"
+    if mood == WANT:
+        return met, f"own {_in_a_sentence(subject, ctx)}"
+    return met, f"{_cap(subject.name())} is not {whose}."
+
+
+def _owner_wanted(value):
+    """(whose it must be, whether containers count) from either written form."""
+    if isinstance(value, dict):
+        return (str(value.get("role") or value.get("owner") or "actor"),
+                str(value.get("through") or "") == "containers")
+    return str(value or "actor"), False
+
+
 #: What a state can stop its holder doing. Three, and never a list of
 #: forbidden verbs: a state is settled once while new verbs go on being
 #: invented, so any list would be stale within a week.
@@ -962,6 +1043,7 @@ _PREDICATES = {
     "kind": _p_kind,
     "holds": _p_holds,
     "wears": _p_wears,
+    "owned_by": _p_owned_by,
     "placed": _p_placed,
     "trait": _p_trait,
     "in_room": _p_in_room,
@@ -1040,6 +1122,25 @@ def achieves(effect, condition):
 
     if name == "holds" and etype == "move_object":
         return str(effect.get("to") or "") == "actor"
+
+    if name == "owned_by" and etype == "set_owner":
+        # Read for the thing the effect names and no further. The cascade is
+        # deliberately unreadable backwards: "give her the box" as a way of
+        # satisfying "own the sword inside it" is not a plan step any planner
+        # should be inventing, and an effect that could be read that way would
+        # have the planner handing containers about in the hope of what fell
+        # out. A decision on the record rather than a gap. See 6.4.
+        whose, _through = _owner_wanted(value)
+        going_to = str(effect.get("to") or "")
+        if whose == SOMEBODY:
+            return bool(going_to) and going_to != NOBODY
+        if going_to == "nobody" or whose == NOBODY:
+            return going_to == whose
+        named = str(effect.get("name_role") or effect.get("role") or "")
+        subject = condition.get("subject") or "direct"
+        if named and isinstance(subject, str) and named != subject:
+            return False
+        return going_to == whose
 
     if name == "placed" and etype == "move_object":
         try:
