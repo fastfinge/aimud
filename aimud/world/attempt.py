@@ -264,21 +264,91 @@ def _mechanics(caller, verb, parsed, bound, on_message):
     """
     The verbs the game itself answers for, before any of it is learned.
 
-    Three of them, and each is a mechanic rather than something a world has to
+    Four of them, and each is a mechanic rather than something a world has to
     work out: every one of these words means exactly one thing and the game
     already knows what. A player's `wear` command and an NPC deciding to put
     its coat on reach the same code and the same limits, and no world ever
     invents a private meaning for any of them.
 
     Each `handle` declines anything that is not really its business -- "draw
-    the curtain", "put out the fire" -- and those go on through the ordinary
-    pipeline. True when one of them took the attempt.
+    the curtain", "put out the fire", "give up" -- and those go on through the
+    ordinary pipeline. True when one of them took the attempt.
     """
-    from world import clothing, gear, relations
+    from world import clothing, gear, ownership, relations
 
     return bool(clothing.handle(caller, verb, bound, on_message)
                 or gear.handle(caller, verb, bound, on_message)
+                or ownership.handle(caller, verb, parsed, bound, on_message)
                 or relations.handle(caller, verb, parsed, bound, on_message))
+
+
+def consequences(caller, verb, bound):
+    """
+    Run what follows from something that happened outside this pipeline.
+
+    The after-rules, and only those. A mechanic and a command both do the
+    thing themselves and never reach `_with_rule`, so until now nothing a
+    world had written about what *follows* from picking something up or
+    handing it over could fire at all -- and "taking an unowned thing claims
+    it" is exactly such a rule.
+
+    Written as a rule rather than as a line inside each mechanic because that
+    is the whole argument of the standard rules: a world can put a check rule
+    in front of one, replace it, or read it in `rules`, and none of that is
+    possible for a policy welded into a command. See
+    docs/pronouns-and-ownership.md 6.5.
+
+    The instead and check phases are deliberately not run. Whatever it was has
+    already happened by the time anybody calls this, and a refusal arriving
+    after the fact would be a lie.
+    """
+    room = getattr(caller, "location", None)
+    world_root = getattr(room.db, "world_root", None) if room is not None else None
+    if world_root is None:
+        return []
+
+    from world import rulebooks
+
+    done = []
+    for later in rulebooks.for_attempt(world_root, verb, bound, caller,
+                                       phase=rulebooks.AFTER):
+        done += effects_mod.apply(caller, room, later.get("effects") or [],
+                                  bound=bound, world_root=world_root)
+    return done
+
+
+def permitted(caller, verb, bound):
+    """
+    What this world's check rules say against something about to happen, or "".
+
+    The other half of `consequences`, for the same doors. Taking and giving
+    are a command and a mechanic, neither reaches `_with_rule`, and so a check
+    rule about either was filed, shown in `rules`, and consulted by nothing.
+    "You may not take what is not yours" is exactly such a rule -- shipped
+    with every world and suspended -- and restoring a rule nothing reads is
+    not a decision anybody can make.
+
+    Every gathered check rule and not only those naming this verb, because
+    that is what the pipeline does: a world that says nothing may be done
+    while you are dead means picking things up as well. Asked before anything
+    moves, so a refusal is a refusal rather than an apology afterwards. The
+    instead phase is not run: whoever calls this has already decided what the
+    words mean, and has no use for a rule saying they mean something else.
+    """
+    room = getattr(caller, "location", None)
+    world_root = getattr(room.db, "world_root", None) if room is not None else None
+    if world_root is None:
+        return ""
+
+    from world import conditions, rulebooks
+
+    ctx = conditions.context(bound, caller, world_root, verb)
+    for gate in rulebooks.for_attempt(world_root, verb, bound, caller,
+                                      phase=rulebooks.CHECK):
+        complaint = conditions.unmet(gate.get("conditions") or [], ctx)
+        if complaint:
+            return complaint
+    return ""
 
 
 def _in_turn(caller, sponsor, spread, on_message, allow_effects, on_wait,

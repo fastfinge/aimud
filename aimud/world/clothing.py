@@ -593,4 +593,14 @@ def create(spec, location, worn_on=None):
     if worn_on is not None:
         style = str(spec.get("wearstyle", "")).strip()
         put_on(worn_on, obj, wearstyle=style or True)
+
+    # Born with it. Anything made *on* somebody is theirs -- the clothes a
+    # character was generated wearing, what they were given to carry -- and
+    # anything made in a room is the room's furniture and belongs to nobody
+    # until somebody picks it up. Done here rather than at each generator,
+    # because every route that makes an object comes through this function and
+    # only this function knows, in one place, who it was made for.
+    from world import ownership
+
+    ownership.claim(worn_on if worn_on is not None else location, obj)
     return obj

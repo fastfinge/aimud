@@ -156,16 +156,32 @@ def _do_take(caller, obj):
     if not obj.access(caller, "get"):
         caller.msg("You can't take that.")
         return
+    # The validation that is this world's rather than this command's: its
+    # check rules about taking, which include "you may not take what is not
+    # yours" once a world has restored it. See `attempt.permitted`.
+    from world import attempt, ownership
+
+    refused = attempt.permitted(caller, "get", {"direct": obj})
+    if refused:
+        caller.msg(refused)
+        return
     room = caller.location
     success = obj.move_to(caller, quiet=True)
     if success:
         caller.msg(f"You pick up {obj.get_display_name(caller)}.")
         obj.at_get(caller)
         _note(caller, obj)
+        # And whatever this world says follows from having taken something --
+        # which by default is that a thing nobody owned is now yours. Getting
+        # is a command rather than a trip through the attempt pipeline, so
+        # without this the after-rules about it could never fire at all.
+        attempt.consequences(caller, "get", {"direct": obj})
         if room:
             from world.npc_gen import notify_npcs
             notify_npcs(room, "action", caller.get_display_name(caller),
-                        f"picked up {obj.get_display_name(caller)}")
+                        ownership.witnessed_taking(
+                            f"picked up {obj.get_display_name(caller)}",
+                            caller, obj))
     else:
         caller.msg("You can't pick that up.")
 

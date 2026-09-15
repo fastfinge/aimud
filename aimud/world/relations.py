@@ -471,6 +471,15 @@ def _take_from(caller, obj, host, on_message):
         shut = host.get_numbered_name(1, caller, return_string=True)
         on_message(f"{shut[:1].upper()}{shut[1:]} is closed.")
         return True
+    # Taking a thing out of a drawer is taking it, so this world's rules about
+    # taking are asked here too -- it is the same action arriving by a
+    # different door. See `attempt.permitted` and `attempt.consequences`.
+    from world import attempt
+
+    refused = attempt.permitted(caller, "get", {"direct": obj, "source": host})
+    if refused:
+        on_message(refused)
+        return True
     if not obj.move_to(caller, quiet=True, move_type="get"):
         on_message("You cannot take that.")
         return True
@@ -482,6 +491,10 @@ def _take_from(caller, obj, host, on_message):
         f"You take {label} {preposition} {where}.",
         _event(caller, "get", {"direct": obj, "source": host},
                f"{{actor}} $pconj(take) {{direct}} {preposition} {{source}}."))
+    # Taking a thing out of a drawer is taking it, so whatever this world says
+    # follows from that applies here too -- it is the same action arriving by
+    # a different door. See `attempt.consequences`.
+    attempt.consequences(caller, "get", {"direct": obj, "source": host})
     return True
 
 

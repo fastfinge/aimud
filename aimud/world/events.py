@@ -671,5 +671,13 @@ def _tell_the_characters(event, template):
     if actor is None or room is None:
         return
     spoken = render(template, None, event)
+    if event.verb == "get":
+        # Whose it was, which the room's prose never says and a witness needs:
+        # somebody watching a stranger pick up their own crowbar has seen
+        # something the room has not. See `ownership.witnessed_taking`.
+        from world import ownership
+
+        spoken = ownership.witnessed_taking(spoken, actor,
+                                            event.roles.get("direct"))
     notify_npcs(room, "action", name_for(actor, None), spoken,
                 exclude=actor, actor=actor)

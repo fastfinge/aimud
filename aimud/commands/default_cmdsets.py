@@ -26,6 +26,7 @@ from evennia.contrib.game_systems.clothing.clothing import CmdInventory
 from commands.clothing_cmds import CmdCover, CmdRemove, CmdUncover, CmdWear
 from commands.drop_cmds import CmdAIDrop
 from commands.follow_cmds import CmdFollow
+from commands.give_cmds import CmdAIGive
 from commands.goal_cmds import CmdGoal
 from commands.help_cmds import CmdAIHelp
 from commands.memory_cmds import CmdMemoryMaintenance, CmdRemember
@@ -72,6 +73,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdAIDrop())
         self.add(CmdAIEmote())
         self.add(CmdFollow())
+        self.add(CmdAIGive())
         self.add(CmdWear())
         self.add(CmdRemove())
         self.add(CmdCover())

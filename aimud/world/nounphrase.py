@@ -36,11 +36,11 @@ name this game generates, because `verbs.naming_rule()` is what wrote them.
 **What `.plain` is, and why it is not `.head`.** `.plain` is the phrase with
 its determiners gone and nothing else touched, which is exactly what
 `verbs.plain` has always returned, and half this game matches on it. The
-structure sits beside it rather than replacing it: `.possessor` and `.head`
-are new information that nothing reads yet. They are read in phase P6, when
-possessive matching arrives and "get her ball" has somewhere to look. Until
-then this module changes what the code *knows* and not what it *does*, which
-is the whole of what P0 is for.
+structure sits beside it rather than replacing it -- so `.possessor` and
+`.thing` could be written here and read a phase later, which is what
+happened: `world.ownership` matches "get her ball" against what she owns and
+what she is carrying, and `.plain` still says "ball" for everything that
+matches names against keys.
 """
 
 import re
@@ -239,8 +239,9 @@ class NounPhrase:
         What is left once the grammar has been taken off: "wrench" from "all
         of her second-best wrenches".
 
-        This is the string a search should actually use, and almost nothing
-        uses it yet. `bind` moves onto it in P2, possessive matching in P6.
+        This is the string a search should actually use once the grammar has
+        been read off it, and what `ownership.theirs` matches against: "her
+        second sword" narrows to her swords and then counts through them.
         """
         return " ".join(self.rest)
 

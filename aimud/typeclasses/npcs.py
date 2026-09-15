@@ -1134,13 +1134,31 @@ class NPC(ObjectParent, DefaultObject):
             if obj_name:
                 obj, _ = _find_one(self, obj_name, location=room)
                 if obj and obj is not self:
-                    if obj.move_to(self, quiet=True):
-                        from world import events
+                    from world import attempt, events, ownership
 
-                        self._acted(room, events.Event(
+                    # The rules a player taking it meets, and told why when
+                    # they refuse -- or a character reaches for somebody's
+                    # purse every turn and is turned back every turn.
+                    refused = attempt.permitted(self, "get", {"direct": obj})
+                    if refused:
+                        self._note_to_self(_as_noticed(refused))
+                    elif obj.move_to(self, quiet=True):
+                        said = self._acted(room, events.Event(
                             actor=self, room=room, verb="get",
                             roles={"direct": obj},
                             room_template="{actor} $pconj(pick) up {direct}."))
+                        # Whatever follows from having taken something follows
+                        # for a character too: an NPC that picks up an unowned
+                        # crowbar owns it, by the same rule and not a copy of
+                        # it. See `attempt.consequences`.
+                        attempt.consequences(self, "get", {"direct": obj})
+                        # Picking a thing up is not, on its own, anything the
+                        # others need to hear about. Picking up somebody
+                        # else's is -- and the owner most of all.
+                        told = ownership.witnessed_taking(said, self, obj)
+                        if told != said:
+                            self._notify_other_npcs(room, "action", told,
+                                                    _depth)
 
         elif tool_name == "give":
             obj_name = str(args.get("object_name", "")).strip()
@@ -1148,15 +1166,26 @@ class NPC(ObjectParent, DefaultObject):
             if obj_name and recipient_name:
                 obj, _ = _find_one(self, obj_name, location=self)
                 recipient, _ = _find_one(self, recipient_name, location=room)
-                if obj and recipient and recipient is not self:
-                    if obj.move_to(recipient, quiet=True):
-                        from world import events
+                if obj and recipient:
+                    # Through the mechanic, so that a character handing
+                    # something over meets the same refusals a player does --
+                    # it cannot give away what it is wearing, or what it is
+                    # not carrying -- and so the ownership moves in the one
+                    # place that knows how. See `world.ownership.give`.
+                    from world import attempt, ownership
 
-                        self._acted(room, events.Event(
-                            actor=self, room=room, verb="give",
-                            roles={"direct": obj, "target": recipient},
-                            room_template=(
-                                "{actor} $pconj(give) {direct} to {target}.")))
+                    ok, said, event = ownership.give(self, obj, recipient)
+                    if ok:
+                        self._acted(room, event)
+                        attempt.consequences(
+                            self, "give",
+                            {"direct": obj, "target": recipient})
+                    else:
+                        # Why it could not, where the next prompt will read it.
+                        # Otherwise a character that tries to hand over the
+                        # coat it is wearing tries again every turn, and is
+                        # turned back every turn without ever learning why.
+                        self._note_to_self(_as_noticed(said))
 
         elif tool_name == "create":
             self._conjure(str(args.get("name", "")).strip(), room)

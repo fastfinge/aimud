@@ -540,6 +540,19 @@ def bind(caller, phrase, fuzzy=False, verb=""):
         found, _question = resolve_pronoun(caller, read.pronoun, verb)
         return found
 
+    # A phrase that says whose it is has narrowed the search itself, and the
+    # narrowing is the answer: "her sword" is not a name to look up but a
+    # claim to test, so it is matched against what she owns and what she is
+    # carrying and against nothing else. Failing that it binds nothing, which
+    # is a refusal rather than an invitation -- the alternative, and what this
+    # used to do, was to search for an object called "her sword" and offer to
+    # invent one. See `world.ownership`.
+    if read.possessor is not None:
+        from world import ownership
+
+        found, _question = ownership.whose(caller, read)
+        return found
+
     one_of_several = counted(caller, phrase)
     if one_of_several is not None:
         return one_of_several
@@ -584,6 +597,15 @@ def bind_all(caller, roles, fuzzy=False, verb=""):
         read = nounphrase.read(phrase, world_root)
         if read.pronoun:
             obj, asked = resolve_pronoun(caller, read.pronoun, verb)
+            if asked:
+                questions.append((role, asked))
+                continue
+        elif read.possessor is not None:
+            # "Which her?" is the same question whether the word stood in for
+            # the thing or for whoever owns it, so it is asked the same way.
+            from world import ownership
+
+            obj, asked = ownership.whose(caller, read)
             if asked:
                 questions.append((role, asked))
                 continue
@@ -796,10 +818,17 @@ _COMMAND_VERBS = set()
 #: touched -- and none of that could be said while the pipeline handed the verb
 #: straight back to `CmdAILook`. See docs/rulebooks-from-inform.md 8.1.
 #:
+#: `give` is the same case arrived at from the other end. Evennia ships a give
+#: command and this game replaces it with one that hands the sentence to the
+#: pipeline, because giving is where ownership moves and because Evennia's
+#: cannot resolve "give it to her". Handing the verb back would therefore hand
+#: it to our own command, which would hand it here again -- the bounce above,
+#: with both ends inside this game.
+#:
 #: Canonical verbs only. Everything folds through `VERB_SYNONYMS` before this is
 #: consulted, so one entry covers `l`, `x`, `examine`, `inspect`, `study` and
 #: `view`, and adding the spellings separately would be six chances to miss one.
-PIPELINE_VERBS = frozenset(["look"])
+PIPELINE_VERBS = frozenset(["look", "give"])
 
 
 def command_verbs():
@@ -813,9 +842,10 @@ def engine_verbs():
     Every verb the game itself answers, read off the running game.
 
     Two sources, because there are two ways a verb never reaches a model: a
-    real command in the character's command set, and the three modules that
-    take a verb over inside the attempt pipeline when the noun suits --
-    wearing, wielding, and putting one thing on another.
+    real command in the character's command set, and the four modules that
+    take a verb over inside the attempt pipeline when the nouns suit --
+    wearing, wielding, putting one thing on another, and handing one to
+    somebody.
 
     Read rather than written out here. A hand-written list is one that goes
     quietly stale: the day somebody adds a command or aliases one, a prompt
@@ -830,10 +860,10 @@ def engine_verbs():
     if _ENGINE_VERBS is not None:
         return _ENGINE_VERBS
 
-    from world import clothing, gear, relations
+    from world import clothing, gear, ownership, relations
 
     found = set()
-    for module in (clothing, gear, relations):
+    for module in (clothing, gear, ownership, relations):
         found.update(str(verb) for verb in getattr(module, "VERBS", ()))
 
     try:

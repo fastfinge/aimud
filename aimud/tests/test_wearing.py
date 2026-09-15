@@ -30,6 +30,14 @@ class Wearing(EvenniaCommandTest):
         self.coat.key = "coat"
         self.coat.location = self.char1
         self.coat.db.kinds = ["clothing"]
+        # What makes a thing wearable is the affordance and nothing else --
+        # `clothing.wearable` reads `verbs.affordances`, which reads this map.
+        # A kind of "clothing" and a `clothing_type` are how the coat is
+        # ordered and limited once it is a garment; neither is what lets it
+        # become one. `clothing.create` writes this for every coat the world
+        # makes, from the kind, and a fixture that skips it has built an
+        # object no amount of clothing_type will let anybody put on.
+        self.coat.db.affordances = {"wear": True}
         self.coat.db.clothing_type = "outerwear"
         referents.clear(self.char1)
 
@@ -49,6 +57,7 @@ class Wearing(EvenniaCommandTest):
         """
         from commands.clothing_cmds import CmdWear
 
+        self.coat.db.affordances = {}
         self.coat.db.clothing_type = None
         self.coat.db.kinds = []
         said = self.call(CmdWear(), "coat")

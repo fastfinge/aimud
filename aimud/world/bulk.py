@@ -73,13 +73,15 @@ def matching(caller, verb, phrase, where=None):
     """
     The things "all" means here, for this verb.
 
-    Narrowed four ways, in order of how sure each is. Whatever the phrase
-    named, when it named a sort at all -- "every wrench" is not every thing.
-    Whatever cannot be acted on at all is dropped -- exits are map, not
-    furniture. Whatever the verb is refused on is dropped, because a kind that
-    has already said a bottle cannot be read should not be asked again twelve
-    times. And people are included only when the word was about people, so
-    "eat all" in a busy room does not begin with the innkeeper.
+    Narrowed five ways, in order of how sure each is. Whoever the phrase said
+    it all belonged to -- "all of her machines" is not all the machines.
+    Whatever the phrase named, when it named a sort at all -- "every wrench"
+    is not every thing. Whatever cannot be acted on at all is dropped -- exits
+    are map, not furniture. Whatever the verb is refused on is dropped,
+    because a kind that has already said a bottle cannot be read should not be
+    asked again twelve times. And people are included only when the word was
+    about people, so "eat all" in a busy room does not begin with the
+    innkeeper.
     """
     from world import kinds, verbs
     from world.quests import is_person
@@ -93,12 +95,20 @@ def matching(caller, verb, phrase, where=None):
     people = _people_meant(phrase)
     _all, sort = split(phrase)
     sort, by_kind, people = _resolve_them(caller, sort, people, world_root)
+    owner, claimed = _owner_meant(caller, phrase)
+    if claimed and owner is None:
+        # A claim about somebody who is not here. Finding nothing is the only
+        # honest answer: sweeping the room instead would act on everybody's
+        # things because one person's could not be found.
+        return []
 
     found = []
     for obj in list(getattr(where, "contents", []) or []):
         if obj is caller or getattr(obj, "destination", None) is not None:
             continue
         if is_person(obj) != people:
+            continue
+        if owner is not None and not _belongs_to(owner, obj):
             continue
         # The same test a single noun is bound by, so "every wrench" reaches
         # exactly what "wrench" would have reached, twelve times over. Strict,
@@ -121,6 +131,39 @@ def matching(caller, verb, phrase, where=None):
         if len(found) >= LIMIT:
             break
     return found
+
+
+def _owner_meant(caller, phrase):
+    """
+    (person, whether anybody was claimed) for a phrase like "all of her tools".
+
+    The two are separate answers because they lead different ways: nobody
+    claimed is the ordinary case and narrows nothing, while a claim that
+    resolves to nobody has to come back empty. The same resolution `bind`
+    uses, so "her tools" and "all of her tools" cannot disagree about who
+    "her" is.
+    """
+    from world import ownership
+
+    read = nounphrase.read(phrase)
+    if read.possessor is None:
+        return None, False
+    person, _asked = ownership.person_meant(caller, read.possessor,
+                                            read.possessor_words)
+    return person, True
+
+
+def _belongs_to(person, obj):
+    """
+    Whether this is theirs -- owned, or merely in their hands.
+
+    The same two passes `ownership.theirs` makes for a single noun, collapsed
+    into one test because a bulk action takes everything that answers rather
+    than the best thing that answers.
+    """
+    from world import ownership
+
+    return ownership.owns(person, obj) or obj.location is person
 
 
 def _resolve_them(caller, sort, people, world_root):

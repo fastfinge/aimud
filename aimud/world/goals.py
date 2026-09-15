@@ -185,6 +185,19 @@ def sanitise(conditions, owner=None):
     return clean
 
 
+def recover(obj):
+    """
+    "Get back what is mine", as a goal.
+
+    Having it in hand again, which is all getting a thing back can be tested
+    as: whether it is returned, bargained for or snatched is the character's
+    business, and the planner already knows how to go and pick up something
+    it wants. Named by key, as every goal names what it is about. See
+    `world.ownership.want_back`.
+    """
+    return [{"type": "holds", "object": str(getattr(obj, "key", "") or "")}]
+
+
 def _test(condition, actor, world_root):
     """
     Evaluate one condition. Returns (met, how it reads as a want).
