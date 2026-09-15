@@ -66,7 +66,7 @@ WIELD_LIMIT = 2
 VERBS = ("wield", "unwield", "hold")
 
 
-def prompt_block(world_root):
+def prompt_block(world_root, registers=True):
     """
     How to declare what an item is worth, for any generator that makes one.
 
@@ -110,8 +110,11 @@ def prompt_block(world_root):
         "simply existing, which is most things. Use it whenever the object has\n"
         "a condition that could be turned off — otherwise a lamp in a pack\n"
         "shines as brightly as one alight.\n\n"
-        + traits.vocabulary_block(
+        + (traits.vocabulary_block(
             world_root, "Traits this world already measures")
+           if registers else
+           "list_traits shows the traits this world measures; a bonus names "
+           "one of those.\n\n")
     )
 
 

@@ -1152,6 +1152,35 @@ hand becomes complaints) and `_generate_description`. `populate_room` and
 exploring: a scripted world that builds a matching room produces the thing,
 under words the quest accepts.
 
+*As built, so far* (6a, items):
+
+* **`judge_existence` and `judge_takeable`** (4 rounds each) share
+  `item_gen._judged`. Rounds out is an error, as unreadable JSON was: there is
+  no answer to take as it stands, and a guess would either conjure a thing
+  nobody allowed or refuse one nobody refused.
+* **`make_item`** (6 rounds) is `clothing.spec_schema`, adjusted per word:
+  * `sense` becomes an enum of the head noun's senses when
+    `needs_sense_choice` says they disagree, replacing `sense_prompt`'s menu;
+  * `under` gets the kind buckets and ConceptNet's suggestions in its
+    description when the dictionary has never heard of the word, replacing
+    `anchor_prompt`'s menu;
+  * a `new_token_lists` field is added.
+
+  When the rounds run out, the last item is made as it stands.
+* **`item_complaints`** sends back:
+  * a name carrying a condition (`verbs.name_contradicts_states`);
+  * a sense that contradicts what the thing was said to be
+    (`kinds.sense_contradicts`, which used to be resolved silently);
+  * an `under` the dictionary does not know;
+  * a word list `token_lists.clean` refuses;
+  * a `{slot}` in the description that no list answers;
+  * near-duplicate states and lists.
+* **The prompt keeps the gear and word-list explanations without their
+  registers.** `gear.prompt_block(registers=False)` and
+  `token_lists.TOOL_PROMPT` point at `list_traits` and `list_word_lists`.
+  `_state_hints` adds the states things of this sort have been in and
+  §5.2's unused words in their groups.
+
 ### Phase 7: characters, quests and the rest
 
 `generate_npc` (whose name retries become complaints), `dress_npc`,

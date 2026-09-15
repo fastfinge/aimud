@@ -724,6 +724,27 @@ $found_at(galley, else=a crate).
 """
 
 
+#: `PROMPT`, for a generator that answers through a tool. The lists are behind
+#: `list_word_lists` rather than pasted in, and a new one is declared in the
+#: tool's `new_token_lists` field rather than in a JSON reply.
+TOOL_PROMPT = """A description may use a word list: write {name} and one entry
+is chosen and kept, so the thing reads the same on every look. Use one only for
+a detail that could reasonably differ between two of the same thing -- most
+descriptions need none. list_word_lists shows the lists this world keeps; name
+only those, or one you declare in new_token_lists.
+
+To make the choice a fact rules can read, give a declared list a "group" and
+give each entry the state it sets: {"text": "red", "sets": {"states": ["red"]}}.
+
+A description or an entry may also draw a word from the dictionaries, chosen
+and kept the same way: $hyponym(sword.n.01) is some sort of sword,
+$part_of(ship.n.01) some part of a ship, $found_at(galley) something found in
+a galley, $used_for(cooking) something used for cooking, $kind_of(bread) what
+bread is a sort of. Always give an else for when the dictionary has nothing:
+$found_at(galley, else=a crate).
+"""
+
+
 def vocabulary_block(world_root, for_kinds=()):
     """
     The lists as a prompt block, and how to use and add to them.

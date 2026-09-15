@@ -10,7 +10,7 @@ from world import llm
 
 
 _EXISTENCE_SYSTEM_PROMPT = """You are a game master for a text MUD deciding if an object could plausibly exist in a room.
-Respond with JSON only: {"valid": true|false, "reason": "one sentence"}
+Answer by calling judge_existence.
 Be permissive — if it's plausible for the world and room, say valid.
 Deny only clear impossibilities (e.g. a spaceship in a medieval dungeon).
 
@@ -22,29 +22,16 @@ handle, a table leg, a page of a book) is fine, and so is a part that has
 plainly been cut free — a severed hand, a mounted stag's head, a bone."""
 
 _TAKEABILITY_SYSTEM_PROMPT = """You are a game master deciding if a player can pick up an object in a MUD.
-Respond with JSON only: {"valid": true|false, "reason": "one sentence"}
+Answer by calling judge_takeable.
 Fixed features (walls, doors, floor, built-in or very heavy furniture) cannot be taken.
 Portable items (weapons, tools, books, loose objects) can be taken."""
 
 _ITEM_SYSTEM_PROMPT = """You generate items for a text-based MUD.
-Respond with a single JSON object — no other text:
-{
-  "name": "Item Name (2-4 words, title case)",
-  "description": "2-3 sentence atmospheric description of the item.",
-  "takeable": true|false,
-  "kind": "cup",
-  "kinds": [],
-  "qualifiers": ["blue", "ceramic"],
-  "sense": "",
-  "under": "",
-  "holds": ["in"],
-  "affordances": {"read": true, "burn": true},
-  "states": ["dusty"],
-  "clothing_type": "",
-  "trait_bonuses": {"defence": 2},
-  "bonus_when": "worn",
-  "bonus_while": ""
-}
+Answer by calling make_item.
+
+name is 2-4 words in title case, and description is 2-3 atmospheric sentences
+about the item alone.
+
 kind is the common noun this thing IS, singular and lowercase. Strip the words
 that only describe it: a "Blue Ceramic Cup" is a cup, a "Stained Slate
 Chalkboard" is a chalkboard. It is what the thing has in common with every
@@ -180,25 +167,9 @@ def validate_object_existence(sponsor, room, object_name, on_valid, on_invalid, 
             ),
         },
     ]
-
-    def _fetch():
-        return llm.ask(sponsor, model, messages)
-
-    def _done(content):
-        try:
-            data = _parse_json(content)
-            reason = str(data.get("reason", ""))
-            if data.get("valid"):
-                on_valid(reason)
-            else:
-                on_invalid(reason)
-        except Exception as exc:
-            on_error(str(exc))
-
-    def _fail(failure):
-        on_error(failure.getErrorMessage())
-
-    llm.fetch(_fetch, on_success=_done, on_error=_fail)
+    _judged(sponsor, model, messages, "judge_existence",
+            f"Say whether '{object_name}' could plausibly exist in this room.",
+            on_valid, on_invalid, on_error, room)
 
 
 def validate_object_takeable(sponsor, room, obj, on_valid, on_invalid, on_error):
@@ -229,25 +200,9 @@ def validate_object_takeable(sponsor, room, obj, on_valid, on_invalid, on_error)
             ),
         },
     ]
-
-    def _fetch():
-        return llm.ask(sponsor, model, messages)
-
-    def _done(content):
-        try:
-            data = _parse_json(content)
-            reason = str(data.get("reason", ""))
-            if data.get("valid"):
-                on_valid(reason)
-            else:
-                on_invalid(reason)
-        except Exception as exc:
-            on_error(str(exc))
-
-    def _fail(failure):
-        on_error(failure.getErrorMessage())
-
-    llm.fetch(_fetch, on_success=_done, on_error=_fail)
+    _judged(sponsor, model, messages, "judge_takeable",
+            f"Say whether a player can pick up '{obj_name}'.",
+            on_valid, on_invalid, on_error, room)
 
 
 def generate_item(sponsor, room, object_name, on_success, on_error):
@@ -265,18 +220,13 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
 
     from world import affordances as af, gear, lexicon, verbs
 
-    # Only for a word whose senses disagree about what kind of thing it is --
-    # a chest, a board, a bar. Empty for almost everything, and a sword or a
-    # bottle never costs a token for it.
-    which_sense = lexicon.sense_prompt(object_name)
-    # And for a noun no dictionary knows, what sort of thing it is at all --
-    # asked here because this is the one generator that is told the name in
-    # advance. The contents and clothing passes invent their own names, so they
-    # answer the `under` field in the spec instead.
-    which_anchor = lexicon.anchor_prompt(object_name)
+    from world import kinds, lookups, token_lists
+    from world import toolbox as tb
 
-    from world import kinds, token_lists
-
+    # Which sense, or what an invented noun hangs under, is in the tool's
+    # schema now: an enum of the senses for a word whose senses disagree, and
+    # an open field with the anchors for one no dictionary knows. The prompt
+    # only says that it is being asked.
     world_root = room.db.world_root if room else None
     messages = [
         {"role": "system",
@@ -288,23 +238,23 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
             "role": "user",
             "content": (
                 f"{_world_and_room(room, 'items')}\n\n"
-                f"{gear.prompt_block(world_root)}"
-                f"{token_lists.vocabulary_block(world_root)}"
-                f"{which_sense}"
-                f"{which_anchor}"
+                f"{gear.prompt_block(world_root, registers=False)}"
+                f"{token_lists.TOOL_PROMPT}\n"
+                f"{_sense_note(object_name)}"
+                f"{_state_hints(world_root, [lexicon.head_noun(object_name)])}"
                 f"{_plural_note(object_name)}"
                 f"Generate the item the player is examining: '{object_name}'"
             ),
         },
     ]
+    box = tb.Toolbox([item_tool(object_name)] + lookups.named(*ITEM_LOOKUPS),
+                     tb.ToolContext(world_root=world_root, room=room,
+                                    sponsor=sponsor, job="items"))
 
-    def _fetch():
-        return llm.ask(sponsor, model, messages)
-
-    def _done(content):
+    def _done(data):
         try:
-            data = _parse_json(content)
-            name = str(data.get("name", object_name)).strip()
+            data = dict(data or {})
+            name = str(data.get("name") or object_name).strip()
             description = str(data.get("description", "")).strip()
             takeable = bool(data.get("takeable", True))
 
@@ -337,10 +287,14 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
         except Exception as exc:
             on_error(str(exc))
 
-    def _fail(failure):
-        on_error(failure.getErrorMessage())
-
-    llm.fetch(_fetch, on_success=_done, on_error=_fail)
+    # Rounds out, the last item sent is made as it stands: a thing the player
+    # reached for and got is better than an error, and the registers still
+    # fold whatever near-duplicates it carries.
+    llm.converse(sponsor, model, messages, box, on_done=_done,
+                 on_error=on_error,
+                 on_exhausted=lambda last: _done(last) if last
+                 else on_error("no item came back"),
+                 rounds=ITEM_ROUNDS)
 
 
 # ---------------------------------------------------------------------------
@@ -414,3 +368,258 @@ def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False):
 
     validate_object_existence(sponsor, room, phrase, on_valid, on_invalid,
                               on_error)
+
+
+# ---------------------------------------------------------------------------
+# The finish tools (docs/generator-tool-loops.md §4.2)
+# ---------------------------------------------------------------------------
+
+#: Rounds each may take (§10.3). The judgements are a yes or no a player waits
+#: on; an item is a little more, and a player waits on it too.
+JUDGING_ROUNDS = 4
+ITEM_ROUNDS = 6
+
+#: The lookups offered while making an item: the registers its prompt used to
+#: paste in, and the dictionaries its sense and anchor are checked against.
+ITEM_LOOKUPS = ("list_states", "list_state_groups", "list_traits",
+                "list_word_lists", "show_word_list", "kind_info",
+                "lexicon_senses", "lexicon_define", "commonsense")
+
+
+def _listed(value):
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _judged(sponsor, model, messages, tool_name, question, on_valid,
+            on_invalid, on_error, room):
+    """
+    A yes or no through a finish tool: `judge_existence` or `judge_takeable`.
+
+    Rounds out is an error, as a reply that was not JSON used to be. There is
+    no answer to take as it stands, and guessing one would either conjure a
+    thing nobody allowed or refuse one nobody refused.
+    """
+    from world import toolbox as tb
+
+    world_root = room.db.world_root if room is not None else None
+    box = tb.Toolbox([tb.Tool(
+        tool_name, question,
+        tb.params({"valid": {"type": "boolean",
+                             "description": "The answer"},
+                   "reason": {"type": "string",
+                              "description": "One sentence"}}, ["valid"]),
+        lambda ctx, args, answer: answer(tb.accept(args)), finishes=True)],
+        tb.ToolContext(world_root=world_root, room=room, sponsor=sponsor,
+                       job="validation"))
+
+    def done(data):
+        reason = str(data.get("reason") or "")
+        if data.get("valid"):
+            on_valid(reason)
+        else:
+            on_invalid(reason)
+
+    llm.converse(sponsor, model, messages, box, on_done=done,
+                 on_error=on_error,
+                 on_exhausted=lambda _last: on_error("no answer came back"),
+                 rounds=JUDGING_ROUNDS)
+
+
+def _needs_anchor(word):
+    """Whether the dictionary has never heard of a noun at all."""
+    from world import lexicon
+
+    return (bool(word) and lexicon.available()
+            and not lexicon.ancestors(word)
+            and not lexicon.settled_noun_sense(word)
+            and not lexicon.needs_sense_choice(word))
+
+
+def _sense_note(object_name):
+    """One line saying which of `sense` and `under` is being asked, or ""."""
+    from world import lexicon
+
+    word = lexicon.head_noun(object_name)
+    if word and lexicon.needs_sense_choice(word):
+        return (f"'{word}' means several different kinds of thing; say in "
+                f"sense which one this is, given the room.\n\n")
+    if _needs_anchor(word):
+        return (f"'{word}' is not a word the dictionary knows; say in under "
+                f"what sort of thing it most nearly is.\n\n")
+    return ""
+
+
+def item_tool(object_name):
+    """
+    `make_item`, the finish tool `generate_item` answers with.
+
+    `clothing.spec_schema`, with `sense` closed to the word's senses when they
+    disagree about what sort of thing it is -- what `lexicon.sense_prompt`
+    used to write as a menu -- and `under` described with the anchors when the
+    word is one no dictionary knows, and a field for the word lists its
+    description declares.
+    """
+    from world import clothing, lexicon, token_lists
+    from world import toolbox as tb
+
+    word = lexicon.head_noun(object_name)
+
+    def parameters(ctx):
+        schema = clothing.spec_schema(ctx)
+        properties = dict(schema["properties"])
+        if word and lexicon.needs_sense_choice(word):
+            listed = lexicon.senses(word)
+            if listed:
+                properties["sense"] = {
+                    "type": "string",
+                    "enum": [name for name, _ in listed] + [""],
+                    "description": "Which of these this one is, given the "
+                                   "room: " + "; ".join(
+                                       f"{name} -- {definition}"
+                                       for name, definition in listed)
+                                   + ". Empty if none of them fits."}
+        elif _needs_anchor(word):
+            proposed = lexicon.suggested_anchors(word)
+            properties["under"] = {
+                "type": "string",
+                "description": "The nearest real sense this hangs under. Any "
+                               "dictionary identifier will do; most often one "
+                               "of " + ", ".join(sorted(lexicon.KIND_BUCKETS))
+                               + (". Something outside the dictionary "
+                                  "suggests " + ", ".join(proposed)
+                                  if proposed else "") + "."}
+        properties["new_token_lists"] = {
+            "type": "array", "items": token_lists.schema(ctx),
+            "description": "Word lists the description uses that this world "
+                           "does not keep yet"}
+        return dict(schema, properties=properties, additionalProperties=False)
+
+    def handler(ctx, args, answer):
+        said = item_complaints(args, ctx.world_root)
+        if said:
+            answer(tb.complain("Not made: " + "; ".join(said) + ". Send the "
+                               "item again with that put right.", value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("make_item", f"Make '{object_name}'.", parameters, handler,
+                   finishes=True)
+
+
+def item_complaints(args, world_root):
+    """
+    What is wrong with an item that asking again can put right, as short
+    phrases; [] when nothing is.
+
+    What every other door into the world is already held to: a name that
+    carries a condition, a sense that contradicts what the thing was said to
+    be, an anchor the dictionary does not know, a word list nothing keeps, and
+    a state or list that is another spelling of one this world has.
+    """
+    from world import effects, kinds, lexicon, token_lists, tokens, verbs
+    from world import vocabulary
+
+    said = []
+    name = str(args.get("name") or "").strip()
+    states = [str(state).strip().lower() for state in _listed(args.get("states"))
+              if str(state).strip()]
+
+    wrong = verbs.name_contradicts_states(name, states, world_root)
+    if wrong:
+        one = len(wrong) == 1
+        said.append(f"a name says what a thing is and never its condition, "
+                    f"and {', '.join(wrong)} {'is a condition' if one else 'are conditions'}: "
+                    f"put {'it' if one else 'them'} in states instead")
+
+    sense = str(args.get("sense") or "").strip()
+    if sense:
+        given = args.get("affordances")
+        given = given if isinstance(given, dict) else {}
+        clash = kinds.sense_contradicts(
+            sense, [verb for verb, yes in given.items() if yes],
+            args.get("takeable"))
+        if clash:
+            said.append(f"{sense} is a {clash}, which does not fit what you "
+                        f"said can be done with it; choose the sense you "
+                        f"mean, or leave it empty")
+
+    under = str(args.get("under") or "").strip()
+    if under and lexicon.available() and not lexicon.definition(under):
+        said.append(f"{under} is not a sense the dictionary knows; give a "
+                    f"real identifier, such as device.n.01")
+
+    declared, lists = set(), []
+    for entry in _listed(args.get("new_token_lists")):
+        if not isinstance(entry, dict):
+            said.append("a word list that was not an object")
+            continue
+        list_name = token_lists._slug(entry.get("name"))
+        cleaned, why = token_lists.clean(entry)
+        if cleaned is None or not list_name:
+            said.append(f"the word list {list_name or '(unnamed)'} cannot be "
+                        f"kept: {why or 'it has no name'}")
+            continue
+        declared.add(list_name)
+        lists.append(entry)
+
+    if world_root is not None:
+        description = str(args.get("description") or "")
+        unknown = sorted(
+            slot for slot in token_lists.references(description)
+            if slot not in effects._BUILTIN_SLOTS
+            and slot not in tokens._PROVIDED_SLOTS
+            and slot not in declared
+            and token_lists.get(world_root, slot) is None)
+        if unknown:
+            said.append("the description asks for word lists this world does "
+                        "not keep: " + ", ".join(f"{{{slot}}}" for slot in unknown)
+                        + "; declare them in new_token_lists or write the "
+                          "words out")
+
+    vocab = verbs.vocabulary(world_root)
+    said += [line.rstrip(".") for line in vocabulary.near_duplicates(
+        world_root, new_states=[{"slug": state} for state in states
+                                if state not in vocab],
+        new_token_lists=lists)]
+    return said
+
+
+def _state_hints(world_root, words):
+    """
+    The conditions things of this sort have been in, and the unused words in
+    their groups (§5.2), as a block for the prompt, or "".
+
+    Free: the scan is dictionary work over the registers, and it is only run
+    when there are groups to look in.
+    """
+    if world_root is None:
+        return ""
+    from world import kinds, rulecheck, verbs
+
+    try:
+        of = [kinds.canonical(word) for word in words if word]
+        of = [kind for kind in of if kind]
+        vocab = verbs.vocabulary(world_root)
+        familiar = sorted(set(kinds.states_of(world_root, of)) & set(vocab))
+        groups = {verbs.group_of(world_root, state) for state in familiar} - {""}
+        unused = []
+        if groups:
+            findings = rulecheck.scan(rulecheck.of_world(world_root))
+            unused = [state for state in findings.get("dead_vocabulary") or []
+                      if verbs.group_of(world_root, state) in groups
+                      and state not in familiar]
+    except Exception:
+        from evennia.utils import logger
+
+        logger.log_trace("item_gen: the state hints could not be worked out")
+        return ""
+
+    lines = []
+    if familiar:
+        lines.append("Conditions things of this sort have been in before: "
+                     + ", ".join(familiar) + ".")
+    if unused:
+        lines.append("Already in this world's vocabulary and used by nothing "
+                     "yet: " + ", ".join(unused) + ". Reuse one before "
+                     "coining another.")
+    return "\n".join(lines) + "\n\n" if lines else ""
