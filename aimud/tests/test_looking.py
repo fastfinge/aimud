@@ -16,7 +16,7 @@ ever. Every spelling is asserted here for that reason.
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeSponsor, as_json, immediately, replying
+from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
 from world import actions, conditions as C, rulebooks as R
 from world import gear, standard_rules, traits, verbs
@@ -117,7 +117,7 @@ class Looking(EvenniaTest):
         """One look, with no model permitted to answer."""
         said = []
         with immediately(), replying(
-                as_json({"actor": "should not be asked",
+                finishing(narrate={"actor": "should not be asked",
                          "room": "should not be asked"})) as script:
             attempt_mod.attempt(
                 self.char1, raw, FakeSponsor(),

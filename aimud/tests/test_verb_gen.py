@@ -12,7 +12,8 @@ on `narrate`, which goes through the same door and the same repair.
 from django.test import tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeSponsor, as_json, immediately, replying
+from tests.support import (FakeSponsor, finishing, immediately, replying,
+                           tool_reply)
 from world import llm, verb_gen, verbs
 
 
@@ -82,7 +83,7 @@ class TheDoorIsClosed(EvenniaTest):
 
     def test_a_callback_does_not_fire_on_its_own(self):
         got = []
-        with replying(as_json({"actor": "You hand it over.",
+        with replying(finishing(narrate={"actor": "You hand it over.",
                                "room": "{actor} $pconj(hand) {direct}."})):
             verb_gen.narrate(
                 FakeSponsor(), "hand", {"direct": self.obj1}, self.char1,
@@ -119,7 +120,7 @@ class NarratingATemplate(EvenniaTest):
 
     def test_the_prompt_lists_every_placeholder(self):
         _got, _err, recorder = self.narrate(
-            as_json({"actor": "You hand it over.",
+            finishing(narrate={"actor": "You hand it over.",
                      "room": "{actor} $pconj(hand) {target} {direct}."}))
         sent = recorder.sent()
         self.assertIn("{direct}", sent)
@@ -128,7 +129,7 @@ class NarratingATemplate(EvenniaTest):
 
     def test_the_prompt_carries_the_objects_and_what_was_typed(self):
         _got, _err, recorder = self.narrate(
-            as_json({"actor": "You hand it over.",
+            finishing(narrate={"actor": "You hand it over.",
                      "room": "{actor} $pconj(hand) {target} {direct}."}))
         self.assertEqual(recorder.count, 1)
         sent = recorder.sent()
@@ -141,7 +142,7 @@ class NarratingATemplate(EvenniaTest):
         would be shown to everybody for ever.
         """
         got, err, _ = self.narrate(
-            as_json({"actor": "You hand it over.",
+            finishing(narrate={"actor": "You hand it over.",
                      "room": "{actor} $pconj(hand) {target} {direct}."}))
         self.assertIsNone(err)
         self.assertEqual(got[1], "{actor} $pconj(hand) {target} {direct}.")
@@ -151,7 +152,7 @@ class NarratingATemplate(EvenniaTest):
         from world import events, pronouns
 
         got, _err, _ = self.narrate(
-            as_json({"actor": "You hand it over.",
+            finishing(narrate={"actor": "You hand it over.",
                      "room": "{actor} $pconj(hand) {target} {direct}."}))
         pronouns.give(self.char1, "they", self.root)
         event = events.Event(actor=self.char1, room=self.root, verb="hand",
@@ -173,7 +174,7 @@ class NarratingATemplate(EvenniaTest):
         from world import events
 
         got, err, _ = self.narrate(
-            as_json({"actor": "You hand it over.",
+            finishing(narrate={"actor": "You hand it over.",
                      "room": "{actor} hands {target} the {direct}."}))
         self.assertIsNone(err)
         self.assertEqual(events.repair(got[1]),
@@ -181,9 +182,11 @@ class NarratingATemplate(EvenniaTest):
 
     def test_json_a_model_nearly_wrote_is_repaired_rather_than_lost(self):
         """model_json's whole purpose, never covered because it needed a model."""
-        got, err, _ = self.narrate(
-            '```json\n{"actor": "You hand it over.", // a note\n'
-            ' "room": "{actor} $pconj(hand) {target} {direct}.",}\n```')
+        got, err, _ = self.narrate(tool_reply({
+            "id": "call_nearly", "type": "function",
+            "function": {"name": "narrate", "arguments": (
+                '{"actor": "You hand it over.", // a note\n'
+                ' "room": "{actor} $pconj(hand) {target} {direct}.",}')}}))
         self.assertIsNone(err)
         self.assertEqual(got[0], "You hand it over.")
 

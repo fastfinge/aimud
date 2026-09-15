@@ -14,7 +14,8 @@ instead, and a wrong `instead` silently changes what a verb means.
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeSponsor, as_json, immediately, replying
+from tests.support import (FakeSponsor, as_json, finishing, immediately,
+                           replying)
 from world import attempt as attempt_mod
 from world import actions, counters, kinds, rulebooks as R
 from world import standard_rules, suggest, verbs
@@ -469,7 +470,7 @@ class TheWholeRoad(EvenniaTest):
     def try_it(self, raw):
         said = []
         with immediately(), replying(
-                as_json({"actor": "Done.", "room": "{actor} does it."})):
+                finishing(narrate={"actor": "Done.", "room": "{actor} does it."})):
             attempt_mod.attempt(
                 self.char1, raw, FakeSponsor(),
                 on_message=lambda a, r=None: said.append(a or ""))

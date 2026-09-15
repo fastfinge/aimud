@@ -1095,6 +1095,51 @@ the `no_rule` wants from §5.1, and `adopt`.
 declaration, rules, admission and narration on finish tools, and a rule
 refused in round 1 and corrected in round 2 is kept rather than dropped.
 
+*As built:*
+
+* **Four finish tools:**
+  * `declare_action` (6 rounds): the roles, access and gates are enums. The
+    sense is an enum of the dictionary's senses when there are two or more,
+    and `verb_sense_prompt`'s menu has left the prompt. Rounds out falls back
+    to `observe`, as a failed call did.
+  * `file_rules` (8): the scope is an enum of `menu()`'s tokens, with
+    `effects.schema`, `conditions.schema` and the declaration schemas nested.
+  * `admit` (4): rounds out is an error, as unreadable JSON was.
+  * `narrate` (6): rounds out takes the last narration as it stands.
+* **`file_rules` runs `validate` and sends back what it would have dropped,**
+  together with `vocabulary.near_duplicates` for its new states and traits,
+  unknown `adopt` ids, and an answer that files nothing without saying why.
+  When the rounds run out, the last answer is taken: what is valid in it is
+  kept, and near-duplicates fold as the registers always folded them. A model
+  that never called `file_rules` at all now counts towards `note_fruitless`,
+  where unreadable JSON used to be an error that counted nothing; a network
+  failure still counts nothing.
+* **The prompt keeps the menu, what is already decided, and the objects.**
+  The state and trait registers are behind `LOOKUPS` (states, groups,
+  traits, `verb_info`, rules, `world_faults`, `kind_info`, `commonsense`,
+  `find_rooms`). They are replaced by the states things of these sorts have
+  been in, and by `rule_gen.hints`: `rulecheck.relevant` over one scan, this
+  verb's waiting proposals, and `want_lines`.
+* **`want_lines` shows a `no_rule` want only when its object is bound here,**
+  and a `missing_thing` want only when ConceptNet ties the thing to a bound
+  kind: `PartOf` or `AtLocation` read forward from the thing, or `HasA`
+  from the kind. At most three.
+* **`adopt` is offered only when this verb has proposals waiting,** since an
+  enum cannot be empty. Adopting goes through `suggest.accept`, and an
+  adopted rule counts as a rule for `note_fruitless`.
+* **Narration complaints stop short of the plan.** A name written out, a
+  placeholder that stands for nobody, and an unknown effect type are sent
+  back. An article before a placeholder and a conjugated actor verb are not,
+  because `events.repair` already mends them for nothing on the way in, and a
+  round spent on them is a round a player waits through.
+* **Tests answer by tool name.** `tests.support.finishing(narrate={...},
+  file_rules={...})` answers whichever finish tool a call offers, so a script
+  no longer has to predict which of the four questions an attempt asks.
+  Eleven test files moved to it.
+* **Not converted yet:** the modify naming rule inside `file_rules`
+  (§6.3). A literal `new_name` in a `modify_object` effect is still checked
+  only when the effect runs.
+
 ### Phase 6: items and rooms
 
 `validate_object_existence` / `_takeable`, `generate_item`, `populate_room`,

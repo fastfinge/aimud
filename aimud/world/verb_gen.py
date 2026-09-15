@@ -17,6 +17,7 @@ specific is stored on the specific thing, and neither is stored on the room.
 """
 
 import json
+import re
 
 from evennia.utils.dbserialize import deserialize
 
@@ -25,11 +26,11 @@ from world import llm
 
 _NARRATION_SYSTEM = """You narrate the result of an action in a text MUD, and say what it changed.
 
-Respond with a single JSON object — no other text — matching:
-{"actor": "what the acting character experiences, 1-3 sentences",
- "room": "one full sentence others in the room see, beginning {actor} $pconj(verb)",
- "effects": [ ... ],
- "difficulty": 0}
+Answer by calling narrate, with:
+  actor       what the acting character experiences, 1-3 sentences
+  room        one full sentence others in the room see, beginning {actor} $pconj(verb)
+  effects     only where this thing differs; see below
+  difficulty  only where this thing differs; see below
 
 You are writing about THESE things, not about their sort. The verb's rule
 already says what the action means in general; what you add is what it does
@@ -260,8 +261,7 @@ def state_block(world_root, bound=None):
 
 _ADMISSION_SYSTEM = """You decide whether a sort of thing can be acted on at all.
 
-Respond with a single JSON object — no other text:
-{"allowed": true|false, "reason": "a few words"}
+Answer by calling admit.
 
 You are told what a verb means in this world and asked about a KIND of thing,
 not a particular one. So the question is never whether this bottle happens to
@@ -339,15 +339,27 @@ def ask_admission(sponsor, world_root, verb, rule, kind, on_answer, on_error):
         },
     ]
 
-    def _done(content):
-        try:
-            data = _parse_json_object(content)
-            on_answer(bool(data.get("allowed")), str(data.get("reason", "")))
-        except Exception as exc:
-            on_error(str(exc))
+    from world import toolbox as tb
 
-    llm.fetch(lambda: llm.ask(sponsor, model, messages),
-              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
+    box = tb.Toolbox([tb.Tool(
+        "admit", f"Say whether {asked} can be {verb}ed at all.",
+        tb.params({"allowed": {"type": "boolean",
+                               "description": f"Whether that sort of thing "
+                                              f"can be {verb}ed"},
+                   "reason": {"type": "string", "description": "A few words"}},
+                  ["allowed"]),
+        lambda ctx, args, answer: answer(tb.accept(args)), finishes=True)],
+        tb.ToolContext(world_root=world_root, sponsor=sponsor, job="commands"))
+
+    def _done(data):
+        on_answer(bool(data.get("allowed")), str(data.get("reason") or ""))
+
+    llm.converse(sponsor, model, messages, box, on_done=_done,
+                 on_error=on_error,
+                 on_exhausted=lambda _last: on_error(
+                     f"no answer came back about whether {asked} can be "
+                     f"{verb}ed"),
+                 rounds=ADMISSION_ROUNDS)
 
 
 def narrate(sponsor, verb, bound, actor, raw, on_success, on_error, result=None):
@@ -383,12 +395,23 @@ def narrate(sponsor, verb, bound, actor, raw, on_success, on_error, result=None)
         },
     ]
 
-    def _done(content):
+    from world import toolbox as tb
+
+    room = getattr(actor, "location", None)
+    world_root = getattr(room.db, "world_root", None) if room is not None \
+        else None
+    box = tb.Toolbox([narration_tool(bound, actor)],
+                     tb.ToolContext(world_root=world_root, room=room,
+                                    actor=actor, bound=bound, sponsor=sponsor,
+                                    job="commands"))
+
+    def _done(data):
+        data = data if isinstance(data, dict) else {}
         try:
-            data = _parse_json_object(content)
-            actor_text = str(data.get("actor", "")).strip()
+            actor_text = str(data.get("actor") or "").strip()
             if not actor_text:
-                raise ValueError("empty narration")
+                raise ValueError("the narrator said nothing about what "
+                                 "happened")
             # What this thing in particular does, riding the call that was
             # being made anyway. A narration is already written per object and
             # per outcome; asking the same reply what it changed here is not a
@@ -403,10 +426,112 @@ def narrate(sponsor, verb, bound, actor, raw, on_success, on_error, result=None)
                 difficulty = 0
             if difficulty > 0:
                 specifics["difficulty"] = difficulty
-            on_success(actor_text, str(data.get("room", "")).strip(),
-                       specifics)
+            room_text = str(data.get("room") or "").strip()
         except Exception as exc:
             on_error(str(exc))
+            return
+        on_success(actor_text, room_text, specifics)
 
-    llm.fetch(llm.ask, sponsor, model, messages,
-              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
+    # Rounds out, the last narration is taken as it stands. A narration a
+    # little wrong is better than an action that happened and says nothing,
+    # and `events.repair` still runs on it on the way in.
+    llm.converse(sponsor, model, messages, box, on_done=_done,
+                 on_error=on_error, on_exhausted=_done,
+                 rounds=NARRATION_ROUNDS)
+
+
+# ---------------------------------------------------------------------------
+# The finish tools (docs/generator-tool-loops.md §4.2)
+# ---------------------------------------------------------------------------
+
+#: Rounds each may take (§10.3). Admission is a yes or no a player waits on.
+ADMISSION_ROUNDS = 4
+NARRATION_ROUNDS = 6
+
+#: A placeholder in a room line: `{direct}`, or `{actor's}` for a possessive.
+_SLOT = re.compile(r"\{(\w+?)(?:'s)?\}")
+
+
+def narration_tool(bound, actor):
+    """`narrate`, the finish tool a narration answers with."""
+    from world import effects as effects_mod
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        return tb.params({
+            "actor": {"type": "string",
+                      "description": "What the acting character experiences, "
+                                     "1-3 sentences, second person"},
+            "room": {"type": "string",
+                     "description": "One sentence for everyone else, as a "
+                                    "template: " + _placeholders(bound)},
+            "effects": {"type": "array", "items": effects_mod.schema(ctx),
+                        "description": "Only where this thing differs from "
+                                       "the rule; the whole list, with your "
+                                       "amounts"},
+            "difficulty": {"type": "integer", "minimum": 0,
+                           "description": "Only for a contested verb: the "
+                                          "number to beat for this thing; 0 "
+                                          "keeps the rule's"},
+        }, ["actor"])
+
+    def handler(ctx, args, answer):
+        said = narration_complaints(args, bound, actor)
+        if said:
+            answer(tb.complain("Not taken: " + "; ".join(said) + ". Send the "
+                               "narration again with that put right.",
+                               value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("narrate", "Say what happened, and what it changed here.",
+                   parameters, handler, finishes=True)
+
+
+def _placeholders(bound):
+    roles = ["{actor}"] + [f"{{{role}}}" for role, obj in
+                           sorted((bound or {}).items()) if obj is not None]
+    return ", ".join(roles)
+
+
+def narration_complaints(args, bound, actor):
+    """
+    What is wrong with a narration that can be put right by asking, as short
+    phrases; [] when nothing is.
+
+    Only what `events.repair` cannot mend on its own. An article before a
+    placeholder and a conjugated actor verb are repaired on the way in for
+    nothing, so they are not worth a round a player waits for. A name written
+    out, a placeholder for nobody, and an effect nothing can apply are not
+    repairable: a name is shown for ever to people who know that person by
+    another, and an unknown placeholder renders as itself.
+    """
+    from world import effects as effects_mod
+
+    said = []
+    room = str(args.get("room") or "")
+    if room:
+        allowed = {"actor"} | {role for role, obj in (bound or {}).items()
+                               if obj is not None}
+        strange = sorted({name for name in _SLOT.findall(room)
+                          if name not in allowed})
+        if strange:
+            said.append("the room line uses "
+                        + ", ".join(f"{{{name}}}" for name in strange)
+                        + ", which stand for nobody here; the placeholders "
+                          "are " + _placeholders(bound))
+        named = []
+        for obj in [actor, *(bound or {}).values()]:
+            key = str(getattr(obj, "key", "") or "")
+            if key and re.search(rf"(?<!\w){re.escape(key)}(?!\w)", room,
+                                 re.IGNORECASE):
+                named.append(key)
+        if named:
+            said.append("the room line names " + ", ".join(named)
+                        + "; write the placeholder instead")
+    for effect in args.get("effects") or []:
+        kind = str(effect.get("type") or "") if isinstance(effect, dict) \
+            else ""
+        if kind not in effects_mod.VOCABULARY:
+            said.append(f"there is no such effect as {kind!r}")
+    return said

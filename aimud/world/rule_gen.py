@@ -363,14 +363,8 @@ def _clean_effects(given):
 
 _SYSTEM = """You add one or two rules to a text MUD that already has some.
 
-Respond with a single JSON object — no other text:
-{"rules": [{"phase": "check", "scope": "<one of the scopes offered>",
-            "about": "direct", "name": "one short sentence",
-            "conditions": [...], "effects": [...], "contest": null}],
- "new_states": [{"slug": "powered", "means": "running under its own power",
-                 "group": "power"}],
- "new_traits": [],
- "cannot_say": ""}
+Answer by calling file_rules. The states, traits and rules this world already
+has are not listed here: look them up with the tools when you need them.
 
 A rule is one small fact about when something works, what it does, or what
 follows. Write the fewest that make this verb behave properly here. Two or
@@ -438,8 +432,8 @@ bread, sitting down. Most verbs have none, and leaving it out entirely is the
 ordinary answer. But a world in which nothing whatever can be failed at is not
 a game, so when a verb genuinely is one, say so.
 
-**new_states** declares any state slug your rules used that the vocabulary
-below does not already have: its meaning, and its "group" if it belongs to
+**new_states** declares any state slug your rules used that this world does
+not already have (list_states shows them): its meaning, and its "group" if it belongs to
 one. A group is a set of states only one of which can be true at a time, so
 powering a thing on takes it out of whatever "power" state it was in without
 any rule saying so. Reuse an existing state whenever one fits -- a second word
@@ -447,6 +441,10 @@ for a condition the world already has is two facts that cannot see each other.
 
 **new_traits** does the same for a trait a condition or effect named, with
 "slug", "name", "means" and "trait_type" ("counter" or "gauge").
+
+**adopt**, when it is offered, takes the ids of rules this world has already
+worked out for this verb and is waiting to put into force. Adopt one only if
+this verb genuinely does that; it is better than writing the same rule again.
 
 If this verb needs something you cannot say with the conditions and effects
 above, leave "rules" empty and put one sentence in "cannot_say" describing
@@ -525,7 +523,7 @@ did name a thing, and powering a datapad would power the ship instead.
 """
 
 
-def prompt(world_root, action, bound, actor, offered):
+def prompt(world_root, action, bound, actor, offered, hints=()):
     """Everything the model is shown, assembled."""
     from world import actions, conditions, lore
 
@@ -557,15 +555,21 @@ def prompt(world_root, action, bound, actor, offered):
 
         lines.append("\n" + _describe_objects(bound, actor))
 
-    # The vocabulary a rule should be choosing from rather than adding to.
-    # Shown in full for the same reason the old generator showed it: a state
-    # that cannot be seen gets coined again under another name, and then a
-    # thing is powered and inactive at once with neither word knowing the
-    # other exists.
-    from world import traits, verb_gen
+    # Not the registers, which are behind lookup tools now and checked for
+    # near-duplicates when an answer comes back, but the few states worth
+    # putting in front of the rest: what things of these sorts have been in.
+    from world import verb_gen, verbs
 
-    lines.append("\n" + verb_gen.state_block(world_root, bound)
-                 + traits.vocabulary_block(world_root))
+    familiar = sorted(verb_gen._states_of_kinds(world_root, bound)
+                      & set(verbs.vocabulary(world_root)))
+    if familiar:
+        lines.append("\nConditions things of these sorts have been in before, "
+                     "to reuse if one fits: " + ", ".join(familiar)
+                     + ". list_states has the rest.")
+    if hints:
+        lines.append("\nWhat this world is missing, where it bears on this. "
+                     "Act on a line only if this verb genuinely does that:")
+        lines += [f"  - {hint}" for hint in hints]
     lines.append("\n" + lore.description(world_root, actor))
     return "\n".join(lines)
 
@@ -583,25 +587,33 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
     except ValueError as err:
         on_error(str(err))
         return
+    from world import lookups, suggest
+    from world import toolbox as tb
+
     model = sponsor.model_for("commands")
     offered = menu(world_root, bound, actor)
+    proposals = [rule for rule in suggest.queue(world_root)
+                 if rule.get("action") == action] if world_root else []
 
     system = _SYSTEM.replace("{conditions}", _CONDITIONS) \
                     .replace("{effects}", _EFFECTS)
     messages = [
         {"role": "system", "content": system},
-        {"role": "user", "content": prompt(world_root, action, bound, actor,
-                                           offered)},
+        {"role": "user", "content": prompt(
+            world_root, action, bound, actor, offered,
+            hints(world_root, action, bound, proposals))},
     ]
+    box = tb.Toolbox(
+        [rules_tool(action, offered, proposals)] + lookups.named(*LOOKUPS),
+        tb.ToolContext(world_root=world_root,
+                       room=getattr(actor, "location", None), actor=actor,
+                       bound=bound, sponsor=sponsor, job="commands"))
 
-    def answered(content):
-        from world.model_json import parse_object
-
-        try:
-            reply = parse_object(content)
-        except Exception as exc:
-            on_error(str(exc))
-            return
+    def answered(reply):
+        # Accepted, or the last thing sent when the rounds ran out: what is
+        # valid in it is kept either way, and a model that never answered at
+        # all has answered with nothing, which is counted.
+        reply = reply if isinstance(reply, dict) else {}
         cannot = str(reply.get("cannot_say") or "").strip()
         if cannot:
             logger.log_info(f"rule_gen: {action} cannot_say -- {cannot}")
@@ -609,16 +621,18 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
         for complaint in complaints:
             logger.log_info(f"rule_gen: {action} dropped -- {complaint}")
         _register_states(world_root, reply)
-        if not kept:
+        adopted = _adopt(world_root, reply, proposals)
+        if not kept and not adopted:
             # Asked and answered with nothing usable -- a `cannot_say`, or rules
             # that every one of them failed validation. Counted, so that the next
             # attempt at this verb is not another call to the same effect.
             note_fruitless(world_root, action)
-        on_success([rulebooks.add(world_root, rule) for rule in kept])
+        on_success([rulebooks.add(world_root, rule) for rule in kept]
+                   + adopted)
 
-    llm.fetch(llm.ask, sponsor, model, messages,
-              on_success=answered,
-              on_error=lambda failure: on_error(failure.getErrorMessage()))
+    llm.converse(sponsor, model, messages, box, on_done=answered,
+                 on_error=on_error, on_exhausted=answered,
+                 rounds=LEARN_ROUNDS)
 
 
 def fruitless(world_root, action):
@@ -749,3 +763,246 @@ def lookup_tools():
                   ["verb"]),
         tb.answering(informing), doing="looking up a verb", looks=True,
         available=lambda ctx: ctx.world_root is not None)]
+
+
+# ---------------------------------------------------------------------------
+# The finish tool, and what the prompt is told (docs §4.2, §5.1, §5.2)
+# ---------------------------------------------------------------------------
+
+#: Rounds `learn` may take (§10.3).
+LEARN_ROUNDS = 8
+
+#: The lookups offered while writing rules: the registers the prompt used to
+#: paste in, the rules already filed, and the rooms an effect may name.
+LOOKUPS = ("list_states", "show_state", "list_state_groups", "list_traits",
+           "show_trait", "verb_info", "list_rules", "show_rule",
+           "world_faults", "kind_info", "commonsense", "find_rooms")
+
+#: The most wants shown as hints in one call (§5.1).
+MOST_WANTS = 3
+
+
+def rules_tool(action, offered, proposals=()):
+    """
+    `file_rules`, the finish tool `learn` answers with.
+
+    The scope is an enum of the menu's tokens, which is ground rule 6 moved out
+    of the prose and into the schema. `adopt` is offered only when this verb
+    has proposals waiting, since an enum of nothing cannot be sent.
+
+    Its handler is `validate`, and what `validate` would have dropped and
+    logged is sent back instead, with any near-duplicate words, so a rule
+    refused in one round can be put right in the next.
+    """
+    from world import actions, conditions, traits, verbs
+    from world import effects as effects_mod
+    from world import toolbox as tb
+
+    tokens = [token for token, _said, _scope in offered]
+    ids = [str(rule.get("id")) for rule in proposals or () if rule.get("id")]
+
+    def parameters(ctx):
+        known = (sorted(traits.vocabulary(ctx.world_root))
+                 if ctx.world_root is not None else [])
+        rule = {
+            "type": "object",
+            "properties": {
+                "phase": {"type": "string", "enum": list(PHASES),
+                          "description": "check, carry_out, instead or after"},
+                "scope": {"type": "string", "enum": tokens,
+                          "description": "Where it is filed: one of the "
+                                         "scopes offered"},
+                "about": {"type": "string",
+                          "enum": list(actions.ROLES) + ["enclosure"],
+                          "description": "Which participant the scope is "
+                                         "matched against"},
+                "name": {"type": "string",
+                         "description": "What must be so, in one short "
+                                        "sentence"},
+                "conditions": {"type": "array",
+                               "items": conditions.schema(ctx),
+                               "description": "A check rule's requirements"},
+                "effects": {"type": "array", "items": effects_mod.schema(ctx),
+                            "description": "What a carry_out, instead or "
+                                           "after rule does"},
+                "contest": {
+                    "type": "object",
+                    "properties": {
+                        "trait": tb.choice(known, "The actor's figure that "
+                                                  "decides it",
+                                           ask="list_traits"),
+                        "against": {"type": "object", "properties": {
+                            "role": {"type": "string",
+                                     "enum": list(actions.ROLES)},
+                            "trait": {"type": "string"}}},
+                        "difficulty": {"type": "number"},
+                    },
+                    "description": "Only for a verb a capable person could "
+                                   "fail at"},
+            },
+            "required": ["phase", "scope"],
+        }
+        properties = {
+            "rules": {"type": "array", "items": rule, "maxItems": 4,
+                      "description": "The fewest rules that make it behave; "
+                                     "empty with cannot_say if none can"},
+            "new_states": {"type": "array",
+                           "items": verbs.state_declaration_schema(ctx),
+                           "description": "States the rules use that this "
+                                          "world does not have"},
+            "new_traits": {"type": "array",
+                           "items": traits.declaration_schema(ctx),
+                           "description": "Traits the rules use that this "
+                                          "world does not have"},
+            "cannot_say": {"type": "string",
+                           "description": "What the conditions and effects "
+                                          "could not say, if anything"},
+        }
+        if ids:
+            properties["adopt"] = {
+                "type": "array", "items": {"type": "string", "enum": ids},
+                "description": "Rules already worked out for this verb, to "
+                               "put into force"}
+        return tb.params(properties, ["rules"])
+
+    def handler(ctx, args, answer):
+        from world import vocabulary
+
+        kept, said = validate(args, offered, action, ctx.world_root)
+        said = list(said)
+        adopting = _listed(args.get("adopt"))
+        stray = [str(rule_id) for rule_id in adopting
+                 if str(rule_id) not in ids]
+        if stray:
+            said.append("there is no waiting rule called " + ", ".join(stray))
+        said += [line.rstrip(".") for line in vocabulary.near_duplicates(
+            ctx.world_root, new_states=_listed(args.get("new_states")),
+            new_traits=_listed(args.get("new_traits")))]
+        if (not said and not kept and not adopting
+                and not str(args.get("cannot_say") or "").strip()):
+            said.append("that files nothing: write a rule, adopt one, or say "
+                        "in cannot_say what is missing")
+        if said:
+            answer(tb.complain("Not filed: " + "; ".join(said) + ". Send the "
+                               "whole answer again with that put right, or "
+                               "leave that part out.", value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("file_rules", f"File the rules for {action}.", parameters,
+                   handler, finishes=True)
+
+
+def _listed(value):
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _adopt(world_root, reply, proposals):
+    """The waiting proposals a reply adopted, put into force."""
+    from world import suggest
+
+    ids = {str(rule.get("id")) for rule in proposals or ()}
+    taken = []
+    for rule_id in _listed(reply.get("adopt")):
+        if str(rule_id) not in ids:
+            continue
+        rule = suggest.accept(world_root, str(rule_id))
+        if rule is not None:
+            logger.log_info(f"rule_gen: adopted {rule_id}")
+            taken.append(rule)
+    return taken
+
+
+def hints(world_root, action, bound, proposals=()):
+    """
+    What this world's faults and its people's wants say about this attempt,
+    as at most `rulecheck.MOST_HINTS` lines (§5.2). Free: no model.
+
+    Never raises. A hint is a kindness, and a world whose registers upset the
+    scan should still get its rule written.
+    """
+    if world_root is None:
+        return []
+    from world import rulecheck
+
+    try:
+        registers = rulecheck.of_world(world_root)
+        return rulecheck.relevant(
+            rulecheck.scan(registers), registers, action,
+            near=rulecheck.states_near(world_root, bound),
+            proposals=proposals, wants=want_lines(world_root, action, bound))
+    except Exception:
+        logger.log_trace("rule_gen: the hints could not be worked out")
+        return []
+
+
+def want_lines(world_root, action, bound):
+    """
+    Wants nothing in this world can satisfy that bear on the things bound here
+    (§5.1), worded for the prompt.
+
+    A `no_rule` want about a bound thing, always. A `missing_thing` want only
+    when ConceptNet relates the missing thing to a bound thing's kind -- part
+    of it, found at it, had by it -- so breaking rock may yield the ore, and
+    sniffing bread may not. Without a corpus, only the first.
+    """
+    from world import commonsense, goals, kinds, lexicon, planner
+
+    things = [obj for obj in (bound or {}).values() if obj is not None]
+    if not things:
+        return []
+    names = [str(obj.key or "").lower() for obj in things]
+    words = sorted({lexicon.word_of(kind) or kind
+                    for obj in things for kind in kinds.of(obj)})
+    corpus = commonsense.available()
+
+    lines = []
+    for want in goals.blocked_wants(world_root):
+        if len(lines) >= MOST_WANTS:
+            break
+        what = str(want.get("what") or "").strip()
+        condition = want.get("condition") or {}
+        who = getattr(want.get("who"), "key", "somebody")
+        if (want.get("reason") == planner.NO_RULE and condition.get("object")
+                and any(what.lower() in name for name in names)):
+            lines.append(f"{who} wants the {what}{_wanted_state(condition)}, "
+                         f"and nothing this world knows how to do brings that "
+                         f"about.")
+        elif want.get("reason") == planner.MISSING_THING and corpus and what:
+            related = _related(what, words)
+            if related:
+                lines.append(f"{who} wants something {want.get('words')}, and "
+                             f"nothing like it exists anywhere. It goes with "
+                             f"a {related}: if {action} could genuinely yield "
+                             f"one, a rule may create it, named that way.")
+    return lines
+
+
+def _wanted_state(condition):
+    said = []
+    if condition.get("is"):
+        said.append(" to be " + ", ".join(condition["is"]))
+    if condition.get("lacks"):
+        said.append(" not to be " + ", ".join(condition["lacks"]))
+    if condition.get("type") == "gone":
+        said.append(" gone")
+    return " and".join(said)
+
+
+def _related(what, words):
+    """The kind word ConceptNet ties a wanted thing to, or ""."""
+    from world import commonsense
+
+    def spelled(items):
+        return {str(item).lower().replace("_", " ") for item in items}
+
+    wanted = what.lower()
+    for relation in ("PartOf", "AtLocation"):
+        ends = spelled(commonsense.forward(wanted, relation))
+        for word in words:
+            if word.lower().replace("_", " ") in ends:
+                return word
+    for word in words:
+        if wanted in spelled(commonsense.forward(word, "HasA")):
+            return word
+    return ""

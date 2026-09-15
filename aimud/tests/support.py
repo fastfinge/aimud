@@ -79,6 +79,8 @@ def replying(*answers, tools=None):
                   tool_choice=None):
         offered.append((tools, tool_choice))
         answer = reply_for(messages)
+        if isinstance(answer, Finishing):
+            return answer.reply(tools)
         if isinstance(answer, dict):
             return answer
         return {"choices": [{"message": {"content": answer}}]}
@@ -86,6 +88,8 @@ def replying(*answers, tools=None):
     def fake_ask(sponsor, model, messages, timeout=llm.TIMEOUT):
         offered.append((None, None))
         answer = reply_for(messages)
+        if isinstance(answer, Finishing):
+            return ""
         if isinstance(answer, dict):
             return llm.content(answer)
         return answer
@@ -154,6 +158,37 @@ def tool_reply(*calls, content=None):
     if calls:
         message["tool_calls"] = list(calls)
     return {"choices": [{"message": message}]}
+
+
+class Finishing:
+    """
+    A reply that answers whichever finish tool the call it is sent to offers.
+
+    What a script needs once every generator is a tool loop. An attempt asks
+    up to four questions -- what a verb takes, what it does, whether a sort of
+    thing admits it, what happened -- and which of them are asked depends on
+    what the world already knows. A script of replies in order has to predict
+    that; this does not, so a test writes each answer once, by tool name, and
+    only the questions actually asked are answered.
+
+    A call offering none of the named tools gets a reply saying nothing, which
+    a loop treats as a model that will not answer.
+    """
+
+    def __init__(self, answers):
+        self.answers = dict(answers)
+
+    def reply(self, tools):
+        for schema in tools or ():
+            name = ((schema or {}).get("function") or {}).get("name")
+            if name in self.answers:
+                return tool_reply(tool_call(name, **self.answers[name]))
+        return {"choices": [{"message": {"content": ""}}]}
+
+
+def finishing(**answers):
+    """`Finishing`, written as `finishing(narrate={...}, admit={...})`."""
+    return Finishing(answers)
 
 
 def clock():
