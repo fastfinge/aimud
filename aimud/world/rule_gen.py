@@ -34,24 +34,29 @@ from evennia.utils import logger
 
 from world import effects, llm, rulebooks
 
-#: How far up the taxonomy a rule may be filed, by depth from the root. A
-#: scope is too general exactly when it is too near the top, which makes the
-#: taxonomy its own measure and saves anybody writing a list.
+#: How near the root a scope has to be before it can be too general, by depth,
+#: and how broad it has to be there -- how many sorts of thing sit beneath it.
+#: A scope is too general when it is both. The taxonomy is its own measure
+#: either way, and nobody has to write a list.
 #:
-#: Set by looking at where the useful scopes actually sit:
+#:                             depth   beneath
+#:     physical_entity.n.01       2    39,555   everything
+#:     object.n.01                3    29,580   everything
+#:     artifact.n.01              5    10,504   everything anybody made
+#:     instrumentality.n.03       6     5,494   most objects in the game
+#:     structure.n.01             6     1,405   a real sort of thing
+#:     device.n.01                7     2,760   a real sort of thing
+#:     container.n.01             7       744   a real sort of thing
+#:     ledger.n.01                6         4   one sort of thing
 #:
-#:     physical_entity.n.01     2   everything
-#:     object.n.01              3   everything
-#:     artifact.n.01            5   everything anybody made
-#:     instrumentality.n.03     6   most objects in the game
-#:     device.n.01              7   a real sort of thing
-#:     container.n.01           7   a real sort of thing
-#:     publication.n.01         9
-#:     spacecraft.n.01         12
-#:
-#: Six is the line: it refuses the four that would put one rule over the whole
-#: world, and offers the ones a rule is genuinely worth having about.
+#: Depth alone was the measure, and it refused things that are only shallow
+#: because their branch of the taxonomy is. Made things run deep; documents,
+#: events and measures do not, so a ledger sits at six like instrumentality
+#: does, with four sorts of ledger beneath it rather than five thousand sorts
+#: of instrument. The baseline soak for the tool-loop plan found `drink`
+#: learning no rule because its teacup was "too near the top of the taxonomy".
 SCOPE_CEILING = 6
+SCOPE_BREADTH = 2000
 
 #: Where a world remembers the verbs it asked about and got nothing for.
 #:
@@ -137,11 +142,10 @@ def _worth_offering(world_root, kind):
     """
     The ancestors of a kind that are worth filing a rule against.
 
-    Cut off above `SCOPE_CEILING`, because a rule filed at
+    Cut off wherever `too_general` says so, because a rule filed at
     `physical_entity.n.01` is a rule about everything, and a model offered it
-    will sometimes take it. The ceiling is the taxonomy's own depth, which is
-    the natural measure: a scope is too general exactly when it is too near
-    the root.
+    will sometimes take it. The same test the reply is checked against, so
+    nothing is offered that would then be refused.
     """
     from world import kinds, lexicon
 
@@ -150,21 +154,26 @@ def _worth_offering(world_root, kind):
                          key=lambda name: -len(lexicon.ancestors(name))):
         if parent == kind:
             continue
-        if len(lexicon.ancestors(parent)) <= SCOPE_CEILING:
+        if too_general({rulebooks.KIND: parent}):
             continue
         out.append(parent)
     return out[:3]
 
 
 def too_general(scope, world_root=None):
-    """Whether a scope is nearer the root of the taxonomy than we allow."""
+    """
+    Whether a scope is near enough the root, and broad enough there, to be a
+    rule about everything. See `SCOPE_CEILING`.
+    """
     from world import lexicon
 
     kind = (scope or {}).get(rulebooks.KIND)
     if not kind:
         return False
     depth = len(lexicon.ancestors(kind))
-    return bool(depth) and depth <= SCOPE_CEILING
+    if not depth or depth > SCOPE_CEILING:
+        return False
+    return lexicon.has_at_least_below(kind, SCOPE_BREADTH)
 
 
 # ---------------------------------------------------------------------------

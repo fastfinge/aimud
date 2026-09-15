@@ -42,6 +42,7 @@ the world slightly clumsier. It must never make the world impossible.
 
 import os
 import threading
+from functools import lru_cache
 
 from evennia.utils import logger
 
@@ -285,6 +286,43 @@ def ancestors(sense):
         )
     except Exception:
         return frozenset()
+
+
+#: Everything that is a thing rather than an idea, an event or an amount.
+PHYSICAL = "physical_entity.n.01"
+
+
+@lru_cache(maxsize=4096)
+def has_at_least_below(sense, count):
+    """
+    Whether at least `count` sorts of thing sit anywhere beneath a sense.
+
+    How broad a sense is, which is not how deep it sits: WordNet's branches are
+    not the same depth. Made things run deep, so a container is seven steps from
+    the root with 744 sorts of container beneath it, while documents, events and
+    measures are shallow -- a ledger is six steps from the root with four sorts
+    of ledger beneath it.
+
+    Stops counting at `count`. Every sort of thing there is sits beneath
+    `entity.n.01`, and counting all 74,373 of them took two and a half seconds,
+    which is not something to do on the reactor; counting to a couple of
+    thousand takes milliseconds. False without a corpus, and for anything that
+    is not a sense.
+    """
+    if count <= 0:
+        return True
+    synset = _synset(sense)
+    if synset is None:
+        return False
+    try:
+        seen = 0
+        for _below in synset.closure(lambda node: node.hyponyms()):
+            seen += 1
+            if seen >= count:
+                return True
+    except Exception:
+        return False
+    return False
 
 
 def buckets(sense):

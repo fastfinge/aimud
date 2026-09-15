@@ -38,6 +38,17 @@ class TheScopeCeiling(SimpleTestCase):
                      "sword.n.01", "spacecraft.n.01"):
             self.assertFalse(rule_gen.too_general({"kind": kind}), kind)
 
+    def test_a_narrow_kind_in_a_shallow_branch_is_not(self):
+        """
+        Found in the baseline soak: `drink` learned no rule because its teacup
+        was "too near the top of the taxonomy". Depth is not breadth. Documents,
+        events and measures are shallow branches, so a ledger sits as near the
+        root as instrumentality does, with four sorts of ledger beneath it.
+        """
+        for kind in ("ledger.n.01", "fire.n.01", "teacup.n.01", "slag.n.01",
+                     "structure.n.01"):
+            self.assertFalse(rule_gen.too_general({"kind": kind}), kind)
+
     def test_a_zone_or_the_world_is_never_too_general(self):
         """They are as general as they are, and both are legitimate."""
         self.assertFalse(rule_gen.too_general({"world": True}))

@@ -41,6 +41,33 @@ class NamingASense(SimpleTestCase):
 
 
 @tag("unit")
+class HowBroadASenseIs(SimpleTestCase):
+    """What the scope ceiling measures, now that depth alone is not enough."""
+
+    def test_a_catch_all_has_thousands_beneath_it(self):
+        self.assertTrue(lexicon.has_at_least_below("instrumentality.n.03", 2000))
+        self.assertTrue(lexicon.has_at_least_below("artifact.n.01", 2000))
+
+    def test_a_shallow_narrow_sense_has_a_handful(self):
+        self.assertTrue(lexicon.has_at_least_below("ledger.n.01", 4))
+        self.assertFalse(lexicon.has_at_least_below("ledger.n.01", 5))
+        self.assertFalse(lexicon.has_at_least_below("teacup.n.02", 1))
+
+    def test_asking_about_the_root_stops_counting_early(self):
+        """All 74,373 took two and a half seconds; it may never be asked for."""
+        import time
+
+        lexicon.has_at_least_below.cache_clear()
+        started = time.perf_counter()
+        self.assertTrue(lexicon.has_at_least_below("entity.n.01", 2000))
+        self.assertLess(time.perf_counter() - started, 0.5)
+
+    def test_nothing_that_is_not_a_sense_has_anything_beneath_it(self):
+        self.assertFalse(lexicon.has_at_least_below("datapad", 1))
+        self.assertTrue(lexicon.has_at_least_below("datapad", 0))
+
+
+@tag("unit")
 class WhichSenseAVerbRelationStartsFrom(SimpleTestCase):
     """The bug this half of phase 1 exists to fix."""
 
