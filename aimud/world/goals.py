@@ -159,7 +159,10 @@ def sanitise(conditions, owner=None):
                 entry[field] = str(raw[field]).strip()
         for field in ("is", "lacks"):
             if raw.get(field):
-                entry[field] = [str(s).lower().strip() for s in raw[field] if s]
+                from world.model_json import listed
+
+                entry[field] = [str(s).lower().strip()
+                                for s in listed(raw[field]) if s]
         for field in ("min", "max"):
             if raw.get(field) is not None:
                 try:

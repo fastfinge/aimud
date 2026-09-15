@@ -289,3 +289,31 @@ def _unrepairable(repaired, exc):
 def _excerpt(content):
     text = str(content).strip()
     return repr(text if len(text) <= _EXCERPT else text[:_EXCERPT] + "...")
+
+
+def listed(value):
+    """
+    A list of words, however few it names and however it was written.
+
+    Asked for a list, a model writes one word rather than a list of one -- and
+    read as written that is not one condition but nine, one per letter. A
+    world in the first soak of the tool loops came out of an afternoon with
+    `d`, `e`, `h`, `s`, `t` and `x` among its conditions: every one of them
+    registered, none of them meaning anything, and none of them ever to be
+    unset, because a `set_state` effect had said `"add": "sharpened"`.
+
+    So every place that reads a list of words out of a reply -- or out of what
+    an older reply stored -- comes through here. A string is the one word it
+    says; a mapping is the one thing it describes; anything else is what it
+    holds, with the blanks left out.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, dict):
+        return [value]
+    try:
+        return [item for item in value if item not in (None, "")]
+    except TypeError:
+        return [value]

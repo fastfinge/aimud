@@ -32,7 +32,7 @@ into a measurement.
 
 from evennia.utils import logger
 
-from world import effects, llm, rulebooks
+from world import effects, llm, model_json, rulebooks
 
 #: How near the root a scope has to be before it can be too general, by depth,
 #: and how broad it has to be there -- how many sorts of thing sit beneath it.
@@ -277,7 +277,8 @@ def _states_produced(reply, world_root, action):
                 continue
             for effect in (entry.get("effects") or []):
                 if str(effect.get("type") or "") == "set_state":
-                    found |= {str(s).lower() for s in (effect.get("add") or [])}
+                    found |= {str(s).lower()
+                              for s in model_json.listed(effect.get("add"))}
         except (AttributeError, TypeError, ValueError):
             continue
     for rule in rulebooks.all_rules(world_root) if world_root else []:
@@ -288,7 +289,8 @@ def _states_produced(reply, world_root, action):
         for effect in rulecheck.effects_of(rule):
             try:
                 if str(effect.get("type") or "") == "set_state":
-                    found |= {str(s).lower() for s in (effect.get("add") or [])}
+                    found |= {str(s).lower()
+                              for s in model_json.listed(effect.get("add"))}
             except AttributeError:
                 continue
     return found
@@ -318,7 +320,8 @@ def _self_defeating(conds, produced):
     wanted = set()
     for condition in (conds or []):
         try:
-            wanted |= {str(s).lower() for s in (condition.get("is") or [])}
+            wanted |= {str(s).lower()
+                       for s in model_json.listed(condition.get("is"))}
         except AttributeError:
             continue
     return sorted(wanted & produced)

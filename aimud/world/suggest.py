@@ -30,7 +30,7 @@ mean something else.
 
 from evennia.utils import logger
 
-from world import counters, rulebooks
+from world import counters, model_json, rulebooks
 
 #: Where a world remembers what it has been offered and declined.
 ATTR_DECLINED = "declined_suggestions"
@@ -318,7 +318,7 @@ def from_pairs(world_root):
         wanted = sum(1 for rule in _world_rules(world_root)
                      for condition in (rule.get("conditions") or [])
                      if missing in [str(s).lower() for s in
-                                    (condition.get("is") or [])])
+                                    model_json.listed(condition.get("is"))])
         made.append(propose(
             world_root,
             rulebooks.blank(
@@ -344,7 +344,9 @@ def _where_state_is_set(world_root, state):
     for rule in _world_rules(world_root):
         for effect in (rule.get("effects") or []):
             try:
-                adds = [str(s).lower() for s in (effect.get("add") or [])]
+                from world.model_json import listed
+
+                adds = [str(s).lower() for s in listed(effect.get("add"))]
             except AttributeError:
                 continue
             if wanted in adds:

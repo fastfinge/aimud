@@ -555,7 +555,9 @@ def states_of(world_root, obj_kinds):
     for kind in prune(obj_kinds, world_root):
         entry = spec(world_root, kind) or {}
         try:
-            seen |= {str(s) for s in (entry.get("states") or [])}
+            from world.model_json import listed
+
+            seen |= {str(s) for s in listed(entry.get("states"))}
         except (AttributeError, TypeError, ValueError):
             continue
     return seen

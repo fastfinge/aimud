@@ -795,10 +795,12 @@ def _apply_one(actor, room, effect, bound, world_root):
         targets = _resolve_many(effect, "name", bound, room, actor)
         if not targets:
             return None
+        from world.model_json import listed
+
         add, remove = [], []
-        for slug in effect.get("add", []):
+        for slug in listed(effect.get("add")):
             add.append(verbs.register_state(world_root, str(slug)))
-        for slug in effect.get("remove", []):
+        for slug in listed(effect.get("remove")):
             remove.append(str(slug).lower().strip())
         from world import kinds
 

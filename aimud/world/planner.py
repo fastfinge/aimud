@@ -173,11 +173,13 @@ def _burns_itself_down(rule):
         if etype == "destroy_object":
             return True     # the thing the rule needs will not be there
         if etype == "set_state":
-            added = {str(s) for s in effect.get("add") or []}
-            removed = {str(s) for s in effect.get("remove") or []}
-            if added & {str(s) for s in needed.get("lacks") or []}:
+            from world.model_json import listed
+
+            added = {str(s) for s in listed(effect.get("add"))}
+            removed = {str(s) for s in listed(effect.get("remove"))}
+            if added & {str(s) for s in listed(needed.get("lacks"))}:
                 return True
-            if removed & {str(s) for s in needed.get("is") or []}:
+            if removed & {str(s) for s in listed(needed.get("is"))}:
                 return True
         if etype == "modify_object" and effect.get("affordances") is not None:
             from world import affordances as af

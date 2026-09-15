@@ -521,7 +521,9 @@ def _summarise(effects):
         elif etype == "move_object":
             parts.append(f"{name} changes hands")
         elif etype == "set_state":
-            added = ", ".join(effect.get("add") or []) or "changed"
+            from world.model_json import listed
+
+            added = ", ".join(listed(effect.get("add"))) or "changed"
             parts.append(f"{name} becomes {added}")
         elif etype == "modify_object":
             parts.append(f"{name} is altered")

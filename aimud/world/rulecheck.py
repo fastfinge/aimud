@@ -134,7 +134,9 @@ def as_verb_rule(rule):
         subject = str(condition.get("subject") or "direct")
         entry = requires.setdefault(subject, {"is": [], "lacks": []})
         for field in ("is", "lacks"):
-            entry[field] += [str(s) for s in (condition.get(field) or [])]
+            from world.model_json import listed
+
+            entry[field] += [str(s) for s in listed(condition.get(field))]
     return {"valid": True,
             "requires": requires,
             "effects": rule.get("effects") or [],
@@ -391,7 +393,9 @@ def self_defeating(rules):
         wanted = set()
         for condition in (rule.get("conditions") or []):
             try:
-                wanted |= {str(v).lower() for v in (condition.get("is") or [])}
+                from world.model_json import listed
+
+                wanted |= {str(v).lower() for v in listed(condition.get("is"))}
             except AttributeError:
                 continue
         clash = sorted(wanted & made)

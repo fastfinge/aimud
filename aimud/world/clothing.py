@@ -535,8 +535,10 @@ def create(spec, location, worn_on=None):
     obj.db.kinds = the_kinds
     obj.db.kind = the_kinds[0] if the_kinds else ""
     obj.db.qualifiers = qualifiers
+    from world.model_json import listed
+
     obj.db.states = sorted({str(s).lower().strip()
-                            for s in (spec.get("states") or []) if s})
+                            for s in listed(spec.get("states")) if s})
 
     # The naming rule, checked rather than only asked for. Reported and not
     # repaired: a name is what everything else has learned to call the thing,

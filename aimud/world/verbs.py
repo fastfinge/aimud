@@ -1502,7 +1502,11 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
     if not world_root or not slug:
         return slug
     slug = re.sub(r"[^a-z0-9_]", "", slug.lower().strip())
-    if not slug:
+    # A condition is never one letter. Whatever asked for this was reading a
+    # word a character at a time, and the belt to `listed`'s braces: a world
+    # in the first soak came out of an afternoon with d, e, h, s, t and x in
+    # its vocabulary, none of which anything could mean or ever unset.
+    if len(slug) < 2:
         return ""
 
     vocab = vocabulary(world_root)
@@ -1708,12 +1712,18 @@ def apply_states(obj, add=(), remove=(), world_root=None, announce=True):
     `announce` is for the one caller that is restoring a condition rather than
     causing one, where the character already knows.
     """
+    from world.model_json import listed
+
     current = states(obj)
     before = set(current)
 
-    for slug in remove:
+    # Through `listed`, because this is the innermost door every state comes
+    # through: an effect written "add": "sharpened" rather than ["sharpened"]
+    # was read a letter at a time and each letter registered as a condition of
+    # its own. See `model_json.listed`.
+    for slug in listed(remove):
         current.discard(slug)
-    for slug in add:
+    for slug in listed(add):
         # Registered on the way in, so that every caller gets the same
         # guarantees rather than only the ones that remembered: a meaning, a
         # group, a help entry, and the fold that turns "soaked" into the "wet"

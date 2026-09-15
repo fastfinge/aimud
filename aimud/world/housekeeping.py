@@ -82,3 +82,58 @@ def collect_orphans():
         attributes += 1
 
     return tags, attributes
+
+
+def prune_letter_states():
+    """
+    Take the one-letter conditions out of every world. Returns (worlds, things).
+
+    A `set_state` effect written `"add": "sharpened"` rather than
+    `["sharpened"]` was read a letter at a time, and each letter registered as
+    a condition of its own -- so a world in the first soak of the tool loops
+    had `d`, `e`, `h`, `s`, `t` and `x` in its vocabulary, none of which means
+    anything, none of which any verb sets, and none of which can ever be
+    unset. `worldcheck` reported them faithfully and `help x` had nothing to
+    say about any of them, because there was nothing to say.
+
+    The reading is repaired at every door now (`model_json.listed`, and the
+    length `register_state` refuses), and this clears up after the worlds that
+    met it: the register, what the kinds remember, and the things standing in
+    them. Startup, beside the orphan sweep, for the same reason -- nothing
+    else is running to race with.
+    """
+    from evennia.objects.models import ObjectDB
+
+    def kept(values):
+        return [value for value in (values or []) if len(str(value)) > 1]
+
+    worlds = things = 0
+    roots = ObjectDB.objects.filter(
+        db_attributes__db_key="state_vocabulary").distinct()
+    for root in roots:
+        vocabulary = dict(root.db.state_vocabulary or {})
+        letters = [slug for slug in vocabulary if len(str(slug)) < 2]
+        if letters:
+            for slug in letters:
+                vocabulary.pop(slug, None)
+            root.db.state_vocabulary = vocabulary
+            worlds += 1
+        # The kinds remember what things of their sort have been in, which is
+        # where the letters would otherwise be handed to the next generator.
+        specs = dict(root.db.kind_specs or {})
+        changed = False
+        for kind, spec in specs.items():
+            states = (spec or {}).get("states")
+            if states is not None and kept(states) != list(states):
+                specs[kind] = {**spec, "states": kept(states)}
+                changed = True
+        if changed:
+            root.db.kind_specs = specs
+
+    for obj in ObjectDB.objects.filter(
+            db_attributes__db_key="states").distinct():
+        standing = list(obj.db.states or [])
+        if kept(standing) != standing:
+            obj.db.states = sorted(kept(standing))
+            things += 1
+    return worlds, things

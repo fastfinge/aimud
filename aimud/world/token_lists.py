@@ -143,7 +143,9 @@ def clean(declared):
             continue
         sets = raw.get("sets") or {}
         try:
-            states = [_slug(s) for s in (sets.get("states") or []) if _slug(s)]
+            from world.model_json import listed
+
+            states = [_slug(s) for s in listed(sets.get("states")) if _slug(s)]
             traits = {}
             for slug, value in dict(sets.get("traits") or {}).items():
                 traits[_slug(slug)] = float(value)
@@ -270,8 +272,10 @@ def _settle_facts(world_root, name, entry):
         sets = item.get("sets")
         if not sets:
             continue
+        from world.model_json import listed
+
         settled = []
-        for slug in sets.get("states") or []:
+        for slug in listed(sets.get("states")):
             known = slug in verbs.vocabulary(world_root) or verbs.group_of(
                 world_root, slug)
             if not known and not group:
@@ -616,7 +620,9 @@ def _state_in(holder, group, world_root):
 
 def _entry_setting(entry, state):
     for item in entry.get("entries") or []:
-        if state in ((item.get("sets") or {}).get("states") or []):
+        from world.model_json import listed
+
+        if state in listed((item.get("sets") or {}).get("states")):
             return item
     return None
 
@@ -625,7 +631,9 @@ def _apply(holder, sets, world_root):
     """Make a choice's facts true of whatever holds it. Silently: nobody acted."""
     from world import traits, verbs
 
-    states = list(sets.get("states") or [])
+    from world.model_json import listed
+
+    states = listed(sets.get("states"))
     if states:
         verbs.apply_states(holder, add=states, world_root=world_root,
                            announce=False)

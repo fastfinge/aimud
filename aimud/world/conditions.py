@@ -246,16 +246,13 @@ def _listed(value):
 
     Asked for one condition a model writes one word rather than a list of one,
     and read as written that is not one requirement but six, one per letter --
-    see `verbs.requirements`, which learned this the hard way.
+    see `verbs.requirements`, which learned this the hard way -- and then
+    `effects`, which had not, and coined a condition per letter of "sharpened"
+    in somebody's world. One answer for all of them now.
     """
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [value] if value.strip() else []
-    try:
-        return [v for v in value if v]
-    except TypeError:
-        return [value]
+    from world.model_json import listed
+
+    return listed(value)
 
 
 def predicate_of(condition):

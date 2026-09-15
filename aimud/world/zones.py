@@ -763,7 +763,9 @@ def states(world_root, zone_id):
     """The conditions true of this zone just now."""
     record = get(world_root, zone_id)
     try:
-        return {str(s) for s in (record.get("states") or [])}
+        from world.model_json import listed
+
+        return {str(s) for s in listed(record.get("states"))}
     except AttributeError:
         return set()
 
