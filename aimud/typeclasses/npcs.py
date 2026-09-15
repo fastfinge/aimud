@@ -1253,8 +1253,16 @@ class NPC(ObjectParent, DefaultObject):
                 # `_aloud` answers with the episode: the pose in the past
                 # tense, "Barnaby waved at Raldor", which is what everybody
                 # here remembers.
-                remembered = self._aloud(room, "{actor} " + action,
-                                         verb="emote")
+                # Through `events.pose`, never spliced onto "{actor} ": a model
+                # writes "She glides closer", "wings fluttering" and "my
+                # shoulder" as often as it writes a bare verb, and each of
+                # those came out as "She She", "She wings" and a first person
+                # nobody was.
+                from world import events
+
+                remembered = self._aloud(
+                    room, events.pose(action, self, room.db.world_root),
+                    verb="emote")
                 self._add_to_history("emote", self.key, action, about=about,
                                      addressed=addressed, line=remembered)
                 self._notify_other_npcs(room, "emote", remembered, _depth,

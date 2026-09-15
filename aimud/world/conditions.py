@@ -1029,6 +1029,16 @@ def _p_reachable(subject, value, condition, ctx, mood):
     # `power` means the ship: the ship is not in the room, it is the room.
     within = (subject.obj in relations.reachable(who.obj, include_self=True)
               or subject.obj in relations.enclosing(who.obj))
+    # People are not things, and `relations.reachable` only walks things -- so
+    # without this every character was out of reach of everybody, and every
+    # verb that names a person was refused before it began. Somebody standing
+    # in the same place is within arm's length. An exit is not a person, and
+    # is left to the rule that already governs it.
+    if not within:
+        here = getattr(who.obj, "location", None)
+        within = (here is not None and subject.obj.location is here
+                  and getattr(subject.obj, "destination", None) is None
+                  and not relations._is_thing(subject.obj))
     if mood == WANT:
         return within, f"get within reach of {subject.name()}"
     return within, f"{_cap(subject.name())} is out of reach."

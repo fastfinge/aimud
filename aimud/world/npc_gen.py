@@ -112,15 +112,20 @@ NPC_TOOLS = [
         "type": "function",
         "function": {
             "name": "emote",
-            "description": "Perform an action or gesture (third-person description).",
+            "description": ("A gesture or expression everyone here sees. Not "
+                            "for doing something to anything: that is attempt."),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "description": (
-                            "A short third-person phrase, e.g. 'nods solemnly' "
-                            "or 'adjusts her hood'"
+                            "What you do, starting with the verb, without "
+                            "your own name or pronoun in front: 'nods "
+                            "solemnly', 'loops an arm through Sampson's'. "
+                            "Third person throughout -- your own hair is "
+                            "'her hair', 'his hair' or 'their hair', never "
+                            "'my hair' -- and never I or me."
                         ),
                     }
                 },

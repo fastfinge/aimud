@@ -210,7 +210,11 @@ _ARTICLE_BEFORE_SLOT = re.compile(r"\b[Aa]n?\b\s+(?=\{)|\b[Tt]he\b\s+(?=\{)")
 #:
 #: Only the word directly after `{actor}`, and only when it is visibly
 #: third-person singular: the repair has to be one this can be certain of.
-_ACTOR_VERB = re.compile(r"(\{actor(?:'s)?\}|\{actor\}'s)(\s+)([a-z]+(?:e?s))\b")
+#:
+#: Never after `{actor's}`. What follows a possessive is a noun, and a plural
+#: noun looks exactly like a conjugated verb: "{actor's} eyes narrow" was
+#: repaired into "$pconj(eye)", and "her wings fluttering" into "she wings".
+_ACTOR_VERB = re.compile(r"(\{actor\})(\s+)([a-z]+(?:e?s))\b")
 
 
 def repair(template):
@@ -250,6 +254,108 @@ def _wrap_actor_verb(match):
     slot, gap, verb = match.groups()
     base = english.base_form(verb)
     return f"{slot}{gap}$pconj({base})" if base else match.group(0)
+
+
+# ---------------------------------------------------------------------------
+# A character's own pose
+# ---------------------------------------------------------------------------
+
+#: A character writing about itself in the first person, as the slots that say
+#: the same thing to whoever is reading.
+_FIRST_PERSON = {"my": "{actor.adjective}", "mine": "{actor.possessive}",
+                 "me": "{actor.object}", "myself": "{actor.reflexive}"}
+_FIRST_PERSON_WORD = re.compile(r"\b(my|mine|me|myself)\b", re.IGNORECASE)
+
+#: Words in quotation marks inside a pose, which are left exactly as written.
+_QUOTED = re.compile(r'("[^"]*"|“[^”]*”)')
+
+#: What a model puts in front of its own pose to say who is doing it.
+_SUBJECTS = frozenset(["i", "he", "she", "they", "it"])
+_POSSESSIVES = frozenset(["my", "his", "her", "their", "its"])
+_LEADING_WORD = re.compile(r"^([A-Za-z][\w'’-]*)[,:]?\s+")
+
+
+def pose(action, actor=None, world_root=None):
+    """
+    A character's emote as a template, whatever shape the model wrote it in.
+
+    The template used to be "{actor} " and the words, which is right for the
+    shape asked for -- "nods solemnly" -- and wrong for every other shape a
+    model writes just as often:
+
+    * **Its own name or pronoun in front.** "She glides closer" read "She She
+      glides closer", and "Melia bounces over" read "Melia Melia bounces".
+      The name or subject pronoun is taken off.
+    * **A possessive in front.** "Her eyes narrow" is about the actor's eyes:
+      `{actor's} eyes narrow`, which reads "Melia's eyes" or "her eyes".
+    * **No verb at all.** "wings fluttering in anticipation" is a phrase
+      about the actor's wings, and "smiling warmly" is something the actor is
+      doing: `{actor's} wings fluttering`, `{actor} $pconj(be) smiling`.
+    * **The first person.** "my pink shoulder" is the actor's shoulder, told
+      to each reader as "her", "his" or "your".
+
+    Words in quotation marks are left alone: a character may say "my dear".
+    """
+    text = " ".join(str(action or "").split())
+    if not text:
+        return ""
+
+    names, subjects, possessives = set(), set(_SUBJECTS), set(_POSSESSIVES)
+    if actor is not None:
+        key = str(getattr(actor, "key", "") or "").strip()
+        if key:
+            names |= {key.lower(), key.split()[0].lower()}
+        forms = pronoun_forms(actor, world_root)
+        if forms.get("subject"):
+            subjects.add(str(forms["subject"]).lower())
+        if forms.get("adjective"):
+            possessives.add(str(forms["adjective"]).lower())
+
+    pieces = _QUOTED.split(text)
+    head, lead = pieces[0], "{actor} "
+
+    stripped = False
+    lowered = head.lower()
+    for name in sorted(names, key=len, reverse=True):
+        for suffix, becomes in (("'s ", "{actor's} "), ("’s ", "{actor's} "),
+                                (", ", "{actor} "), (" ", "{actor} ")):
+            if lowered.startswith(name + suffix):
+                head, lead, stripped = head[len(name) + len(suffix):], becomes, True
+                break
+        if stripped:
+            break
+    if not stripped:
+        match = _LEADING_WORD.match(head)
+        word = match.group(1).lower() if match else ""
+        if word in subjects:
+            head = head[match.end():]
+        elif word in possessives:
+            head, lead = head[match.end():], "{actor's} "
+
+    words = head.split(" ")
+    if lead == "{actor} " and words and words[0]:
+        first = words[0]
+        low = first[:1].lower() + first[1:]
+        second = words[1].lower() if len(words) > 1 else ""
+        if (second.endswith("ing") and not low.endswith("ly")
+                and english.is_plural(low.strip(",.;"))):
+            lead = "{actor's} "                 # "wings fluttering"
+            words[0] = low
+        elif low.endswith("ing") and len(low) > 5 and not english.base_form(low):
+            lead = "{actor} $pconj(be) "        # "smiling warmly"
+            words[0] = low
+        elif english.base_form(low):
+            words[0] = low                      # "Bounces over", name taken off
+        elif low.endswith("ly") and english.base_form(second):
+            words[1] = f"$pconj({english.base_form(second)})"
+    elif lead == "{actor's} " and words and words[0]:
+        words[0] = words[0][:1].lower() + words[0][1:]
+    pieces[0] = " ".join(words)
+
+    for index in range(0, len(pieces), 2):
+        pieces[index] = _FIRST_PERSON_WORD.sub(
+            lambda found: _FIRST_PERSON[found.group(1).lower()], pieces[index])
+    return lead + "".join(pieces)
 
 
 # ---------------------------------------------------------------------------
