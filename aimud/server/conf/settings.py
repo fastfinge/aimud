@@ -40,6 +40,12 @@ SERVERNAME = "aimud"
 # changes nothing else -- see commands/command.py.
 COMMAND_DEFAULT_CLASS = "commands.command.MuxCommand"
 
+# Evennia's own parser, with one rule on top: inside a generated world, a
+# building, admin or system command has to be typed with its prefix --
+# `@open`, `@examine`, `@force` -- so that `open door` is opening a door rather
+# than a builder making an exit called "door". See server/conf/cmdparser.py.
+COMMAND_PARSER = "server.conf.cmdparser.cmdparser"
+
 
 ######################################################################
 # Settings given in secret_settings.py override those in this file.

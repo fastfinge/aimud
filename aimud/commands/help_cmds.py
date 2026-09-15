@@ -53,6 +53,7 @@ AFFORDANCE_CATEGORY = "affordances"
 STATE_CATEGORY = "conditions"
 TRAIT_CATEGORY = "traits"
 PRONOUN_CATEGORY = "pronouns"
+TOKEN_CATEGORY = "word lists"
 
 #: Anyone may read them. They document a world the player is standing in.
 OPEN = "view:all();read:all()"
@@ -452,7 +453,41 @@ def world_topics(caller, world_root=None):
         _place(topics, key, label, entry)
     for key, label, entry in _affordance_topics(world_root):
         _place(topics, key, label, entry)
+    # Last: a list is named for what it chooses between, and that word is
+    # nearly always a kind or a state too -- which is what a player asking
+    # about it more likely meant.
+    from world import token_lists
+
+    for name, entry in sorted(token_lists.vocabulary(world_root).items()):
+        _place(topics, name, "word list",
+               _entry(name, TOKEN_CATEGORY, _token_text(name, entry)))
     return topics
+
+
+def _token_text(name, entry):
+    """What `help color` says about a word list."""
+    from world import token_lists
+
+    where = {
+        "render": "chosen again every time it is read",
+        "object": "chosen once for each thing and kept",
+        "room": "chosen once for each room and kept",
+        "world": "chosen once for the whole world",
+        "viewer": "chosen once for each person looking",
+    }.get(entry.get("scope"), "")
+    lines = [
+        f"|w{{{name}}}|n is a word list this world keeps.",
+        "",
+        (entry.get("means") or "").strip(),
+        "",
+        f"It chooses between: {token_lists.spelled(entry, most=MOST_LISTED)}.",
+        f"What it chooses is {where}." if where else "",
+    ]
+    if entry.get("group"):
+        lines.append(f"Each choice is a condition in the group "
+                     f"|w{entry['group']}|n, so rules can read it.")
+    lines += ["", f"Type |wtokens {name}|n for the whole list."]
+    return "\n".join(lines)
 
 
 def _pronoun_text(slug, entry):

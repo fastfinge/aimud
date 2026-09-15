@@ -11,8 +11,9 @@ from commands.command import Command
 
 _RECALL_SYSTEM = """You answer a player's question about their own character's past in a text MUD.
 
-You are given memories recalled from that character's memory, most relevant first.
-Answer from those memories only.
+You are given memories recalled from that character's memory, oldest first,
+each with how long ago it was, and sometimes a line saying what is true now.
+Answer from those only.
 
 - Answer in one or two sentences, plainly, in second person ("You met her...").
 - If the memories do not answer the question, say so plainly. Never invent an
@@ -93,26 +94,40 @@ class CmdRemember(Command):
         from world import llm
 
         def _fetch():
-            # Recall and the model call share one trip into the thread pool,
-            # keeping both off the reactor.
-            from world.memory import format_memories, recall_sync
+            # Recall in the thread pool, off the reactor.
+            from world.memory import recall_rows_sync
 
-            memories = recall_sync(where, question, top_k=8)
-            if not memories:
-                return None
+            return recall_rows_sync(where, question, top_k=8)
+
+        def _done(rows):
+            # Back on the main thread: each memory is said again with the
+            # names things have now, which reads the game's database. Then the
+            # model is asked, off the reactor again.
+            if not rows:
+                _answered(None)
+                return
+            from world.memory import format_recalled
+
+            try:
+                memories = format_recalled(rows)
+            except Exception as exc:
+                caller.ndb.recalling = False
+                caller.msg(f"|rYou cannot gather your thoughts: {exc}|n")
+                return
             messages = [
                 {"role": "system", "content": _RECALL_SYSTEM},
                 {
                     "role": "user",
                     "content": (
-                        f"Memories recalled:\n{format_memories(memories)}\n\n"
+                        f"Memories recalled:\n{memories}\n\n"
                         f"The player asks: {question}"
                     ),
                 },
             ]
-            return llm.ask(sponsor, model, messages)
+            llm.fetch(llm.ask, sponsor, model, messages,
+                      on_success=_answered, on_error=_fail)
 
-        def _done(answer):
+        def _answered(answer):
             caller.ndb.recalling = False
             if answer is None:
                 caller.msg("You cannot bring anything to mind about that.")

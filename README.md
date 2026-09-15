@@ -484,6 +484,20 @@ install that is the superuser you made at first start.
 | `worldcheck [<n>]` | What a world's rules say about each other: conditions it can set and never unset, conditions a rule requires that nothing can bring about, verbs it refused and why. Then what the world has actually been asked to do and how it answered — a condition nothing can bring about matters more when eleven people have tried. Says if anything is waiting in `rules suggest`. Costs nothing — no model is asked anything. |
 | `memcheck [sleep \| sweep \| distil \| all]` | Memory upkeep now rather than on its clock: consolidate what characters remember, delete the banks of characters that no longer exist, or turn recent summaries into what a character now knows. On its own it reports what it would do and changes nothing. Distilling is the only part that costs anything. |
 
+### Building commands inside a world
+
+Evennia's own building, admin and system commands are all still here for a
+Builder or the superuser. **Inside a generated world, type them with their
+prefix**: `@open`, `@examine`, `@create`, `@destroy`, `@lock`, `@force`. There
+the bare word is something you do — `open door` opens a door rather than making
+an exit called "door", and `examine lantern` looks at the lantern rather than
+listing its attributes. The first time a bare name goes to the world instead,
+you are told the prefixed spelling.
+
+Outside a world — Limbo, or anywhere built by hand — they work exactly as
+Evennia documents them, prefix or not. The game's own commands, such as `look`,
+`worldedit` and `tokens`, never need one.
+
 ---
 
 ## What it costs

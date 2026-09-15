@@ -27,6 +27,36 @@ def forget_narrations(obj):
         obj.db.ai_commands = {}
 
 
+def _note_states(actor, obj, added, removed, world_root):
+    """
+    Write what a verb made true, and what it ended, as the world's history.
+
+    A state belongs in a triple, not in anybody's memory of the moment: "the
+    candle is now lit" stops being true, and a memory cannot say so, while a
+    triple is closed by whatever replaces it. A state in an exclusive group
+    supersedes the rest of its group -- lit ends unlit -- and one in no group
+    stands beside whatever else is true. Fire-and-forget, and nothing if the
+    world keeps no memory.
+    """
+    from world import memory, verbs
+
+    where = memory.where_for(actor, world_root)
+    if not where.bank or obj is None:
+        return
+    for slug in added or ():
+        if not slug:
+            continue
+        group = verbs.group_of(world_root, slug)
+        exclusive = bool(group and verbs.group_rules(world_root, group)
+                         .get("exclusive"))
+        memory.note_triple(where, f"#{obj.id}", group or "is", slug,
+                           supersede=exclusive)
+    for slug in removed or ():
+        if slug:
+            memory.end_triples(where, f"#{obj.id}",
+                               verbs.group_of(world_root, slug) or "is", slug)
+
+
 def _protected(obj, room):
     """True for things a verb must never destroy or carry away."""
     from evennia.objects.objects import DefaultCharacter
@@ -490,6 +520,11 @@ def _apply_one(actor, room, effect, bound, world_root):
         from world import ownership
 
         ownership.forget(obj)
+        # And that it is gone, as the world's history. Before the deletion,
+        # while the world can still be found from where the thing is.
+        from world import memory
+
+        memory.note_destroyed(obj, world_root)
         obj.delete()
         # A shattered shield protects nobody. Deletion is not a move, so the
         # hooks that keep gear honest do not fire for it.
@@ -613,6 +648,9 @@ def _apply_one(actor, room, effect, bound, world_root):
             changed = True
         if effect.get("new_description"):
             obj.db.desc = str(effect["new_description"]).strip()
+            from world import tokens
+
+            tokens.settle(obj)
             changed = True
         if effect.get("affordances") is not None:
             # An object's affordances come from its kind, and this is the one
@@ -680,6 +718,7 @@ def _apply_one(actor, room, effect, bound, world_root):
         for obj in targets:
             verbs.apply_states(obj, add=add, remove=remove,
                                world_root=world_root)
+            _note_states(actor, obj, add, remove, world_root)
             # A lamp going out stops lighting whoever holds it, and a fire
             # going out stops warming the room. Only for things whose worth is
             # gated on a state, so the ordinary case costs one lookup.
@@ -699,6 +738,9 @@ def _apply_one(actor, room, effect, bound, world_root):
     if etype == "modify_room":
         if effect.get("new_description"):
             room.db.desc = str(effect["new_description"]).strip()
+            from world import tokens
+
+            tokens.settle(room)
         if effect.get("new_name"):
             new_name = str(effect["new_name"]).strip()
             room.key = new_name

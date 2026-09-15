@@ -260,13 +260,15 @@ def _refuse(text):
     return False, text, None
 
 
-def _event(character, verb, garment, template, **roles):
+def _event(character, verb, garment, template, quotes=None, **roles):
     """
     One thing somebody did with what they are wearing.
 
     The room's half as an event rather than a sentence, so that each person
     watching is told in their own words, with the verb as `$pconj(...)` so it
-    agrees with whoever did it. See `world.events`.
+    agrees with whoever did it. See `world.events`. `quotes` are words the
+    template names but must not read: the garments' names in "covering the
+    shirt", which a model chose.
 
     P3 wrote every call to this and never the function: wearing anything
     raised a NameError that `attempt`'s broad except turned into "Something
@@ -277,7 +279,7 @@ def _event(character, verb, garment, template, **roles):
 
     return events.Event(actor=character, verb=verb,
                         roles={"direct": garment, **roles},
-                        room_template=template)
+                        room_template=template, quotes=quotes)
 
 
 def _revalue(character):
@@ -334,7 +336,8 @@ def put_on(character, garment, wearstyle=True):
         if covered else ""
     return (True, f"You put on {label}{tail}.",
             _event(character, "wear", garment,
-                   "{actor} $pconj(put) on {direct}" + f"{tail}."))
+                   "{actor} $pconj(put) on {direct}{tail}.",
+                   quotes={"tail": tail}))
 
 
 def take_off(character, garment):
@@ -355,7 +358,8 @@ def take_off(character, garment):
         if revealed else ""
     return (True, f"You take off {label}{tail}.",
             _event(character, "remove", garment,
-                   "{actor} $pconj(take) off {direct}" + f"{tail}."))
+                   "{actor} $pconj(take) off {direct}{tail}.",
+                   quotes={"tail": tail}))
 
 
 def cover_with(character, garment, covering):
@@ -557,7 +561,16 @@ def create(spec, location, worn_on=None):
     # half full is gettable as "full bottle" without waiting for a verb.
     from world import verbs
 
+    # And what its name says it is, it is: a "Wax-Sealed Vial" made in a world
+    # that knows `sealed` is sealed. See verbs.adopt_named_states.
+    verbs.adopt_named_states(obj, _root_of(location))
     verbs.refresh_state_aliases(obj)
+    # Every choice its description makes, made now, before anything reads it.
+    # A choice can be a state, so this comes after the states are written and
+    # can add to them. See `world.token_lists`.
+    from world import tokens
+
+    tokens.settle(obj)
     if garment_type in GARMENT_TYPES:
         obj.db.clothing_type = garment_type
 

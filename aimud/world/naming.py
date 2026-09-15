@@ -41,6 +41,7 @@ lying about. That question is asked first, since nothing here can answer it
 """
 
 import re
+from functools import lru_cache
 
 from world import nounphrase
 
@@ -177,6 +178,14 @@ def _words(text):
             if w and w not in _NOISE]
 
 
+@lru_cache(maxsize=4096)
+def _one_of(word):
+    """A word's singular, cached: every candidate in reach is scored against it."""
+    from world import english
+
+    return english.singular(word).lower()
+
+
 def _word_score(word, other):
     """How well one word stands for another, typos and homophones included."""
     if word == other:
@@ -184,6 +193,14 @@ def _word_score(word, other):
     # Too short to forgive: "cup" and "cap" are both real things.
     if len(word) < MIN_LENGTH or len(other) < MIN_LENGTH:
         return 0.0
+    # Several of one thing name the thing: "sarcophagi" for a Stone
+    # Sarcophagus. Scored below an exact word and above what counts as
+    # confident, so it is acted on -- found in playtesting, where looking at
+    # the sarcophagi a room described made "some sarcophagi", and asking after
+    # one of them would have made another. A plural that is a word of its own
+    # is not reduced, so "glasses" does not find a glass.
+    if _one_of(word) == _one_of(other):
+        return 0.95
     # Naming a thing by part of one of its words: "board" for a chalkboard,
     # "lamp" for an oil-lamp. Not a mistake at all, and what Evennia's own
     # search already does, so this only keeps the two in agreement.

@@ -58,6 +58,7 @@ REGISTERS = (
     "declined_suggestions",     # suggest.ATTR_DECLINED
     "verbs_without_rules",      # rule_gen.ATTR_FRUITLESS
     "zones",
+    "token_lists",              # token_lists.ATTR -- a world's word lists
 )
 
 

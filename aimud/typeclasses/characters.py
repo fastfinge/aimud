@@ -125,10 +125,13 @@ class Character(ObjectParent, DefaultCharacter):
         `super()`, which would be ObjectParent's -- that one appends the
         condition itself, and it must not arrive twice.
         """
-        from world import clothing, verbs
+        from world import clothing, tokens, verbs
 
         base = self.world_desc() or DefaultCharacter.get_display_desc(
             self, looker, **kwargs)
+        base = tokens.text(base, tokens.Context(
+            viewer=looker, about=self, world_root=tokens.world_root_of(self),
+            purpose="display"))
         text = clothing.appearance(self, base, looker)
         line = verbs.condition(self, looker)
         if not line:
@@ -168,10 +171,14 @@ class Character(ObjectParent, DefaultCharacter):
 
         events.noticed(room, self)
 
+        from evennia.utils.utils import make_iter
         from world.npc_gen import notify_npcs
 
+        # A whisper names its listener in the command rather than the words,
+        # and they are spoken to whatever the words say.
         notify_npcs(room, "say", self.get_display_name(self), message,
-                    exclude=self, actor=self)
+                    exclude=self, actor=self,
+                    targets=list(make_iter(receivers)) if receivers else ())
 
     def at_post_move(self, source_location, move_type="move", **kwargs):
         super().at_post_move(source_location, move_type=move_type, **kwargs)
@@ -230,14 +237,15 @@ class Character(ObjectParent, DefaultCharacter):
 
         notice_changes(self)
 
-        # Where the character has been is part of what they know.
+        # Where the character has been is part of what they know. Named and in
+        # the past tense, never "I": a memory is searched by the names in it.
         from world.memory import remember
 
         where = room.db.room_title or room.key
         came_from = source_location.db.room_title or source_location.key if source_location else None
         remember(
             self,
-            f"I arrived in {where}" + (f", coming from {came_from}" if came_from else ""),
+            f"{self.key} arrived in {where}" + (f" from {came_from}" if came_from else ""),
             kind="moved",
             importance=0.3,
         )

@@ -10,7 +10,7 @@ import re
 
 from evennia.utils import logger
 
-from world import llm
+from world import llm, tokens
 
 
 #: How many times a character may be sent back to be renamed. Each retry is a
@@ -1023,12 +1023,19 @@ def _memory_inputs(npc, room, room_title):
 
 
 def _format_history(history):
+    """
+    Working memory as the prompt reads it, each line as it was remembered.
+
+    The line an entry was remembered by, when it has one, so that "Just now"
+    and what recall finds are the same words -- past tense both -- and recall
+    can leave out what is already on show by comparing them.
+    """
     if not history:
         return "(no prior events)"
     from world.memory import describe_event
 
     return "\n".join(
-        describe_event(
+        event.get("line") or describe_event(
             event.get("type", "action"),
             event.get("actor", "?"),
             event.get("text", ""),
@@ -1041,7 +1048,9 @@ def _format_history(history):
 # Public sync helper
 # ---------------------------------------------------------------------------
 
-def notify_npcs(room, event_type, actor_name, text, exclude=None, actor=None):
+def notify_npcs(room, event_type, actor_name, text, exclude=None, actor=None,
+                about=None, addressed=None, targets=(), line=None,
+                metadata=None):
     """
     Tell everyone in `room` that something happened. Main thread only.
 
@@ -1053,16 +1062,38 @@ def notify_npcs(room, event_type, actor_name, text, exclude=None, actor=None):
     exclude    : an object to skip (e.g. the NPC that caused the event)
     actor      : the character responsible, when it is one -- they remember
                  doing it rather than merely seeing it
+    about      : who and what it concerned, as `memory.remember` takes it
+    addressed  : who was spoken to, the same shape
+    targets    : whoever the command itself named, such as a whisper's
+                 listener
+    line       : the memory already written, when there is an event behind
+                 it -- see `memory.episode_of` -- and `metadata` to go with it
+
+    For speech and poses nobody has said who was involved, so the words are
+    read for names -- see `world.recognition` -- and every memory of the
+    moment, and every NPC deciding whether it was spoken to, gets the answer.
     """
     from world.memory import record_room_event
 
-    record_room_event(room, event_type, actor_name, text, actor=actor)
+    if about is None and addressed is None and event_type in ("say", "emote"):
+        from world import recognition
+
+        mentions = recognition.recognise(text, speaker=actor, room=room,
+                                         targets=targets)
+        about = recognition.about(mentions)
+        addressed = recognition.addressed(mentions)
+    about, addressed = list(about or ()), list(addressed or ())
+
+    record_room_event(room, event_type, actor_name, text, actor=actor,
+                      about=about, addressed=addressed, line=line,
+                      metadata=metadata)
 
     for obj in room.contents:
         if obj is exclude:
             continue
         if obj.db.is_npc:
-            obj.witness(event_type, actor_name, text)
+            obj.witness(event_type, actor_name, text, about=about,
+                        addressed=addressed, line=line, metadata=metadata)
 
 
 # ---------------------------------------------------------------------------
@@ -1081,11 +1112,11 @@ def generate_npc(sponsor, room, on_success, on_error):
         on_error(str(e))
         return
 
-    from world import lore, pronouns, traits
+    from world import lore, pronouns, token_lists, tokens, traits
 
     world_desc = lore.description(room)
     room_title = room.db.room_title or room.key
-    room_desc = room.db.desc or ""
+    room_desc = tokens.text_of(room)
 
     # Who is already here, so the model is not asked to invent a stranger in
     # ignorance of everyone it has invented before. Listing them is most of
@@ -1105,6 +1136,7 @@ def generate_npc(sponsor, room, on_success, on_error):
                 f"{lore.guidance_block(room, 'npcs')}"
                 f"{traits.vocabulary_block(room.db.world_root)}"
                 f"{pronouns.vocabulary_block(room.db.world_root)}"
+                f"{token_lists.vocabulary_block(room.db.world_root, ['person'])}"
                 f"Room: [{room_title}]\n{room_desc}\n\n"
                 f"{taken}"
                 "Generate an NPC who would naturally be found here."
@@ -1151,12 +1183,15 @@ def generate_npc(sponsor, room, on_success, on_error):
             from typeclasses.npcs import NPC
             from world import kinds
 
+            token_lists.declare(room.db.world_root, data.get("new_token_lists"))
             npc = create_object(NPC, key=name, location=room)
             npc.db.desc = description
             # A character is a sort of thing. Said here as well as in the
             # typeclass because a generated character is given its description
             # and its manner in this order, and a kind belongs beside them.
             kinds.ensure_person(npc)
+            # Their eyes are one colour from the first moment, whoever looks.
+            tokens.settle(npc)
             # Kept apart from the description: this is who they are, which
             # players never see by looking, and which the character itself
             # needs in order to behave like anyone in particular.
@@ -1243,9 +1278,9 @@ def dress_npc(sponsor, npc):
                 f"World: {lore.description(room)}\n\n"
                 f"{lore.guidance_block(room, 'npcs')}"
                 f"Room: [{room.db.room_title or room.key}]\n"
-                f"{room.db.desc or ''}\n\n"
+                f"{tokens.text_of(room)}\n\n"
                 f"Character: {npc.key}\n"
-                f"Their body: {npc.db.desc or '(not described)'}\n"
+                f"Their body: {tokens.text_of(npc) or '(not described)'}\n"
                 f"Who they are: {npc.db.manner or '(not described)'}\n"
                 f"What they want: {goals.describe(npc.db.goal)}\n\n"
                 f"{gear.prompt_block(room.db.world_root)}"
@@ -1300,11 +1335,13 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
     from world import clothing, lore
     from world.activity import active_players_in
 
+    from world import tokens
+
     nearby = active_players_in(room)
     world_desc = (lore.description(room, nearby[0] if nearby else None)
                   or npc.db.world_description or "")
     room_title = room.db.room_title or room.key
-    room_desc = room.db.desc or ""
+    room_desc = tokens.text_of(room)
     room_contents = _room_context(room, npc)
     history_text, bank, cues, on_show = _memory_inputs(npc, room, room_title)
 
@@ -1321,7 +1358,7 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
         world_desc=world_desc,
         guidance=lore.guidance_block(room, "dialogue",
                                      nearby[0] if nearby else None),
-        npc_desc=clothing.own_appearance(npc, npc.db.desc or "") or "(no description)",
+        npc_desc=clothing.own_appearance(npc, tokens.text_of(npc)) or "(no description)",
         npc_traits=_trait_line(npc),
         npc_manner=(f"Who you are: {npc.db.manner}\n\n" if npc.db.manner else "\n"),
         room_title=room_title,
@@ -1331,18 +1368,33 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
         want=_want_line(npc),
     )
 
-    def _fetch():
-        from world.memory import format_memories, recall_for_cues
+    def _recall():
+        # In the thread pool, off the reactor: recall is SQLite and slow.
+        from world.memory import recall_for_cues
 
-        recalled = format_memories(
-            recall_for_cues(bank, cues, top_k=6, already_known=on_show))
+        return recall_for_cues(bank, cues, top_k=6, already_known=on_show,
+                               rows=True)
+
+    def _recalled(rows):
+        # Back on the main thread, because saying a memory again with the
+        # names things have now reads the game's database, which a worker
+        # thread may not touch -- and then out again for the model. One hop
+        # more than when recall and the call shared a thread; see
+        # docs/tokens-and-phrases.md, phase 6.
+        from world.memory import format_recalled
+
+        try:
+            recalled = format_recalled(rows)
+        except Exception as exc:
+            on_error(str(exc))
+            return
         messages = [
             {"role": "system", "content": system},
             {
                 "role": "user",
                 "content": (
-                    f"What you remember about this place and these people:\n"
-                    f"{recalled}\n\n"
+                    f"What you remember about this place and these people, "
+                    f"oldest first:\n{recalled}\n\n"
                     f"Just now:\n{history_text}\n\n"
                     "Nothing has just happened — act of your own accord. "
                     "What do you do right now, naturally and in character? "
@@ -1350,7 +1402,8 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
                 ),
             },
         ]
-        return llm.call(sponsor, model, messages, tools=tools)
+        llm.fetch(lambda: llm.call(sponsor, model, messages, tools=tools),
+                  on_success=_done, on_error=_fail)
 
     def _done(raw):
         try:
@@ -1380,7 +1433,7 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    llm.fetch(_fetch, on_success=_done, on_error=_fail)
+    llm.fetch(_recall, on_success=_recalled, on_error=_fail)
 
 
 def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
@@ -1400,11 +1453,13 @@ def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
     from world import clothing, lore
     from world.activity import active_players_in
 
+    from world import tokens
+
     nearby = active_players_in(room)
     world_desc = (lore.description(room, nearby[0] if nearby else None)
                   or npc.db.world_description or "")
     room_title = room.db.room_title or room.key
-    room_desc = room.db.desc or ""
+    room_desc = tokens.text_of(room)
     room_contents = _room_context(room, npc)
 
     # Working memory verbatim, long memory by relevance.  Anything the model
@@ -1424,7 +1479,7 @@ def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
         world_desc=world_desc,
         guidance=lore.guidance_block(room, "dialogue",
                                      nearby[0] if nearby else None),
-        npc_desc=clothing.own_appearance(npc, npc.db.desc or "") or "(no description)",
+        npc_desc=clothing.own_appearance(npc, tokens.text_of(npc)) or "(no description)",
         npc_traits=_trait_line(npc),
         npc_manner=(f"Who you are: {npc.db.manner}\n\n" if npc.db.manner else "\n"),
         room_title=room_title,
@@ -1434,25 +1489,37 @@ def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
         want=_want_line(npc),
     )
 
-    def _fetch():
-        # Recall runs here, inside the thread that was already being deferred
-        # for the network call, so it costs no extra hop and never touches the
-        # reactor.
-        from world.memory import format_memories, recall_for_cues
+    def _recall():
+        # In the thread pool, off the reactor: recall is SQLite and slow.
+        from world.memory import recall_for_cues
 
-        recalled = format_memories(
-            recall_for_cues(bank, cues, top_k=6, already_known=on_show))
+        return recall_for_cues(bank, cues, top_k=6, already_known=on_show,
+                               rows=True)
+
+    def _recalled(rows):
+        # Back on the main thread to say each memory again with the names
+        # things have now, which reads the game's database -- then out again
+        # for the model. See `generate_npc_idle`.
+        from world.memory import format_recalled
+
+        try:
+            recalled = format_recalled(rows)
+        except Exception as exc:
+            on_error(str(exc))
+            return
         messages = [
             {"role": "system", "content": system},
             {
                 "role": "user",
                 "content": (
-                    f"What you remember that bears on this:\n{recalled}\n\n"
+                    f"What you remember that bears on this, oldest first:\n"
+                    f"{recalled}\n\n"
                     f"Just now:\n{history_text}\n\nHow do you respond?"
                 ),
             },
         ]
-        return llm.call(sponsor, model, messages, tools=tools)
+        llm.fetch(lambda: llm.call(sponsor, model, messages, tools=tools),
+                  on_success=_done, on_error=_fail)
 
     def _done(raw):
         try:
@@ -1482,4 +1549,4 @@ def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    llm.fetch(_fetch, on_success=_done, on_error=_fail)
+    llm.fetch(_recall, on_success=_recalled, on_error=_fail)

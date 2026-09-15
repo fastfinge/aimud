@@ -342,6 +342,11 @@ def permitted(caller, verb, bound):
 
     from world import conditions, rulebooks
 
+    # What a name says a thing is, before its check rules are read. See
+    # `_with_rule` and verbs.adopt_named_states.
+    for obj in list((bound or {}).values()):
+        verbs.adopt_named_states(obj, world_root)
+
     ctx = conditions.context(bound, caller, world_root, verb)
     for gate in rulebooks.for_attempt(world_root, verb, bound, caller,
                                       phase=rulebooks.CHECK):
@@ -980,6 +985,13 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                redirects=0):
     from world import conditions, rulebooks
 
+    # Before anything is checked: a thing is in whatever conditions its name
+    # says, from the moment this world knows them as conditions -- which may
+    # be this very attempt, when the rule it needs was only just written.
+    # See verbs.adopt_named_states.
+    for obj in list((bound or {}).values()):
+        verbs.adopt_named_states(obj, world_root)
+
     ctx = conditions.context(bound, caller, world_root, verb)
     book = rulebooks.for_attempt(world_root, verb, bound, caller,
                                  verb_rule=rule)
@@ -1119,11 +1131,15 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             actor_text = "\n".join(
                 part for part in [actor_text] + extra if part).strip()
             extra = []
-        template = " ".join([events_mod.repair(room_text)] + extra).strip()
+        # The narration and the effect lines travel apart. The effect lines
+        # are the game's own sentences and name things by whatever they are
+        # called, so `Event.template` puts them after the narration as quotes
+        # rather than as more template to be read.
         event = events_mod.Event(
             actor=caller, room=room, verb=verb, roles=bound,
             outcome=outcome, effects=list(extra), raw=raw,
-            contested=result is not None, room_template=template)
+            contested=result is not None,
+            room_template=events_mod.repair(room_text))
         # AFTER. What follows from it having worked, gathered before any of
         # it landed so that nothing an after-rule does can set another one
         # going. Bounded by the action, which is how consequence happens here
@@ -1209,40 +1225,20 @@ def _remember(caller, event, actor_text):
     list begins `i you he she it they` -- so `"I did: ..."` led with a word
     that made the sentence contribute nothing at all. The prefix is gone and
     the names are in.
+
+    **An episode, in the past tense, and nothing else** (phase 6). The same
+    sentence a witness remembers: "Raldor handed Jessica the sword." Neither
+    the actor's own second-person line nor the effect lines go in any more --
+    "you hug her" is not a memory, and "the candle is now lit" is a state,
+    which `effects` writes as a triple where it can stop being true. The
+    metadata is what `memory.rerender` says it again from. `actor_text` is
+    kept in the signature and read by nothing.
     """
-    from world.memory import remember
+    from world.memory import episode_of, remember
 
-    involved = [obj for obj in event.participants() if obj is not caller]
-    names = ", ".join(sorted(str(obj.key) for obj in involved))
-
-    line = f"{caller.key} {'tried to' if event.contested else ''} {event.verb}"
-    line = " ".join(line.split())
-    if names:
-        line += f" {names}"
-    # A failure is a thing that happened to you and worth remembering as one:
-    # an NPC beaten off twice should know it before trying a third time, and
-    # "attacked the guard" on its own reads as a victory.
-    if event.contested:
-        line += (", and succeeded" if event.outcome in checks.GOOD
-                 else ", and failed")
-    if actor_text:
-        line += f" — {actor_text}"
-    if event.effects:
-        line += " " + " ".join(event.effects)
-
-    remember(
-        caller, line, kind="did", importance=0.65,
-        # What no extractor could supply, because we resolved it rather than
-        # guessing: exactly who and what this was about, by name and by id.
-        about=[(str(obj.key), f"#{obj.id}")
-               for obj in event.participants() if getattr(obj, "id", None)],
-        # Unread today. It is what lets a recalled memory be re-rendered with
-        # the names things have now rather than replayed as the sentence it
-        # was written as.
-        metadata={"verb": event.verb, "outcome": event.outcome,
-                  "roles": {role: obj.id for role, obj in event.roles.items()
-                            if getattr(obj, "id", None)}},
-    )
+    line, about, metadata = episode_of(event)
+    remember(caller, line, kind="did", importance=0.65, about=about,
+             metadata=metadata)
 
 
 def _release(caller, on_message, actor_text, event=None):

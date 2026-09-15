@@ -206,10 +206,11 @@ class NarratingATemplate(EvenniaTest):
         event = events.Event(actor=self.char1, room=self.root, verb="hand",
                              roles={"direct": self.obj1, "target": self.char2},
                              room_template=got[1])
+        # They/them, and named, so one person: "hands". Only "they" hand.
         self.assertEqual(events.render(got[1], self.char2, event),
-                         f"{self.char1.key} hand you the {self.obj1.key}.")
+                         f"{self.char1.key} hands you the {self.obj1.key}.")
         self.assertEqual(events.render(got[1], None, event),
-                         f"{self.char1.key} hand {self.char2.key} "
+                         f"{self.char1.key} hands {self.char2.key} "
                          f"the {self.obj1.key}.")
 
     def test_a_careless_reply_is_repaired_before_it_is_stored(self):

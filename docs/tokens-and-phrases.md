@@ -1,6 +1,8 @@
 # Development plan: tokens and phrases
 
-Status: **planned, nothing built.** Six phases, §8.
+Status: **all six phases built.** Six phases, §8. Where the
+building turned up something the plan had wrong, the phase says so under *As
+built* rather than the plan being quietly corrected.
 
 Companion to `development-plan.md` (rulebooks) and `pronouns-and-ownership.md`.
 The ground rules in §2 of `development-plan.md` are acceptance criteria here
@@ -539,6 +541,32 @@ result can reach the renderer as a `Phrase` when the call sits inside other
 text, or only as a string. If only as a string, write the parser: §4.1 is two
 productions. Keep Evennia's spelling either way.
 
+*Spike result: only as a string, so the parser is ours.* Measured against
+Evennia 6.1.0:
+
+* **Plain text forces a string.** `parse` sets `return_str = True` the moment
+  it reads a character outside a call, and joins every result with `str()`.
+  `"{actor} $pconj(hand) {target}."` with a callable returning a `Phrase`
+  comes back as the string `"{actor} hands {target}."`. The object survives
+  only when the call is the whole string.
+* **A workaround exists and was not taken.** A callable can append its
+  `Phrase` to a side list passed as a reserved keyword argument and return a
+  placeholder, which the caller splits back into spans. That works for flat
+  calls, keyword arguments included. But a nested call's result reaches the
+  outer call as the placeholder string, and `{slot}` needs a second pass of
+  our own anyway: two parsers, joined by a hack.
+* **What is kept from it** is behaviour, copied and tested:
+  * `\$` escapes a call;
+  * an unknown call (`$nope(x)`) or an unclosed one (`$pconj(hand`) is left as
+    written;
+  * a `$` not followed by a letter or underscore (`$5`) is literal;
+  * a double-quoted argument may contain commas, and is taken as written;
+  * a comma inside braces, brackets or parentheses does not split an argument
+    (an unquoted argument is otherwise read as a template of its own, so a
+    slot or a call inside one still works).
+* **Speed** was not the reason: 5.8 µs a parse against 0.3 µs for the current
+  regex, which is nothing beside a network write.
+
 Then:
 * `world/tokens.py`: parser, `Phrase`, spans, the render context (§4.3), the
   built-in resolvers for roles, possessives, `$pconj`, `{user}` and `self`
@@ -561,6 +589,52 @@ Then:
 
 No world reset.
 
+*As built* (`world/tokens.py`, `tests/test_tokens.py`). Settled in the
+building:
+
+* **Aliases are accepted on read and not rewritten on store.** §4.1 says
+  `<user>` and friends are normalised when text is stored. `parse` normalises
+  all three spellings before reading, which is all a world needs. Rewriting
+  what an author typed would change stored text in the phase that promised no
+  behaviour change, and would show them `{user}` in `worldedit` where they
+  wrote `<user>`.
+
+  At the time of building, what eats a brace of `{{user}}` on its way to the
+  screen had not been found. It is the ANSI colour escape in Evennia's editor:
+  there `{{` is the escape for writing a single brace among colour and
+  formatting codes. So only the doubled spelling displays wrongly; `{user}`
+  and `<user>` display as typed, and rewriting on store is safe if it is ever
+  wanted.
+* **Effect lines are quotes named `_effect0`, `_effect1` and so on.**
+  `Event.template()` puts them after the repaired narration, and
+  `Event.quoted()` binds them. Every site that rendered
+  `repair(event.room_template)` renders `event.template()` now. One behaviour
+  did change, and it was a bug: an effect line with no narration in front of
+  it was repaired as a fragment and read "Jessica a lamp is now here."
+* **Quotes win over roles**, then roles, then the built-ins, then plugins.
+  The splices that became quotes: an NPC's `say`; its request aloud; the quest
+  giver and title when accepting, declining and abandoning; the effect line
+  after "destroys something"; and clothing's "covering ..." tail, which named
+  garments a model had named.
+* **An NPC's emote stays template text.** It is narration the model wrote
+  about its own character, the same standing as a cached room template, and
+  `repair` needs to read it to wrap its verb. Its only bound role is the
+  actor.
+* **`{viewer}`, `{here}` and `{world}` are built** as well as `{user}` and
+  `{self}`: `here` is the event's room title and `world` is `lore.title`.
+* **The field table** is `name`, the five pronoun forms, `state.<group>`,
+  `trait.<slug>` and `owner`. The reader's own pronoun forms are second
+  person. A field not in the table leaves the slot as written, so
+  `{direct.db.api_key}` renders as itself.
+* **`provide(name, resolver, call=False)` and `withdraw(name)`** are the plugin
+  seam. `scope` and `fields` from §4.4 arrive with phase 3, when there is
+  anything to scope.
+* **`purpose` is set but read by nothing yet.** `events.render` passes
+  `display` for a reader and `prompt` for nobody, and the centering rule still
+  decides on its own whether the reader is somebody.
+* **Tense is carried and not used.** `$pconj` conjugates the present only until
+  phase 2.
+
 ### Phase 2 -- English
 
 * `world/english.py` as §7.
@@ -576,6 +650,66 @@ Acceptance is a word table built from §3's measurements:
 * every row with and without WordNet.
 
 The narration tests pass unchanged. No world reset.
+
+*As built* (`world/english.py`, `tests/test_english.py`). Settled in the
+building:
+
+* **WordNet's verb exceptions come after Evennia, not before.** §7.1 put the
+  tables third, taking a single listed form as the past. The rule fails on
+  "sow", which the table files with "sown" alone because its past is regular:
+  "she sown". But Evennia's table lacks 158 of the 1,392 verbs WordNet lists
+  irregular forms for -- bind, bear, baby-sit, co-star -- so the tables are
+  consulted only when Evennia has nothing. Where they list several forms,
+  those ending "n" or "ne" are set aside as participles: bear gives "bore".
+  "light" stays "lighted", which is Evennia's answer and English.
+* **WordNet's noun exceptions are not used.** `inflect` already knows every
+  irregular plural the table does, and the table says fish becomes "fishes".
+* **`base_form` asks Evennia's infinitive first.** The suffix guesses alone
+  answered "i" for "is", and `repair` had been turning "{actor} is tired" into
+  a template that told its actor "You i tired". It gives `$pconj(be)` now.
+  "{actor} has" is "have" the same way.
+* **Number and article are read from the head of a phrase**, the last word
+  before "of": "a pair of boots", "three pairs of boots". `referents` keeps
+  asking about the last word, because a pile of coins is "them" to somebody
+  typing.
+* **`$an`, `$the`, `$plural` and `$count` are built** on words rather than
+  things. An argument arrives as text, so they cannot know that "water" is
+  stuff; a slot chooses its own article from the thing it names.
+* **`get_numbered_name` is overridden on `ObjectParent`.** Somebody is
+  "Jessica", stuff is "some water" whatever the count, and the plural aliases
+  are registered as Evennia registers them. A name containing colour codes is
+  handed back to Evennia. At a count of one the alias registered is "a
+  sword"; Evennia also registered "one sword".
+* **Known gaps, measured and left:** "scissors" is not detected as plural,
+  because WordNet files it as its own headword; the last-word test in
+  `referents` calls "physics" and "species" plural; `inflect` writes "a
+  8-ball"; a two-syllable verb that should double its last letter
+  ("hotswapped") does not.
+* **Found, not fixed:** `repair` wraps the word after `{actor's}` as well as
+  after `{actor}`, so "{actor's} boots" becomes `$pconj(boot)` and tells the
+  actor "your boot". It was already doing this before phase 1.
+* **Found and fixed, during phase 5: a named they/them character took a
+  plural verb.** Agreement read the pronoun set whatever the subject was
+  called, so "Jessica hand Britney the sword" -- and `test_centering` asserted
+  it. A verb now agrees with the words its subject was given: `Naming` records
+  whether it named or pronominalised each participant, and `$pconj` asks it
+  (`Naming.plural_for`, `events.subject_plural`). "They hand", "Jessica
+  hands". A thing's number is still its name's -- "the coins scatter" -- and a
+  subject the sentence has not yet named is taken as named.
+* **Found in playtesting and fixed: "some stick of blue chalk".** The chalk was
+  filed under a substance sense, so the whole object was taken for stuff.
+  `english.is_mass` now asks the name as well: stuff only when the name's head
+  is the substance word. "Some blue chalk", "a stick of blue chalk", "a chalk
+  stick".
+* **Found in playtesting and fixed: looking at sarcophagi made "some
+  sarcophagi".** Two fixes, one each side of creation. The item model is told,
+  when asked to make something plural, to make one of several separate things
+  and name it in the singular, or keep a plural name that is one thing, like
+  trousers (`item_gen._plural_note`) -- a question about English the model can
+  answer and a dictionary cannot. And `naming` scores a plural against its
+  singular as the same word (`english.singular`, guarded by
+  `lexicon.headword` so "glasses" never finds a glass), so "look at sarcophagi"
+  finds the sarcophagus that already exists rather than making another.
 
 ### Phase 3 -- world lists, facts and scope
 
@@ -606,6 +740,69 @@ Acceptance is the ball, end to end:
 
 No world reset: new attributes only.
 
+*As built* (`world/token_lists.py`, `commands/token_cmds.py`,
+`tests/test_token_lists.py`). Settled in the building:
+
+* **Lists are their own module.** §5.6 named the door `tokens.register`. It is
+  `token_lists.register_many`, with `register` for one list, `declare` for a
+  generator's reply and `unregister`, because `tokens` is the grammar and a
+  world's register is a different job. `tokens` asks `token_lists.resolve` for
+  any slot that is not a quote, a role or a built-in, and `$pick` goes to the
+  same place.
+* **A reference nobody answers is refused as well as a list that cannot
+  finish.** §5.6 had only the productivity check. But a list whose entry says
+  `{beast}` when no `beast` list exists would show its braces for ever, so the
+  references are checked over everything the world keeps plus everything in
+  the same batch. Lists declared together may name each other.
+* **The fold is exact or singular.** `smells` folds onto `smell` through the
+  lemma; nothing looser, because a list's name is typed into text and a fold
+  that surprised whoever typed it would be worse than a second list.
+* **Facts are states and traits, and nothing else.** §5.2 allowed kinds and
+  affordances at creation. `clothing.create` settles an object's kinds before
+  the object exists, a kind is a rule cache key, and an affordance belongs to
+  a kind rather than to one thing -- so a list has no safe moment to change
+  either.
+* **A list with a group declares its states; a list without one may only name
+  states the world keeps.** An unknown state in a grouped list is registered
+  into that group, as a state declared anywhere else would be. A trait must
+  already be kept, because a trait has a type and bounds and a word in a list
+  says neither. Traits are set only on people.
+* **The state is read before the remembered word.** A grouped list on a thing
+  already in one of its states renders that entry, or the state's own word if
+  no entry sets it -- which is how paint reads "red". If a choice was made and
+  the state has since been taken away, the list renders its fallback or
+  nothing, rather than a colour the thing no longer is.
+* **Only object, room and world scopes write facts.** A choice made once per
+  viewer cannot put one thing in two states, and one made every render has
+  nowhere to stay.
+* **Two references in one entry share a choice** because they share a path:
+  "The {beast} and {beast}" is one animal twice. Past a depth of eight, only
+  entries that name no other list are chosen from.
+* **Choices are made at creation in three places and remade in two.**
+  `clothing.create` covers items, clothes and room contents; `_create_room`
+  declares the room's lists once the world exists -- the first room *is* the
+  world -- and settles them; the NPC spawn settles the body. `modify_object`
+  and `modify_room` settle again after rewriting a description. A viewer-scoped
+  choice is left for whoever looks.
+* **Every prompt read of a description goes through `tokens.text_of`**:
+  `item_gen`, `npc_gen`, `verb_gen` and `worldgen`, eleven sites in all. A
+  structural test fails on any `.db.desc` read in `world/` outside `tokens`.
+  Looks render through `ObjectParent.get_display_desc`, which covers objects,
+  rooms and NPCs, and `Character.get_display_desc`.
+* **Three generators may declare lists**: items, NPCs and room descriptions.
+  Each is shown `token_lists.vocabulary_block` in its user message, with the
+  instructions for `new_token_lists` in the block rather than in a system
+  prompt -- ordered by `for` kinds: nothing for an item, `person` for an NPC,
+  the room type for a room. The contents and clothing passes, and the rule and
+  verb generators, declare none.
+* **`tokens` lists, shows, tries, adds and removes.** Adding and removing is for
+  the world's creator or a superuser, the line `worldedit` draws. `tokens add`
+  makes decoration only; a list of states comes from a generator for now.
+  Lists are `help` topics under "word lists", filed after every other register
+  so the bare word stays with a kind or a condition of the same name.
+* **Found, not fixed:** a description that names a list nobody declared shows
+  its braces. Declarations are checked; the text a list is used in is not.
+
 ### Phase 4 -- lexicon sources
 
 * The calls of §6, with `else=`, the ConceptNet filter and seeded picks.
@@ -617,6 +814,37 @@ Acceptance:
   deterministic and pass the filter.
 
 No world reset.
+
+*As built* (`world/token_lists.py` `SOURCES`, `world/lexicon.py`,
+`tests/test_lexicon_sources.py`). Settled in the building:
+
+* **A dictionary's answer is made into a list on the spot and chosen from by
+  the same path a kept list is.** `token_lists.resolve` was split so that
+  `choose` takes any list, kept or not. So every call has a scope, a seed and
+  an `as=` label for free, and is kept under the call itself --
+  `hyponym:sword.n.01` -- so two different calls on one thing are two choices.
+* **A plain word is accepted where a sense is**, when it settles to one:
+  `$hyponym(sword)` is `$hyponym(sword.n.01)`. A word whose senses disagree
+  settles to nothing and the call says its `else`.
+* **WordNet gives one word per sense**, its first lemma with underscores as
+  spaces, and only the senses directly beneath or directly part of it. Two
+  steps down "tree" is already an opepe.
+* **The ConceptNet filter is `token_lists.plausible`**: three words at most, a
+  head noun WordNet knows, and not settled into the `person` bucket. "cook" is
+  in a galley and is refused. An ambiguous word such as "sailor" settles to no
+  sense and is let through -- the filter refuses only what it can be sure of.
+* **Without WordNet nothing from ConceptNet passes**, because the filter needs
+  a dictionary to say a word is a word. Every call then says its `else`, and
+  one with no `else` says nothing.
+* **A choice once made stays made** whatever a corpus says later. A call that
+  found nothing stores nothing, so a world that later downloads ConceptNet
+  starts choosing where it used to say its `else`.
+* **No choice becomes a kind.** §6 allowed a hyponym to become an object's kind
+  at creation. Phase 3 settled that nothing a list chooses changes what a
+  thing is, and a dictionary's list is no different.
+* **Known gap:** arguments are expanded before the call is made, so an `else`
+  holding a list slot makes that list's choice even when the dictionary
+  answered.
 
 ### Phase 5 -- recognition
 
@@ -651,6 +879,54 @@ Acceptance:
 * annotations carry the stated confidences.
 
 No world reset.
+
+*As built* (`world/recognition.py`, `tests/test_recognition.py`). Settled in
+the building:
+
+* **Recognition is its own module**, `recognition.recognise(text, speaker,
+  room, targets)`, not `tokens.recognise`: it reads words into references,
+  which is the other direction from anything in `tokens`. It answers with
+  `Mention(ref, name, start, end, addressed, confidence)`.
+* **One word of a person's name counts, at lower confidence.** The plan allowed
+  only a key or an alias, but people say "Barnaby" to Barnaby Royston. The rule
+  is the one `NPC._names` already used to notice being named: every word of the
+  name longer than two letters that is not a title. Whole names outrank parts,
+  and the longest name found wins a stretch of text.
+* **Things are mentioned too, and never addressed.** "Pass me the lamp" names
+  the lamp. The capital rule applies only to people, since a thing is usually
+  named in lower case.
+* **A capital at the start of a sentence proves nothing**, so a name that is a
+  word ("Hope", "Tam") counts there only when it is set off as being spoken to.
+* **Two candidates for one stretch of text name neither**, unless one is surer:
+  a whole name beats one word of somebody else's.
+* **A name followed by the end of its sentence closes the utterance.** "Hello,
+  Raldor. Is the lamp lit?" is said to Raldor.
+* **The confidences:** 1.0 for a command's own target (a whisper's listener),
+  0.8 for a whole name or alias, 0.6 for one word of a name, 0.5 for a name
+  that is an ordinary word.
+* **Annotations are written per confidence**, since `add_many` takes one per
+  call. `addressed` is its own kind, by dbref. `about` accepts
+  `(name, dbref, confidence)`, and the old two-field shape still reads at 1.0.
+* **Where it runs.** `notify_npcs` reads player speech and poses. An NPC's `say`
+  and `emote` read their own words and pass what they found to their own
+  memory and to the NPCs who hear them. A whisper's receivers arrive as
+  targets. And a witnessed action -- which the plan left alone -- now carries
+  its bound participants at 1.0 into every witness's memory, from
+  `events._tell_the_characters`.
+* **An NPC answers when recognition says it was spoken to.** `spoken_to` sits
+  beside `addressed_by`, which is unchanged: any mention of a name still wakes
+  a character. What `spoken_to` adds is being whispered to.
+* **Found and fixed: players never remembered what an NPC said.** An NPC's
+  speech and emotes, and what it produced or picked up, were written to its own
+  memory and told to the other NPCs through `_notify_other_npcs`, which never
+  called `record_room_event`. `memory.py` promises that what a character has
+  witnessed is written as it happens, and for every NPC tool it was not. Now
+  `_notify_other_npcs` writes to the players' memories first -- before the
+  chain limit, which exists to stop model calls rather than memories -- and
+  the acts no other NPC is told about (asking a favour aloud, handing a thing
+  over, breaking one) write through the same `_witnessed_by_players`. The one
+  path that already recorded, a verb attempt, now goes through it too rather
+  than recording twice.
 
 ### Phase 6 -- memory shape, rendering at display, and NPC context
 
@@ -730,6 +1006,73 @@ Acceptance:
   falls back to its stored text.
 * **NPC context:** in time order with ages; the dedupe test from 6b; the
   present-state line appears and is capped.
+
+*As built* (`world/memory.py` episodes and recall, `tests/test_episodes.py`).
+Settled in the building:
+
+* **One builder, two functions.** `memory.episode_line(event)` renders the
+  narration -- repaired, without effect lines -- in the past tense for nobody,
+  and adds ", and failed." or ", and succeeded." to a contest.
+  `memory.episode_of(event)` adds `about` and metadata. An event with no
+  narration, which is every look and every mechanic, gets a plain one from its
+  verb and roles: "Jessica hugged Britney.", "Jessica looked at the sword."
+* **Metadata is `shape: 2`** with the template, verb, outcome, whether it was
+  contested, the actor's id, every role's id, and the quotes. Anything recalled
+  without `shape: 2` is shown exactly as it was stored.
+* **Every path a witnessed action takes carries the line and metadata**:
+  `events._tell_the_characters`, `notify_npcs`, `record_room_event`,
+  `NPC.witness`, `_add_to_history`, `_notify_other_npcs` and
+  `_witnessed_by_players`. An NPC's working-memory entry keeps the same line it
+  remembered, so "Just now" and recall are the same words.
+* **`_acted` now answers with the episode**, so an NPC's own mechanic acts --
+  picking up, handing over, producing, breaking, asking a favour, agreeing to
+  an errand -- are remembered in the past tense. They carry no metadata, and
+  are not re-rendered.
+* **Speech is `Raldor said, "..."`**, and movement is "Raldor arrived in the
+  galley from the corridor" and "Barnaby walked north to the dock". An NPC's
+  emote is its template in the past tense: "Barnaby waved at Raldor". **A
+  player's pose is stored as typed**, present tense and all: it is typed text,
+  which is never read as a template, and nothing can safely change its tense.
+* **`set_state` effects write triples** (`effects._note_states`): a state in an
+  exclusive group supersedes the rest of its group, one in no group is `is`,
+  and a removal closes its triple. Ownership already wrote facts.
+* **Moving and destroying things write triples too.** Every story move of a
+  thing -- taken, dropped, placed, given, sent by an effect -- reaches
+  `ObjectParent.at_post_move`, which writes `located` ("carried_by #5", "in
+  #1", "on #7") and supersedes where it was. Every triple here -- states,
+  location, destruction -- is keyed by dbref, as ownership's already were: a
+  triple is queried by identity, two swords share a name, and a renamed room is
+  still the room. Names stay in the facts and the memories. Teleports are left out,
+  since that is Evennia's housekeeping when something holding things is
+  deleted, and so are people, rooms and exits. The `destroy_object` effect
+  closes `located` and writes `is destroyed`, before the deletion; deletion
+  itself is not hooked, because a world being reset deletes everything in it.
+* **Creating a thing writes nothing, on purpose.** Things are made when first
+  needed, not when first mentioned: the blackboard a room describes becomes an
+  object the first time somebody reaches for it. A record of the moment it was
+  made would say when somebody first reached for it and read as when it came to
+  be. The hook skips an arrival from nowhere for that reason.
+* **Recall does not return metadata; `get` does.** `_recall_sync` reads each
+  hit's metadata by id in the same connection, and returns rows. `recall_sync`
+  still returns strings for anything that wants them.
+* **Rendering happens on the main thread, in one extra hop.** Both NPC prompts
+  and the `remember` command now recall in the thread pool, format on the main
+  thread -- re-rendering and the present-state line read the game database --
+  and send the model call back out. **Not measured under load.** The fallback
+  the plan names, stored text for anything the main thread did not already
+  hold, has not been needed.
+* **Deduplication is still by the words, not by memory ids.** A working-memory
+  entry never learns its memory's id, because remembering is fire-and-forget.
+  It holds exactly the line it remembered, so comparing the words keeps working
+  once both sides are episodes.
+* **Ages are real-time buckets**: "moments ago", "a little while ago", "earlier
+  today", "yesterday", "N days ago". **The present-state line** covers at most
+  three things, never people, and says whose each is and where: "Now: the
+  sword is Britney's and carried by Britney."
+* **Known gaps:** ownership's ", which belongs to Olara Voss" note on a
+  witnessed theft is in the stored line but not re-rendered, and memories
+  written before this phase stay in the bank until the world is reset --
+  nothing in the code forces the reset.
 
 ---
 

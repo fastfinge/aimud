@@ -143,6 +143,18 @@ class CmdAIUnknown(SystemNoMatch):
             caller.msg("You're still trying to do that...")
             return
 
+        # A builder typing a building command's bare name in a world is doing
+        # the verb now, not the command. Said once per name per session, so
+        # somebody who meant the verb is not told about it every time.
+        from server.conf.cmdparser import staff_spelling
+
+        spelled = staff_spelling(self.cmdset, caller, cmd_verb)
+        hinted = caller.ndb.staff_hints or set()
+        if spelled and spelled not in hinted:
+            caller.msg(f"|x(In a world, |w{cmd_verb}|x is something you do. "
+                       f"Type |w{spelled}|x for the building command.)|n")
+            caller.ndb.staff_hints = hinted | {spelled}
+
         sponsor = _sponsor_for(caller)
         # A key is wanted before anything is attempted, because almost every
         # attempt ends at a model and being told so after the wait is worse

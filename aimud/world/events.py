@@ -61,8 +61,22 @@ slot, both filled here and nowhere else:
         the same participant as a possessor -- "Jessica's", "your", "her".
     $pconj(verb)  $pconj(verb, role)
         a verb agreeing with its subject: "hands" for one person, "hand"
-        for they/them and for the reader. Only the first word is
-        conjugated, so "$pconj(pick) up" and "$pconj(pick up)" both work.
+        for the reader and when the subject was called "they". A they/them
+        character called by name is one person -- "Jessica hands". Only the
+        first word is conjugated, so "$pconj(pick) up" and "$pconj(pick up)"
+        both work.
+
+The grammar itself -- how a template is read, what else a slot may name,
+and the fields a slot may ask for -- is `world.tokens`, shared with
+everything else in the game that puts a variable into a sentence. What stays
+here is what is particular to narration: who is the centre, and what to call
+each participant.
+
+**Words that must not be read as a template travel as quotes.** What an NPC
+said, a name, the game's own line about what an effect changed: each is bound
+to a slot by whoever builds the event -- `{quote}`, `{tail}` -- and inserted
+exactly as it is. Spliced into the template instead, an NPC whose line
+contained `{target}` would have said somebody's name.
 
 Rendering has one side effect, and it is the whole mechanism: the reader's
 `referents` table is told what they were just shown, so that the next line
@@ -72,24 +86,15 @@ Jessica act, reaches Jessica.
 
 import re
 
-from world import referents
+from world import english, referents, tokens
 
 #: The roles a narration can name, in the order they rank.
 #:
 #: Grammatical role order, which is what centering theory ranks by: the
 #: subject outranks the object, the object outranks everything oblique.
-#: `participants` returns things in this order and `centre` reads it.
-RANK = ("actor", "direct", "target", "container", "source", "instrument")
-
-#: A placeholder in a narration template: `{actor}`, `{direct}`, and the
-#: possessive `{actor's}` (or `{actor}'s`, which a model writes just as often).
-_SLOT = re.compile(r"\{(\w+)('s)?\}('s)?")
-
-#: A verb to agree with its subject: `$pconj(pick)`, `$pconj(pick, direct)`.
-#: Evennia's funcparser spells it the same way, so a template written for one
-#: reads correctly in the other; the machinery here is ours (see the module
-#: docstring for why).
-_CONJ = re.compile(r"\$pconj\(([^)]*)\)")
+#: `participants` returns things in this order and `centre` reads it. Kept in
+#: `world.tokens`, which reserves the names.
+RANK = tokens.ROLES
 
 
 class Event:
@@ -103,11 +108,13 @@ class Event:
     """
 
     __slots__ = ("actor", "room", "verb", "roles", "outcome", "effects",
-                 "actor_text", "room_template", "raw", "manner", "contested")
+                 "actor_text", "room_template", "raw", "manner", "contested",
+                 "quotes")
 
     def __init__(self, actor=None, room=None, verb="", roles=None,
                  outcome="success", effects=(), actor_text="",
-                 room_template="", raw="", manner=(), contested=False):
+                 room_template="", raw="", manner=(), contested=False,
+                 quotes=None):
         self.actor = actor
         self.room = room if room is not None else getattr(actor, "location", None)
         self.verb = verb
@@ -119,11 +126,36 @@ class Event:
         self.raw = raw
         self.manner = list(manner)
         self.contested = contested
+        self.quotes = dict(quotes or {})
 
     @property
     def seen(self):
         """Whether anybody but the actor has anything to read."""
-        return bool(str(self.room_template or "").strip())
+        return bool(str(self.room_template or "").strip()
+                    or any(str(line).strip() for line in self.effects))
+
+    def template(self):
+        """
+        What the room is told: the narration, repaired, then each effect line.
+
+        The effect lines are the game's own sentences about what changed -- "a
+        lamp is now here." -- and name things by whatever they are called, so
+        they follow the narration as quotes rather than being joined onto its
+        text. Joined, they were also repaired as though they were narration: a
+        line with no narration in front of it had `{actor}` put before it.
+        """
+        text = repair(self.room_template)
+        tail = " ".join("{_effect%d}" % index
+                        for index, line in enumerate(self.effects)
+                        if str(line).strip())
+        return f"{text} {tail}".strip() if tail else text
+
+    def quoted(self):
+        """Every slot this event binds to words that are not to be read."""
+        found = {f"_effect{index}": str(line)
+                 for index, line in enumerate(self.effects)}
+        found.update(self.quotes)
+        return found
 
     def mapping(self):
         """
@@ -181,38 +213,6 @@ _ARTICLE_BEFORE_SLOT = re.compile(r"\b[Aa]n?\b\s+(?=\{)|\b[Tt]he\b\s+(?=\{)")
 _ACTOR_VERB = re.compile(r"(\{actor(?:'s)?\}|\{actor\}'s)(\s+)([a-z]+(?:e?s))\b")
 
 
-def _base_form(word):
-    """
-    The base form of a third-person-singular verb, or "" if it is not one.
-
-    Asked of Evennia's conjugator rather than guessed at with suffix rules,
-    which is the only way "tries" comes back "try" and "watches" "watch"
-    without a table of exceptions here. "" for anything whose third person is
-    not the word given -- "is", "has", a plural noun that happens to end in s
-    -- so the caller leaves alone whatever it cannot be sure about.
-    """
-    for guess in _base_guesses(word):
-        try:
-            if _stance(guess, False)[1] == word:
-                return guess
-        except Exception:
-            continue
-    return ""
-
-
-def _base_guesses(word):
-    """Every base form `word` could be the third person singular of."""
-    if word.endswith("ies") and len(word) > 4:
-        yield word[:-3] + "y"
-    if word.endswith(("ses", "xes", "zes", "ches", "shes")):
-        yield word[:-2]
-    if word.endswith("es"):
-        yield word[:-1]
-        yield word[:-2]
-    if word.endswith("s"):
-        yield word[:-1]
-
-
 def repair(template):
     """
     A narration template that will render, whatever the model sent back.
@@ -248,7 +248,7 @@ def repair(template):
 def _wrap_actor_verb(match):
     """`{actor} hands` -> `{actor} $pconj(hand)`, or leave it be."""
     slot, gap, verb = match.groups()
-    base = _base_form(verb)
+    base = english.base_form(verb)
     return f"{slot}{gap}$pconj({base})" if base else match.group(0)
 
 
@@ -306,7 +306,7 @@ def plain_name(obj, viewer, bare=False):
     up a sword" reads as though one had just appeared. A name that already
     starts with an article is left alone, and `bare` asks for none at all --
     for a thing that follows a possessive, where "her the sword" is not
-    English.
+    English. The article itself is `world.english`'s to choose.
     """
     if obj is None:
         return ""
@@ -314,17 +314,9 @@ def plain_name(obj, viewer, bare=False):
         name = obj.get_display_name(viewer)
     except AttributeError:
         return str(getattr(obj, "key", obj))
-    from world.quests import is_person
-
-    try:
-        person = is_person(obj)
-    except AttributeError:
-        person = False
-    if person or bare or not name:
+    if bare or not name:
         return name
-    if str(name).lower().split(" ", 1)[0] in ("the", "a", "an", "some"):
-        return name
-    return f"the {name}"
+    return english.with_article(name, obj, definite=True)
 
 
 def _reads(viewer):
@@ -359,6 +351,10 @@ class Naming:
         self.world_root = event.world_root if event is not None else None
         self.reads = _reads(viewer)
         self.spent = set()
+        # How each participant has been named in this sentence so far:
+        # "you", "pronoun" or "name". A verb agrees with the words its subject
+        # was given, not with the set they go by -- see `plural_for`.
+        self.said = {}
         current = event.participants() if event is not None else []
         if previous is None:
             previous = referents.told(viewer) if self.reads else []
@@ -376,6 +372,7 @@ class Naming:
         if obj is None:
             return ""
         if obj is self.viewer:
+            self.said[id(obj)] = "you"
             return "your" if possessive else "you"
         if obj is self.centre:
             forms = pronoun_forms(obj, self.world_root)
@@ -387,9 +384,22 @@ class Naming:
                 word = forms.get("object", "")
             if word and word not in self.spent:
                 self.spent.add(word)
+                self.said[id(obj)] = "pronoun"
                 return word
+        self.said[id(obj)] = "name"
         name = plain_name(obj, self.viewer, bare=bare)
         return f"{name}'s" if possessive else name
+
+    def plural_for(self, obj):
+        """
+        Whether a verb whose subject is `obj` agrees as plural in this sentence.
+
+        By the words the subject was given. "They" takes a plural verb for a
+        they/them character, but their name is one person: "they hand" and
+        "Jessica hands". Before this, the set decided both, and a named
+        they/them character read "Jessica hand Britney the sword".
+        """
+        return subject_plural(obj, self.world_root, self.said.get(id(obj)))
 
     def remember(self):
         """
@@ -424,79 +434,77 @@ def name_for(obj, viewer, role="", event=None):
     return Naming(viewer, event, previous=[]).name(obj, role)
 
 
-def conjugate(verb, subject, viewer, world_root=None):
+def conjugate(verb, subject, viewer, world_root=None, tense="present",
+              naming=None):
     """
     A verb agreeing with its subject, as this reader would see it.
 
-    "hands" for one person, "hand" for a they/them character or a pile of
-    coins, "hand" for the reader themselves. Only the first word is touched;
-    "pick up" comes back "picks up". Evennia's conjugator does the English,
-    and a verb it cannot place gets the plain third-person suffix rather
-    than nothing at all.
+    "hands" for one person, "hand" when they are "they" or for a pile of
+    coins, "hand" for the reader themselves -- and in the past, "was" for her
+    and "were" for them or for you. Only the first word is touched; "pick up"
+    comes back "picks up". The subject's person and number are decided here,
+    where the reader and pronoun sets are known; the English is
+    `world.english`'s.
+
+    `naming` is the sentence's `Naming`, which knows whether the subject was
+    given a pronoun or a name. Without one the subject is taken as named.
     """
-    verb = str(verb or "").strip()
-    if not verb:
-        return ""
-    head, _, tail = verb.partition(" ")
     if subject is not None and subject is viewer:
-        word = _stance(head, False)[0]
+        person, plural = 2, False
     else:
-        plural = bool(pronoun_forms(subject, world_root).get("plural")) \
-            if subject is not None else False
-        word = _stance(head, plural)[1]
-    return f"{word} {tail}".strip()
+        person = 3
+        if naming is not None:
+            plural = naming.plural_for(subject)
+        else:
+            plural = subject_plural(subject, world_root)
+    return english.conjugate(verb, person=person, plural=plural, tense=tense)
 
 
-def _stance(verb, plural):
-    """(second person, third person) for one word."""
+def subject_plural(obj, world_root=None, said="name"):
+    """
+    Whether a subject takes a plural verb, given the words it was called by.
+
+    A thing's number is its name's, whatever it was called: "the coins
+    scatter", "they scatter". A person called by a pronoun agrees with the set
+    -- "they pick up" -- and a person called by name is one person, whatever
+    set they go by. A subject not yet named in the sentence is taken as named.
+    """
+    if obj is None:
+        return False
+    from world.quests import is_person
+
     try:
-        from evennia.utils.verb_conjugation.conjugate import (
-            verb_actor_stance_components)
+        person = is_person(obj)
+    except AttributeError:
+        person = False
+    if person and said != "pronoun":
+        return False
+    return bool(pronoun_forms(obj, world_root).get("plural"))
 
-        second, third = verb_actor_stance_components(verb, plural=plural)
-        return str(second or verb), str(third or verb)
-    except Exception:
-        return verb, verb if plural else f"{verb}s"
 
-
-def render(template, viewer, event, previous=None):
+def render(template, viewer, event, previous=None, tense="present"):
     """
     The template as this viewer should read it.
 
-    Verbs agree first, then names are chosen, then the reader's table is
-    told what they saw -- the one side effect, and only for a reader who is
-    somebody. A regex rather than `str.format_map`, because a template is
-    often a sentence a model wrote and a stray brace in it must not raise in
-    the middle of delivering something that already happened. A slot naming
-    nothing is left alone and caught by the structural test rather than shown
-    with a guess in it.
+    `world.tokens` reads the template and fills it, asking this module's
+    `Naming` what to call each participant; then the reader's table is told
+    what they saw -- the one side effect, and only for a reader who is
+    somebody. Never `str.format_map`, because a template is often a sentence a
+    model wrote and a stray brace in it must not raise in the middle of
+    delivering something that already happened. A slot naming nothing is left
+    alone and caught by the structural test rather than shown with a guess in
+    it.
 
     `previous` overrides what the reader was last shown; for tests of the
-    rule, and for nothing else.
+    rule, and for nothing else. `tense="past"` is the same narration as
+    something that already happened: "Jessica handed Britney the sword."
     """
-    mapping = event.mapping()
     naming = Naming(viewer, event, previous)
-
-    def agree(match):
-        verb, _, role = match.group(1).partition(",")
-        role = role.strip() or "actor"
-        return conjugate(verb, mapping.get(role), viewer, naming.world_root)
-
-    def fill(match):
-        role = match.group(1)
-        if role not in mapping:
-            return match.group(0)
-        possessive = bool(match.group(2) or match.group(3))
-        # "{target's} {direct}", "{target's} own {direct}": a thing that
-        # follows a possessive in the same clause is already determined, and
-        # "her the sword" is not English.
-        clause = re.split(r"[.,;:!?]", text[:match.start()])[-1]
-        determined = bool(re.search(r"(?:'s\}|\}'s)\s+(?:\w+\s+){0,2}$", clause))
-        return naming.name(mapping[role], role, possessive,
-                           bare=determined)
-
-    text = _CONJ.sub(agree, str(template or ""))
-    text = _SLOT.sub(fill, text)
+    context = tokens.Context(
+        viewer=viewer, event=event, world_root=naming.world_root,
+        naming=naming, purpose="display" if naming.reads else "prompt",
+        tense=tense)
+    text = tokens.text(template, context)
     if text.strip():
         naming.remember()
     return text[:1].upper() + text[1:] if text[:1].islower() else text
@@ -524,7 +532,7 @@ def deliver(event, to_actor=True):
     if not event.seen or room is None:
         return
 
-    template = repair(event.room_template)
+    template = event.template()
     show_the_room(event, template)
     _tell_the_characters(event, template)
 
@@ -586,7 +594,7 @@ def show_the_room(event, template=None, exclude=()):
     if room is None:
         return
     if template is None:
-        template = repair(event.room_template)
+        template = event.template()
     left_out = set(exclude or ())
     for viewer in list(getattr(room, "contents", []) or []):
         if viewer is actor or viewer in left_out or not hasattr(viewer, "msg"):
@@ -640,7 +648,7 @@ def deliver_many(events, actor_text="", actor=None, room=None):
     if not events or room is None:
         return
 
-    templates = [repair(event.room_template) for event in events]
+    templates = [event.template() for event in events]
     for viewer in list(getattr(room, "contents", []) or []):
         if viewer is actor or not hasattr(viewer, "msg"):
             continue
@@ -670,14 +678,22 @@ def _tell_the_characters(event, template):
     actor, room = event.actor, event.room
     if actor is None or room is None:
         return
+    from world import memory
+
     spoken = render(template, None, event)
+    # What every witness remembers: the episode, in the past tense, with who
+    # it concerned -- known, because binding resolved it -- and the metadata
+    # it can be said again from. See `memory.episode_of`.
+    line, about, metadata = memory.episode_of(event)
     if event.verb == "get":
         # Whose it was, which the room's prose never says and a witness needs:
         # somebody watching a stranger pick up their own crowbar has seen
         # something the room has not. See `ownership.witnessed_taking`.
         from world import ownership
 
-        spoken = ownership.witnessed_taking(spoken, actor,
-                                            event.roles.get("direct"))
+        taken = event.roles.get("direct")
+        spoken = ownership.witnessed_taking(spoken, actor, taken)
+        line = ownership.witnessed_taking(line, actor, taken)
     notify_npcs(room, "action", name_for(actor, None), spoken,
-                exclude=actor, actor=actor)
+                exclude=actor, actor=actor, about=about, line=line,
+                metadata=metadata)

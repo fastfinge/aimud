@@ -106,10 +106,36 @@ def _parse_json(content):
     return parse_object(content)
 
 
+def _plural_note(object_name):
+    """
+    What to tell the item model when it is asked to make something plural.
+
+    Found in playtesting: looking at the sarcophagi a room described made one
+    object called "Sarcophagi", which the game then called "some sarcophagi"
+    and nobody could ever look at one of. Whether a plural names several
+    separate things or one thing with a plural name -- trousers, barracks --
+    is a question about English that a dictionary cannot settle and the model
+    can, so it is asked rather than the name being changed here. What was
+    typed is kept as an alias either way, and `naming` finds the singular.
+    """
+    from world import english
+
+    if not english.is_plural(object_name):
+        return ""
+    return (
+        f"'{object_name}' is plural. If it names several separate things -- "
+        f"sarcophagi along a wall, statues in a row -- make just ONE of them, "
+        f"named in the singular, so each can be looked at and handled on its "
+        f"own. If it is one thing with a plural name, like trousers or "
+        f"barracks, keep the name as it is.\n\n"
+    )
+
+
 def _room_context(room):
+    from world import tokens
+
     title = room.db.room_title or room.key
-    desc = room.db.desc or ""
-    return f"[{title}]\n{desc}"
+    return f"[{title}]\n{tokens.text_of(room)}"
 
 
 def _world_and_room(room, facet):
@@ -187,8 +213,10 @@ def validate_object_takeable(sponsor, room, obj, on_valid, on_invalid, on_error)
         on_error(str(e))
         return
 
+    from world import tokens
+
     obj_name = obj.db.room_title or obj.key
-    obj_desc = obj.db.desc or ""
+    obj_desc = tokens.text_of(obj)
 
     messages = [
         {"role": "system", "content": _TAKEABILITY_SYSTEM_PROMPT},
@@ -247,8 +275,9 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
     # answer the `under` field in the spec instead.
     which_anchor = lexicon.anchor_prompt(object_name)
 
-    from world import kinds
+    from world import kinds, token_lists
 
+    world_root = room.db.world_root if room else None
     messages = [
         {"role": "system",
          "content": _ITEM_SYSTEM_PROMPT.replace(
@@ -259,9 +288,11 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
             "role": "user",
             "content": (
                 f"{_world_and_room(room, 'items')}\n\n"
-                f"{gear.prompt_block(room.db.world_root if room else None)}"
+                f"{gear.prompt_block(world_root)}"
+                f"{token_lists.vocabulary_block(world_root)}"
                 f"{which_sense}"
                 f"{which_anchor}"
+                f"{_plural_note(object_name)}"
                 f"Generate the item the player is examining: '{object_name}'"
             ),
         },
@@ -278,6 +309,10 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
             takeable = bool(data.get("takeable", True))
 
             from world import clothing
+
+            # Lists first, so that the description's choices can be made the
+            # moment the thing exists.
+            token_lists.declare(world_root, data.get("new_token_lists"))
 
             # Built through the clothing layer so that anything the model
             # called wearable really can be put on. A coat found in a

@@ -46,6 +46,38 @@ class ObjectParent:
 
     """
 
+    def get_numbered_name(self, count, looker, **kwargs):
+        """
+        "a sword", "three swords" -- and "some water", "Jessica", "some glasses".
+
+        Evennia's own asks `inflect` alone, which knows spelling and nothing
+        about the thing, and so says "a water", "a Jessica" and "a glasses".
+        `world.english` asks the thing first. The aliases are registered the
+        way Evennia registers them, so "look three swords" still finds them.
+
+        A name with colour codes in it is left to Evennia, whose `inflect` call
+        is written to survive them.
+        """
+        key = kwargs.get("key") or self.get_display_name(looker)
+        if "|" in str(key):
+            return super().get_numbered_name(count, looker, **kwargs)
+
+        from world import english
+
+        key = str(key)
+        singular = english.count(1, key, obj=self)
+        plural = english.count(count, key, obj=self)
+        if not self.aliases.get(plural, category=self.plural_category):
+            self.aliases.clear(category=self.plural_category)
+            self.aliases.add(plural, category=self.plural_category)
+            self.aliases.add(singular, category=self.plural_category)
+
+        if kwargs.get("no_article") and count == 1:
+            return key if kwargs.get("return_string") else (key, key)
+        if kwargs.get("return_string"):
+            return singular if count == 1 else plural
+        return singular, plural
+
     def get_display_desc(self, looker, **kwargs):
         """
         What a look shows: the thing as written, then how it is right now.
@@ -56,9 +88,14 @@ class ObjectParent:
         also lets a thing be several things at once -- empty and sticky and
         scorched -- which is exactly what a name has no room for.
         """
-        from world import verbs
+        from world import tokens, verbs
 
         base = super().get_display_desc(looker, **kwargs) or ""
+        # The stored text keeps its tokens, so what a word list chose -- and
+        # the state behind it, which a rule may have changed -- is read now.
+        base = tokens.text(base, tokens.Context(
+            viewer=looker, about=self, world_root=tokens.world_root_of(self),
+            purpose="display"))
         line = verbs.condition(self, looker)
         if not line:
             return base
@@ -101,6 +138,37 @@ class ObjectParent:
 
         relations.displace(self)
         gear.release(self, dropper)
+
+    def at_post_move(self, source_location, move_type="move", **kwargs):
+        """
+        A thing went somewhere: write where, as the world's history.
+
+        Every story move of a thing ends here -- taken, dropped, placed, given,
+        sent by an effect -- which is why this is a hook rather than a line at
+        each of those call sites. Three kinds of move are not history and are
+        left out:
+
+        * a teleport, which is Evennia's housekeeping: contents sent home when
+          whatever held them is deleted, as a whole world is on a reset;
+        * an arrival from nowhere, which is a thing being made -- and things
+          are made when first needed, not when first mentioned, so a record of
+          it would say when somebody first reached for it rather than when it
+          came to be;
+        * and anything that is not a thing: a person's movements are their
+          own memories, and a room or an exit does not move.
+
+        See `memory.note_whereabouts`.
+        """
+        super().at_post_move(source_location, move_type=move_type, **kwargs)
+        if move_type == "teleport" or source_location is None:
+            return
+        from world import memory, relations, tokens
+
+        if not relations._is_thing(self):
+            return
+        world_root = tokens.world_root_of(self)
+        if world_root is not None:
+            memory.note_whereabouts(self, world_root)
 
     def at_object_receive(self, moved_obj, source_location, **kwargs):
         """
