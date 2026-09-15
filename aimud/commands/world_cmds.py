@@ -280,9 +280,14 @@ class CmdNPCGen(Command):
             caller.msg("An NPC is already being generated for this room.")
             return
 
-        account = _get_account(caller)
+        # The world pays for its own people, the same sponsor every character's
+        # own turns are paid by (`NPC._sponsor`). This handed `generate_npc` an
+        # account where it takes a sponsor, so the command raised before it
+        # reached a model -- after the flag below was already up, which left
+        # the room refusing `npcgen` until a reload.
+        sponsor = sponsor_mod.of(caller)
         try:
-            sponsor_mod.of_account(account).key()
+            sponsor.key()
         except ValueError as e:
             caller.msg(str(e))
             return
@@ -300,9 +305,13 @@ class CmdNPCGen(Command):
             room.ndb.generating_npc = False
             caller.msg(f"|rNPC generation failed: {err}|n")
 
+        from world import busy
         from world.npc_gen import generate_npc
-        generate_npc(account=account, room=room,
-                     on_success=on_success, on_error=on_error)
+
+        wait = busy.start(caller, "generating a character for this room")
+        generate_npc(sponsor=sponsor, room=room,
+                     on_success=busy.closing(wait, on_success),
+                     on_error=busy.closing(wait, on_error))
 
 
 class CmdWorldRemove(Command):
@@ -487,12 +496,17 @@ class CmdWorldReset(Command):
                 f"Your existing world was left untouched."
             )
 
+        from world import busy
         from world.worldgen import generate_first_room
+
+        wait = busy.start(caller, f"rebuilding {lore.title(root)}")
         # A reset builds a world that does not exist yet, so there is no
         # world to read a payer off -- and whoever asked for it is the one who
         # will own it. Same as the wizard, for the same reason.
         generate_first_room(sponsor_mod.of_account(account), spec,
-                            on_success, on_error, creator_character=caller)
+                            busy.closing(wait, on_success),
+                            busy.closing(wait, on_error),
+                            creator_character=caller)
 
     def _target(self, worlds):
         """Resolve which world to reset, reporting any problem to the caller."""
@@ -929,8 +943,16 @@ class CmdRules(Command):
                         "which.|n")
             self.caller.msg("\n".join(said))
 
-        suggest.judge(_get_account(self.caller), root, on_success=done,
-                      on_error=lambda err: self.caller.msg(f"|r{err}|n"))
+        # The world pays for judging itself. An account used to go here, and
+        # an account's `key` is its name rather than a way to get an API key,
+        # so every judgement raised before it was asked.
+        from world import busy
+
+        wait = busy.start(self.caller, f"judging {len(standing)} suggestions")
+        suggest.judge(sponsor_mod.of(self.caller), root,
+                      on_success=busy.closing(wait, done),
+                      on_error=busy.closing(
+                          wait, lambda err: self.caller.msg(f"|r{err}|n")))
 
     def _suspend(self, root, asked, listed):
         """
@@ -1485,13 +1507,19 @@ class CmdCommonsense(Command):
             "take a while; carry on playing.\n"
             f"|x{commonsense.ATTRIBUTION}|n")
 
+        from world import busy
+
+        # No lifetime: a large download can honestly take longer than any
+        # model call, and stopping the notices would say it had stopped.
+        wait = busy.start(caller, "fetching the second lexicon", lifetime=None)
+
         # Through the same seam every network call uses, so it lands off the
         # main thread and cannot stall the game while it runs.
         llm.fetch(
             commonsense.download,
-            on_success=lambda kept: caller.msg(
+            on_success=busy.closing(wait, lambda kept: caller.msg(
                 f"|wSecond lexicon ready.|n {kept} edges indexed. Nothing in "
-                f"the game needed it; it is a little better informed now."),
-            on_error=lambda failure: caller.msg(
+                f"the game needed it; it is a little better informed now.")),
+            on_error=busy.closing(wait, lambda failure: caller.msg(
                 f"|rCould not fetch it: {failure.getErrorMessage()}|n\n"
-                f"|xNothing is broken. The game runs without it.|n"))
+                f"|xNothing is broken. The game runs without it.|n")))

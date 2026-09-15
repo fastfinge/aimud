@@ -15,7 +15,7 @@ allowed to say so.
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeSponsor, as_json, immediately, replying
+from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
 from world import actions, kinds, rule_gen, verbs, zones
 from world import rulebooks as R
@@ -36,6 +36,17 @@ class TheScopeCeiling(SimpleTestCase):
     def test_the_ones_worth_having_a_rule_about_are_not(self):
         for kind in ("device.n.01", "container.n.01", "publication.n.01",
                      "sword.n.01", "spacecraft.n.01"):
+            self.assertFalse(rule_gen.too_general({"kind": kind}), kind)
+
+    def test_a_narrow_kind_in_a_shallow_branch_is_not(self):
+        """
+        Found in the baseline soak: `drink` learned no rule because its teacup
+        was "too near the top of the taxonomy". Depth is not breadth. Documents,
+        events and measures are shallow branches, so a ledger sits as near the
+        root as instrumentality does, with four sorts of ledger beneath it.
+        """
+        for kind in ("ledger.n.01", "fire.n.01", "teacup.n.01", "slag.n.01",
+                     "structure.n.01"):
             self.assertFalse(rule_gen.too_general({"kind": kind}), kind)
 
     def test_a_zone_or_the_world_is_never_too_general(self):
@@ -302,7 +313,7 @@ class TheSpaceshipExample(EvenniaTest):
     def try_it(self, raw):
         said = []
         with immediately(), replying(
-                as_json({"actor": "Done.", "room": "{actor} does it."})):
+                finishing(narrate={"actor": "Done.", "room": "{actor} does it."})):
             attempt_mod.attempt(
                 self.char1, raw, FakeSponsor(),
                 on_message=lambda a, r=None: said.append(a or ""))
@@ -349,7 +360,7 @@ class WordsARuleCoined(EvenniaTest):
 
     def written(self, reply):
         kept = []
-        with immediately(), replying(as_json(reply)):
+        with immediately(), replying(finishing(file_rules=reply)):
             rule_gen.learn(FakeSponsor(), self.root, "power",
                            {"direct": self.obj1}, self.char1,
                            on_success=kept.extend,
@@ -436,7 +447,7 @@ class AFreshWorldLearningAVerb(EvenniaTest):
                         "group": "power"}],
     }
     NARRATION = {"actor": "The screen lights up.",
-                 "room": "{actor} powers the datapad."}
+                 "room": "{actor} $pconj(power) {direct}."}
 
     def try_it(self, raw, *replies):
         """One attempt. Answers with what was said, and how often it asked."""
@@ -449,8 +460,8 @@ class AFreshWorldLearningAVerb(EvenniaTest):
         return " ".join(s for s in said if s), asked
 
     def test_it_asks_once_files_a_rule_and_carries_it_out(self):
-        said, asked = self.try_it("power datapad", as_json(self.ANSWER),
-                                  as_json(self.NARRATION))
+        said, asked = self.try_it("power datapad", finishing(
+            file_rules=self.ANSWER, narrate=self.NARRATION))
         self.assertEqual(asked, 2, "one rule call and one narration, no more")
 
         filed = [r for r in R.all_rules(self.root) if r["source"] == "generated"]
@@ -467,8 +478,8 @@ class AFreshWorldLearningAVerb(EvenniaTest):
         rule about every datapad, so the second one costs a narration and
         nothing else.
         """
-        self.try_it("power datapad", as_json(self.ANSWER),
-                    as_json(self.NARRATION))
+        self.try_it("power datapad", finishing(
+            file_rules=self.ANSWER, narrate=self.NARRATION))
         before = len([r for r in R.all_rules(self.root)
                       if r["source"] == "generated"])
 
@@ -478,7 +489,7 @@ class AFreshWorldLearningAVerb(EvenniaTest):
         second.db.affordances = {"power": True}
         second.move_to(self.room2, quiet=True)
 
-        self.try_it("power slate", as_json(self.NARRATION))
+        self.try_it("power slate", finishing(narrate=self.NARRATION))
         self.assertIn("powered", verbs.states(second))
         self.assertEqual(len([r for r in R.all_rules(self.root)
                               if r["source"] == "generated"]), before,
@@ -486,9 +497,10 @@ class AFreshWorldLearningAVerb(EvenniaTest):
 
     def test_a_rule_filed_too_generally_is_refused_rather_than_stored(self):
         self.try_it("power datapad",
-                    as_json({"rules": [dict(self.ANSWER["rules"][0],
-                                            scope="physical_entity.n.01")]}),
-                    as_json(self.NARRATION))
+                    finishing(
+                        file_rules={"rules": [dict(self.ANSWER["rules"][0],
+                                                   scope="physical_entity.n.01")]},
+                        narrate=self.NARRATION))
         self.assertEqual([r for r in R.all_rules(self.root)
                           if r["source"] == "generated"], [])
         self.assertNotIn("powered", verbs.states(self.pad))

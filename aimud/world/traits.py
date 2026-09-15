@@ -192,25 +192,6 @@ def register(world_root, slug, name="", means="", trait_type=DEFAULT_TRAIT_TYPE,
     return slug
 
 
-def vocabulary_block(world_root, header="Traits this world already uses"):
-    """
-    The register as a prompt block, or "" when the world has none yet.
-
-    Every prompt that could invent a trait gets this, which is the part of
-    keeping one vocabulary that actually does the work: a model shown that
-    "stamina" exists does not go on to invent "vigour".
-    """
-    vocab = vocabulary(world_root)
-    if not vocab:
-        return ""
-    lines = []
-    for slug, entry in sorted(vocab.items()):
-        means = entry.get("means") or entry.get("name") or ""
-        lines.append(f"  {slug} ({entry.get('trait_type', 'counter')}): {means}")
-    return (f"{header} — reuse these rather than inventing another name for "
-            f"the same idea:\n" + "\n".join(lines) + "\n\n")
-
-
 # ---------------------------------------------------------------------------
 # Reading a character
 # ---------------------------------------------------------------------------
@@ -558,3 +539,97 @@ def lights(world_root):
     world says which it is.
     """
     return LIGHT in vocabulary(world_root)
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`list_traits` and `show_trait`: the register, for a model to read."""
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        return tb.paged(
+            [f"{slug} ({entry.get('trait_type', DEFAULT_TRAIT_TYPE)}): "
+             f"{entry.get('means') or entry.get('name') or ''}"
+             for slug, entry in sorted(vocabulary(ctx.world_root).items())],
+            args, "traits")
+
+    def showing(ctx, args):
+        asked = _slug(args.get("slug"))
+        entry = known(ctx.world_root, asked)
+        if entry is None:
+            near = _matching(ctx.world_root, asked)
+            return (f"This world keeps no trait called {asked}."
+                    + (f" It does keep {near}." if near else ""))
+        said = [f"{asked}: {entry.get('name') or asked}",
+                f"means: {entry.get('means') or '(not said)'}",
+                f"type: {entry.get('trait_type', DEFAULT_TRAIT_TYPE)}"]
+        for field in ("base", "min", "max", "rate"):
+            if entry.get(field) is not None:
+                said.append(f"{field}: {entry[field]}")
+        if entry.get("descs"):
+            said.append("words for it: " + ", ".join(
+                f"up to {top} is {word}" for top, word in
+                sorted(dict(entry["descs"]).items(),
+                       key=lambda pair: float(pair[0]))))
+        return "\n".join(said)
+
+    return [
+        tb.Tool("list_traits",
+                "The traits this world measures people by. Reuse one of these "
+                "rather than inventing another name for the same idea.",
+                tb.params(tb.PAGE), tb.answering(listing),
+                doing="looking up this world's traits", looks=True),
+        tb.Tool("show_trait", "Everything this world says about one trait.",
+                tb.params({"slug": {"type": "string",
+                                    "description": "The trait's name"}},
+                          ["slug"]),
+                tb.answering(showing), doing="looking up a trait", looks=True),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# The shape of a declaration, and whether it is one this world has (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def declaration_schema(ctx=None):
+    """One new trait, as `register` reads it."""
+    return {
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "Its name"},
+            "name": {"type": "string",
+                     "description": "Optional. How it is said"},
+            "means": {"type": "string",
+                      "description": "One sentence on what it measures"},
+            "trait_type": {"type": "string", "enum": list(TRAIT_TYPES),
+                           "description": "counter moves from a base; gauge "
+                                          "empties and refills; static stays "
+                                          "put"},
+            "base": {"type": "number", "description": "Where it starts"},
+            "min": {"type": "number", "description": "Optional. Its floor"},
+            "max": {"type": "number", "description": "Optional. Its ceiling"},
+            "rate": {"type": "number",
+                     "description": "Optional. Change per second"},
+            "descs": {"type": "object",
+                      "description": "Optional. Words for standing at it, as "
+                                     "{top of band: word}"},
+        },
+        "required": ["slug", "means", "trait_type"],
+    }
+
+
+def near_duplicate(world_root, slug):
+    """
+    The trait this world already keeps under a near spelling, or "".
+
+    Only what `_matching` would fold: an abbreviation, a plural, a separator.
+    A different word for the same idea -- "vigour" beside "stamina" -- is not
+    caught here, because nothing here knows the two mean the same; the
+    register being in front of the model is what catches that.
+    """
+    asked = _slug(slug)
+    found = _matching(world_root, asked) if asked else None
+    return found if found and found != asked else ""

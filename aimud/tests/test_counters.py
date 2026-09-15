@@ -16,7 +16,7 @@ than it is, and a suggester weighs its proposals by exactly that ratio.
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeSponsor, as_json, immediately, replying
+from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
 from world import actions, counters, kinds, rulebooks as R
 from world import standard_rules, verbs
@@ -244,7 +244,7 @@ class EveryWayOutIsCounted(Counting):
 
     def try_it(self, raw, *replies):
         said = []
-        answers = replies or (as_json({"actor": "Done.",
+        answers = replies or (finishing(narrate={"actor": "Done.",
                                        "room": "{actor} does it."}),)
         with immediately(), replying(*answers):
             attempt_mod.attempt(

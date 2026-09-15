@@ -16,6 +16,8 @@ each with how long ago it was, and sometimes a line saying what is true now.
 Answer from those only.
 
 - Answer in one or two sentences, plainly, in second person ("You met her...").
+- If they only half answer it, you may call recall with other words before
+  answering.
 - If the memories do not answer the question, say so plainly. Never invent an
   event, a name or a detail that is not in the memories.
 - If the memories are partial, say what is known and what is not.
@@ -27,6 +29,11 @@ def _sponsor_for(caller):
     from world import sponsor
 
     return sponsor.of(caller)
+
+
+#: Rounds `remember` may take (docs/generator-tool-loops.md §10.3): enough to
+#: recall again under other words, and a player is waiting.
+REMEMBER_ROUNDS = 6
 
 
 class CmdRemember(Command):
@@ -91,7 +98,9 @@ class CmdRemember(Command):
         # had it: `llm.fetch` below is called in this scope, and a name bound
         # inside the inner function is not visible here. Every `recall` raised
         # NameError before it reached the thread pool.
-        from world import llm
+        from world import busy, llm
+
+        wait = busy.start(caller, "casting your mind back")
 
         def _fetch():
             # Recall in the thread pool, off the reactor.
@@ -111,9 +120,11 @@ class CmdRemember(Command):
             try:
                 memories = format_recalled(rows)
             except Exception as exc:
+                wait.done()
                 caller.ndb.recalling = False
                 caller.msg(f"|rYou cannot gather your thoughts: {exc}|n")
                 return
+            wait.stage("putting what you remember into words")
             messages = [
                 {"role": "system", "content": _RECALL_SYSTEM},
                 {
@@ -124,19 +135,36 @@ class CmdRemember(Command):
                     ),
                 },
             ]
-            llm.fetch(llm.ask, sponsor, model, messages,
-                      on_success=_answered, on_error=_fail)
+            from world import lookups
+            from world import toolbox as tb
+
+            # No finish tool: the answer is prose, and the loop ends on a
+            # reply that calls nothing. `recall` is offered for a question the
+            # first memories only half answer.
+            room = caller.location
+            box = tb.Toolbox(lookups.named("recall"), tb.ToolContext(
+                world_root=room.db.world_root if room is not None else None,
+                room=room, actor=caller, sponsor=sponsor, job="memory",
+                wait=wait))
+            llm.converse(sponsor, model, messages, box,
+                         on_done=lambda said: _answered(said or None),
+                         on_error=_failed, rounds=REMEMBER_ROUNDS)
 
         def _answered(answer):
+            wait.done()
             caller.ndb.recalling = False
             if answer is None:
                 caller.msg("You cannot bring anything to mind about that.")
             else:
                 caller.msg(str(answer).strip())
 
-        def _fail(failure):
+        def _failed(why):
+            wait.done()
             caller.ndb.recalling = False
-            caller.msg(f"|rYou cannot gather your thoughts: {failure.getErrorMessage()}|n")
+            caller.msg(f"|rYou cannot gather your thoughts: {why}|n")
+
+        def _fail(failure):
+            _failed(failure.getErrorMessage())
 
         llm.fetch(_fetch, on_success=_done, on_error=_fail)
 

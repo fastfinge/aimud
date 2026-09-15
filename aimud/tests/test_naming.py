@@ -18,7 +18,7 @@ is why "look here" conjured a `here`.
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeSponsor, immediately, replying
+from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
 from world import bulk, relations, standard_rules, verbs
 
@@ -279,10 +279,12 @@ class SentencesTheCommandSetCannotSay(Naming):
         self.thing("Tongs", location=self.char1)
         before = len(self.room2.contents)
         self.typed("get stone with tongs",
-                   '{"applies_to": [{"role": "direct"}]}',
-                   '{"rules": []}',
-                   '{"allowed": true, "reason": ""}',
-                   '{"actor": "You lift it with the tongs.", "room": ""}')
+                   finishing(
+                       declare_action={"applies_to": [{"role": "direct"}]},
+                       file_rules={"rules": []},
+                       admit={"allowed": True, "reason": ""},
+                       narrate={"actor": "You lift it with the tongs.",
+                                "room": ""}))
         self.assertEqual(len(self.room2.contents), before,
                          "nothing should have been conjured")
 
@@ -414,7 +416,8 @@ class TheMechanicsGetTheirSayTwice(Naming):
     def test_so_a_figure_of_speech_never_settles_an_arity(self):
         from world import actions
 
-        self.attempted("put out the fire", '{"rules": []}')
+        self.attempted("put out the fire",
+                       finishing(file_rules={"rules": []}))
         declared = actions.spec(self.root, "put")
         self.assertTrue(all(role["optional"]
                             for role in declared["applies_to"]))

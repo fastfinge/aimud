@@ -39,6 +39,7 @@ synchronous.
 
 import json
 import queue
+import time
 import urllib.error
 import urllib.request
 
@@ -101,9 +102,25 @@ def _complain(body):
         except (ValueError, TypeError):
             return ""
     try:
-        said = str((body.get("error") or {}).get("message") or "").strip()
+        report = body.get("error") or {}
+        said = str(report.get("message") or "").strip()
     except AttributeError:
         return ""
+    # "Provider returned error" is a wrapper, and the sentence worth reading is
+    # underneath it: which provider refused, and what it said -- a schema it
+    # will not accept, a tool call it cannot follow. Without this the log said
+    # only that something went wrong, every time, for the same reason.
+    try:
+        metadata = report.get("metadata") or {}
+        provider = str(metadata.get("provider_name") or "").strip()
+        raw = metadata.get("raw")
+        raw = json.dumps(raw) if isinstance(raw, (dict, list)) else str(raw or "")
+        if provider:
+            said = f"{said} [{provider}]".strip()
+        if raw.strip():
+            said = f"{said}: {raw.strip()}".strip(": ")
+    except Exception:
+        pass
     return said[:MAX_COMPLAINT]
 
 
@@ -138,7 +155,8 @@ def _request(url, api_key, payload=None, timeout=TIMEOUT):
                                f"({err.code})") from err
 
 
-def call(sponsor, model, messages, tools=None, timeout=TIMEOUT):
+def call(sponsor, model, messages, tools=None, timeout=TIMEOUT,
+         tool_choice=None):
     """
     Ask a model, and answer with the whole reply.
 
@@ -150,6 +168,11 @@ def call(sponsor, model, messages, tools=None, timeout=TIMEOUT):
     carries -- the service to talk to and who to charge come with it -- and
     unpacking it into a key at the top of every generator is what left the
     other two with nowhere to travel.
+
+    `tool_choice` says whether a reply must use a tool, and which one: "auto"
+    when it is left out, or `{"type": "function", "function": {"name": ...}}`
+    to name the tool the reply has to call. It means nothing without tools, so
+    it is only sent with them.
     """
     # The sampling settings chosen for this job ride on the model choice. See
     # world.model_params: only what the player actually set is sent.
@@ -158,12 +181,46 @@ def call(sponsor, model, messages, tools=None, timeout=TIMEOUT):
     payload = {"model": model, "messages": messages}
     payload.update(settings(model))
     if tools:
+        # Refused before anything is sent, when the model is known not to
+        # take tools: a job that needs them cannot be done by it, and asking
+        # anyway only buys the provider's refusal. Known means the model list
+        # was fetched this session -- the `models` menu fetches it -- and a
+        # model nobody has listed is asked as ever, so the service can say so
+        # in its own words.
+        from world.model_params import supports_tools
+
+        record = model_record(sponsor, model)
+        if record is not None and not supports_tools(record):
+            job = getattr(model, "job", "") or "this job"
+            raise LLMError(f"{model} cannot use tools, and {job} needs them. "
+                           f"Choose another model for {job} with the models "
+                           f"command.")
         payload["tools"] = tools
-        payload["tool_choice"] = "auto"
+        payload["tool_choice"] = tool_choice or "auto"
+    # Timed here, around the request and nothing else, because how long a
+    # player waits is made of these and the ledger is where it is added up.
+    started = time.monotonic()
     reply = _request(_chat_url(sponsor.base_url), sponsor.key(), payload,
                      timeout)
-    _spent(sponsor, model, reply)
+    _spent(sponsor, model, reply, time.monotonic() - started)
+    # An error report can arrive with a 200, and a reply with no choices is
+    # one whatever it says. `ask` already turned that into words; `call` handed
+    # it on, and every caller reading tool calls out of it failed on the key
+    # instead -- the log said an NPC's turn failed with "'choices'", three
+    # times in one baseline session, and never why. Raised after the call is
+    # written down, because it was still a call.
+    if not _has_choices(reply):
+        raise LLMError(_complain(reply)
+                       or "the model service sent back no answer")
     return reply
+
+
+def _has_choices(reply):
+    """Whether a reply carries anything a model said, however little."""
+    try:
+        return bool(reply.get("choices"))
+    except AttributeError:
+        return False
 
 
 def content(reply):
@@ -196,15 +253,30 @@ def ask(sponsor, model, messages, timeout=TIMEOUT):
     raise LLMError(_complain(reply) or "the model returned no text")
 
 
+#: What each service last said about its models, by the URL they were listed
+#: from: {url: {model id: record}}. Filled whenever the list is fetched, and
+#: read by `call` to refuse a model that cannot use tools. In memory only; a
+#: reload forgets it, and the next fetch of the list fills it again.
+_RECORDS = {}
+
+
 def models(sponsor, timeout=LIST_TIMEOUT):
     """Every model this key can reach, ordered by id. For the `models` menu."""
-    listed = _request(_models_url(sponsor.base_url), sponsor.key(),
-                      timeout=timeout)
+    url = _models_url(sponsor.base_url)
+    listed = _request(url, sponsor.key(), timeout=timeout)
     try:
-        return sorted(listed["data"], key=lambda record: record["id"])
+        found = sorted(listed["data"], key=lambda record: record["id"])
     except (KeyError, TypeError) as err:
         raise LLMError(_complain(listed)
                        or "the model service sent no list of models") from err
+    _RECORDS[url] = {str(record["id"]): record for record in found}
+    return found
+
+
+def model_record(sponsor, model_id):
+    """What the service said about one model, or None if it has not said."""
+    known = _RECORDS.get(_models_url(getattr(sponsor, "base_url", None)))
+    return (known or {}).get(str(model_id or ""))
 
 
 #: Calls that have happened but have not been written down yet.
@@ -221,15 +293,17 @@ def models(sponsor, timeout=LIST_TIMEOUT):
 _spending = queue.Queue()
 
 
-def _spent(sponsor, model, reply):
+def _spent(sponsor, model, reply, seconds=None):
     """
-    Note what a reply cost, from inside the thread that received it.
+    Note what a reply cost, and how long it took, from inside the thread that
+    received it.
 
     Never raises and never touches the database. Bookkeeping must not be able
     to lose an answer somebody is waiting for.
     """
     try:
-        _spending.put_nowait((sponsor, model, (reply or {}).get("usage")))
+        _spending.put_nowait((sponsor, model, (reply or {}).get("usage"),
+                              seconds))
     except Exception:
         pass
 
@@ -240,10 +314,179 @@ def _write_down_spending():
 
     while True:
         try:
-            sponsor, model, usage = _spending.get_nowait()
+            sponsor, model, usage, seconds = _spending.get_nowait()
         except queue.Empty:
             return
-        ledger.note(sponsor, model, usage)
+        ledger.note(sponsor, model, usage, seconds)
+
+
+def converse(sponsor, model, messages, toolbox, *, on_done, on_error,
+             rounds=8, timeout=TIMEOUT, wait=None, on_exhausted=None):
+    """
+    Ask a model with tools, and keep going until it has answered.
+
+    The loop every generator shares: see docs/generator-tool-loops.md §3.
+    Runs on the reactor and goes through `fetch` for every round, so a test's
+    `immediately()` runs a whole conversation before this returns.
+
+    A round asks, adds the reply to the conversation exactly as it came, and
+    runs its tool calls in order through `toolbox`, adding each result. It
+    ends:
+
+    * when a finish tool **accepts** -- `on_done(value)`;
+    * when there is no finish tool and a reply calls none, or a round only
+      acted -- `on_done(text)`, the reply's own words, or None;
+    * when the rounds run out -- `on_exhausted(last rejected value)` if given,
+      otherwise `on_error(why)`. On the last round the finish tool is named in
+      `tool_choice`, so a model is made to answer rather than merely asked;
+    * when a round fails -- `on_error(why)`, in words, as every generator's
+      error path already takes it.
+
+    A reply with no tool calls while a finish tool is waiting is told to use
+    it. Nothing parses JSON out of the text: one way to answer, one parser.
+    """
+    from world import toolbox as tools_mod
+
+    if wait is not None and toolbox.ctx.wait is None:
+        toolbox.ctx.wait = wait
+    finish = toolbox.finish
+    convo = list(messages)
+    state = {"round": 0, "forced": False, "last": None,
+             "started": time.monotonic(), "ended": False}
+
+    def ended(outcome, value=None, error=None, exhausted=False):
+        if state["ended"]:
+            return
+        state["ended"] = True
+        _loop_measured(sponsor, model, toolbox, state, outcome, rounds, error)
+        if exhausted and on_exhausted is not None:
+            return on_exhausted(state["last"])
+        if error is not None:
+            return on_error(error)
+        return on_done(value)
+
+    def ask():
+        choice = None
+        if finish is not None and state["round"] >= rounds - 1:
+            choice = {"type": "function", "function": {"name": finish.name}}
+            state["forced"] = True
+        state["round"] += 1
+        fetch(call, sponsor, model, list(convo), toolbox.schemas or None,
+              timeout, choice,
+              on_success=replied,
+              on_error=lambda failure: ended(
+                  "failed", error=failure.getErrorMessage()))
+
+    def replied(reply):
+        try:
+            message = reply["choices"][0]["message"] or {}
+        except (KeyError, IndexError, TypeError):
+            return ended("failed", error="the model service sent back no "
+                                         "answer")
+        calls = [entry for entry in (message.get("tool_calls") or [])
+                 if (entry or {}).get("type", "function") == "function"]
+        # `content` comes back null beside tool calls, and a provider that
+        # will not take null there refuses the whole round -- so the reply is
+        # echoed with the empty string it means.
+        spoken = {"role": "assistant", "content": message.get("content") or ""}
+        if calls:
+            spoken["tool_calls"] = calls
+        convo.append(spoken)
+
+        if not calls:
+            if finish is None:
+                return ended("answered", value=message.get("content") or "")
+            if state["round"] >= rounds:
+                return ended("exhausted", exhausted=True,
+                             error=f"the model never answered with "
+                                   f"{finish.name}")
+            convo.append({"role": "user",
+                          "content": f"Answer by calling {finish.name}."})
+            return ask()
+        run(calls, 0, {"looked": False, "complained": False})
+
+    def run(calls, index, seen):
+        if state["ended"]:
+            return None
+        if index >= len(calls):
+            return after(seen)
+        entry = calls[index]
+        if index >= tools_mod.MOST_CALLS_PER_ROUND:
+            answered_with(entry, "Not run: that is too many at once. Ask "
+                                 "again for whatever you still need.")
+            return run(calls, index + 1, seen)
+        name = str(((entry or {}).get("function") or {}).get("name") or "")
+        tool = toolbox.by_name.get(name)
+
+        def answered(result):
+            if isinstance(result, tools_mod.Accepted):
+                answered_with(entry, result)
+                return ended("forced" if state["forced"] else "accepted",
+                             value=result.value)
+            if isinstance(result, tools_mod.Complaint):
+                seen["complained"] = True
+                state["last"] = result.value
+            if tool is not None and tool.looks:
+                seen["looked"] = True
+            answered_with(entry, result)
+            return run(calls, index + 1, seen)
+
+        toolbox.run(entry, answered)
+        return None
+
+    def answered_with(entry, result):
+        convo.append({"role": "tool",
+                      "tool_call_id": str((entry or {}).get("id") or ""),
+                      "content": tools_mod.said(result)})
+
+    def after(seen):
+        if finish is None and not seen["looked"]:
+            return ended("acted")
+        if state["round"] >= rounds:
+            if finish is None:
+                return ended("exhausted", value=None)
+            return ended("exhausted", exhausted=True,
+                         error=f"the model never answered with {finish.name}")
+        return ask()
+
+    ask()
+
+
+def _loop_measured(sponsor, model, toolbox, state, outcome, rounds, why=None):
+    """
+    One line for every loop, which is what the soak reads budgets from.
+
+    With `why` when it failed or ran out, because several generators swallow
+    their errors on purpose -- a room with no contents, a verb that falls back
+    to what an attempt shows -- and this line is then the only place the
+    reason is ever written down: a model that cannot take tools, a schema a
+    provider refused.
+
+    Never raises: a measurement must not be able to lose the answer it is
+    measuring.
+    """
+    try:
+        job = str(getattr(model, "job", "") or "unknown")
+        seconds = time.monotonic() - state["started"]
+        lookups = ", ".join(f"{name}x{count}" for name, count
+                            in sorted(toolbox.used.items())) or "none"
+        from evennia.utils import logger
+
+        logger.log_info(
+            f"llm: loop job={job} model={model} "
+            f"rounds={state['round']}/{rounds} "
+            f"seconds={seconds:.1f} tools={lookups} "
+            f"complaints={toolbox.complaints} outcome={outcome}"
+            + (f" why={str(why)[:300]!r}" if why else ""))
+
+        from world import ledger
+
+        ledger.note_loop(sponsor, model, {
+            "rounds": state["round"], "limit": rounds, "seconds": seconds,
+            "outcome": outcome, "complaints": toolbox.complaints,
+            "tools": dict(toolbox.used)})
+    except Exception:
+        pass
 
 
 def fetch(work, *args, on_success, on_error):

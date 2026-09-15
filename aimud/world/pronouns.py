@@ -304,18 +304,52 @@ def spelled(entry):
                      entry.get("possessive", "")])
 
 
-def vocabulary_block(world_root,
-                     header="Pronoun sets this world already uses"):
-    """
-    The register as a prompt block.
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
 
-    Every prompt that could invent a set gets this, which is the half of
-    keeping one vocabulary that does the work: a model shown that she/her
-    exists does not declare it again under another name.
-    """
-    vocab = vocabulary(world_root)
-    lines = [f"  {slug}: {spelled(entry)} — {entry.get('means', '')}"
-             for slug, entry in sorted(vocab.items())]
-    return (f"{header} — use one of these by name wherever it fits, and "
-            f"declare a new set only for somebody none of them suits:\n"
-            + "\n".join(lines) + "\n\n")
+def lookup_tools():
+    """`list_pronoun_sets`: the register, for a model to read."""
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        return "\n".join(f"{slug}: {spelled(entry)} — {entry.get('means', '')}"
+                         for slug, entry in
+                         sorted(vocabulary(ctx.world_root).items()))
+
+    return [tb.Tool(
+        "list_pronoun_sets",
+        "The pronoun sets this world keeps. Use one by name wherever it fits.",
+        tb.params(), tb.answering(listing),
+        doing="looking up this world's pronouns", looks=True)]
+
+
+# ---------------------------------------------------------------------------
+# The shape of a declaration, and whether it is one this world has (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def set_schema(ctx=None):
+    """One pronoun set, complete, as `clean` insists."""
+    forms = {field: {"type": "string",
+                     "description": f"The {field} form"} for field in FORMS}
+    return {
+        "type": "object",
+        "properties": {
+            **forms,
+            "plural": {"type": "boolean",
+                       "description": "Whether the verb after it is plural: "
+                                      "they pick up, she picks up"},
+            "means": {"type": "string",
+                      "description": "One sentence on who this set is for"},
+        },
+        "required": list(REQUIRED),
+    }
+
+
+def near_duplicate(world_root, declared):
+    """The set this world already keeps under that subject form, or ""."""
+    try:
+        subject = _slug(dict(declared or {}).get("subject"))
+    except (TypeError, ValueError):
+        return ""
+    return subject if subject and subject in vocabulary(world_root) else ""

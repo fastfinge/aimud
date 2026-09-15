@@ -73,8 +73,7 @@ MOST_ENTRIES = 60
 #: Longest an entry may be.
 LONGEST_ENTRY = 300
 
-#: Most lists a prompt is shown, and most entries shown for each.
-MOST_SHOWN = 20
+#: Most entries shown when a list is spelled out.
 ENTRIES_SHOWN = 6
 
 _NAME = re.compile(r"[a-z_][a-z0-9_]*")
@@ -144,7 +143,9 @@ def clean(declared):
             continue
         sets = raw.get("sets") or {}
         try:
-            states = [_slug(s) for s in (sets.get("states") or []) if _slug(s)]
+            from world.model_json import listed
+
+            states = [_slug(s) for s in listed(sets.get("states")) if _slug(s)]
             traits = {}
             for slug, value in dict(sets.get("traits") or {}).items():
                 traits[_slug(slug)] = float(value)
@@ -271,8 +272,10 @@ def _settle_facts(world_root, name, entry):
         sets = item.get("sets")
         if not sets:
             continue
+        from world.model_json import listed
+
         settled = []
-        for slug in sets.get("states") or []:
+        for slug in listed(sets.get("states")):
             known = slug in verbs.vocabulary(world_root) or verbs.group_of(
                 world_root, slug)
             if not known and not group:
@@ -294,6 +297,66 @@ def _settle_facts(world_root, name, entry):
             if not traits.known(world_root, slug):
                 return f"{slug!r} is not a trait this world keeps"
     return ""
+
+
+def complaints(world_root, declared=(), texts=()):
+    """
+    What `register_many` would refuse in these declarations, and the slots in
+    `texts` nothing would answer, as short phrases; [] when there is nothing.
+
+    For a finish tool, so a list is sent back rather than refused and logged
+    after the answer was taken. The same checks, over the same candidate set:
+    everything this world keeps plus everything declared here, so declared
+    lists may name each other. A list already kept under another spelling is
+    not a complaint here -- `vocabulary.near_duplicates` says that.
+    """
+    said, batch = [], {}
+    for given in list(declared or []):
+        if not isinstance(given, dict):
+            said.append("a word list that was not an object")
+            continue
+        asked = _slug(given.get("name"))
+        if not asked or not _NAME.fullmatch(asked):
+            said.append(f"a word list needs a name of letters, digits and "
+                        f"underscores, not {given.get('name')!r}")
+            continue
+        if _reserved(asked):
+            said.append(f"{{{asked}}} is a name the game itself answers; "
+                        f"choose another")
+            continue
+        if world_root is not None and _fold(world_root, asked):
+            continue
+        entry, complaint = clean(given)
+        if complaint:
+            said.append(f"the word list {{{asked}}} cannot be kept: {complaint}")
+            continue
+        batch[asked] = entry
+
+    kept = vocabulary(world_root) if world_root is not None else {}
+    candidate = {**kept, **batch}
+    good = productive(candidate)
+    for name, entry in batch.items():
+        unknown = sorted(
+            ref for item in entry["entries"] for ref in references(item["text"])
+            if ref not in candidate and not _known_name(ref, world_root))
+        if name not in good:
+            said.append(f"the word list {{{name}}} can never finish expanding")
+        elif unknown:
+            said.append(f"the word list {{{name}}} names "
+                        + ", ".join(f"{{{ref}}}" for ref in unknown)
+                        + ", which nothing answers")
+
+    if world_root is not None:
+        unknown = sorted({ref for text in texts or ()
+                          for ref in references(str(text or ""))
+                          if ref not in candidate
+                          and not _known_name(ref, world_root)})
+        if unknown:
+            said.append("the description asks for word lists this world does "
+                        "not keep: " + ", ".join(f"{{{ref}}}" for ref in unknown)
+                        + "; declare them in new_token_lists or write the "
+                          "words out")
+    return said
 
 
 def register_many(world_root, declared):
@@ -557,7 +620,9 @@ def _state_in(holder, group, world_root):
 
 def _entry_setting(entry, state):
     for item in entry.get("entries") or []:
-        if state in ((item.get("sets") or {}).get("states") or []):
+        from world.model_json import listed
+
+        if state in listed((item.get("sets") or {}).get("states")):
             return item
     return None
 
@@ -566,7 +631,9 @@ def _apply(holder, sets, world_root):
     """Make a choice's facts true of whatever holds it. Silently: nobody acted."""
     from world import traits, verbs
 
-    states = list(sets.get("states") or [])
+    from world.model_json import listed
+
+    states = listed(sets.get("states"))
     if states:
         verbs.apply_states(holder, add=states, world_root=world_root,
                            announce=False)
@@ -701,19 +768,17 @@ def spelled(entry, most=ENTRIES_SHOWN):
 
 
 #: What a generator is told, beneath whatever lists this world already keeps.
-PROMPT = """A description may use a word list: write {name} and one entry is
-chosen and kept, so the thing reads the same on every look. Use one only for a
-detail that could reasonably differ between two of the same thing -- most
-descriptions need none. Only name lists shown here or declared in your reply.
+#: How to use and declare word lists, for a generator that answers through a
+#: tool. The lists are behind `list_word_lists` rather than pasted in, and a
+#: new one is declared in the tool's `new_token_lists` field.
+TOOL_PROMPT = """A description may use a word list: write {name} and one entry
+is chosen and kept, so the thing reads the same on every look. Use one only for
+a detail that could reasonably differ between two of the same thing -- most
+descriptions need none. list_word_lists shows the lists this world keeps; name
+only those, or one you declare in new_token_lists.
 
-To declare a list, add to your JSON:
-"new_token_lists": [{"name": "smell", "means": "what a dockside place smells of",
-                     "entries": ["brine", "tar", "old rope"]}]
-To make the choice a fact rules can read, give the list a "group" and give each
-entry the state it sets:
-{"name": "paint", "means": "the colour something is painted", "group": "colour",
- "entries": [{"text": "red", "sets": {"states": ["red"]}},
-             {"text": "green", "sets": {"states": ["green"]}}]}
+To make the choice a fact rules can read, give a declared list a "group" and
+give each entry the state it sets: {"text": "red", "sets": {"states": ["red"]}}.
 
 A description or an entry may also draw a word from the dictionaries, chosen
 and kept the same way: $hyponym(sword.n.01) is some sort of sword,
@@ -724,21 +789,122 @@ $found_at(galley, else=a crate).
 """
 
 
-def vocabulary_block(world_root, for_kinds=()):
-    """
-    The lists as a prompt block, and how to use and add to them.
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
 
-    Lists meant for the kinds in play come first, then the rest, up to
-    `MOST_SHOWN`. A world's lists will outgrow a prompt long before its states
-    do, and the ones for other sorts of thing are the ones to leave out.
-    """
-    wanted = set(for_kinds or ())
-    kept = vocabulary(world_root)
-    ordered = sorted(kept.items(),
-                     key=lambda pair: (not (set(pair[1].get("for") or ())
-                                            & wanted), pair[0]))
-    lines = [f"  {{{name}}}: {spelled(entry)} — {entry.get('means', '')}"
-             for name, entry in ordered[:MOST_SHOWN]]
-    listed = ("Word lists this world keeps:\n" + "\n".join(lines) + "\n"
-              if lines else "")
-    return f"{listed}{PROMPT}\n"
+def lookup_tools():
+    """`list_word_lists`, `show_word_list` and `try_text`."""
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        wanted = str(args.get("for_kind") or "").strip()
+        kept = vocabulary(ctx.world_root)
+        ordered = sorted(kept.items(),
+                         key=lambda pair: (wanted not in (pair[1].get("for")
+                                                          or ()), pair[0]))
+        return tb.paged([f"{{{name}}}: {spelled(entry)} — "
+                         f"{entry.get('means', '')}"
+                         for name, entry in ordered], args, "word lists")
+
+    def showing(ctx, args):
+        name = _slug(args.get("name"))
+        entry = get(ctx.world_root, name)
+        if entry is None:
+            return f"This world keeps no word list called {name}."
+        said = [f"{{{name}}}: {entry.get('means', '')}",
+                f"kept per: {entry.get('scope') or DEFAULT_SCOPE}"]
+        if entry.get("group"):
+            said.append(f"sets the group: {entry['group']}")
+        if entry.get("for"):
+            said.append(f"for: {', '.join(entry['for'])}")
+        said.append("entries: " + spelled(entry, most=MOST_ENTRIES))
+        return "\n".join(said)
+
+    def trying(ctx, args):
+        from world import effects, tokens
+
+        text = str(args.get("text") or "")
+        unknown = sorted(
+            name for name in references(text)
+            if name not in effects._BUILTIN_SLOTS
+            and name not in tokens._PROVIDED_SLOTS
+            and get(ctx.world_root, name) is None)
+        shown = tokens.text(text, tokens.Context(
+            viewer=ctx.actor, world_root=ctx.world_root, purpose="display"))
+        said = f"That comes to: {shown}"
+        if unknown:
+            said += ("\nThis world keeps no list called "
+                     + ", ".join("{" + name + "}" for name in unknown)
+                     + "; declare it, or use one it keeps.")
+        return said
+
+    return [
+        tb.Tool("list_word_lists",
+                "The word lists a description here may use, those meant for "
+                "one sort of thing first.",
+                tb.params({**tb.PAGE, "for_kind": {
+                    "type": "string",
+                    "description": "Optional. Put lists meant for this sort of "
+                                   "thing first"}}),
+                tb.answering(listing), doing="looking up word lists",
+                looks=True),
+        tb.Tool("show_word_list", "One word list, every entry.",
+                tb.params({"name": {"type": "string",
+                                    "description": "The list's name, without "
+                                                   "braces"}}, ["name"]),
+                tb.answering(showing), doing="looking up a word list",
+                looks=True),
+        tb.Tool("try_text",
+                "What a description comes to once its word lists are filled "
+                "in, and which lists it asks for that this world does not keep.",
+                tb.params({"text": {"type": "string",
+                                    "description": "The description to try"}},
+                          ["text"]),
+                tb.answering(trying), doing="trying out a description",
+                looks=True),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# The shape of a declaration, and whether it is one this world has (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def schema(ctx=None):
+    """One word list, as `clean` reads it."""
+    return {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string",
+                     "description": "The list's name, as it is written in "
+                                    "braces"},
+            "means": {"type": "string",
+                      "description": "One sentence on what the list is for"},
+            "scope": {"type": "string", "enum": list(SCOPES),
+                      "description": "What a choice is kept on"},
+            "group": {"type": "string",
+                      "description": "Optional. The state group its entries "
+                                     "set"},
+            "for": {"type": "array", "items": {"type": "string"},
+                    "description": "Optional. The sorts of thing it is meant "
+                                   "for"},
+            "fallback": {"type": "string",
+                         "description": "Optional. What to say if nothing can "
+                                        "be chosen"},
+            "entries": {"type": "array",
+                        "items": {"type": "object", "properties": {
+                            "text": {"type": "string"},
+                            "weight": {"type": "number"},
+                            "sets": {"type": "object"}},
+                            "required": ["text"]},
+                        "description": "The words it chooses between"},
+        },
+        "required": ["name", "means", "entries"],
+    }
+
+
+def near_duplicate(world_root, name):
+    """The list this world already keeps under another spelling, or ""."""
+    wanted = _slug(name)
+    folded = _fold(world_root, wanted) if wanted else ""
+    return folded if folded and folded != wanted else ""

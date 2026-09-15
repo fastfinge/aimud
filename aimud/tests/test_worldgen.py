@@ -17,16 +17,16 @@ scripted replies costs nothing and catches every one of them.
 from django.test import tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import as_json, immediately, replying
+from tests.support import finishing, immediately, replying
 from world import sponsor as sponsor_mod
 
-PLAN = as_json({"zones": [{"name": "Hall", "purpose": "people pass through",
+PLAN = ({"zones": [{"name": "Hall", "purpose": "people pass through",
                            "room_types": ["hall"], "room_budget": 4}],
                 "singleton_types": []})
-NAME = as_json({"name": "Front Hall", "type": "hall",
+NAME = ({"name": "Front Hall", "type": "hall",
                 "category": "circulation", "zone": "Hall",
                 "zone_purpose": "", "exits": []})
-DESC = as_json({"description": "A plain hall.", "trait_bonuses": {}})
+DESC = ({"description": "A plain hall.", "trait_bonuses": {}})
 
 
 @tag("world")
@@ -45,7 +45,8 @@ class MakingTheFirstRoom(EvenniaTest):
         from world.worldgen import generate_first_room
 
         made, failed = [], []
-        with immediately(), replying(PLAN, NAME, DESC):
+        with immediately(), replying(finishing(
+                plan_world=PLAN, name_room=NAME, describe_room=DESC)):
             generate_first_room(sponsor, {"description": "a quiet hall"},
                                 on_success=made.append,
                                 on_error=failed.append, **kwargs)

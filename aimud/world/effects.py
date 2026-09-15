@@ -27,6 +27,109 @@ def forget_narrations(obj):
         obj.db.ai_commands = {}
 
 
+#: Slots a description may use that are not word lists: they are answered by
+#: the renderer itself. See `tokens._slot`.
+_BUILTIN_SLOTS = frozenset(["self", "viewer", "user", "here", "world"])
+
+
+def modify_complaints(obj, new_name="", new_description="", world_root=None,
+                      room=None):
+    """
+    What stops this change being made, as short sentences; [] when nothing
+    does.
+
+    Shared by the `modify_object` effect and a character's `modify` tool, so a
+    rule and a character cannot differ about what renaming a thing may do --
+    and held to what every generator's names and descriptions are held to:
+
+    * A name says what a thing is and never its condition. `broken`, `lit`
+      and `half-empty` belong in states, where something can undo them; a
+      name carrying one is wrong the moment the condition changes. See
+      `verbs.name_contradicts_states`.
+    * A description may only ask for word lists this world keeps. A slot
+      nothing answers is shown to players as a raw `{smell}`. Checked by
+      name and never by rendering, because rendering would keep the choices
+      it made on the thing even for a change that is then refused.
+
+    Permission is not asked here. A rule's effect is the result of a verb the
+    world already allowed; a character's tool asks `attempt.permitted` itself.
+    """
+    from world import token_lists, tokens, verbs
+
+    if obj is None:
+        return ["there is nothing by that name to change"]
+    if _protected(obj, room if room is not None else obj.location):
+        return [f"{obj.key} is not something that can be changed"]
+
+    complaints = []
+    if new_name:
+        wrong = verbs.name_contradicts_states(new_name, verbs.states(obj),
+                                              world_root)
+        if wrong:
+            complaints.append(
+                f"a name says what a thing is and not what condition it is "
+                f"in, and {', '.join(wrong)} "
+                f"{'is a condition' if len(wrong) == 1 else 'are conditions'}")
+    if new_description:
+        unknown = sorted(
+            name for name in token_lists.references(new_description)
+            if name not in _BUILTIN_SLOTS
+            and name not in tokens._PROVIDED_SLOTS
+            and (world_root is None
+                 or token_lists.get(world_root, name) is None))
+        if unknown:
+            complaints.append(
+                "the description asks for word lists this world does not "
+                "keep: " + ", ".join("{" + name + "}" for name in unknown))
+    return complaints
+
+
+def modify(obj, new_name="", new_description="", affordances=None,
+           world_root=None):
+    """
+    Change what a thing is called, how it looks, or what can be done to it.
+
+    Nothing here refuses: `modify_complaints` is asked first. Answers whether
+    anything changed.
+
+    The old name is kept as a name the thing still answers to. Whoever
+    remembered "the brass key" should still find it after it has been bent,
+    and anything that learned the old name -- a goal, a quest, a character's
+    memory -- would otherwise be looking for a thing that has vanished.
+    """
+    from world import tokens, verbs
+
+    changed = False
+    if new_name:
+        old = str(obj.key or "")
+        obj.key = new_name
+        # The aliases its condition earns it spell out its name, so they
+        # are stale the moment the name changes.
+        verbs.refresh_state_aliases(obj)
+        if old and old.lower() != new_name.lower():
+            obj.aliases.add(old.lower())
+        verbs.adopt_named_states(obj, world_root)
+        changed = True
+    if new_description:
+        obj.db.desc = new_description
+        tokens.settle(obj)
+        changed = True
+    if affordances is not None:
+        # An object's affordances come from its kind, and this is the one
+        # thing that may overrule them -- because a rule changing what a
+        # particular thing can do is a deliberate act rather than drift.
+        # Burning one book does not stop books being readable.
+        from world import affordances as af
+
+        obj.db.affordances = af.normalise(affordances)
+    if changed:
+        # Narrations were written about what this object was. A charred stub
+        # is not the candle whose description was cached, so the stored text
+        # is dropped and rewritten on next use.
+        forget_narrations(obj)
+    return changed
+
+
 def _note_states(actor, obj, added, removed, world_root):
     """
     Write what a verb made true, and what it ended, as the world's history.
@@ -134,6 +237,62 @@ def _resolve_many(effect, key, bound, room, actor):
     return [found] if found is not None else []
 
 
+def _and_then(labels):
+    """"a key, a candle and a coil of rope" -- for reading, not for parsing."""
+    labels = [str(label) for label in labels if label]
+    if len(labels) < 2:
+        return labels[0] if labels else ""
+    return f"{', '.join(labels[:-1])} and {labels[-1]}"
+
+
+def _put(obj, where, effect, bound, room, actor, world_root=None):
+    """
+    Put one thing where an effect says, and answer with what the room saw.
+
+    One account of moving something, because two effects need it now:
+    `move_object` names a thing and `move_contents` empties one out. The
+    destinations are the same for both -- your hands, the floor here, in or on
+    something else involved, or another room entirely -- and a bulk move that
+    understood any fewer of them would be a second, worse answer to a question
+    already settled.
+    """
+    from world import relations
+
+    if where not in ("actor", "room") and where in bound:
+        # In or on something else involved. The case a rule could never say
+        # before, and why a verb that meant to put the key in the box used to
+        # drop it on the floor instead.
+        host = bound[where]
+        preposition = str(effect.get("preposition", "")).strip().lower()
+        if preposition not in relations.PREPOSITIONS:
+            preposition = relations.DEFAULT
+        ok, message = relations.place(obj, host, preposition, quiet=True)
+        return message if ok else None
+
+    # Another room entirely, named the way a rule can name one: a ship that
+    # launches, a letter that is sent, a bin that is emptied somewhere else.
+    if where not in ("actor", "room"):
+        from world import coords
+
+        elsewhere = coords.room_named(world_root, where)
+        if elsewhere is None:
+            return None
+        if not obj.move_to(elsewhere, quiet=True):
+            return None
+        relations.displace(obj)
+        label = obj.get_numbered_name(1, None, return_string=True)
+        return f"{label.capitalize()} is gone."
+
+    destination = actor if where == "actor" else room
+    if obj.move_to(destination, quiet=True):
+        # It is in a hand or on a floor now, not on or in anything.
+        relations.displace(obj)
+        label = obj.get_numbered_name(1, None, return_string=True)
+        return (f"{actor.get_display_name(actor)} takes {label}."
+                if destination is actor else f"{label.capitalize()} is set down.")
+    return None
+
+
 def _resolve(effect, key, bound, room, actor):
     """
     Find the object an effect refers to.
@@ -212,6 +371,13 @@ VOCABULARY = {
                  "inside or on another thing, or another room entirely",
         "takes": 'name_role, to: "actor" | "room" | <role> | <a room\'s name>, '
                  "preposition",
+        "backwards": True, "answers": False,
+    },
+    "move_contents": {
+        "means": "empties something out: everything it holds goes wherever "
+                 "one thing would have gone",
+        "takes": 'name_role, to: "actor" | "room" | <role> | <a room\'s name>, '
+                 'preposition, from: "in" | "on" | "under" | "behind"',
         "backwards": True, "answers": False,
     },
     "set_owner": {
@@ -362,6 +528,14 @@ def say(effect):
             return (f"puts {what} {preposition} "
                     f"{conditions._SUBJECT_WORDS.get(where, where)}")
         return f"sends {what} to {where}"
+
+    if etype == "move_contents":
+        where = str(effect.get("to") or "actor").strip()
+        if where == "actor":
+            return f"empties {what} into your hands"
+        if where == "room":
+            return f"empties {what} out onto the floor"
+        return f"empties {what} into {where}"
 
     if etype == "modify_object":
         said = []
@@ -557,49 +731,44 @@ def _apply_one(actor, room, effect, bound, world_root):
         return None
 
     if etype == "move_object":
-        from world import relations
-
         obj = _resolve(effect, "name", bound, room, actor)
         if obj is None or _protected(obj, room):
             return None
+        return _put(obj, str(effect.get("to", "room")).strip(), effect,
+                    bound, room, actor, world_root)
 
-        # "to" is the actor, the room, or the role of something to put it in
-        # or on. That last case is the one a rule could never say before, and
-        # is why a verb that meant to put the key in the box used to drop it
-        # on the floor instead.
-        where = str(effect.get("to", "room")).strip()
-        if where not in ("actor", "room") and where in bound:
-            host = bound[where]
-            preposition = str(effect.get("preposition", "")).strip().lower()
-            if preposition not in relations.PREPOSITIONS:
-                preposition = relations.DEFAULT
-            ok, message = relations.place(obj, host, preposition, quiet=True)
-            return message if ok else None
+    if etype == "move_contents":
+        # What "loot" needs, and "empty", "unpack", "tip out" and "rob" with
+        # it. Three times over two worlds a model was asked what looting a
+        # crate does and answered, in as many words, that it could not say:
+        # "move all contents of the container to the actor's inventory" was
+        # not something the vocabulary could express, because `move_object`
+        # names one thing. `cannot_say` is what measured that.
+        from world import relations
 
-        # Another room entirely, named the way a rule can name one. Until now
-        # `to` reached the actor, this room, or a role -- never a different
-        # place -- so a ship that launched could not put anything anywhere, and
-        # nor could a verb that sent a letter or emptied a bin.
-        if where not in ("actor", "room"):
-            from world import coords
+        host = _resolve(effect, "name", bound, room, actor)
+        if host is None:
+            return None
+        taken = str(effect.get("from") or "").strip().lower()
+        holding = relations.contents(
+            host, taken if taken in relations.PREPOSITIONS else None)
+        # Worn things are on somebody rather than in them, so looting a body
+        # takes what it carries and leaves its clothes where they are. A verb
+        # that strips somebody is a different rule saying a different thing.
+        holding = [obj for obj in holding
+                   if not obj.db.worn and not _protected(obj, room)]
+        if not holding:
+            return None
 
-            elsewhere = coords.room_named(world_root, where)
-            if elsewhere is None:
-                return None
-            if not obj.move_to(elsewhere, quiet=True):
-                return None
-            relations.displace(obj)
-            label = obj.get_numbered_name(1, None, return_string=True)
-            return f"{label.capitalize()} is gone."
-
-        destination = actor if where == "actor" else room
-        if obj.move_to(destination, quiet=True):
-            # It is in a hand or on a floor now, not on or in anything.
-            relations.displace(obj)
-            label = obj.get_numbered_name(1, None, return_string=True)
-            return (f"{actor.get_display_name(actor)} takes {label}." if destination is actor
-                    else f"{label.capitalize()} is set down.")
-        return None
+        where = str(effect.get("to", "actor")).strip()
+        moved = [obj.get_numbered_name(1, None, return_string=True)
+                 for obj in holding
+                 if _put(obj, where, effect, bound, room, actor, world_root)]
+        if not moved:
+            return None
+        emptied = host.get_numbered_name(1, None, return_string=True)
+        return (f"{actor.get_display_name(actor)} empties {emptied}: "
+                f"{_and_then(moved)}.")
 
     if etype == "set_exit":
         # Where a way out of here leads. The effect a launching ship needs: its
@@ -642,33 +811,19 @@ def _apply_one(actor, room, effect, bound, world_root):
         obj = _resolve(effect, "name", bound, room, actor)
         if obj is None or _protected(obj, room):
             return None
-        changed = False
-        if effect.get("new_name"):
-            obj.key = str(effect["new_name"]).strip()
-            changed = True
-        if effect.get("new_description"):
-            obj.db.desc = str(effect["new_description"]).strip()
-            from world import tokens
-
-            tokens.settle(obj)
-            changed = True
-        if effect.get("affordances") is not None:
-            # An object's affordances come from its kind, and this is the one
-            # thing that may overrule them -- because a rule changing what a
-            # particular thing can do is a deliberate act rather than drift.
-            # Burning one book does not stop books being readable.
-            from world import affordances as af
-
-            obj.db.affordances = af.normalise(effect["affordances"])
-        if effect.get("new_name"):
-            # The aliases its condition earns it spell out its name, so they
-            # are stale the moment the name changes.
-            verbs.refresh_state_aliases(obj)
-        if changed:
-            # Narrations were written about what this object was. A charred
-            # stub is not the candle whose description was cached, so the
-            # stored text is dropped and rewritten on next use.
-            forget_narrations(obj)
+        new_name = str(effect.get("new_name") or "").strip()
+        new_description = str(effect.get("new_description") or "").strip()
+        complaints = modify_complaints(obj, new_name, new_description,
+                                       world_root, room=room)
+        if complaints:
+            # Refused rather than half-done, and said where somebody reading
+            # the log can find it: a rule that tries this every time it runs
+            # is a rule worth rewriting.
+            logger.log_info(f"effects: {obj.key} not changed: "
+                            f"{'; '.join(complaints)}")
+            return None
+        modify(obj, new_name=new_name, new_description=new_description,
+               affordances=effect.get("affordances"), world_root=world_root)
         return None
 
     if etype == "set_trait":
@@ -706,10 +861,12 @@ def _apply_one(actor, room, effect, bound, world_root):
         targets = _resolve_many(effect, "name", bound, room, actor)
         if not targets:
             return None
+        from world.model_json import listed
+
         add, remove = [], []
-        for slug in effect.get("add", []):
+        for slug in listed(effect.get("add")):
             add.append(verbs.register_state(world_root, str(slug)))
-        for slug in effect.get("remove", []):
+        for slug in listed(effect.get("remove")):
             remove.append(str(slug).lower().strip())
         from world import kinds
 
@@ -780,3 +937,98 @@ def _apply_one(actor, room, effect, bound, world_root):
         return None
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# The shape of an effect, for a tool's parameters (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def schema(ctx=None):
+    """
+    One effect, as a finish tool's parameters describe it.
+
+    In the conservative dialect: `type` is closed to what this module can
+    apply, and every other field is optional, its description saying which
+    types use it. What depends on the type is enforced by whoever validates
+    the answer, as `rule_gen.validate` does, rather than by `oneOf`, which not
+    every provider honours.
+    """
+    from world import conditions, relations
+    from world import toolbox as tb
+
+    world_root = getattr(ctx, "world_root", None)
+    known_traits = []
+    if world_root is not None:
+        from world import traits
+
+        known_traits = sorted(traits.vocabulary(world_root))
+    roles = list(conditions.ROLES)
+    return {
+        "type": "object",
+        "properties": {
+            "type": {"type": "string", "enum": sorted(VOCABULARY),
+                     "description": "What it does: " + "; ".join(
+                         f"{name} {entry['means']}"
+                         for name, entry in sorted(VOCABULARY.items()))},
+            "role": tb.choice(roles + list(PLURAL_ROLES),
+                              "set_state, set_trait: whose state or figure "
+                              "changes"),
+            "name_role": tb.choice(roles, "destroy_object, move_object, "
+                                          "move_contents, modify_object, "
+                                          "set_owner: which participant it "
+                                          "is about"),
+            "name": {"type": "string",
+                     "description": "create_object: what the new thing is "
+                                    "called"},
+            "description": {"type": "string",
+                            "description": "create_object: what it looks like"},
+            "location": {"type": "string", "enum": ["room", "actor"],
+                         "description": "create_object: on the floor, or in "
+                                        "the hands of whoever acted"},
+            "add": {"type": "array", "items": {"type": "string"},
+                    "description": "set_state: conditions to put it in"},
+            "remove": {"type": "array", "items": {"type": "string"},
+                       "description": "set_state: conditions to take away"},
+            "trait": tb.choice(known_traits, "set_trait: the figure",
+                               ask="list_traits"),
+            "change": {"type": "number",
+                       "description": "set_trait: how far to move it"},
+            "set_to": {"type": "number",
+                       "description": "set_trait: where to put it"},
+            "rate": {"type": "number",
+                     "description": "set_trait: change per second from now "
+                                    "on; 0 stops it"},
+            "to": {"type": "string",
+                   "description": "move_object, move_contents: 'actor', "
+                                  "'room', a participant or a room's name; "
+                                  "set_owner: 'actor', a participant or "
+                                  "'nobody'; set_exit, move_actor: a room's "
+                                  "name"},
+            "preposition": {"type": "string",
+                            "enum": list(relations.PREPOSITIONS),
+                            "description": "move_object, move_contents to a "
+                                           "participant: how it goes there"},
+            "from": {"type": "string",
+                     "enum": list(relations.PREPOSITIONS),
+                     "description": "move_contents: take only what is in it, "
+                                    "on it, under or behind it; leave it out "
+                                    "for everything it holds"},
+            "exit": {"type": "string",
+                     "description": "set_exit, move_actor: which way out"},
+            "new_name": {"type": "string",
+                         "description": "modify_object, modify_room: what "
+                                        "it is called from now on"},
+            "new_description": {"type": "string",
+                                "description": "modify_object, modify_room: "
+                                               "what it looks like from now "
+                                               "on"},
+            "action": {"type": "string",
+                       "description": "try: the verb this means instead"},
+            "roles": {"type": "object",
+                      "description": "try: the participants for that verb"},
+            "cascade": {"type": "boolean",
+                        "description": "set_owner: whether what it holds "
+                                       "changes hands too"},
+        },
+        "required": ["type"],
+    }

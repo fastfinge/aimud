@@ -248,7 +248,7 @@ class TheSilentNoOpIsGone(EvenniaTest):
         self.room1.db.is_ai_room = True
 
     def attempt(self, raw):
-        from tests.support import FakeSponsor, immediately, replying
+        from tests.support import FakeSponsor, finishing, immediately, replying
         from world import attempt as attempt_mod
 
         said = []
@@ -288,11 +288,12 @@ class AskingWhatAnActionTakes(EvenniaTest):
         self.room1.db.is_ai_room = True
 
     def ask(self, reply, bound=None):
-        from tests.support import FakeSponsor, as_json, immediately, replying
+        from tests.support import FakeSponsor, finishing, immediately, replying
 
         got = []
         with immediately(), replying(
-                as_json(reply) if isinstance(reply, dict) else reply):
+                finishing(declare_action=reply)
+                if isinstance(reply, dict) else reply):
             actions.learn(FakeSponsor(), self.root, "power",
                           bound if bound is not None else {},
                           self.char1,
@@ -341,7 +342,7 @@ class AskingWhatAnActionTakes(EvenniaTest):
     def test_an_action_already_declared_is_not_asked_about_again(self):
         actions.declare(self.root, "power",
                         [{"role": "direct", "optional": True}])
-        from tests.support import FakeSponsor, immediately, replying
+        from tests.support import FakeSponsor, finishing, immediately, replying
 
         got = []
         with immediately(), replying("{}") as script:

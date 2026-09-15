@@ -309,15 +309,10 @@ def prompt_block(world_root, action):
     `affordances.PROMPT` are, so that the shape asked for and the shape read
     cannot drift apart.
     """
-    from world import lexicon
-
     lines = [
-        f'Declare what "{action}" takes, as a JSON object:',
-        '{"applies_to": [{"role": "direct", "access": "touchable",',
-        '                 "optional": false}], "sense": "", "means": "",',
-        '  "despite": []}',
+        f'Declare what "{action}" takes by calling declare_action.',
         "",
-        "role is one of: " + ", ".join(ROLES) + ". Leave the list empty for a",
+        "applies_to lists the roles it takes. Leave the list empty for a",
         "verb that takes nothing -- shrugging, waiting. There is always somebody",
         "acting, so never declare that.",
         "",
@@ -346,10 +341,74 @@ def prompt_block(world_root, action):
         "consequence it had. If you are unsure, leave it empty: a world can",
         "refuse an action and go on, and cannot take this back.",
     ]
-    asked = lexicon.verb_sense_prompt(action)
-    if asked:
-        lines += ["", asked.rstrip()]
+    lines += [
+        "",
+        "sense, when it is offered, is which meaning of the word this world",
+        "means by it, given what is going on. If none of them fits, leave it",
+        "empty and say what it means in means instead.",
+    ]
     return "\n".join(lines) + "\n"
+
+
+#: Rounds a declaration may take (docs/generator-tool-loops.md §10.3).
+LEARN_ROUNDS = 6
+
+
+def declaration_tool(action):
+    """
+    `declare_action`, the finish tool `learn` answers with.
+
+    Every field is closed where `declare` refuses anything else: the roles, how
+    near, the gates. The sense is an enum of the dictionary's senses when there
+    are two or more, which is the menu `lexicon.verb_sense_prompt` used to
+    write into the prompt; with one or none there is nothing to choose, and
+    `declare` takes the settled sense itself.
+    """
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        from world import lexicon
+
+        role = {
+            "type": "object",
+            "properties": {
+                "role": {"type": "string", "enum": list(ROLES),
+                         "description": "Which part of the sentence"},
+                "access": {"type": "string", "enum": list(ACCESS),
+                           "description": "How near the actor must be; "
+                                          "touchable is the ordinary answer"},
+                "optional": {"type": "boolean",
+                             "description": "Whether it may be left unsaid"},
+            },
+            "required": ["role"],
+            "additionalProperties": False,
+        }
+        properties = {
+            "applies_to": {"type": "array", "items": role,
+                           "maxItems": len(ROLES),
+                           "description": "The roles it takes; empty for none"},
+            "means": {"type": "string",
+                      "description": "Optional. What it means, in a sentence"},
+            "despite": {"type": "array",
+                        "items": {"type": "string", "enum": list(GATES)},
+                        "description": "Almost always empty; see the "
+                                       "instructions"},
+        }
+        listed = lexicon.verb_senses(action)
+        if len(listed) >= 2:
+            properties["sense"] = {
+                "type": "string", "enum": [name for name, _ in listed],
+                "description": "Which meaning: " + "; ".join(
+                    f"{name} -- {definition}" for name, definition in listed)
+                + ". Leave it out if none of them fits, and say what it means "
+                  "in means instead."}
+        return tb.params(properties, ["applies_to"])
+
+    return tb.Tool(
+        "declare_action",
+        f'Settle what "{action}" takes. Call it once, with the answer.',
+        parameters, lambda ctx, args, answer: answer(tb.accept(args)),
+        finishes=True)
 
 
 def learn(sponsor, world_root, action, bound, actor, on_success,
@@ -376,7 +435,8 @@ def learn(sponsor, world_root, action, bound, actor, on_success,
     all. Refusing the verb instead would make a new world unplayable over a
     question it can manage without.
     """
-    from world import llm, lore, model_json, verbs
+    from world import llm, lookups, lore, verbs
+    from world import toolbox as tb
 
     action = verbs.canonical_verb(str(action or "").strip().lower())
     settled = spec(world_root, action)
@@ -404,17 +464,12 @@ def learn(sponsor, world_root, action, bound, actor, on_success,
                      f"this one sentence happened to name.")},
     ]
 
-    def answered(content):
-        try:
-            reply = model_json.parse_object(content)
-        except Exception:
-            fall_back()
-            return
+    def answered(reply):
         # A declaration with an empty list is a real answer -- shrugging and
-        # waiting take nothing, and the prompt says so. A reply with no
+        # waiting take nothing, and the instructions say so. A reply with no
         # `applies_to` at all is not an answer, and taking it for one would
         # settle, permanently and on no evidence, that the verb takes nothing.
-        if not hasattr(reply, "get") or "applies_to" not in reply:
+        if not isinstance(reply, dict) or "applies_to" not in reply:
             fall_back()
             return
         try:
@@ -427,7 +482,39 @@ def learn(sponsor, world_root, action, bound, actor, on_success,
                            means=str(reply.get("means") or ""),
                            despite=reply.get("despite") or []))
 
-    llm.fetch(llm.ask, sponsor, sponsor.model_for("commands"), messages,
-              on_success=answered,
-              on_error=lambda failure: fall_back(failure.getErrorMessage()))
+    # Rounds out is the same as no answer: what the attempt shows stands in.
+    box = tb.Toolbox([declaration_tool(action)] + lookups.named("verb_info"),
+                     tb.ToolContext(world_root=world_root, actor=actor,
+                                    bound=bound, sponsor=sponsor,
+                                    job="commands"))
+    llm.converse(sponsor, sponsor.model_for("commands"), messages, box,
+                 on_done=answered, on_error=fall_back,
+                 on_exhausted=lambda _last: fall_back(), rounds=LEARN_ROUNDS)
 
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`list_known_verbs`: the verbs this world has worked out."""
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        from world import rulebooks
+
+        root = ctx.world_root
+        known = set(vocabulary(root))
+        known |= {key.split("#", 1)[0] for key in (root.db.verb_rules or {})}
+        known |= {rule.get("action") for rule in rulebooks.all_rules(root)
+                  if rule.get("action")}
+        return tb.paged(sorted(known), args, "verbs")
+
+    return [tb.Tool(
+        "list_known_verbs",
+        "The verbs this world has already worked out. Trying one of these "
+        "costs nothing to learn.",
+        tb.params(tb.PAGE), tb.answering(listing),
+        doing="looking up the verbs this world knows", looks=True,
+        available=lambda ctx: ctx.world_root is not None)]

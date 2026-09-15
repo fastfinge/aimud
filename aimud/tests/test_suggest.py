@@ -14,7 +14,8 @@ instead, and a wrong `instead` silently changes what a verb means.
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeSponsor, as_json, immediately, replying
+from tests.support import (FakeSponsor, as_json, finishing, immediately,
+                           replying)
 from world import attempt as attempt_mod
 from world import actions, counters, kinds, rulebooks as R
 from world import standard_rules, suggest, verbs
@@ -469,7 +470,7 @@ class TheWholeRoad(EvenniaTest):
     def try_it(self, raw):
         said = []
         with immediately(), replying(
-                as_json({"actor": "Done.", "room": "{actor} does it."})):
+                finishing(narrate={"actor": "Done.", "room": "{actor} does it."})):
             attempt_mod.attempt(
                 self.char1, raw, FakeSponsor(),
                 on_message=lambda a, r=None: said.append(a or ""))
@@ -531,7 +532,8 @@ class AskingSomebodyElseToJudge(AWorldWithFaults):
     def ask(self, reply):
         taken, declined, errors = [], [], []
         with immediately(), replying(
-                as_json(reply) if isinstance(reply, dict) else reply) as script:
+                finishing(give_verdicts=reply) if isinstance(reply, dict)
+                else reply) as script:
             suggest.judge(FakeSponsor(), self.root,
                           on_success=lambda a, d: (taken.extend(a),
                                                    declined.extend(d)),
@@ -573,6 +575,28 @@ class AskingSomebodyElseToJudge(AWorldWithFaults):
         after = R.get(self.root, self.opener["id"])
         self.assertIsNotNone(after, "a world's own rule is not the queue's")
         self.assertEqual(after["name"], before["name"])
+
+    def test_a_verdict_about_something_not_waiting_is_sent_back_first(self):
+        """The rail is in the schema now, and a stray id is a complaint."""
+        from tests.support import tool_call, tool_reply
+
+        first = self.standing[0]
+        taken, errors = [], []
+        with immediately(), replying(
+                tool_reply(tool_call("give_verdicts", verdicts=[
+                    {"id": "r999", "accept": True}])),
+                tool_reply(tool_call("give_verdicts", verdicts=[
+                    {"id": first["id"], "accept": True}]))) as script:
+            suggest.judge(FakeSponsor(), self.root,
+                          on_success=lambda a, d: taken.extend(a),
+                          on_error=errors.append)
+            offered = script.tools(0)[0]["function"]["parameters"]
+            said = script.tool_results(1)[0]["content"]
+        self.assertEqual(
+            offered["properties"]["verdicts"]["items"]["properties"]["id"]["enum"],
+            [rule["id"] for rule in self.standing])
+        self.assertIn("r999", said)
+        self.assertEqual((taken, errors), ([first["id"]], []))
 
     def test_a_reply_that_is_not_a_reply_is_an_error_not_a_change(self):
         _taken, _declined, errors = self.ask("I would rather not.")

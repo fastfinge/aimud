@@ -32,26 +32,31 @@ into a measurement.
 
 from evennia.utils import logger
 
-from world import effects, llm, rulebooks
+from world import effects, llm, model_json, rulebooks
 
-#: How far up the taxonomy a rule may be filed, by depth from the root. A
-#: scope is too general exactly when it is too near the top, which makes the
-#: taxonomy its own measure and saves anybody writing a list.
+#: How near the root a scope has to be before it can be too general, by depth,
+#: and how broad it has to be there -- how many sorts of thing sit beneath it.
+#: A scope is too general when it is both. The taxonomy is its own measure
+#: either way, and nobody has to write a list.
 #:
-#: Set by looking at where the useful scopes actually sit:
+#:                             depth   beneath
+#:     physical_entity.n.01       2    39,555   everything
+#:     object.n.01                3    29,580   everything
+#:     artifact.n.01              5    10,504   everything anybody made
+#:     instrumentality.n.03       6     5,494   most objects in the game
+#:     structure.n.01             6     1,405   a real sort of thing
+#:     device.n.01                7     2,760   a real sort of thing
+#:     container.n.01             7       744   a real sort of thing
+#:     ledger.n.01                6         4   one sort of thing
 #:
-#:     physical_entity.n.01     2   everything
-#:     object.n.01              3   everything
-#:     artifact.n.01            5   everything anybody made
-#:     instrumentality.n.03     6   most objects in the game
-#:     device.n.01              7   a real sort of thing
-#:     container.n.01           7   a real sort of thing
-#:     publication.n.01         9
-#:     spacecraft.n.01         12
-#:
-#: Six is the line: it refuses the four that would put one rule over the whole
-#: world, and offers the ones a rule is genuinely worth having about.
+#: Depth alone was the measure, and it refused things that are only shallow
+#: because their branch of the taxonomy is. Made things run deep; documents,
+#: events and measures do not, so a ledger sits at six like instrumentality
+#: does, with four sorts of ledger beneath it rather than five thousand sorts
+#: of instrument. The baseline soak for the tool-loop plan found `drink`
+#: learning no rule because its teacup was "too near the top of the taxonomy".
 SCOPE_CEILING = 6
+SCOPE_BREADTH = 2000
 
 #: Where a world remembers the verbs it asked about and got nothing for.
 #:
@@ -61,6 +66,11 @@ SCOPE_CEILING = 6
 #: cached nowhere -- so a player, or a character working at a goal, could buy the
 #: same empty answer indefinitely.
 ATTR_FRUITLESS = "verbs_without_rules"
+
+#: Where a world remembers what it was told it could not say. Beside the
+#: count, and not the same thing: a verb nobody needed a rule for is narrated
+#: like any other, and a verb the vocabulary cannot express must not be.
+ATTR_CANNOT_SAY = "verbs_that_cannot_be_said"
 
 #: How many times a world may ask before it stops asking. Two, because the first
 #: answer may have been unlucky -- a malformed reply, a scope the model misread --
@@ -137,11 +147,10 @@ def _worth_offering(world_root, kind):
     """
     The ancestors of a kind that are worth filing a rule against.
 
-    Cut off above `SCOPE_CEILING`, because a rule filed at
+    Cut off wherever `too_general` says so, because a rule filed at
     `physical_entity.n.01` is a rule about everything, and a model offered it
-    will sometimes take it. The ceiling is the taxonomy's own depth, which is
-    the natural measure: a scope is too general exactly when it is too near
-    the root.
+    will sometimes take it. The same test the reply is checked against, so
+    nothing is offered that would then be refused.
     """
     from world import kinds, lexicon
 
@@ -150,21 +159,26 @@ def _worth_offering(world_root, kind):
                          key=lambda name: -len(lexicon.ancestors(name))):
         if parent == kind:
             continue
-        if len(lexicon.ancestors(parent)) <= SCOPE_CEILING:
+        if too_general({rulebooks.KIND: parent}):
             continue
         out.append(parent)
     return out[:3]
 
 
 def too_general(scope, world_root=None):
-    """Whether a scope is nearer the root of the taxonomy than we allow."""
+    """
+    Whether a scope is near enough the root, and broad enough there, to be a
+    rule about everything. See `SCOPE_CEILING`.
+    """
     from world import lexicon
 
     kind = (scope or {}).get(rulebooks.KIND)
     if not kind:
         return False
     depth = len(lexicon.ancestors(kind))
-    return bool(depth) and depth <= SCOPE_CEILING
+    if not depth or depth > SCOPE_CEILING:
+        return False
+    return lexicon.has_at_least_below(kind, SCOPE_BREADTH)
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +282,8 @@ def _states_produced(reply, world_root, action):
                 continue
             for effect in (entry.get("effects") or []):
                 if str(effect.get("type") or "") == "set_state":
-                    found |= {str(s).lower() for s in (effect.get("add") or [])}
+                    found |= {str(s).lower()
+                              for s in model_json.listed(effect.get("add"))}
         except (AttributeError, TypeError, ValueError):
             continue
     for rule in rulebooks.all_rules(world_root) if world_root else []:
@@ -279,7 +294,8 @@ def _states_produced(reply, world_root, action):
         for effect in rulecheck.effects_of(rule):
             try:
                 if str(effect.get("type") or "") == "set_state":
-                    found |= {str(s).lower() for s in (effect.get("add") or [])}
+                    found |= {str(s).lower()
+                              for s in model_json.listed(effect.get("add"))}
             except AttributeError:
                 continue
     return found
@@ -309,7 +325,8 @@ def _self_defeating(conds, produced):
     wanted = set()
     for condition in (conds or []):
         try:
-            wanted |= {str(s).lower() for s in (condition.get("is") or [])}
+            wanted |= {str(s).lower()
+                       for s in model_json.listed(condition.get("is"))}
         except AttributeError:
             continue
     return sorted(wanted & produced)
@@ -354,14 +371,8 @@ def _clean_effects(given):
 
 _SYSTEM = """You add one or two rules to a text MUD that already has some.
 
-Respond with a single JSON object — no other text:
-{"rules": [{"phase": "check", "scope": "<one of the scopes offered>",
-            "about": "direct", "name": "one short sentence",
-            "conditions": [...], "effects": [...], "contest": null}],
- "new_states": [{"slug": "powered", "means": "running under its own power",
-                 "group": "power"}],
- "new_traits": [],
- "cannot_say": ""}
+Answer by calling file_rules. The states, traits and rules this world already
+has are not listed here: look them up with the tools when you need them.
 
 A rule is one small fact about when something works, what it does, or what
 follows. Write the fewest that make this verb behave properly here. Two or
@@ -429,8 +440,8 @@ bread, sitting down. Most verbs have none, and leaving it out entirely is the
 ordinary answer. But a world in which nothing whatever can be failed at is not
 a game, so when a verb genuinely is one, say so.
 
-**new_states** declares any state slug your rules used that the vocabulary
-below does not already have: its meaning, and its "group" if it belongs to
+**new_states** declares any state slug your rules used that this world does
+not already have (list_states shows them): its meaning, and its "group" if it belongs to
 one. A group is a set of states only one of which can be true at a time, so
 powering a thing on takes it out of whatever "power" state it was in without
 any rule saying so. Reuse an existing state whenever one fits -- a second word
@@ -438,6 +449,10 @@ for a condition the world already has is two facts that cannot see each other.
 
 **new_traits** does the same for a trait a condition or effect named, with
 "slug", "name", "means" and "trait_type" ("counter" or "gauge").
+
+**adopt**, when it is offered, takes the ids of rules this world has already
+worked out for this verb and is waiting to put into force. Adopt one only if
+this verb genuinely does that; it is better than writing the same rule again.
 
 If this verb needs something you cannot say with the conditions and effects
 above, leave "rules" empty and put one sentence in "cannot_say" describing
@@ -475,6 +490,7 @@ _EFFECTS = """An effect is one of:
   {"type": "destroy_object", "name_role": "direct"}
   {"type": "set_owner", "name_role": "direct", "to": "actor"}
   {"type": "set_owner", "name_role": "direct", "to": "nobody"}
+  {"type": "move_contents", "name_role": "direct", "to": "actor"}
   {"type": "narrate"}
   {"type": "move_actor", "exit": "north"}
   {"type": "move_actor", "to": "<a room's name>"}
@@ -487,6 +503,14 @@ letter moves it to the container with "in", one that sets a cup on a table
 moves it to the target with "on", and one that sends a parcel away names the
 room. Never invent a state like "in_box" to stand in for this; where a thing
 is, is not a property of the thing, and the game tracks it properly.
+
+"move_contents" empties a thing out: everything it holds goes wherever a
+single thing would have gone, with the same "to". That is what looting,
+emptying, unpacking and tipping out are, and it is the effect to reach for
+whenever the answer would otherwise be "all of them" -- there is no way to
+write a rule that walks a container's contents itself, and no need. Add
+"from": "in", "on", "under" or "behind" to take only what is there that way.
+Clothes somebody is wearing are never taken: they are on them, not in them.
 
 "set_exit" changes where a way out of this room leads. It and the room form of
 "move_object" both name a room the way somebody reading would -- its name,
@@ -516,7 +540,7 @@ did name a thing, and powering a datapad would power the ship instead.
 """
 
 
-def prompt(world_root, action, bound, actor, offered):
+def prompt(world_root, action, bound, actor, offered, hints=()):
     """Everything the model is shown, assembled."""
     from world import actions, conditions, lore
 
@@ -548,15 +572,21 @@ def prompt(world_root, action, bound, actor, offered):
 
         lines.append("\n" + _describe_objects(bound, actor))
 
-    # The vocabulary a rule should be choosing from rather than adding to.
-    # Shown in full for the same reason the old generator showed it: a state
-    # that cannot be seen gets coined again under another name, and then a
-    # thing is powered and inactive at once with neither word knowing the
-    # other exists.
-    from world import traits, verb_gen
+    # Not the registers, which are behind lookup tools now and checked for
+    # near-duplicates when an answer comes back, but the few states worth
+    # putting in front of the rest: what things of these sorts have been in.
+    from world import verb_gen, verbs
 
-    lines.append("\n" + verb_gen.state_block(world_root, bound)
-                 + traits.vocabulary_block(world_root))
+    familiar = sorted(verb_gen._states_of_kinds(world_root, bound)
+                      & set(verbs.vocabulary(world_root)))
+    if familiar:
+        lines.append("\nConditions things of these sorts have been in before, "
+                     "to reuse if one fits: " + ", ".join(familiar)
+                     + ". list_states has the rest.")
+    if hints:
+        lines.append("\nWhat this world is missing, where it bears on this. "
+                     "Act on a line only if this verb genuinely does that:")
+        lines += [f"  - {hint}" for hint in hints]
     lines.append("\n" + lore.description(world_root, actor))
     return "\n".join(lines)
 
@@ -574,25 +604,33 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
     except ValueError as err:
         on_error(str(err))
         return
+    from world import lookups, suggest
+    from world import toolbox as tb
+
     model = sponsor.model_for("commands")
     offered = menu(world_root, bound, actor)
+    proposals = [rule for rule in suggest.queue(world_root)
+                 if rule.get("action") == action] if world_root else []
 
     system = _SYSTEM.replace("{conditions}", _CONDITIONS) \
                     .replace("{effects}", _EFFECTS)
     messages = [
         {"role": "system", "content": system},
-        {"role": "user", "content": prompt(world_root, action, bound, actor,
-                                           offered)},
+        {"role": "user", "content": prompt(
+            world_root, action, bound, actor, offered,
+            hints(world_root, action, bound, proposals))},
     ]
+    box = tb.Toolbox(
+        [rules_tool(action, offered, proposals)] + lookups.named(*LOOKUPS),
+        tb.ToolContext(world_root=world_root,
+                       room=getattr(actor, "location", None), actor=actor,
+                       bound=bound, sponsor=sponsor, job="commands"))
 
-    def answered(content):
-        from world.model_json import parse_object
-
-        try:
-            reply = parse_object(content)
-        except Exception as exc:
-            on_error(str(exc))
-            return
+    def answered(reply):
+        # Accepted, or the last thing sent when the rounds ran out: what is
+        # valid in it is kept either way, and a model that never answered at
+        # all has answered with nothing, which is counted.
+        reply = reply if isinstance(reply, dict) else {}
         cannot = str(reply.get("cannot_say") or "").strip()
         if cannot:
             logger.log_info(f"rule_gen: {action} cannot_say -- {cannot}")
@@ -600,16 +638,18 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
         for complaint in complaints:
             logger.log_info(f"rule_gen: {action} dropped -- {complaint}")
         _register_states(world_root, reply)
-        if not kept:
+        adopted = _adopt(world_root, reply, proposals)
+        if not kept and not adopted:
             # Asked and answered with nothing usable -- a `cannot_say`, or rules
             # that every one of them failed validation. Counted, so that the next
             # attempt at this verb is not another call to the same effect.
-            note_fruitless(world_root, action)
-        on_success([rulebooks.add(world_root, rule) for rule in kept])
+            note_fruitless(world_root, action, cannot)
+        on_success([rulebooks.add(world_root, rule) for rule in kept]
+                   + adopted)
 
-    llm.fetch(llm.ask, sponsor, model, messages,
-              on_success=answered,
-              on_error=lambda failure: on_error(failure.getErrorMessage()))
+    llm.converse(sponsor, model, messages, box, on_done=answered,
+                 on_error=on_error, on_exhausted=answered,
+                 rounds=LEARN_ROUNDS)
 
 
 def fruitless(world_root, action):
@@ -623,17 +663,37 @@ def fruitless(world_root, action):
         return 0
 
 
-def note_fruitless(world_root, action):
-    """Record that asking about a verb produced no rule. Answers with the count."""
+def note_fruitless(world_root, action, why=""):
+    """Record that asking about a verb produced no rule. Answers with the count.
+
+    `why` is what the model said it could not express, when it said so. Kept
+    because the two empty answers mean opposite things to whoever typed the
+    verb: nothing needed saying, which is how smiling works and is narrated
+    like any other verb, or the vocabulary has no way to say it, where
+    narrating would describe a success that did not happen. See
+    `attempt.settle`.
+    """
     if not world_root or not action:
         return 0
     store = dict(getattr(world_root.db, ATTR_FRUITLESS, None) or {})
     count = fruitless(world_root, action) + 1
     store[str(action)] = count
     setattr(world_root.db, ATTR_FRUITLESS, store)
+    if why:
+        unsayable = dict(getattr(world_root.db, ATTR_CANNOT_SAY, None) or {})
+        unsayable[str(action)] = str(why)
+        setattr(world_root.db, ATTR_CANNOT_SAY, unsayable)
     logger.log_info(f"rule_gen: {action} produced no rule ({count} of "
                     f"{ASKS_ALLOWED})")
     return count
+
+
+def cannot_say(world_root, action):
+    """What this world was told it could not express about a verb, or ""."""
+    if not world_root:
+        return ""
+    store = dict(getattr(world_root.db, ATTR_CANNOT_SAY, None) or {})
+    return str(store.get(str(action)) or "")
 
 
 def worth_asking(world_root, action):
@@ -685,3 +745,301 @@ def _register_states(world_root, reply):
             or traits.DEFAULT_TRAIT_TYPE,
             base=entry.get("base"), min=entry.get("min"),
             max=entry.get("max"))
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`verb_info`: everything this world knows about a verb."""
+    from world import toolbox as tb
+
+    def informing(ctx, args):
+        from world import actions, lexicon, verbs
+
+        verb = verbs.canonical_verb(str(args.get("verb") or "").strip().lower())
+        root = ctx.world_root
+        said = [f"{verb}:"]
+        if verb in verbs.engine_verbs():
+            said.append("The game itself handles this verb.")
+        declared = actions.spec(root, verb)
+        if declared:
+            roles = ", ".join(f"{role.get('role')} ({role.get('access')})"
+                              for role in declared.get("applies_to") or []) \
+                or "nothing"
+            said.append(f"It takes: {roles}.")
+            if declared.get("means"):
+                said.append(f"It means: {declared['means']}")
+        filed = [rule for rule in rulebooks.all_rules(root)
+                 if rule.get("action") == verb]
+        for rule in filed:
+            said.append(f"  {rule.get('id')} {rule.get('phase')} at "
+                        f"{rulebooks.said_scope(rule.get('scope'), root)}"
+                        f" -- {rule.get('name') or ''}"
+                        + ("" if rule.get("listed", True) else " (suspended)"))
+        if not filed and not declared:
+            said.append("This world has decided nothing about it yet.")
+        for ancestor in lexicon.verb_ancestors(verb):
+            count = len([rule for rule in rulebooks.all_rules(root)
+                         if rule.get("action") == ancestor])
+            if count:
+                said.append(f"It is a way of {ancestor}, which this world has "
+                            f"{count} rules about.")
+        asked = fruitless(root, verb)
+        if asked:
+            said.append(f"Asked about {asked} times with no rule to show.")
+        return "\n".join(said)
+
+    return [tb.Tool(
+        "verb_info",
+        "Everything this world knows about a verb: what it takes, the rules "
+        "filed about it, and the verbs it is a way of doing that already have "
+        "rules.",
+        tb.params({"verb": {"type": "string", "description": "The verb"}},
+                  ["verb"]),
+        tb.answering(informing), doing="looking up a verb", looks=True,
+        available=lambda ctx: ctx.world_root is not None)]
+
+
+# ---------------------------------------------------------------------------
+# The finish tool, and what the prompt is told (docs §4.2, §5.1, §5.2)
+# ---------------------------------------------------------------------------
+
+#: Rounds `learn` may take (§10.3).
+LEARN_ROUNDS = 8
+
+#: The lookups offered while writing rules: the registers the prompt used to
+#: paste in, the rules already filed, and the rooms an effect may name.
+LOOKUPS = ("list_states", "show_state", "list_state_groups", "list_traits",
+           "show_trait", "verb_info", "list_rules", "show_rule",
+           "world_faults", "kind_info", "commonsense", "find_rooms")
+
+#: The most wants shown as hints in one call (§5.1).
+MOST_WANTS = 3
+
+
+def rules_tool(action, offered, proposals=()):
+    """
+    `file_rules`, the finish tool `learn` answers with.
+
+    The scope is an enum of the menu's tokens, which is ground rule 6 moved out
+    of the prose and into the schema. `adopt` is offered only when this verb
+    has proposals waiting, since an enum of nothing cannot be sent.
+
+    Its handler is `validate`, and what `validate` would have dropped and
+    logged is sent back instead, with any near-duplicate words, so a rule
+    refused in one round can be put right in the next.
+    """
+    from world import actions, conditions, traits, verbs
+    from world import effects as effects_mod
+    from world import toolbox as tb
+
+    tokens = [token for token, _said, _scope in offered]
+    ids = [str(rule.get("id")) for rule in proposals or () if rule.get("id")]
+
+    def parameters(ctx):
+        known = (sorted(traits.vocabulary(ctx.world_root))
+                 if ctx.world_root is not None else [])
+        rule = {
+            "type": "object",
+            "properties": {
+                "phase": {"type": "string", "enum": list(PHASES),
+                          "description": "check, carry_out, instead or after"},
+                "scope": {"type": "string", "enum": tokens,
+                          "description": "Where it is filed: one of the "
+                                         "scopes offered"},
+                "about": {"type": "string",
+                          "enum": list(actions.ROLES) + ["enclosure"],
+                          "description": "Which participant the scope is "
+                                         "matched against"},
+                "name": {"type": "string",
+                         "description": "What must be so, in one short "
+                                        "sentence"},
+                "conditions": {"type": "array",
+                               "items": conditions.schema(ctx),
+                               "description": "A check rule's requirements"},
+                "effects": {"type": "array", "items": effects_mod.schema(ctx),
+                            "description": "What a carry_out, instead or "
+                                           "after rule does"},
+                "contest": {
+                    "type": "object",
+                    "properties": {
+                        "trait": tb.choice(known, "The actor's figure that "
+                                                  "decides it",
+                                           ask="list_traits"),
+                        "against": {"type": "object", "properties": {
+                            "role": {"type": "string",
+                                     "enum": list(actions.ROLES)},
+                            "trait": {"type": "string"}}},
+                        "difficulty": {"type": "number"},
+                    },
+                    "description": "Only for a verb a capable person could "
+                                   "fail at"},
+            },
+            "required": ["phase", "scope"],
+        }
+        properties = {
+            "rules": {"type": "array", "items": rule, "maxItems": 4,
+                      "description": "The fewest rules that make it behave; "
+                                     "empty with cannot_say if none can"},
+            "new_states": {"type": "array",
+                           "items": verbs.state_declaration_schema(ctx),
+                           "description": "States the rules use that this "
+                                          "world does not have"},
+            "new_traits": {"type": "array",
+                           "items": traits.declaration_schema(ctx),
+                           "description": "Traits the rules use that this "
+                                          "world does not have"},
+            "cannot_say": {"type": "string",
+                           "description": "What the conditions and effects "
+                                          "could not say, if anything"},
+        }
+        if ids:
+            properties["adopt"] = {
+                "type": "array", "items": {"type": "string", "enum": ids},
+                "description": "Rules already worked out for this verb, to "
+                               "put into force"}
+        return tb.params(properties, ["rules"])
+
+    def handler(ctx, args, answer):
+        from world import vocabulary
+
+        kept, said = validate(args, offered, action, ctx.world_root)
+        said = list(said)
+        adopting = _listed(args.get("adopt"))
+        stray = [str(rule_id) for rule_id in adopting
+                 if str(rule_id) not in ids]
+        if stray:
+            said.append("there is no waiting rule called " + ", ".join(stray))
+        said += [line.rstrip(".") for line in vocabulary.near_duplicates(
+            ctx.world_root, new_states=_listed(args.get("new_states")),
+            new_traits=_listed(args.get("new_traits")))]
+        if (not said and not kept and not adopting
+                and not str(args.get("cannot_say") or "").strip()):
+            said.append("that files nothing: write a rule, adopt one, or say "
+                        "in cannot_say what is missing")
+        if said:
+            answer(tb.complain("Not filed: " + "; ".join(said) + ". Send the "
+                               "whole answer again with that put right, or "
+                               "leave that part out.", value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("file_rules", f"File the rules for {action}.", parameters,
+                   handler, finishes=True)
+
+
+def _listed(value):
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _adopt(world_root, reply, proposals):
+    """The waiting proposals a reply adopted, put into force."""
+    from world import suggest
+
+    ids = {str(rule.get("id")) for rule in proposals or ()}
+    taken = []
+    for rule_id in _listed(reply.get("adopt")):
+        if str(rule_id) not in ids:
+            continue
+        rule = suggest.accept(world_root, str(rule_id))
+        if rule is not None:
+            logger.log_info(f"rule_gen: adopted {rule_id}")
+            taken.append(rule)
+    return taken
+
+
+def hints(world_root, action, bound, proposals=()):
+    """
+    What this world's faults and its people's wants say about this attempt,
+    as at most `rulecheck.MOST_HINTS` lines (§5.2). Free: no model.
+
+    Never raises. A hint is a kindness, and a world whose registers upset the
+    scan should still get its rule written.
+    """
+    if world_root is None:
+        return []
+    from world import rulecheck
+
+    try:
+        registers = rulecheck.of_world(world_root)
+        return rulecheck.relevant(
+            rulecheck.scan(registers), registers, action,
+            near=rulecheck.states_near(world_root, bound),
+            proposals=proposals, wants=want_lines(world_root, action, bound))
+    except Exception:
+        logger.log_trace("rule_gen: the hints could not be worked out")
+        return []
+
+
+def want_lines(world_root, action, bound):
+    """
+    Wants nothing in this world can satisfy that bear on the things bound here
+    (§5.1), worded for the prompt.
+
+    A `no_rule` want about a bound thing, always. A `missing_thing` want only
+    when ConceptNet relates the missing thing to a bound thing's kind -- part
+    of it, found at it, had by it -- so breaking rock may yield the ore, and
+    sniffing bread may not. Without a corpus, only the first.
+    """
+    from world import commonsense, goals, kinds, lexicon, planner
+
+    things = [obj for obj in (bound or {}).values() if obj is not None]
+    if not things:
+        return []
+    names = [str(obj.key or "").lower() for obj in things]
+    words = sorted({lexicon.word_of(kind) or kind
+                    for obj in things for kind in kinds.of(obj)})
+    corpus = commonsense.available()
+
+    lines = []
+    for want in goals.blocked_wants(world_root):
+        if len(lines) >= MOST_WANTS:
+            break
+        what = str(want.get("what") or "").strip()
+        condition = want.get("condition") or {}
+        who = getattr(want.get("who"), "key", "somebody")
+        if (want.get("reason") == planner.NO_RULE and condition.get("object")
+                and any(what.lower() in name for name in names)):
+            lines.append(f"{who} wants the {what}{_wanted_state(condition)}, "
+                         f"and nothing this world knows how to do brings that "
+                         f"about.")
+        elif want.get("reason") == planner.MISSING_THING and corpus and what:
+            related = _related(what, words)
+            if related:
+                lines.append(f"{who} wants something {want.get('words')}, and "
+                             f"nothing like it exists anywhere. It goes with "
+                             f"a {related}: if {action} could genuinely yield "
+                             f"one, a rule may create it, named that way.")
+    return lines
+
+
+def _wanted_state(condition):
+    said = []
+    if condition.get("is"):
+        said.append(" to be " + ", ".join(condition["is"]))
+    if condition.get("lacks"):
+        said.append(" not to be " + ", ".join(condition["lacks"]))
+    if condition.get("type") == "gone":
+        said.append(" gone")
+    return " and".join(said)
+
+
+def _related(what, words):
+    """The kind word ConceptNet ties a wanted thing to, or ""."""
+    from world import commonsense
+
+    def spelled(items):
+        return {str(item).lower().replace("_", " ") for item in items}
+
+    wanted = what.lower()
+    for relation in ("PartOf", "AtLocation"):
+        ends = spelled(commonsense.forward(wanted, relation))
+        for word in words:
+            if word.lower().replace("_", " ") in ends:
+                return word
+    for word in words:
+        if wanted in spelled(commonsense.forward(word, "HasA")):
+            return word
+    return ""

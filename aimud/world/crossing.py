@@ -133,7 +133,9 @@ def restore(character, world_root):
         return {}
     record = _stored(character).get(_key(world_root)) or {}
     try:
-        wanted = sorted({str(s) for s in (record.get("states") or []) if s})
+        from world.model_json import listed
+
+        wanted = sorted({str(s) for s in listed(record.get("states")) if s})
     except TypeError:
         wanted = []
 

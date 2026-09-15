@@ -13,12 +13,6 @@ from evennia.utils import logger
 from world import llm, tokens
 
 
-#: How many times a character may be sent back to be renamed. Each retry is a
-#: whole generation rather than a cheap naming call the way a room's is, so
-#: the model is asked to keep the character it invented and change only the
-#: name -- and after this many tries the answer is taken as it stands.
-NAME_ATTEMPTS = 3
-
 #: Words that are a station rather than a name. Two sergeants are not two
 #: people with the same name, and rejecting the second one would be wrong.
 TITLES = frozenset("""
@@ -36,13 +30,13 @@ NPC_TOOLS = [
         "type": "function",
         "function": {
             "name": "move",
-            "description": "Move through an available exit.",
+            "description": "Leave by one of the ways out of this room.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "direction": {
                         "type": "string",
-                        "description": "Exit direction or name (e.g. 'north', 'east')",
+                        "description": "Which way out, by its name",
                     }
                 },
                 "required": ["direction"],
@@ -57,7 +51,17 @@ NPC_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "message": {"type": "string"}
+                    "message": {
+                        "type": "string",
+                        "description": "The words, as you would say them",
+                    },
+                    "to": {
+                        "type": "string",
+                        "description": (
+                            "Optional. Who you are speaking to, when it is "
+                            "somebody in particular"
+                        ),
+                    },
                 },
                 "required": ["message"],
             },
@@ -67,11 +71,17 @@ NPC_TOOLS = [
         "type": "function",
         "function": {
             "name": "get",
-            "description": "Pick up an object from the room.",
+            "description": (
+                "Pick up something within reach: lying here, or in or on "
+                "something that is open."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "object_name": {"type": "string"}
+                    "object_name": {
+                        "type": "string",
+                        "description": "What to pick up",
+                    }
                 },
                 "required": ["object_name"],
             },
@@ -85,7 +95,10 @@ NPC_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "object_name": {"type": "string"},
+                    "object_name": {
+                        "type": "string",
+                        "description": "What to hand over, from what you are carrying",
+                    },
                     "recipient": {
                         "type": "string",
                         "description": "Name of the player or NPC to give to",
@@ -99,13 +112,21 @@ NPC_TOOLS = [
         "type": "function",
         "function": {
             "name": "emote",
-            "description": "Perform an action or gesture (third-person description).",
+            "description": ("A gesture or expression everyone here sees. Not "
+                            "for doing something to anything: that is attempt."),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "Third-person description, e.g. 'nods solemnly' or 'adjusts her hood'",
+                        "description": (
+                            "What you do, starting with the verb, without "
+                            "your own name or pronoun in front: 'nods "
+                            "solemnly', 'loops an arm through Sampson's'. "
+                            "Third person throughout -- your own hair is "
+                            "'her hair', 'his hair' or 'their hair', never "
+                            "'my hair' -- and never I or me."
+                        ),
                     }
                 },
                 "required": ["action"],
@@ -145,8 +166,8 @@ NPC_TOOLS = [
                 "Take stock of somebody -- how strong, how skilled, how well, "
                 "how well thought of. Your own figures you already know and "
                 "they are given to you above; use this for other people in the "
-                "room. What you find comes back to you as something you have "
-                "noticed, so you can act on it on your next turn. Sizing "
+                "room. What you find comes straight back to you, so you can "
+                "act on it in the same turn. Sizing "
                 "somebody up is a thing anyone can do by looking at them, so "
                 "use it when it would matter -- before picking a fight, "
                 "before trusting a stranger with an errand, when someone "
@@ -157,10 +178,13 @@ NPC_TOOLS = [
                 "properties": {
                     "person": {
                         "type": "string",
-                        "description": "Which of the people here to size up.",
+                        "description": (
+                            "Which of the people here to size up, or "
+                            "'myself'"
+                        ),
                     },
                 },
-                "required": [],
+                "required": ["person"],
             },
         },
     },
@@ -227,7 +251,10 @@ NPC_TOOLS = [
                     },
                     "time_limit_seconds": {
                         "type": "integer",
-                        "description": "Optional deadline in seconds. Omit if there is no hurry.",
+                        "description": (
+                            "Optional deadline in seconds. Leave it out if "
+                            "there is no hurry."
+                        ),
                     },
                 },
                 "required": ["person", "request", "offer"],
@@ -291,11 +318,17 @@ NPC_TOOLS = [
         "type": "function",
         "function": {
             "name": "destroy",
-            "description": "Destroy an object in the room or in your inventory.",
+            "description": (
+                "Destroy something lying here or that you carry. Ways out "
+                "and people cannot be destroyed."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "object_name": {"type": "string"}
+                    "object_name": {
+                        "type": "string",
+                        "description": "What to destroy",
+                    }
                 },
                 "required": ["object_name"],
             },
@@ -305,16 +338,32 @@ NPC_TOOLS = [
         "type": "function",
         "function": {
             "name": "modify",
-            "description": "Change the name or description of an existing object.",
+            "description": (
+                "Change what something within reach is called, or how it "
+                "looks. A name says what a thing IS -- what it is made of, "
+                "what it is for, whose it is -- and never its condition: "
+                "'glass bottle', not 'broken glass bottle'. Everyone here sees "
+                "you do it, and a change the world's rules refuse is not made."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "object_name": {
                         "type": "string",
-                        "description": "Current name of the object to modify",
+                        "description": "What to change, as it is called now",
                     },
-                    "new_name": {"type": "string"},
-                    "new_description": {"type": "string"},
+                    "new_name": {
+                        "type": "string",
+                        "description": "What it is called from now on, if that changes",
+                    },
+                    "new_description": {
+                        "type": "string",
+                        "description": (
+                            "What it looks like from now on, if that changes: "
+                            "what it is made of and what it is for, not how "
+                            "full, lit or damaged it is"
+                        ),
+                    },
                 },
                 "required": ["object_name"],
             },
@@ -322,21 +371,36 @@ NPC_TOOLS = [
     },
 ]
 
+#: Every tool a character may be offered, by name. `NPC._execute_one` refuses
+#: anything else, which is how a model inventing a tool gets noticed rather
+#: than quietly ignored. Read off the list above, so the two cannot disagree.
+TOOL_NAMES = frozenset(tool["function"]["name"] for tool in NPC_TOOLS)
+
+#: How many things a character may DO in one turn. The prompt always said so,
+#: and nothing held a model to it: a reply with eight tool calls was eight
+#: actions.
+MOST_ACTS = 3
+
+#: Tools that only look, and so do not count against `MOST_ACTS`. Sizing
+#: somebody up before deciding what to do about them is not a second action.
+LOOKING = frozenset(["check_traits"])
+
+#: How many of this world's known verbs `attempt`'s description names, and how
+#: many things `get`'s description says where they are and whose they are.
+MOST_VERBS_NAMED = 30
+MOST_THINGS_SAID = 20
+
+#: How many rounds one character's turn may take. See docs §10.3; the soak
+#: sets it from what `rounds dialogue` says turns actually use.
+TURN_ROUNDS = 8
+
 # ---------------------------------------------------------------------------
 # Prompt templates
 # ---------------------------------------------------------------------------
 
 _NPC_GEN_SYSTEM = """You generate NPC characters for a text-based MUD.
-Respond with a single JSON object only — no other text:
-{
-  "name": "Character Name (1-3 words)",
-  "description": "2-4 sentences: what they look like, and nothing else",
-  "manner": "2-3 sentences: who they are and how they behave",
-  "pronouns": "she",
-  "new_pronoun_set": null,
-  "goal": [ ... ],
-  "traits": [{"slug": "swordsmanship", "value": 12}]
-}
+Answer by calling make_character. The name is 1-3 words, the description 2-4
+sentences, and the manner 2-3 sentences.
 
 "name" is how the player will address this character, so it has to belong to
 one person. Any names already used in this world are listed for you; do not
@@ -376,13 +440,13 @@ If you find yourself writing "wearing", "dressed", "clad", "in a", "carries"
 or "holds", stop: that belongs to the clothing, not to the person.
 
 "pronouns" is what other people say about this character: one of the sets
-this world already keeps, by name. The sets are listed for you. Pick whichever
+this world already keeps, by name. The pronouns field names them. Pick whichever
 suits the person you have written, and vary it across a world the way a real
 place varies.
 
 "new_pronoun_set" is for a character none of those sets suits -- a hive mind,
 a ship's computer, somebody who goes by a word this world has not met. Leave
-it null almost always. When you do give one, give it whole:
+it out almost always. When you do give one, give it whole:
 {"subject": "ze", "object": "zir", "adjective": "zir", "possessive": "zirs",
  "reflexive": "zirself", "plural": false,
  "means": "one sentence on who this set is for"}
@@ -416,7 +480,7 @@ Name only things that plausibly exist in this world. Give an empty list for a
 character with nothing in particular to pursue.
 
 "traits" is what is measurably true of this character, as figures. Give 0 to 4,
-and ONLY ones already in the world's register, which is listed for you below.
+and ONLY ones already in the world's register, which the traits field names.
 Do not invent a trait here: a register is only worth having if everyone in the
 world is measured by the same yardstick, and new traits are added when the
 world's rules need them, not when a character is born. Give an empty list if
@@ -435,10 +499,10 @@ _NPC_REACT_SYSTEM = (
     "Current room: [{room_title}]\n"
     "{room_desc}\n"
     "{room_contents}\n\n"
-    "{known_verbs}"
     "{want}"
     "Use the available tools to react naturally to recent events. "
-    "You may call 0-3 tools per response. "
+    "You may do up to three things per response; sizing somebody up with "
+    "check_traits does not count as one. "
     "If nothing warrants a response, call no tools. Keep reactions brief and in-character.\n\n"
     "To do something physical, use the `attempt` tool with the action written "
     "as a short command — 'light candle', 'open drawer', 'read notice'. That "
@@ -449,22 +513,7 @@ _NPC_REACT_SYSTEM = (
 )
 
 _NPC_OUTFIT_SYSTEM = """You dress a character in a text-based MUD and give them what they carry.
-Respond with a single JSON object — no other text — matching:
-{
-  "worn": [
-    {"name": "item name", "description": "1-2 sentences",
-     "clothing_type": "top", "wearstyle": "",
-     "kind": "coat", "under": "", "holds": [],
-     "affordances": {"wear": true}, "states": [],
-     "trait_bonuses": {}, "bonus_when": ""}
-  ],
-  "carried": [
-    {"name": "item name", "description": "1-2 sentences", "takeable": true,
-     "kind": "letter", "under": "", "holds": [],
-     "affordances": {"read": true}, "states": [],
-     "trait_bonuses": {}, "bonus_when": ""}
-  ]
-}
+Answer by calling dress_character. Each item's description is 1-2 sentences.
 
 You are given the character's body — their build, colouring and permanent
 marks. That is fixed and already written. Your job is everything they can take
@@ -508,8 +557,7 @@ where things go: ["in"] for a pouch, [] for anything solid.
 
 states are conditions currently true of it (patched, bloodstained, damp), usually empty.
 
-{naming_rule}
-Return only the JSON object."""
+{naming_rule}"""
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -520,19 +568,6 @@ def _affordance_rule():
     from world import affordances
 
     return affordances.PROMPT
-
-
-def _parse_json(content):
-    """
-    Parse a model response that should be a single JSON object.
-
-    Delegates to world.model_json, which repairs the near-misses models make
-    -- a trailing comma, a stray comment, an answer cut off mid-object --
-    rather than losing a whole generation over one character.
-    """
-    from world.model_json import parse_object
-
-    return parse_object(content)
 
 
 # ---------------------------------------------------------------------------
@@ -743,12 +778,14 @@ def _want_line(npc):
     # leaving it unsaid would be offering a tool with no reason given.
     offer = quests.offered_to(npc)
     if offer is not None:
-        asked = offer.get("description") or offer.get("title")
+        # What was asked, what is offered and by when are on answer_quest
+        # itself, where the choice is made.
         return (
-            f"{offer['giver']} has asked something of you: {asked}\n"
-            "Answer with answer_quest, as this character would. You are free "
-            "to refuse; agreeing means you will work at it until it is done "
-            "or you give it up.\n\n"
+            f"{offer['giver']} has asked something of you and is waiting for "
+            "your answer; answer_quest says what they asked and what they "
+            "offer. Answer as this character would. You are free to refuse; "
+            "agreeing means you will work at it until it is done or you give "
+            "it up.\n\n"
         )
 
     goal = list(npc.db.goal or [])
@@ -782,11 +819,11 @@ def _want_line(npc):
 #: closed list would be exactly the wrong shape for either.
 _TOOL_CHOICES = {
     "move":         {"direction": "exits"},
-    "get":          {"object_name": "objects"},
+    "get":          {"object_name": "within_reach"},
     "give":         {"object_name": "carried", "recipient": "people"},
-    "check_traits": {"person": "people"},
+    "check_traits": {"person": "sizable"},
     "destroy":      {"object_name": "reachable"},
-    "modify":       {"object_name": "reachable"},
+    "modify":       {"object_name": "changeable"},
 }
 
 
@@ -817,16 +854,40 @@ def _nameable(npc, room):
     """
     from evennia.objects.objects import DefaultCharacter
 
-    people, objects, exits = [], [], []
+    from world import ownership, relations
+
+    people, objects, exits, unexplored = [], [], [], []
     for obj in (room.contents if room else ()):
         if obj is npc:
             continue
         if getattr(obj, "destination", None) is not None:
             exits.append(obj.key)
+            if obj.db.pending_generation or obj.destination is room:
+                unexplored.append(obj.key)
         elif obj.db.is_npc or isinstance(obj, DefaultCharacter):
             people.append(obj.get_display_name(npc))
         else:
             objects.append(obj.key)
+
+    # Within reach is wider than lying loose: into whatever is open, and onto
+    # whatever something else is on. A letter in an open tray is a letter
+    # anybody here can take, and `get` searched the room alone, so no
+    # character ever could.
+    within = [obj for obj in relations.reachable(npc)
+              if obj.location is not npc]
+    said = []
+    for obj in within:
+        where = []
+        host = relations.host_of(obj)
+        if host is not None:
+            where.append(f"{relations.preposition_of(obj)} {host.key}")
+        if ownership.owner_of(obj) is npc:
+            where.append("yours")
+        elif ownership.owner_name(obj):
+            where.append(f"{ownership.owner_name(obj)}'s")
+        else:
+            where.append("nobody's")
+        said.append(f"{obj.key} ({', '.join(where)})")
 
     # What it is wearing is not what it can hand over.
     carried = [obj.key for obj in npc.contents if not obj.db.worn]
@@ -834,10 +895,18 @@ def _nameable(npc, room):
     here = {
         "people": _distinct(people),
         "objects": _distinct(objects),
+        "within_reach": _distinct(obj.key for obj in within),
+        "said_within_reach": _distinct(said)[:MOST_THINGS_SAID],
         "exits": _distinct(exits),
+        "unexplored": _distinct(unexplored),
         "carried": _distinct(carried),
     }
+    # Loose or carried, which is what the effect layer finds by name.
     here["reachable"] = _distinct(here["objects"] + here["carried"])
+    here["changeable"] = _distinct(here["within_reach"] + here["carried"])
+    # Sizing up yourself is worth offering only beside somebody else to size
+    # up: a character's own figures are already in its prompt.
+    here["sizable"] = here["people"] + ["myself"] if here["people"] else []
     return here
 
 
@@ -866,6 +935,11 @@ def _tools_for(npc, room):
     What is deliberately NOT listed: `attempt` and `create`. Those are how
     something the room merely describes becomes real, and a closed list is
     the one thing that would take that away.
+
+    What is said about this moment goes into the descriptions: whose each thing
+    within reach is and where it sits, which ways out lead somewhere nobody has
+    been, the terms of a request waiting on an answer, and what this world
+    already knows how to do.
     """
     from world import quests
 
@@ -878,15 +952,32 @@ def _tools_for(npc, room):
         name = tool["function"]["name"]
 
         if name == "answer_quest":
-            if quests.offered_to(npc) is None:
+            offer = quests.offered_to(npc)
+            if offer is None:
                 continue
-            offered.append(tool)
+            offered.append(_described(tool, _terms_of(offer)))
             continue
 
         if name == "offer_quest":
             if not askable:
                 continue
-            offered.append(_with_choices(tool, {"person": askable}))
+            tool = _with_choices(tool, {"person": askable})
+            deadline = tool["function"]["parameters"]["properties"][
+                "time_limit_seconds"]
+            deadline["minimum"] = quests.MIN_TIME_LIMIT
+            deadline["maximum"] = quests.MAX_TIME_LIMIT
+            offered.append(_described(tool, _carrying_note(here["carried"])))
+            continue
+
+        if name == "attempt":
+            offered.append(_described(tool, _attempt_note(room)))
+            continue
+
+        if name == "say":
+            # Anybody in particular to speak to, or nobody, in which case the
+            # argument is not offered at all.
+            offered.append(_with_choices(tool, {"to": here["people"]})
+                           if here["people"] else _without(tool, "to"))
             continue
 
         wanted = _TOOL_CHOICES.get(name)
@@ -900,7 +991,9 @@ def _tools_for(npc, room):
         # nobody to give it to is as useless as `give` with neither.
         if not all(choices.values()):
             continue
-        offered.append(_with_choices(tool, choices))
+        tool = _with_choices(tool, choices)
+        noting = _NOTES.get(name)
+        offered.append(_described(tool, noting(here)) if noting else tool)
 
     return offered
 
@@ -914,6 +1007,98 @@ def _with_choices(tool, choices):
     for argument, values in choices.items():
         properties[argument]["enum"] = list(values)
     return tool
+
+
+def _described(tool, note):
+    """A copy of `tool` with something about this moment added to what it says."""
+    if not note:
+        return tool
+    from copy import deepcopy
+
+    tool = deepcopy(tool)
+    tool["function"]["description"] = f"{tool['function']['description']} {note}"
+    return tool
+
+
+def _without(tool, argument):
+    """A copy of `tool` that does not offer `argument` at all."""
+    from copy import deepcopy
+
+    tool = deepcopy(tool)
+    tool["function"]["parameters"]["properties"].pop(argument, None)
+    return tool
+
+
+def _unexplored_note(here):
+    names = here["unexplored"]
+    if not names:
+        return ""
+    return (f"Nobody has been through {', '.join(names)} yet: going that way "
+            f"builds somewhere new, and takes a while.")
+
+
+def _within_reach_note(here):
+    said = here["said_within_reach"]
+    return f"Within reach: {'; '.join(said)}." if said else ""
+
+
+#: What each tool is told about this moment, beyond what it may name.
+_NOTES = {
+    "move": _unexplored_note,
+    "get": _within_reach_note,
+}
+
+
+def _carrying_note(carried):
+    """What a character has to offer, so a reward it promises is a real one."""
+    if carried:
+        return f"You are carrying {', '.join(carried)}."
+    return ("You are carrying nothing to give, so offer something you can do "
+            "rather than something you have.")
+
+
+def _terms_of(offer):
+    """A request waiting on an answer, as the character choosing is told it."""
+    from world import quests
+
+    asked = str(offer.get("description") or offer.get("title")
+                or "something").strip().rstrip(".")
+    said = [f"{offer.get('giver') or 'Somebody'} has asked you: {asked}.",
+            f"They offer: {quests._summarise(offer.get('reward'))}."]
+    if offer.get("punishment"):
+        said.append(f"If it is not done: "
+                    f"{quests._summarise(offer.get('punishment'))}.")
+    if offer.get("time_limit"):
+        said.append(f"It has to be done within "
+                    f"{quests._short_time(offer['time_limit'])}.")
+    return " ".join(said)
+
+
+def _attempt_note(room):
+    """
+    What `attempt` can already do here, which was a line of the system prompt
+    and belongs beside the tool it is about.
+
+    Named in two halves. The verbs the game itself handles, read off the
+    modules that take them over, so a character knows wearing and putting are
+    already understood. And the verbs this world has worked out, capped,
+    because a world learns verbs without end.
+    """
+    from world import clothing, gear, ownership, relations
+
+    handled = sorted({str(verb) for module in (clothing, gear, ownership,
+                                               relations)
+                      for verb in getattr(module, "VERBS", ())})
+    said = []
+    if handled:
+        said.append(f"The game itself handles {', '.join(handled)}.")
+    known = _known_verbs(room)
+    if known:
+        shown = known[:MOST_VERBS_NAMED]
+        more = len(known) - len(shown)
+        said.append(f"This world has already worked out {', '.join(shown)}"
+                    + (f", and {more} more." if more else "."))
+    return " ".join(said)
 
 def _known_verbs(room):
     """
@@ -1134,9 +1319,7 @@ def generate_npc(sponsor, room, on_success, on_error):
             "content": (
                 f"World: {world_desc}\n\n"
                 f"{lore.guidance_block(room, 'npcs')}"
-                f"{traits.vocabulary_block(room.db.world_root)}"
-                f"{pronouns.vocabulary_block(room.db.world_root)}"
-                f"{token_lists.vocabulary_block(room.db.world_root, ['person'])}"
+                f"{token_lists.TOOL_PROMPT}\n"
                 f"Room: [{room_title}]\n{room_desc}\n\n"
                 f"{taken}"
                 "Generate an NPC who would naturally be found here."
@@ -1144,38 +1327,10 @@ def generate_npc(sponsor, room, on_success, on_error):
         },
     ]
 
-    def _attempt(remaining, convo):
-        """One try at a character, sending it back if the name is taken."""
-        def _answered(raw):
-            try:
-                content = raw["choices"][0]["message"].get("content") or ""
-                data = _parse_json(content)
-            except Exception as exc:
-                on_error(str(exc))
-                return
-
-            complaint = _check_name(data, existing)
-            if complaint and remaining > 1:
-                _attempt(remaining - 1, convo + [
-                    {"role": "assistant", "content": content},
-                    {"role": "user", "content": complaint},
-                ])
-                return
-            if complaint:
-                # Out of tries. Better a second Yuna than no character at
-                # all, but it is worth knowing the model would not budge.
-                logger.log_info(
-                    f"npc naming: kept '{data.get('name')}' after "
-                    f"{NAME_ATTEMPTS} tries; it clashes with somebody here"
-                )
-            _spawn(data)
-
-        llm.fetch(llm.call, sponsor, model, convo,
-                  on_success=_answered, on_error=_fail)
-
     def _spawn(data):
         try:
-            name = str(data.get("name", "Stranger")).strip()
+            data = dict(data or {})
+            name = str(data.get("name") or "Stranger").strip()
             description = str(data.get("description", "")).strip()
             manner = str(data.get("manner", "")).strip()
 
@@ -1236,10 +1391,30 @@ def generate_npc(sponsor, room, on_success, on_error):
         except Exception as exc:
             on_error(str(exc))
 
-    def _fail(failure):
-        on_error(failure.getErrorMessage())
+    def _after_rounds(last):
+        if not last:
+            on_error("no character came back")
+            return
+        if _check_name(last, existing):
+            # Out of rounds. Better a second Yuna than no character at all,
+            # but it is worth knowing the model would not budge.
+            logger.log_info(
+                f"npc naming: kept '{last.get('name')}' after {NPC_ROUNDS} "
+                f"rounds; it clashes with somebody here")
+        _spawn(last)
 
-    _attempt(NAME_ATTEMPTS, messages)
+    from world import lookups
+    from world import toolbox as tb
+
+    # The retries this used to build by hand -- the answer, then the name
+    # complaint as a user turn -- are the loop's own now, and a trait, goal,
+    # pronoun set or word list that would have been dropped is sent back too.
+    box = tb.Toolbox([character_tool(existing)] + lookups.named(*NPC_LOOKUPS),
+                     tb.ToolContext(world_root=room.db.world_root, room=room,
+                                    sponsor=sponsor, job="npcs"))
+    llm.converse(sponsor, model, messages, box, on_done=_spawn,
+                 on_error=on_error, on_exhausted=_after_rounds,
+                 rounds=NPC_ROUNDS)
 
 
 def dress_npc(sponsor, npc):
@@ -1284,16 +1459,19 @@ def dress_npc(sponsor, npc):
                 f"Who they are: {npc.db.manner or '(not described)'}\n"
                 f"What they want: {goals.describe(npc.db.goal)}\n\n"
                 f"{gear.prompt_block(room.db.world_root)}"
-                f"Dress {npc.key} and give them what they carry."
+                + _hints_block(
+                    carry_hints(npc),
+                    "Somebody in this world wants these, and there are none "
+                    "anywhere. Give this character one to carry only if their "
+                    "trade or errand would plausibly have it, named as the "
+                    "line says:")
+                + f"Dress {npc.key} and give them what they carry."
             ),
         },
     ]
 
-    def _done(raw):
-        try:
-            content = raw["choices"][0]["message"].get("content") or ""
-            data = _parse_json(content)
-        except Exception:
+    def _done(data):
+        if not isinstance(data, dict):
             return
         if npc.location is None:
             return      # deleted while the call was in flight
@@ -1312,16 +1490,63 @@ def dress_npc(sponsor, npc):
             except Exception as exc:
                 logger.log_info(f"could not equip {npc.key}: {exc}")
 
-    llm.fetch(llm.call, sponsor, model, messages,
-              on_success=_done, on_error=lambda _f: None)
+    from world import lookups
+    from world import toolbox as tb
+
+    # Rounds out, the last outfit is put on as it stands; a failure leaves
+    # them as they arrived, the small loss it always was.
+    box = tb.Toolbox([dressing_tool()] + lookups.named(*DRESS_LOOKUPS),
+                     tb.ToolContext(world_root=room.db.world_root, room=room,
+                                    actor=npc, sponsor=sponsor, job="contents"))
+    llm.converse(sponsor, model, messages, box, on_done=_done,
+                 on_error=lambda _why: None, on_exhausted=_done,
+                 rounds=DRESS_ROUNDS)
 
 
-def generate_npc_idle(sponsor, npc, room, on_success, on_error):
+def generate_npc_idle(sponsor, npc, room, on_success, on_error, depth=0):
     """
-    Async. Prompt the NPC to take a spontaneous, self-initiated action.
-    Uses the same tool-calling infrastructure as generate_npc_reaction but
-    asks the model what the NPC would do of its own accord right now.
-    Calls on_success(list[{"name", "args"}]) or on_error(msg) in the main thread.
+    Async. The character does something of its own accord. See `_npc_turn`.
+    Calls on_success({tool: calls}) or on_error(msg) in the main thread.
+    """
+    _npc_turn(
+        sponsor, npc, room, on_success, on_error,
+        remembered="What you remember about this place and these people, "
+                   "oldest first:",
+        asked=("Nothing has just happened — act of your own accord. "
+               "What do you do right now, naturally and in character? "
+               "Choose something that fits the moment and the world."),
+        depth=depth,
+    )
+
+
+def generate_npc_reaction(sponsor, npc, room, on_success, on_error, depth=0):
+    """
+    Async. The character answers what has just happened. See `_npc_turn`.
+    Calls on_success({tool: calls}) or on_error(msg) in the main thread.
+    """
+    _npc_turn(
+        sponsor, npc, room, on_success, on_error,
+        remembered="What you remember that bears on this, oldest first:",
+        asked="How do you respond?",
+        depth=depth,
+    )
+
+
+def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked,
+              depth=0):
+    """
+    One turn for a character: its prompt, its memories, its tools, and what
+    it chose to do.
+
+    Idle and reaction were this function twice, down to the parsing of the
+    tool calls, and differed only in how their memories were introduced and
+    what they were finally asked.
+
+    The turn goes round (Phase 3): each tool runs as the model calls it, and
+    what it found or why it was refused comes back as its result. Sizing
+    somebody up and answering them are one turn now, where the answer used to
+    wait for the next. What `on_success` is handed is how often each tool was
+    used; the tools themselves have already run.
     """
     model = sponsor.model_for("dialogue")
     try:
@@ -1332,10 +1557,8 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
 
     # {{user}} names whoever is here, so an NPC reads the world the way
     # the player it is talking to appears in it.
-    from world import clothing, lore
+    from world import clothing, lore, tokens
     from world.activity import active_players_in
-
-    from world import tokens
 
     nearby = active_players_in(room)
     world_desc = (lore.description(room, nearby[0] if nearby else None)
@@ -1343,15 +1566,12 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
     room_title = room.db.room_title or room.key
     room_desc = tokens.text_of(room)
     room_contents = _room_context(room, npc)
+
+    # Working memory verbatim, long memory by relevance.  Anything the model
+    # needs from further back is recalled rather than replayed.
     history_text, bank, cues, on_show = _memory_inputs(npc, room, room_title)
 
-    verbs_known = _known_verbs(room)
-    known_line = (
-        f"Actions this world already understands: {', '.join(verbs_known)}\n\n"
-        if verbs_known else ""
-    )
-
-    tools = _tools_for(npc, room)
+    box = _toolbox_for(npc, room, depth)
 
     system = _NPC_REACT_SYSTEM.format(
         npc_name=npc.key,
@@ -1364,7 +1584,6 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
         room_title=room_title,
         room_desc=room_desc,
         room_contents=room_contents,
-        known_verbs=known_line,
         want=_want_line(npc),
     )
 
@@ -1392,43 +1611,13 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
             {"role": "system", "content": system},
             {
                 "role": "user",
-                "content": (
-                    f"What you remember about this place and these people, "
-                    f"oldest first:\n{recalled}\n\n"
-                    f"Just now:\n{history_text}\n\n"
-                    "Nothing has just happened — act of your own accord. "
-                    "What do you do right now, naturally and in character? "
-                    "Choose something that fits the moment and the world."
-                ),
+                "content": (f"{remembered}\n{recalled}\n\n"
+                            f"Just now:\n{history_text}\n\n{asked}"),
             },
         ]
-        llm.fetch(lambda: llm.call(sponsor, model, messages, tools=tools),
-                  on_success=_done, on_error=_fail)
-
-    def _done(raw):
-        try:
-            message = raw["choices"][0]["message"]
-            tool_calls_raw = message.get("tool_calls") or []
-            parsed = []
-            for tc in tool_calls_raw:
-                if tc.get("type") == "function":
-                    fn = tc["function"]
-                    try:
-                        # Repaired rather than parsed: a tool call whose
-                        # arguments will not parse used to arrive empty, and
-                        # an NPC saying nothing is worse than a stray comma.
-                        call_args = _parse_json(fn.get("arguments") or "{}")
-                    except ValueError:
-                        call_args = {}
-                    parsed.append({"name": fn["name"], "args": call_args})
-        except Exception as exc:
-            on_error(str(exc))
-            return
-        # Outside the guard above on purpose. Doing what the model asked for
-        # is the caller's business and can fail on its own terms; reporting
-        # that as a failed model call sent whoever read the log looking at
-        # the provider for a bug that was in the world.
-        on_success(parsed)
+        llm.converse(sponsor, model, messages, box,
+                     on_done=lambda _said: on_success(dict(box.used)),
+                     on_error=on_error, rounds=TURN_ROUNDS)
 
     def _fail(failure):
         on_error(failure.getErrorMessage())
@@ -1436,117 +1625,336 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
     llm.fetch(_recall, on_success=_recalled, on_error=_fail)
 
 
-def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
+#: What an acting tool tells the model when nothing was said against it.
+_DONE = {
+    "attempt": ("Underway. How it went will be in front of you on your next "
+                "turn."),
+    "move": "You went.",
+    "say": "Said.",
+    "emote": "Done.",
+}
+
+
+def _toolbox_for(npc, room, depth=0):
     """
-    Async. Send the NPC's context + history to the dialogue model with tool-calling.
-    Calls on_success(list[{"name", "args"}]) or on_error(msg) in the main thread.
+    A character's tools for one turn, each running as the model calls it.
+
+    Lookups answer at once. Anything that acts runs through the character's
+    own handler, and whatever the character was told about it -- the refusal
+    `_note_to_self` would have kept for the next prompt -- is its result
+    now. At most `MOST_ACTS` things act in one turn, across every round.
+
+    `attempt` answers at once rather than waiting for the attempt to finish.
+    Some of its early returns never call back, and a turn waiting on one of
+    those would leave the character thinking for ever; what comes of it
+    reaches the next prompt the way it always has.
     """
-    model = sponsor.model_for("dialogue")
-    try:
-        sponsor.key()          # refuse early rather than mid-prompt
-    except ValueError as e:
-        on_error(str(e))
-        return
+    from world import toolbox as tb
 
-    # {{user}} names whoever is here, so an NPC reads the world the way
-    # the player it is talking to appears in it.
-    from world import clothing, lore
-    from world.activity import active_players_in
+    acted = {"count": 0}
 
-    from world import tokens
+    def running(name):
+        def handler(ctx, args, answer):
+            if name in LOOKING:
+                return answer(npc._sized_up(str(args.get("person") or "").strip(),
+                                            room))
+            if acted["count"] >= MOST_ACTS:
+                return answer("Not done: that is enough for one turn.")
+            acted["count"] += 1
+            npc.ndb.idle_probability = 0
+            npc.ndb.noticing = []
+            try:
+                npc._execute_one(name, args, room, depth)
+                noticed = list(npc.ndb.noticing or [])
+            finally:
+                npc.ndb.noticing = None
+            answer("; ".join(noticed) if noticed else _DONE.get(name, "Done."))
+        return handler
 
-    nearby = active_players_in(room)
-    world_desc = (lore.description(room, nearby[0] if nearby else None)
-                  or npc.db.world_description or "")
-    room_title = room.db.room_title or room.key
-    room_desc = tokens.text_of(room)
-    room_contents = _room_context(room, npc)
+    tools = [tb.from_schema(schema, running(schema["function"]["name"]),
+                            looks=schema["function"]["name"] in LOOKING)
+             for schema in _tools_for(npc, room)]
+    # The first lookups a character is offered: a closer look at something
+    # here, its own memory, what this world already knows how to do, and what
+    # is wrong with its rules. Each is left out where it cannot answer.
+    from world import lookups
 
-    # Working memory verbatim, long memory by relevance.  Anything the model
-    # needs from further back is recalled rather than replayed.
-    history_text, bank, cues, on_show = _memory_inputs(npc, room, room_title)
+    tools += lookups.named("examine", "recall", "list_known_verbs",
+                           "world_faults")
+    return tb.Toolbox(tools, tb.ToolContext(
+        world_root=room.db.world_root if room else None, room=room,
+        actor=npc, job="dialogue"))
 
-    verbs_known = _known_verbs(room)
-    known_line = (
-        f"Actions this world already understands: {', '.join(verbs_known)}\n\n"
-        if verbs_known else ""
-    )
 
-    tools = _tools_for(npc, room)
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
 
-    system = _NPC_REACT_SYSTEM.format(
-        npc_name=npc.key,
-        world_desc=world_desc,
-        guidance=lore.guidance_block(room, "dialogue",
-                                     nearby[0] if nearby else None),
-        npc_desc=clothing.own_appearance(npc, tokens.text_of(npc)) or "(no description)",
-        npc_traits=_trait_line(npc),
-        npc_manner=(f"Who you are: {npc.db.manner}\n\n" if npc.db.manner else "\n"),
-        room_title=room_title,
-        room_desc=room_desc,
-        room_contents=room_contents,
-        known_verbs=known_line,
-        want=_want_line(npc),
-    )
+def lookup_tools():
+    """`name_taken`: whether a person's name is free in this world."""
+    from world import toolbox as tb
 
-    def _recall():
-        # In the thread pool, off the reactor: recall is SQLite and slow.
-        from world.memory import recall_for_cues
+    def checking(ctx, args):
+        name = str(args.get("name") or "").strip()
+        existing = _people_in_world(ctx.room)
+        if not name:
+            return "Give a name to check."
+        if _too_similar(name, existing):
+            close = sorted(other for other in existing
+                           if _too_similar(name, [other]))
+            return (f"{name} is too close to somebody already in this world: "
+                    f"{', '.join(close) or 'the name is unusable'}. Choose a "
+                    f"different first name.")
+        return f"{name} is free."
 
-        return recall_for_cues(bank, cues, top_k=6, already_known=on_show,
-                               rows=True)
+    return [tb.Tool(
+        "name_taken",
+        "Whether a person's name is free in this world. A shared first name, "
+        "or the same words in another order, is taken; a shared family name "
+        "is fine.",
+        tb.params({"name": {"type": "string",
+                            "description": "The name to check"}}, ["name"]),
+        tb.answering(checking), doing="checking a name is free", looks=True,
+        available=lambda ctx: ctx.room is not None)]
 
-    def _recalled(rows):
-        # Back on the main thread to say each memory again with the names
-        # things have now, which reads the game's database -- then out again
-        # for the model. See `generate_npc_idle`.
-        from world.memory import format_recalled
 
-        try:
-            recalled = format_recalled(rows)
-        except Exception as exc:
-            on_error(str(exc))
+# ---------------------------------------------------------------------------
+# Making and dressing a character on finish tools (docs §4.2)
+# ---------------------------------------------------------------------------
+
+#: Rounds each may take (§10.3). A character is made while somebody walks into
+#: a room; dressing them is background work nobody waits on.
+NPC_ROUNDS = 8
+DRESS_ROUNDS = 10
+
+NPC_LOOKUPS = ("list_traits", "show_trait", "list_pronoun_sets",
+               "list_word_lists", "show_word_list", "find_rooms",
+               "list_states")
+DRESS_LOOKUPS = ("list_states", "list_state_groups", "list_traits",
+                 "kind_info", "commonsense")
+
+#: How many wanted things a character being dressed is shown (§5.1).
+CARRY_WANTS = 2
+
+
+def _listed(value):
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _hints_block(lines, header):
+    """A header and its lines for a prompt, or "" when there are none."""
+    if not lines:
+        return ""
+    return header + "\n" + "\n".join(f"  - {line}" for line in lines) + "\n\n"
+
+
+def character_tool(existing):
+    """
+    `make_character`, the finish tool `generate_npc` answers with.
+
+    `traits[].slug` is closed to the register up to the enum cap; `goal` is
+    `goals.schema`; `new_pronoun_set` is `pronouns.set_schema`. `pronouns` is
+    left open, because a declared set's subject form goes there too, and its
+    handler says which sets exist.
+    """
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        from world import goals, pronouns, token_lists, traits
+
+        known = sorted(traits.vocabulary(ctx.world_root))
+        sets = sorted(pronouns.vocabulary(ctx.world_root))
+        trait = {"type": "object",
+                 "properties": {
+                     "slug": tb.choice(known, "A trait this world measures",
+                                       ask="list_traits"),
+                     "value": {"type": "number",
+                               "description": "Where they stand; an ordinary "
+                                              "person is middling"}},
+                 "required": ["slug", "value"]}
+        return tb.params({
+            "name": {"type": "string",
+                     "description": "How the player will address them, 1-3 "
+                                    "words"},
+            "description": {"type": "string",
+                            "description": "Their body, and nothing else"},
+            "manner": {"type": "string",
+                       "description": "Who they are and how they behave"},
+            "pronouns": {"type": "string",
+                         "description": "What others say about them: one of "
+                                        + ", ".join(sets)
+                                        + ", or a declared set's subject form"},
+            "new_pronoun_set": dict(
+                pronouns.set_schema(ctx),
+                description="Only for somebody none of the sets suits, and "
+                            "then complete"),
+            "goal": {"type": "array", "items": goals.schema(ctx),
+                     "description": "What they are trying to bring about; "
+                                    "empty for nothing in particular"},
+            "traits": {"type": "array", "items": trait, "maxItems": 4,
+                       "description": "0 to 4 figures, only traits this world "
+                                      "measures"},
+            "new_token_lists": {"type": "array",
+                                "items": token_lists.schema(ctx),
+                                "description": "Word lists the description "
+                                               "uses that this world does not "
+                                               "keep yet"},
+        }, ["name", "description", "manner"])
+
+    def handler(ctx, args, answer):
+        said = character_complaints(args, existing, ctx.world_root)
+        if said:
+            answer(tb.complain("Not made: " + "; ".join(said) + ". Send the "
+                               "same character again with that put right.",
+                               value=args))
             return
-        messages = [
-            {"role": "system", "content": system},
-            {
-                "role": "user",
-                "content": (
-                    f"What you remember that bears on this, oldest first:\n"
-                    f"{recalled}\n\n"
-                    f"Just now:\n{history_text}\n\nHow do you respond?"
-                ),
-            },
-        ]
-        llm.fetch(lambda: llm.call(sponsor, model, messages, tools=tools),
-                  on_success=_done, on_error=_fail)
+        answer(tb.accept(args))
 
-    def _done(raw):
-        try:
-            message = raw["choices"][0]["message"]
-            tool_calls_raw = message.get("tool_calls") or []
-            parsed = []
-            for tc in tool_calls_raw:
-                if tc.get("type") == "function":
-                    fn = tc["function"]
-                    try:
-                        # Repaired rather than parsed: a tool call whose
-                        # arguments will not parse used to arrive empty, and
-                        # an NPC saying nothing is worse than a stray comma.
-                        call_args = _parse_json(fn.get("arguments") or "{}")
-                    except ValueError:
-                        call_args = {}
-                    parsed.append({"name": fn["name"], "args": call_args})
-        except Exception as exc:
-            on_error(str(exc))
+    return tb.Tool("make_character", "Make the character who belongs here.",
+                   parameters, handler, finishes=True)
+
+
+def character_complaints(args, existing, world_root):
+    """
+    What is wrong with a character that asking again can put right.
+
+    A name somebody already answers to, which was the one thing checked
+    before; and what used to be dropped without a word: a pronoun set nobody
+    keeps or one declared incomplete, goal conditions nothing can test,
+    traits nothing measures, and word lists that would be refused.
+    """
+    from world import goals, pronouns, token_lists, traits, vocabulary
+
+    said = []
+    complaint = _check_name(args, existing)
+    if complaint:
+        said.append(complaint.rstrip("."))
+
+    wanted = pronouns._slug(args.get("pronouns"))
+    declared = args.get("new_pronoun_set")
+    if isinstance(declared, dict) and declared:
+        entry, why = pronouns.clean(declared)
+        if entry is None:
+            said.append(f"the new pronoun set cannot be kept: {why}")
+        else:
+            said += [line.rstrip(".") for line in vocabulary.near_duplicates(
+                world_root, new_pronoun_set=declared)]
+            if wanted and wanted != entry["subject"]:
+                said.append(f"pronouns has to be the new set's subject form, "
+                            f"{entry['subject']}")
+    elif wanted and wanted not in pronouns.vocabulary(world_root):
+        said.append(f"this world keeps no pronoun set called {wanted}; use "
+                    f"one of {', '.join(sorted(pronouns.vocabulary(world_root)))}"
+                    f", or declare it whole in new_pronoun_set")
+
+    goal = _listed(args.get("goal"))
+    if goal:
+        kept = goals.sanitise(goal)
+        if len(kept) < len(goal):
+            said.append(f"{len(goal) - len(kept)} of the goal's conditions "
+                        f"cannot be tested and would be dropped")
+
+    given = [trait for trait in _listed(args.get("traits"))
+             if isinstance(trait, dict)]
+    if len(given) > 4:
+        said.append(f"give at most 4 traits, not {len(given)}")
+    strange = sorted({traits._slug(trait.get("slug")) for trait in given}
+                     - set(traits.vocabulary(world_root)) - {""})
+    if strange:
+        said.append("traits names " + ", ".join(strange) + ", which this "
+                    "world does not measure; list_traits shows what it does")
+
+    declared_lists = _listed(args.get("new_token_lists"))
+    said += token_lists.complaints(world_root, declared_lists,
+                                   [args.get("description")])
+    said += [line.rstrip(".") for line in vocabulary.near_duplicates(
+        world_root, new_token_lists=[entry for entry in declared_lists
+                                     if isinstance(entry, dict)])]
+    return said
+
+
+def dressing_tool():
+    """
+    `dress_character`, the finish tool `dress_npc` answers with: garments with
+    `clothing.spec_schema(worn=True)`, things carried with the plain schema.
+    """
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        from world import clothing
+
+        return tb.params({
+            "worn": {"type": "array",
+                     "items": clothing.spec_schema(ctx, worn=True),
+                     "maxItems": 8,
+                     "description": "What they have on, from the skin "
+                                    "outwards: 2 to 6 garments"},
+            "carried": {"type": "array", "items": clothing.spec_schema(ctx),
+                        "maxItems": 3,
+                        "description": "What is in their hands or pockets: 0 "
+                                       "to 3 things"},
+        }, ["worn", "carried"])
+
+    def handler(ctx, args, answer):
+        said = dressing_complaints(args, ctx.world_root)
+        if said:
+            answer(tb.complain("Not dressed: " + "; ".join(said) + ". Send "
+                               "the outfit again with that put right.",
+                               value=args))
             return
-        # Outside the guard above on purpose. Doing what the model asked for
-        # is the caller's business and can fail on its own terms; reporting
-        # that as a failed model call sent whoever read the log looking at
-        # the provider for a bug that was in the world.
-        on_success(parsed)
+        answer(tb.accept(args))
 
-    def _fail(failure):
-        on_error(failure.getErrorMessage())
+    return tb.Tool("dress_character", "Dress this character and give them "
+                                      "what they carry.",
+                   parameters, handler, finishes=True)
 
-    llm.fetch(_recall, on_success=_recalled, on_error=_fail)
+
+def dressing_complaints(args, world_root):
+    """Each item held to `make_item`'s rules, and every garment wearable."""
+    from world import item_gen
+
+    said = []
+    for field, most in (("worn", 8), ("carried", 3)):
+        items = [item for item in _listed(args.get(field))
+                 if isinstance(item, dict)]
+        if len(items) > most:
+            said.append(f"give at most {most} {field} things, not {len(items)}")
+        for item in items[:most]:
+            name = str(item.get("name") or "").strip() or f"a {field} thing"
+            said += [f"{name}: {line}"
+                     for line in item_gen.item_complaints(item, world_root)]
+            given = item.get("affordances")
+            if field == "worn" and not (isinstance(given, dict)
+                                        and given.get("wear")):
+                said.append(f"{name}: a garment has to afford wear")
+    return said
+
+
+def carry_hints(npc):
+    """
+    Things somebody wants that exist nowhere, for a character to carry (§5.1).
+
+    Never the character's own wants -- dressed carrying what they were made
+    wanting, they would be satisfied before taking a step -- and never in a
+    room the want avoids. A merchant carrying the ore turns an impossible
+    quest into a trade; whether this one would, the prompt leaves to the
+    model.
+    """
+    room = getattr(npc, "location", None)
+    world_root = room.db.world_root if room is not None else None
+    if world_root is None:
+        return []
+    from world import planner, worldgen
+
+    lines = []
+    for want in worldgen._wants(world_root):
+        if (want.get("reason") != planner.MISSING_THING
+                or not want.get("words")
+                or getattr(want.get("who"), "id", None) == npc.id
+                or room.id in (want.get("avoid") or ())):
+            continue
+        who = getattr(want.get("who"), "key", "somebody")
+        lines.append(f"{who} wants something {want['words']}.")
+        if len(lines) >= CARRY_WANTS:
+            break
+    return lines

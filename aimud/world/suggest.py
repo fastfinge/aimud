@@ -30,7 +30,7 @@ mean something else.
 
 from evennia.utils import logger
 
-from world import counters, rulebooks
+from world import counters, model_json, rulebooks
 
 #: Where a world remembers what it has been offered and declined.
 ATTR_DECLINED = "declined_suggestions"
@@ -318,7 +318,7 @@ def from_pairs(world_root):
         wanted = sum(1 for rule in _world_rules(world_root)
                      for condition in (rule.get("conditions") or [])
                      if missing in [str(s).lower() for s in
-                                    (condition.get("is") or [])])
+                                    model_json.listed(condition.get("is"))])
         made.append(propose(
             world_root,
             rulebooks.blank(
@@ -344,7 +344,9 @@ def _where_state_is_set(world_root, state):
     for rule in _world_rules(world_root):
         for effect in (rule.get("effects") or []):
             try:
-                adds = [str(s).lower() for s in (effect.get("add") or [])]
+                from world.model_json import listed
+
+                adds = [str(s).lower() for s in listed(effect.get("add"))]
             except AttributeError:
                 continue
             if wanted in adds:
@@ -548,8 +550,7 @@ _JUDGE = """You are shown rules a text MUD has derived about itself, and you say
 yes or no to each. You are NOT writing rules: every one below is already filled
 in, and every one cites what the world's own behaviour says for it.
 
-Respond with a single JSON object -- no other text:
-{"verdicts": [{"id": "r7", "accept": true, "because": "one short sentence"}]}
+Answer by calling give_verdicts.
 
 One verdict per suggestion, using the id exactly as given. Say `accept: false`
 when a rule would be wrong rather than merely dull -- a world with a few plain
@@ -602,7 +603,7 @@ def judge(sponsor, world_root, on_success, on_error):
     already in the queue, so the worst a bad answer can do is accept something a
     person would have refused, which `rules` then shows marked `derived`.
     """
-    from world import llm, model_json
+    from world import llm
 
     standing = queue(world_root)
     if not standing:
@@ -619,13 +620,12 @@ def judge(sponsor, world_root, on_success, on_error):
         {"role": "user", "content": judgement_prompt(world_root)},
     ]
 
-    def answered(content):
-        try:
-            reply = model_json.parse_object(content)
-            verdicts = list(reply.get("verdicts") or [])
-        except Exception as exc:
-            on_error(str(exc))
+    def answered(reply):
+        if not isinstance(reply, dict):
+            on_error("no verdicts came back")
             return
+        verdicts = [verdict for verdict in (reply.get("verdicts") or [])
+                    if isinstance(verdict, dict)]
 
         waiting = {rule["id"] for rule in standing}
         taken, declined_now = [], []
@@ -649,7 +649,67 @@ def judge(sponsor, world_root, on_success, on_error):
                 declined_now.append(rule_id)
         on_success(taken, declined_now)
 
-    llm.fetch(llm.ask, sponsor, sponsor.model_for("commands"), messages,
-              on_success=answered,
-              on_error=lambda failure: on_error(failure.getErrorMessage()))
+    from world import toolbox as tb
+
+    # Rounds out, the last verdicts are applied as they stand -- a verdict for
+    # anything outside the queue is still refused below -- and a model that
+    # never gave any has answered nothing, which is an error, not a change.
+    box = tb.Toolbox([verdicts_tool(standing)],
+                     tb.ToolContext(world_root=world_root, sponsor=sponsor,
+                                    job="commands"))
+    llm.converse(sponsor, sponsor.model_for("commands"), messages, box,
+                 on_done=answered, on_error=on_error, on_exhausted=answered,
+                 rounds=JUDGE_ROUNDS)
+
+
+#: Rounds a judgement may take (docs/generator-tool-loops.md §10.3).
+JUDGE_ROUNDS = 6
+
+
+def verdicts_tool(standing):
+    """
+    `give_verdicts`, the finish tool `judge` answers with.
+
+    The id is an enum of the queue -- at most `MAX_QUEUE`, well under the enum
+    cap -- which is the rail "a judge may only answer what it was asked" moved
+    into the schema. The handler still checks, since an enum inside an array
+    item is a promise not every provider keeps, and sends a stray id back.
+    """
+    from world import toolbox as tb
+
+    ids = [str(rule["id"]) for rule in standing]
+
+    def parameters(ctx):
+        return tb.params({
+            "verdicts": {
+                "type": "array", "maxItems": len(ids),
+                "items": {"type": "object",
+                          "properties": {
+                              "id": {"type": "string", "enum": ids,
+                                     "description": "The suggestion's id, "
+                                                    "exactly as given"},
+                              "accept": {"type": "boolean",
+                                         "description": "Whether it should "
+                                                        "be put in force"},
+                              "because": {"type": "string",
+                                          "description": "One short "
+                                                         "sentence"}},
+                          "required": ["id", "accept"]},
+                "description": "One verdict per suggestion"},
+        }, ["verdicts"])
+
+    def handler(ctx, args, answer):
+        stray = sorted({str(verdict.get("id"))
+                        for verdict in (args.get("verdicts") or [])
+                        if isinstance(verdict, dict)} - set(ids))
+        if stray:
+            answer(tb.complain(
+                "There is nothing waiting called " + ", ".join(stray)
+                + "; give verdicts only for " + ", ".join(ids) + ".",
+                value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("give_verdicts", "Say yes or no to each suggestion.",
+                   parameters, handler, finishes=True)
 

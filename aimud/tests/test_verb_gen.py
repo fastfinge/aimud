@@ -1,99 +1,34 @@
 """
-Learning a verb rule, with the model's answer coming from a script.
+Verb rules kept per world, and narration, with the model's answer coming from
+a script.
 
-This is the test the plan calls phase 0's finish line: a generator driven end to
-end, through the real prompt assembly, the real JSON repair, the real validation
-and the real storage, without a network call and without a key. Everything it
-exercises used to be reachable only by paying for a model, which is why none of
-it was ever covered.
+This was phase 0's finish line: a generator driven end to end, through the real
+prompt assembly, the real JSON repair and the real storage, without a network
+call and without a key. The generator it first drove, `learn_rule`, has gone --
+`rule_gen.learn` writes a world's rules now -- so what it proved is proved here
+on `narrate`, which goes through the same door and the same repair.
 """
 
 from django.test import tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeSponsor, as_json, immediately, replying
+from tests.support import (FakeSponsor, finishing, immediately, replying,
+                           tool_reply)
 from world import llm, verb_gen, verbs
 
 
 @tag("world")
-class LearningARule(EvenniaTest):
+class KeepingARule(EvenniaTest):
+    """The per-world store `attempt` still reads and `ask_admission` writes out."""
 
     def setUp(self):
         super().setUp()
         self.root = self.room1
         self.root.db.is_world_root = True
-        self.account_stub = FakeSponsor()
 
-    def learn(self, answer, verb="read", bound=None):
-        """Drive `learn_rule` once and return (rule, error, recorder)."""
-        got, failed = [], []
-        with immediately(), replying(answer) as recorder:
-            verb_gen.learn_rule(
-                self.account_stub, self.root, verb,
-                bound if bound is not None else {"direct": self.obj1},
-                self.char1, f"{verb} obj",
-                on_success=got.append,
-                on_error=failed.append,
-            )
-        return (got[0] if got else None,
-                failed[0] if failed else None,
-                recorder)
-
-    def test_a_rule_comes_back_parsed(self):
-        rule, error, _ = self.learn(as_json({
-            "valid": True,
-            "requires": {"direct": {"has": ["read"]}},
-            "effects": [{"type": "set_state", "role": "direct",
-                         "add": ["read"]}],
-            "repeatable": True,
-        }))
-        self.assertIsNone(error)
-        self.assertTrue(rule["valid"])
-        self.assertEqual(rule["requires"]["direct"]["has"], ["read"])
-
-    def test_the_prompt_carries_the_objects_and_the_world(self):
-        _rule, _error, recorder = self.learn(as_json({"valid": True,
-                                                      "effects": []}))
-        self.assertEqual(recorder.count, 1)
-        sent = recorder.sent()
-        self.assertIn("Obj", sent)
-        self.assertIn("read obj", sent)
-
-    def test_json_a_model_nearly_wrote_is_repaired_rather_than_lost(self):
-        """model_json's whole purpose, never covered because it needed a model."""
-        rule, error, _ = self.learn(
-            '```json\n{"valid": true, // a note\n "effects": [],}\n```')
-        self.assertIsNone(error)
-        self.assertTrue(rule["valid"])
-
-    def test_an_unrepairable_answer_is_an_error_and_not_a_crash(self):
-        rule, error, _ = self.learn("I am afraid I cannot help with that.")
-        self.assertIsNone(rule)
-        self.assertTrue(error)
-
-    def test_a_refusal_from_the_service_reaches_the_caller_in_words(self):
-        rule, error, _ = self.learn(llm.LLMError("No credits left"))
-        self.assertIsNone(rule)
-        self.assertIn("No credits left", str(error))
-
-    def test_a_new_state_is_registered_in_the_world_as_a_side_effect(self):
-        """A rule may coin a word, and the world has to know it afterwards."""
-        self.learn(as_json({
-            "valid": True,
-            "effects": [{"type": "set_state", "role": "direct",
-                         "add": ["scorched"]}],
-            "new_states": [{"slug": "scorched", "means": "burnt at the edges",
-                            "group": "fire"}],
-        }), verb="burn")
-        vocabulary = verbs.vocabulary(self.root)
-        self.assertIn("scorched", vocabulary)
-        self.assertEqual(vocabulary["scorched"]["means"], "burnt at the edges")
-
-    def test_a_rule_is_stored_and_found_again_without_a_second_call(self):
-        answer = as_json({"valid": True, "effects": []})
-        rule, _error, _ = self.learn(answer)
+    def test_a_rule_is_stored_and_found_again_without_a_call(self):
         key = verbs.rule_key("read", {"direct": self.obj1})
-        verb_gen.store_rule(self.root, key, rule)
+        verb_gen.store_rule(self.root, key, {"valid": True, "effects": []})
 
         with replying("this should never be asked for") as recorder:
             found = verb_gen.get_rule(self.root, key)
@@ -104,8 +39,8 @@ class LearningARule(EvenniaTest):
         """
         It has to, or it cannot go into a prompt.
 
-        An Attribute hands back `_SaverDict`, which `json.dumps` refuses, and a
-        rule is put in front of a model whenever a related verb is learned. This
+        An Attribute hands back `_SaverDict`, which `json.dumps` refuses, and
+        `ask_admission` puts the verb's rule in front of a model as JSON. This
         is the bug that class of problem always turns out to be.
         """
         import json
@@ -124,6 +59,18 @@ class LearningARule(EvenniaTest):
         self.assertIsInstance(found["effects"], list)
 
 
+def _narrating(sponsor, answer, bound, actor, raw="hand obj to char2",
+               verb="hand"):
+    """Drive `narrate` once and return (parts, error, recorder)."""
+    got, failed = [], []
+    with immediately(), replying(answer) as recorder:
+        verb_gen.narrate(
+            sponsor, verb, bound, actor, raw,
+            on_success=lambda *parts: got.append(parts),
+            on_error=failed.append)
+    return (got[0] if got else None, failed[0] if failed else None, recorder)
+
+
 @tag("world")
 class TheDoorIsClosed(EvenniaTest):
     """
@@ -136,11 +83,13 @@ class TheDoorIsClosed(EvenniaTest):
 
     def test_a_callback_does_not_fire_on_its_own(self):
         got = []
-        with replying(as_json({"valid": True, "effects": []})):
-            verb_gen.learn_rule(
-                FakeSponsor(), self.room1, "read", {"direct": self.obj1},
-                self.char1, "read obj",
-                on_success=got.append, on_error=got.append,
+        with replying(finishing(narrate={"actor": "You hand it over.",
+                               "room": "{actor} $pconj(hand) {direct}."})):
+            verb_gen.narrate(
+                FakeSponsor(), "hand", {"direct": self.obj1}, self.char1,
+                "hand obj",
+                on_success=lambda *parts: got.append(parts),
+                on_error=got.append,
             )
         self.assertEqual(got, [], "if this fires, the seam is no longer needed")
 
@@ -163,26 +112,29 @@ class NarratingATemplate(EvenniaTest):
         self.sponsor = FakeSponsor()
 
     def narrate(self, answer, bound=None):
-        got, failed = [], []
-        with immediately(), replying(answer) as recorder:
-            verb_gen.narrate(
-                self.sponsor, "hand",
-                bound if bound is not None else {"direct": self.obj1,
-                                                 "target": self.char2},
-                self.char1, "hand obj to char2",
-                on_success=lambda *parts: got.append(parts),
-                on_error=failed.append)
-        return (got[0] if got else None, failed[0] if failed else None,
-                recorder)
+        return _narrating(
+            self.sponsor, answer,
+            bound if bound is not None else {"direct": self.obj1,
+                                             "target": self.char2},
+            self.char1)
 
     def test_the_prompt_lists_every_placeholder(self):
         _got, _err, recorder = self.narrate(
-            as_json({"actor": "You hand it over.",
+            finishing(narrate={"actor": "You hand it over.",
                      "room": "{actor} $pconj(hand) {target} {direct}."}))
         sent = recorder.sent()
         self.assertIn("{direct}", sent)
         self.assertIn("{target}", sent)
         self.assertIn("$pconj(", sent)
+
+    def test_the_prompt_carries_the_objects_and_what_was_typed(self):
+        _got, _err, recorder = self.narrate(
+            finishing(narrate={"actor": "You hand it over.",
+                     "room": "{actor} $pconj(hand) {target} {direct}."}))
+        self.assertEqual(recorder.count, 1)
+        sent = recorder.sent()
+        self.assertIn(self.obj1.key, sent)
+        self.assertIn("hand obj to char2", sent)
 
     def test_the_template_comes_back_untouched(self):
         """
@@ -190,7 +142,7 @@ class NarratingATemplate(EvenniaTest):
         would be shown to everybody for ever.
         """
         got, err, _ = self.narrate(
-            as_json({"actor": "You hand it over.",
+            finishing(narrate={"actor": "You hand it over.",
                      "room": "{actor} $pconj(hand) {target} {direct}."}))
         self.assertIsNone(err)
         self.assertEqual(got[1], "{actor} $pconj(hand) {target} {direct}.")
@@ -200,7 +152,7 @@ class NarratingATemplate(EvenniaTest):
         from world import events, pronouns
 
         got, _err, _ = self.narrate(
-            as_json({"actor": "You hand it over.",
+            finishing(narrate={"actor": "You hand it over.",
                      "room": "{actor} $pconj(hand) {target} {direct}."}))
         pronouns.give(self.char1, "they", self.root)
         event = events.Event(actor=self.char1, room=self.root, verb="hand",
@@ -222,8 +174,28 @@ class NarratingATemplate(EvenniaTest):
         from world import events
 
         got, err, _ = self.narrate(
-            as_json({"actor": "You hand it over.",
+            finishing(narrate={"actor": "You hand it over.",
                      "room": "{actor} hands {target} the {direct}."}))
         self.assertIsNone(err)
         self.assertEqual(events.repair(got[1]),
                          "{actor} $pconj(hand) {target} {direct}.")
+
+    def test_json_a_model_nearly_wrote_is_repaired_rather_than_lost(self):
+        """model_json's whole purpose, never covered because it needed a model."""
+        got, err, _ = self.narrate(tool_reply({
+            "id": "call_nearly", "type": "function",
+            "function": {"name": "narrate", "arguments": (
+                '{"actor": "You hand it over.", // a note\n'
+                ' "room": "{actor} $pconj(hand) {target} {direct}.",}')}}))
+        self.assertIsNone(err)
+        self.assertEqual(got[0], "You hand it over.")
+
+    def test_an_unrepairable_answer_is_an_error_and_not_a_crash(self):
+        got, err, _ = self.narrate("I am afraid I cannot help with that.")
+        self.assertIsNone(got)
+        self.assertTrue(err)
+
+    def test_a_refusal_from_the_service_reaches_the_caller_in_words(self):
+        got, err, _ = self.narrate(llm.LLMError("No credits left"))
+        self.assertIsNone(got)
+        self.assertIn("No credits left", str(err))

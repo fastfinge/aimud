@@ -763,7 +763,9 @@ def states(world_root, zone_id):
     """The conditions true of this zone just now."""
     record = get(world_root, zone_id)
     try:
-        return {str(s) for s in (record.get("states") or [])}
+        from world.model_json import listed
+
+        return {str(s) for s in listed(record.get("states"))}
     except AttributeError:
         return set()
 
@@ -796,3 +798,75 @@ def apply_states(world_root, zone_id, add=(), remove=()):
     zones[zone_id]["states"] = sorted(current)
     world_root.db.zones = zones
     return set(zones[zone_id]["states"])
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`list_zones` and `zone_info`: this world's areas, for a model to read."""
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        lines = []
+        for zone_id, record in sorted(all_zones(ctx.world_root).items()):
+            if record.get("is_world"):
+                continue
+            state = "built out" if full(ctx.world_root, zone_id) else "open"
+            lines.append(f"{zone_id}: {path_of(ctx.world_root, zone_id)} -- "
+                         f"{record.get('purpose') or '(purpose not said)'}; "
+                         f"{size(ctx.world_root, zone_id)} of "
+                         f"{budget(ctx.world_root, zone_id)} rooms, {state}")
+        return tb.paged(lines, args, "areas")
+
+    def informing(ctx, args):
+        root = ctx.world_root
+        zone_id = slugify(args.get("zone"))
+        record = get(root, zone_id)
+        if record is None:
+            return f"This world has no area called {args.get('zone')}."
+        said = [f"{path_of(root, zone_id) or record['name']}",
+                f"purpose: {record.get('purpose') or '(not said)'}",
+                f"rooms: {size(root, zone_id)} of {budget(root, zone_id)}"
+                + (", built out" if full(root, zone_id) else "")]
+        if record.get("room_types"):
+            said.append("rooms expected: " + ", ".join(record["room_types"]))
+        used = types_in(root, zone_id)
+        if used:
+            said.append("rooms built: " + ", ".join(
+                f"{slug} ({title})" for slug, title in sorted(used.items())))
+        taken = singletons_taken(root, zone_id)
+        if taken:
+            said.append("only one allowed, and already here: " + ", ".join(
+                f"{slug} ({room} in {place})"
+                for slug, (room, place) in sorted(taken.items())))
+        children = children_of(root, zone_id)
+        if children:
+            said.append("made of: " + ", ".join(name_of(root, child)
+                                                for child in children))
+        if record.get("kind"):
+            said.append(f"a sort of: {record['kind']}")
+        if record.get("states"):
+            said.append("currently: " + ", ".join(record["states"]))
+        return "\n".join(said)
+
+    def rooted(ctx):
+        return ctx.world_root is not None
+
+    return [
+        tb.Tool("list_zones",
+                "The areas this world is made of: what each is for, and how "
+                "many rooms it has of the rooms it was meant to have.",
+                tb.params(tb.PAGE), tb.answering(listing),
+                doing="looking up this world's areas", looks=True,
+                available=rooted),
+        tb.Tool("zone_info",
+                "One area: what it is for, the rooms it expects and has, what "
+                "may exist only once in it, and the areas inside it.",
+                tb.params({"zone": {"type": "string",
+                                    "description": "The area's id or name"}},
+                          ["zone"]),
+                tb.answering(informing), doing="looking up an area",
+                looks=True, available=rooted),
+    ]

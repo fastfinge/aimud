@@ -173,11 +173,13 @@ def _burns_itself_down(rule):
         if etype == "destroy_object":
             return True     # the thing the rule needs will not be there
         if etype == "set_state":
-            added = {str(s) for s in effect.get("add") or []}
-            removed = {str(s) for s in effect.get("remove") or []}
-            if added & {str(s) for s in needed.get("lacks") or []}:
+            from world.model_json import listed
+
+            added = {str(s) for s in listed(effect.get("add"))}
+            removed = {str(s) for s in listed(effect.get("remove"))}
+            if added & {str(s) for s in listed(needed.get("lacks"))}:
                 return True
-            if removed & {str(s) for s in needed.get("is") or []}:
+            if removed & {str(s) for s in listed(needed.get("is"))}:
                 return True
         if etype == "modify_object" and effect.get("affordances") is not None:
             from world import affordances as af
@@ -760,16 +762,105 @@ def advise(actor, world_root, goal):
                 f"to work out what it means.")
         return action, text
 
-    outstanding = [text for met, text in goals.progress(goal, actor, world_root)
+    outstanding = [(condition, text) for condition, (met, text)
+                   in zip(goal, goals.progress(goal, actor, world_root))
                    if not met]
     # Goal descriptions read as "be in Library", "be carrying brass lamp", so
     # they take a verb-phrase frame -- "closer to be in Library" does not.
-    wanted = outstanding[0] if outstanding else "do that"
+    wanted = outstanding[0][1] if outstanding else "do that"
+    reason, what = (blocker(actor, world_root, outstanding[0][0])
+                    if outstanding else (None, ""))
+    return None, _why_not(wanted, reason, what)
 
-    return None, (
-        f"Nothing you can do from here would help you {wanted}. "
-        f"Whatever it needs may be somewhere you have not been yet."
-    )
+
+# ---------------------------------------------------------------------------
+# Why there is no step
+# ---------------------------------------------------------------------------
+
+#: Why the planner can find nothing to do about a condition. What each one
+#: means for somebody else is in `blocker`; what the world can do about each
+#: is docs/generator-tool-loops.md §5.1.
+MISSING_THING = "missing_thing"
+MISSING_ROOM = "missing_room"
+NO_RULE = "no_rule"
+OUT_OF_REACH = "out_of_reach"
+
+
+def blocker(actor, world_root, condition):
+    """
+    Why no step can be taken towards a condition: (reason, what), or
+    (None, "") when there is a step after all.
+
+    The planner reaches each of these dead ends already, in `_for_condition`,
+    and used to answer only that there was nothing to do. Saying which one it
+    was is what lets a player be told the truth and a generator be told what
+    the world is missing:
+
+    * `missing_thing` -- the thing or sort of thing named exists nowhere in
+      the world. A quest for raw ore where there is no raw ore.
+    * `missing_room` -- the room named has never been built.
+    * `no_rule` -- the thing is here, and nothing this world knows how to do
+      would put it in the wanted state or move the figure.
+    * `out_of_reach` -- everything else: it exists, and there is no way there
+      from here within `MAX_TRAVEL`.
+    """
+    if not condition or actor is None:
+        return None, ""
+    action, _key = _for_condition(actor, world_root, condition)
+    if action:
+        return None, ""
+
+    ctype = str(condition.get("type") or "")
+    if ctype == "in_room":
+        room = str(condition.get("room") or "").strip()
+        return (OUT_OF_REACH if _room_named(world_root, room)
+                else MISSING_ROOM), room
+    if ctype == "trait":
+        return NO_RULE, str(condition.get("trait") or "")
+
+    name = str(condition.get("object") or "").strip()
+    kind = str(condition.get("kind") or "").strip()
+    if kind and not name:
+        if goals.find_of_kind(world_root, actor, kind) is None:
+            from world import lexicon
+
+            return MISSING_THING, lexicon.word_of(kind) or kind
+    elif name and goals.find_object(world_root, actor, name) is None:
+        return MISSING_THING, name
+    for other in ("host", "to"):
+        named = str(condition.get(other) or "").strip()
+        if named and goals.find_object(world_root, actor, named) is None:
+            return MISSING_THING, named
+
+    if ctype in ("state", "gone") and name and _bind(actor, name) is not None:
+        return NO_RULE, name
+    return OUT_OF_REACH, name or kind
+
+
+def _room_named(world_root, name):
+    """Whether any room built in this world goes by `name`."""
+    wanted = str(name or "").lower().strip()
+    if not wanted or world_root is None:
+        return False
+    from evennia import search_tag
+
+    rooms = list(search_tag(str(world_root.id), category="ai_world"))
+    for room in rooms + [world_root]:
+        title = (room.db.room_title or room.key or "").lower()
+        if wanted in title:
+            return True
+    return False
+
+
+def _why_not(wanted, reason, what):
+    """What a player is told when there is no step, and the truth about why."""
+    opening = f"Nothing you can do from here would help you {wanted}."
+    if reason in (MISSING_THING, MISSING_ROOM):
+        return f"{opening} There is no {what} anywhere in this world yet."
+    if reason == NO_RULE:
+        return (f"{opening} Nothing this world knows how to do brings that "
+                f"about yet.")
+    return f"{opening} Whatever it needs may be somewhere you have not been yet."
 
 
 # ---------------------------------------------------------------------------

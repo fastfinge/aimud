@@ -23,13 +23,8 @@ from evennia.utils import logger
 
 _SYSTEM = """You turn a character's request into a quest a game can check.
 
-Respond with a single JSON object — no other text — matching:
-{
-  "title": "Three or four words naming the errand",
-  "goal": [ ... ],
-  "reward": [ ... ],
-  "punishment": [ ... ]
-}
+Answer by calling write_quest. The title is three or four words naming the
+errand.
 
 goal is what must become true for the errand to be done. Each entry is one of:
 {"type": "holds",     "object": "brass key"}   (or "kind": "key" for any)                  they are carrying it
@@ -55,7 +50,7 @@ lists of effects, usually:
 {"type": "set_trait", "role": "actor", "trait": "standing", "change": 2}
 
 A "trait" condition and a set_trait effect may only name a trait the world
-already keeps; the register is given to you below. Do not invent one here.
+already keeps; list_traits shows them. Do not invent one here.
 
 "placed" is for putting a thing somewhere rather than merely carrying it --
 "in" a container, "on" a surface, "under" or "behind" anything. Use it when
@@ -63,20 +58,7 @@ the errand is about where something ends up; use "delivered" when it ends up
 with a person.
 
 Give an empty punishment list unless the character clearly threatened one.
-Keep the goal to one or two conditions. Return only the JSON object."""
-
-
-def _parse_json_object(content):
-    """
-    Parse a model response that should be a single JSON object.
-
-    Delegates to world.model_json, which repairs the near-misses models make
-    -- a trailing comma, a stray comment, an answer cut off mid-object --
-    rather than losing a whole generation over one character.
-    """
-    from world.model_json import parse_object
-
-    return parse_object(content)
+Keep the goal to one or two conditions."""
 
 
 #: How many room names a goal may be shown. A goal about somewhere else is the
@@ -164,7 +146,7 @@ def formalise(sponsor, npc, target, request, offer, consequence, on_success, on_
         return
 
     room = npc.location
-    from world import lore, traits
+    from world import lore
 
     world = lore.description(room, target)
 
@@ -175,7 +157,6 @@ def formalise(sponsor, npc, target, request, offer, consequence, on_success, on_
             "content": (
                 f"World: {world}\n\n"
                 f"{lore.guidance_block(room, 'dialogue', target)}"
-                f"{traits.vocabulary_block(room.db.world_root if room else None)}"
                 f"{npc.key} is asking {target.get_display_name(npc)} for something.\n\n"
                 f"What {npc.key} wants: {request}\n"
                 f"What {npc.key} offers: {offer or 'nothing in particular'}\n"
@@ -187,29 +168,34 @@ def formalise(sponsor, npc, target, request, offer, consequence, on_success, on_
         },
     ]
 
-    def _done(content):
-        try:
-            data = _parse_json_object(content)
-            on_success({
-                "title": str(data.get("title", "")).strip() or "An errand",
-                "goal": data.get("goal") or [],
-                "reward": data.get("reward") or [],
-                "punishment": data.get("punishment") or [],
-            })
-        except Exception as exc:
-            on_error(str(exc))
+    def _done(data):
+        data = data if isinstance(data, dict) else {}
+        on_success({
+            "title": str(data.get("title") or "").strip() or "An errand",
+            "goal": _listed(data.get("goal")),
+            "reward": _listed(data.get("reward")),
+            "punishment": _listed(data.get("punishment")),
+        })
 
-    def _fail(failure):
-        on_error(failure.getErrorMessage())
+    from world import lookups
+    from world import toolbox as tb
 
-    llm.fetch(llm.ask, sponsor, model, messages,
-              on_success=_done, on_error=_fail)
+    # Rounds out, the last quest is offered as it stands: `quests.offer` still
+    # refuses one with no testable goal, and logs it, as it always did.
+    box = tb.Toolbox([quest_tool()] + lookups.named(*QUEST_LOOKUPS),
+                     tb.ToolContext(world_root=room.db.world_root if room
+                                    else None, room=room, actor=npc,
+                                    sponsor=sponsor, job="quests"))
+    llm.converse(sponsor, model, messages, box, on_done=_done,
+                 on_error=on_error,
+                 on_exhausted=lambda last: _done(last) if last
+                 else on_error("no quest came back"),
+                 rounds=QUEST_ROUNDS)
 
 
 _GOAL_SYSTEM = """You turn what a character wants into conditions a game can check.
 
-Respond with a single JSON object — no other text — matching:
-{"goal": [ ... ]}
+Answer by calling write_goal.
 
 Each entry is one of:
 {"type": "holds",     "object": "brass key"}   (or "kind": "key" for any)                   they are carrying it
@@ -222,7 +208,7 @@ Each entry is one of:
 {"type": "in_room",   "room": "Kitchen"}                       they went there
 
 Name objects and rooms as they are actually called in the list you are given,
-and traits only from the register below. Give one or two conditions.
+and traits only from those this world measures (list_traits). Give one or two conditions.
 
 "delivered" is about handing something to somebody else, and the "to" must be
 another person. A character who simply wants to have the thing wants "holds".
@@ -249,7 +235,7 @@ def formalise_goal(sponsor, npc, want, on_success, on_error):
         return
 
     room = npc.location
-    from world import lore, traits
+    from world import lore
 
     world = lore.description(room)
     messages = [
@@ -259,7 +245,6 @@ def formalise_goal(sponsor, npc, want, on_success, on_error):
             "content": (
                 f"World: {world}\n\n"
                 f"{lore.guidance_block(room, 'dialogue')}"
-                f"{traits.vocabulary_block(room.db.world_root if room else None)}"
                 f"{npc.key} wants: {want}\n\n"
                 f"{_surroundings(npc, npc)}\n\n"
                 f"Write this as checkable conditions."
@@ -267,12 +252,153 @@ def formalise_goal(sponsor, npc, want, on_success, on_error):
         },
     ]
 
-    def _done(content):
-        try:
-            data = _parse_json_object(content)
-            on_success(data.get("goal") or [])
-        except Exception as exc:
-            on_error(str(exc))
+    def _done(data):
+        on_success(_listed((data if isinstance(data, dict) else {}).get("goal")))
 
-    llm.fetch(llm.ask, sponsor, model, messages,
-              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
+    from world import lookups
+    from world import toolbox as tb
+
+    # An empty goal is a real answer -- what they want cannot be put this way
+    # -- and rounds out takes the last one as it stands, as before.
+    box = tb.Toolbox([goal_tool(npc)] + lookups.named(*QUEST_LOOKUPS),
+                     tb.ToolContext(world_root=room.db.world_root if room
+                                    else None, room=room, actor=npc,
+                                    sponsor=sponsor, job="quests"))
+    llm.converse(sponsor, model, messages, box, on_done=_done,
+                 on_error=on_error, on_exhausted=_done, rounds=GOAL_ROUNDS)
+
+
+# ---------------------------------------------------------------------------
+# The finish tools (docs/generator-tool-loops.md §4.2)
+# ---------------------------------------------------------------------------
+
+#: Rounds each may take (§10.3).
+QUEST_ROUNDS = 8
+GOAL_ROUNDS = 6
+
+#: What either may look up: the trait register the prompts used to paste in,
+#: the rooms a goal may name, and the states a condition may ask for.
+QUEST_LOOKUPS = ("list_traits", "show_trait", "find_rooms", "list_states",
+                 "examine")
+
+
+def _listed(value):
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def goal_complaints(conditions, world_root, owner=None, need_goal=False):
+    """
+    What is wrong with a goal that asking again can put right.
+
+    What `goals.sanitise` would drop -- which used to happen after the answer
+    was taken, silently, leaving a quest nobody could finish -- and a trait
+    condition naming a trait nothing measures.
+    """
+    from world import goals, traits
+
+    said = []
+    given = _listed(conditions)
+    kept = goals.sanitise(given, owner=owner)
+    if len(kept) < len(given):
+        said.append(f"{len(given) - len(kept)} of the goal's conditions cannot "
+                    f"be tested: each needs one of the types "
+                    f"{', '.join(goals.CONDITION_TYPES)}, and a trait "
+                    f"condition needs its trait")
+    elif need_goal and not kept:
+        said.append("a quest needs at least one condition that can be tested")
+    strange = sorted({traits._slug(condition.get("trait")) for condition in kept
+                      if condition.get("type") == "trait"}
+                     - set(traits.vocabulary(world_root)) - {""})
+    if strange:
+        said.append("the goal names " + ", ".join(strange) + ", which this "
+                    "world does not measure; list_traits shows what it does")
+    return said
+
+
+def effect_complaints(given, world_root, label):
+    """An effect nothing can apply, or a trait nothing measures."""
+    from world import effects, traits
+
+    said = []
+    known = traits.vocabulary(world_root)
+    for effect in _listed(given):
+        if not isinstance(effect, dict):
+            said.append(f"a {label} effect that is not an object")
+            continue
+        kind = str(effect.get("type") or "")
+        if kind not in effects.VOCABULARY:
+            said.append(f"there is no such effect as {kind!r} in the {label}")
+            continue
+        if (kind == "set_trait"
+                and traits._slug(effect.get("trait")) not in known):
+            said.append(f"the {label} names the trait "
+                        f"{effect.get('trait')!r}, which this world does not "
+                        f"measure")
+    return said
+
+
+def quest_tool():
+    """`write_quest`, the finish tool `formalise` answers with."""
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        from world import effects, goals
+
+        return tb.params({
+            "title": {"type": "string",
+                      "description": "Three or four words naming the errand"},
+            "goal": {"type": "array", "items": goals.schema(ctx),
+                     "minItems": 1, "maxItems": 2,
+                     "description": "What must become true for it to be done: "
+                                    "one or two conditions"},
+            "reward": {"type": "array", "items": effects.schema(ctx),
+                       "description": "What they get for doing it"},
+            "punishment": {"type": "array", "items": effects.schema(ctx),
+                           "description": "What failing costs them; empty "
+                                          "unless it was threatened"},
+        }, ["title", "goal"])
+
+    def handler(ctx, args, answer):
+        said = (goal_complaints(args.get("goal"), ctx.world_root,
+                                need_goal=True)
+                + effect_complaints(args.get("reward"), ctx.world_root,
+                                    "reward")
+                + effect_complaints(args.get("punishment"), ctx.world_root,
+                                    "punishment"))
+        if said:
+            answer(tb.complain("Not written: " + "; ".join(said) + ". Send "
+                               "the quest again with that put right.",
+                               value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("write_quest", "Write the request as a checkable quest.",
+                   parameters, handler, finishes=True)
+
+
+def goal_tool(owner):
+    """`write_goal`, the finish tool `formalise_goal` answers with."""
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        from world import goals
+
+        return tb.params({
+            "goal": {"type": "array", "items": goals.schema(ctx),
+                     "maxItems": 2,
+                     "description": "One or two conditions; empty if what "
+                                    "they want cannot be put this way"},
+        }, ["goal"])
+
+    def handler(ctx, args, answer):
+        said = goal_complaints(args.get("goal"), ctx.world_root, owner=owner)
+        if said:
+            answer(tb.complain("Not written: " + "; ".join(said) + ". Send "
+                               "the goal again with that put right.",
+                               value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("write_goal", "Write what they want as checkable "
+                                 "conditions.",
+                   parameters, handler, finishes=True)

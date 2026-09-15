@@ -246,16 +246,13 @@ def _listed(value):
 
     Asked for one condition a model writes one word rather than a list of one,
     and read as written that is not one requirement but six, one per letter --
-    see `verbs.requirements`, which learned this the hard way.
+    see `verbs.requirements`, which learned this the hard way -- and then
+    `effects`, which had not, and coined a condition per letter of "sharpened"
+    in somebody's world. One answer for all of them now.
     """
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [value] if value.strip() else []
-    try:
-        return [v for v in value if v]
-    except TypeError:
-        return [value]
+    from world.model_json import listed
+
+    return listed(value)
 
 
 def predicate_of(condition):
@@ -1029,6 +1026,16 @@ def _p_reachable(subject, value, condition, ctx, mood):
     # `power` means the ship: the ship is not in the room, it is the room.
     within = (subject.obj in relations.reachable(who.obj, include_self=True)
               or subject.obj in relations.enclosing(who.obj))
+    # People are not things, and `relations.reachable` only walks things -- so
+    # without this every character was out of reach of everybody, and every
+    # verb that names a person was refused before it began. Somebody standing
+    # in the same place is within arm's length. An exit is not a person, and
+    # is left to the rule that already governs it.
+    if not within:
+        here = getattr(who.obj, "location", None)
+        within = (here is not None and subject.obj.location is here
+                  and getattr(subject.obj, "destination", None) is None
+                  and not relations._is_thing(subject.obj))
     if mood == WANT:
         return within, f"get within reach of {subject.name()}"
     return within, f"{_cap(subject.name())} is out of reach."
@@ -1122,6 +1129,13 @@ def achieves(effect, condition):
 
     if name == "holds" and etype == "move_object":
         return str(effect.get("to") or "") == "actor"
+
+    if name == "holds" and etype == "move_contents":
+        # Emptying something into your hands is a way to come to hold what was
+        # in it. Which particular thing that is, is a fact about the world at
+        # the moment it happens rather than about the rule, so this says only
+        # "that would help" -- which is all anything here ever says.
+        return str(effect.get("to") or "actor") == "actor"
 
     if name == "owned_by" and etype == "set_owner":
         # Read for the thing the effect names and no further. The cascade is
@@ -1431,3 +1445,63 @@ def as_goals(conditions, bound=None, actor=None):
             found.append(wanted)
     return found
 
+
+
+# ---------------------------------------------------------------------------
+# The shape of a condition, for a tool's parameters (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def schema(ctx=None):
+    """
+    One condition, as a finish tool's parameters describe it: a subject and
+    one predicate. Which predicate is the model's choice, so every predicate
+    is an optional field and `predicate_of` is what checks there is one.
+    """
+    from world import toolbox as tb
+
+    world_root = getattr(ctx, "world_root", None)
+    known_traits = []
+    if world_root is not None:
+        from world import traits
+
+        known_traits = sorted(traits.vocabulary(world_root))
+
+    def names(what):
+        return {"type": "array", "items": {"type": "string"},
+                "description": what}
+
+    return {
+        "type": "object",
+        "properties": {
+            "subject": {"description": "Whose condition: a participant ("
+                                       + ", ".join(ROLES) + "), 'here', "
+                                       "{\"enclosure\": <a kind>} or "
+                                       "{\"zone\": true}"},
+            "is": names("states it must be in"),
+            "lacks": names("states it must not be in"),
+            "affords": names("what must be doable to it"),
+            "holds": names("what the subject must be carrying"),
+            "wears": names("what the subject must have on"),
+            "kind": {"description": "a sort of thing it must be"},
+            "owned_by": {"description": "'actor', a participant, 'nobody' or "
+                                        "'somebody'"},
+            "placed": {"description": "where it must be put"},
+            "trait": tb.choice(known_traits, "a figure it must reach",
+                               ask="list_traits"),
+            "min": {"type": "number", "description": "with trait: at least"},
+            "max": {"type": "number", "description": "with trait: at most"},
+            "in_room": {"description": "a room it must be in"},
+            "exists": {"type": "boolean", "description": "it must exist"},
+            "gone": {"type": "boolean", "description": "it must be gone"},
+            "able": {"type": "string", "enum": sorted(GATES),
+                     "description": "what the subject must be free to do"},
+            "reachable_by": {"description": "who must be able to reach it"},
+            "visible_to": {"description": "who must be able to see it"},
+            "leads_to": {"description": "where a way out must lead"},
+            "never": {"type": "boolean",
+                      "description": "never true: a rule nothing can pass"},
+            "unbound": {"type": "boolean",
+                        "description": "nobody named one"},
+        },
+        "required": ["subject"],
+    }

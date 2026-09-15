@@ -16,7 +16,7 @@ ever. Every spelling is asserted here for that reason.
 from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeSponsor, as_json, immediately, replying
+from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
 from world import actions, conditions as C, rulebooks as R
 from world import gear, standard_rules, traits, verbs
@@ -117,7 +117,7 @@ class Looking(EvenniaTest):
         """One look, with no model permitted to answer."""
         said = []
         with immediately(), replying(
-                as_json({"actor": "should not be asked",
+                finishing(narrate={"actor": "should not be asked",
                          "room": "should not be asked"})) as script:
             attempt_mod.attempt(
                 self.char1, raw, FakeSponsor(),
@@ -543,10 +543,20 @@ class WhatGenerationCanNowSay(EvenniaTest):
                       "a dark room must be told to say nothing, not to say 0")
 
     def test_the_contents_prompt_offers_the_state_gate(self):
-        """`gear._gate_open` has implemented this all along."""
-        from world import worldgen
+        """
+        `gear._gate_open` has implemented this all along.
 
-        self.assertIn("bonus_while", worldgen._CONTENTS_SYSTEM_PROMPT)
+        Offered in the finish tool's schema now, beside every other field an
+        item has, and explained by the gear block the prompt still carries.
+        """
+        from world import clothing, gear, worldgen
+
+        tool = worldgen.contents_tool("")
+        items = tool.parameters(None)["properties"]["items"]["items"]
+        self.assertIn("bonus_while", items["properties"])
+        self.assertEqual(items, clothing.spec_schema(None))
+        self.assertIn("bonus_while",
+                      gear.prompt_block(self.room1))
 
     def test_and_a_generated_item_keeps_it(self):
         from world import clothing

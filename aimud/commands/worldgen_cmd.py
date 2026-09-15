@@ -330,9 +330,13 @@ def node_generate(caller, raw_string, **kwargs):
     def on_error(err):
         caller.msg(f"|rWorld generation failed: {err}|n")
 
+    from world import busy
     from world.worldgen import generate_first_room
 
-    generate_first_room(sponsor_mod.of_account(account), dict(draft), on_success, on_error,
+    wait = busy.start(caller, f"generating {title or 'your world'}")
+    generate_first_room(sponsor_mod.of_account(account), dict(draft),
+                        busy.closing(wait, on_success),
+                        busy.closing(wait, on_error),
                         creator_character=caller)
     setattr(caller.ndb, DRAFT, None)
     return "", []

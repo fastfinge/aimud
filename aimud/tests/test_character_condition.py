@@ -18,7 +18,7 @@ order the player met them.
 from django.test import tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeSponsor, as_json, immediately, replying
+from tests.support import FakeSponsor, finishing, immediately, replying
 from world import actions, conditions as C, crossing, rulebooks as R
 from world import attempt as attempt_mod
 from world import standard_rules, traits, verbs
@@ -258,7 +258,7 @@ class ActingInSpiteOfIt(ACharacter):
                          "remove": ["dead"]}]})
         self.heard.clear()
         said = []
-        with immediately(), replying(as_json({"actor": "You draw breath.",
+        with immediately(), replying(finishing(narrate={"actor": "You draw breath.",
                                               "room": "{actor} sits up."})):
             attempt_mod.attempt(
                 self.char1, "respawn", FakeSponsor(),
@@ -284,7 +284,7 @@ class TheGateIsStillThere(ACharacter):
         actions.declare(self.root, "read", [{"role": "direct"}])
         verbs.apply_states(self.char1, add=["dead"], world_root=self.root)
         said = []
-        with immediately(), replying(as_json({"rules": []})):
+        with immediately(), replying(finishing(file_rules={"rules": []})):
             attempt_mod.attempt(
                 self.char1, "read book", FakeSponsor(),
                 on_message=lambda actor_text, room_text=None:

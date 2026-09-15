@@ -555,7 +555,9 @@ def states_of(world_root, obj_kinds):
     for kind in prune(obj_kinds, world_root):
         entry = spec(world_root, kind) or {}
         try:
-            seen |= {str(s) for s in (entry.get("states") or [])}
+            from world.model_json import listed
+
+            seen |= {str(s) for s in listed(entry.get("states"))}
         except (AttributeError, TypeError, ValueError):
             continue
     return seen
@@ -665,3 +667,57 @@ def _is_room(obj):
     which is what the walk wants anyway.
     """
     return obj is not None and getattr(obj, "location", None) is None
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`kind_info`: what the dictionary and this world say about a sort of thing."""
+    from world import toolbox as tb
+
+    def informing(ctx, args):
+        from world import lexicon
+
+        kind = canonical(str(args.get("kind") or ""))
+        root = ctx.world_root
+        above = sorted(ancestors(root, kind) - {kind},
+                       key=lambda name: -len(lexicon.ancestors(name)))
+        entry = spec(root, kind) or {}
+        said = [f"{kind}: {lexicon.word_of(kind) or kind}"]
+        gloss = lexicon.definition(kind)
+        if gloss:
+            said.append(f"means: {gloss}")
+        if anchor(root, kind):
+            said.append(f"hangs under: {anchor(root, kind)}")
+        if above:
+            said.append("is a sort of: " + ", ".join(above[:8]))
+        held = holds(root, [kind])
+        if held:
+            said.append("things go: " + " and ".join(sorted(held)) + " it")
+        decided = dict(entry.get("affordances") or {})
+        if decided:
+            said.append("this world has decided it can be: " + ", ".join(
+                verb for verb, yes in sorted(decided.items()) if yes)
+                + "; and cannot be: " + (", ".join(
+                    verb for verb, yes in sorted(decided.items()) if not yes)
+                    or "nothing"))
+        seen = states_of(root, [kind])
+        if seen:
+            said.append("things of this sort have been: "
+                        + ", ".join(sorted(seen)))
+        if len(said) == 1 and not above:
+            said.append("Neither the dictionary nor this world knows anything "
+                        "about it yet.")
+        return "\n".join(said)
+
+    return [tb.Tool(
+        "kind_info",
+        "What a sort of thing is: its meaning, what it is a sort of, what "
+        "goes in or on it, and what this world has decided about it.",
+        tb.params({"kind": {"type": "string",
+                            "description": "A WordNet id like container.n.01, "
+                                           "or a word"}}, ["kind"]),
+        tb.answering(informing), doing="looking up a sort of thing",
+        looks=True)]

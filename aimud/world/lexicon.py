@@ -42,6 +42,7 @@ the world slightly clumsier. It must never make the world impossible.
 
 import os
 import threading
+from functools import lru_cache
 
 from evennia.utils import logger
 
@@ -287,6 +288,43 @@ def ancestors(sense):
         return frozenset()
 
 
+#: Everything that is a thing rather than an idea, an event or an amount.
+PHYSICAL = "physical_entity.n.01"
+
+
+@lru_cache(maxsize=4096)
+def has_at_least_below(sense, count):
+    """
+    Whether at least `count` sorts of thing sit anywhere beneath a sense.
+
+    How broad a sense is, which is not how deep it sits: WordNet's branches are
+    not the same depth. Made things run deep, so a container is seven steps from
+    the root with 744 sorts of container beneath it, while documents, events and
+    measures are shallow -- a ledger is six steps from the root with four sorts
+    of ledger beneath it.
+
+    Stops counting at `count`. Every sort of thing there is sits beneath
+    `entity.n.01`, and counting all 74,373 of them took two and a half seconds,
+    which is not something to do on the reactor; counting to a couple of
+    thousand takes milliseconds. False without a corpus, and for anything that
+    is not a sense.
+    """
+    if count <= 0:
+        return True
+    synset = _synset(sense)
+    if synset is None:
+        return False
+    try:
+        seen = 0
+        for _below in synset.closure(lambda node: node.hyponyms()):
+            seen += 1
+            if seen >= count:
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def buckets(sense):
     """Which of the KIND_BUCKETS a sense falls into."""
     names = ancestors(sense)
@@ -494,18 +532,34 @@ def settled_noun_sense(word):
     being made, so any of them would answer the same". If any of them would
     answer the same, the first will do, and nobody needs to be asked.
 
-    So this is deliberately the frequency-ordered first sense -- the thing
-    `lexicon.py` warns against everywhere else -- and it is safe here for
-    exactly one reason: it is only reached for words whose senses do not
-    disagree about the answer being asked for. A word whose senses do disagree
-    goes to `sense_prompt` and a generator that can see the room.
+    So this is the frequency-ordered first sense -- the thing `lexicon.py`
+    warns against everywhere else -- and it is safe here for one reason: it is
+    only reached for words whose senses do not disagree about the answer being
+    asked for. A word whose senses do disagree goes to `sense_prompt` and a
+    generator that can see the room.
+
+    **The first sense that is a thing, though, when there is one.** A kind
+    names something in the world, and "do not disagree" only means no two
+    senses land in different buckets -- a sense in no bucket at all does not
+    count as disagreeing. So `teacup` settled on its first sense, "as much as a
+    teacup will hold", which is a measure, while the cup was the second; and a
+    rule about drinking from it was refused, because a measure sits six steps
+    from the root and looked like a rule about everything. `ledger` settled on
+    a record rather than the book, and `fire` on an event rather than the
+    burning. An abstraction is kept only when a word has no physical sense to
+    prefer, which is what a notice is.
 
     Empty for a word with no senses at all, which is the case an anchor is for.
     """
     if not word or needs_sense_choice(word):
         return ""
-    listed = senses(word, pos="n", limit=1)
-    return listed[0][0] if listed else ""
+    listed = senses(word, pos="n")
+    if not listed:
+        return ""
+    for name, _definition in listed:
+        if PHYSICAL in ancestors(name):
+            return name
+    return listed[0][0]
 
 
 def needs_sense_choice(word):
@@ -882,39 +936,14 @@ def verb_senses(verb, limit=5):
     return senses(verb, pos="v", limit=limit)
 
 
-def verb_sense_prompt(verb):
-    """
-    A block asking a model which sense of a verb it means, or "" without one.
-
-    Unlike the noun version this is offered for nearly every verb rather than
-    for the ambiguous few, because 98 of the 100 verbs the exported worlds
-    learned have a WordNet sense and most of those have several. The two that do
-    not are an adverb the old parser mistook for a verb and a misspelling, which
-    is its own small argument for asking.
-
-    Empty for a verb with one sense or none, because a menu of one is not a
-    question -- and one is not rare: `power`, `airlock` and `blaster` all have
-    exactly one. `settled_sense` is what a caller uses in that case.
-    """
-    listed = verb_senses(verb)
-    if len(listed) < 2:
-        return ""          # nothing to choose; see `settled_sense`
-    lines = "\n".join(f"  {name} -- {definition}"
-                      for name, definition in listed)
-    return (
-        f'"{verb}" has more than one meaning. Set "sense" to whichever of '
-        f"these this world means by it, given what is going on:\n{lines}\n"
-        f"Copy the identifier exactly. If none of them fits, leave "
-        f'"sense" empty and say what it means in your own words instead.\n'
-    )
-
-
 def settled_sense(verb):
     """
     The verb's sense when there is only one, so nobody need be asked.
 
-    Paired with `verb_sense_prompt`, which is empty in exactly this case. A
-    verb with one sense has already been disambiguated by English.
+    Paired with `actions.declaration_tool`, which offers the senses as a
+    choice in exactly the other case: two or more. A verb with one sense has
+    already been disambiguated by English -- and one is not rare: `power`,
+    `airlock` and `blaster` all have exactly one.
     """
     listed = verb_senses(verb, limit=2)
     return listed[0][0] if len(listed) == 1 else ""
@@ -993,3 +1022,92 @@ def anchor_prompt(phrase):
         f"identifier will do, and one that does not exist is ignored. Copy it "
         f"exactly.\n"
     )
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """The dictionary, for a model to read. Offered only when there is one."""
+    from world import toolbox as tb
+
+    def sense_param(what):
+        return tb.params({"sense": {"type": "string",
+                                    "description": f"A WordNet id, like "
+                                                   f"sword.n.01, {what}"}},
+                         ["sense"])
+
+    def listing_senses(ctx, args):
+        word = str(args.get("word") or "").strip()
+        pos = "v" if args.get("pos") == "v" else "n"
+        found = verb_senses(word, limit=12) if pos == "v" else senses(word)
+        return ("\n".join(f"{name} -- {gloss}" for name, gloss in found)
+                or f"The dictionary has no senses of {word}.")
+
+    def defining(ctx, args):
+        sense = str(args.get("sense") or "").strip()
+        gloss = definition(sense)
+        return (f"{sense} ({word_of(sense)}): {gloss}" if gloss
+                else f"{sense} is not a sense the dictionary has.")
+
+    def ancestry(ctx, args):
+        sense = str(args.get("sense") or "").strip()
+        found = sorted(ancestors(sense) - {sense},
+                       key=lambda name: -len(ancestors(name)))
+        return (f"{sense} is a sort of: " + ", ".join(found) if found
+                else f"{sense} has nothing above it in the dictionary.")
+
+    def below(ctx, args):
+        sense = str(args.get("sense") or "").strip()
+        found = hyponyms(sense, limit=40)
+        return (f"Sorts of {word_of(sense)}: " + ", ".join(found) if found
+                else f"The dictionary lists no sorts of {sense}.")
+
+    def made_of(ctx, args):
+        sense = str(args.get("sense") or "").strip()
+        found = parts(sense, limit=40)
+        return (f"Parts of {word_of(sense)}: " + ", ".join(found) if found
+                else f"The dictionary lists no parts of {sense}.")
+
+    def verb_kin(ctx, args):
+        verb = str(args.get("verb") or "").strip()
+        found = verb_ancestors(verb, limit=5)
+        return (f"{verb} is a way of: " + ", ".join(found) if found
+                else f"The dictionary says nothing {verb} is a way of doing.")
+
+    def present(ctx):
+        return available()
+
+    return [
+        tb.Tool("lexicon_senses",
+                "The senses a word has in the dictionary, with what each means.",
+                tb.params({"word": {"type": "string", "description": "The word"},
+                           "pos": {"type": "string", "enum": ["n", "v"],
+                                   "description": "n for a noun, v for a verb; "
+                                                  "n unless said"}},
+                          ["word"]),
+                tb.answering(listing_senses), doing="looking in the dictionary",
+                looks=True, available=present),
+        tb.Tool("lexicon_define", "What one dictionary sense means.",
+                sense_param("to define"), tb.answering(defining),
+                doing="looking in the dictionary", looks=True, available=present),
+        tb.Tool("lexicon_ancestors",
+                "Every sort of thing a sense is, nearest first.",
+                sense_param("to look above"), tb.answering(ancestry),
+                doing="looking in the dictionary", looks=True, available=present),
+        tb.Tool("lexicon_hyponyms",
+                "The sorts of thing directly beneath a sense: a sword can be "
+                "a rapier or a cutlass.",
+                sense_param("to look beneath"), tb.answering(below),
+                doing="looking in the dictionary", looks=True, available=present),
+        tb.Tool("lexicon_parts", "The parts a sense is made of.",
+                sense_param("to take apart"), tb.answering(made_of),
+                doing="looking in the dictionary", looks=True, available=present),
+        tb.Tool("verb_ancestors",
+                "What a verb is a way of doing: prying is a way of opening.",
+                tb.params({"verb": {"type": "string", "description": "The verb"}},
+                          ["verb"]),
+                tb.answering(verb_kin), doing="looking in the dictionary",
+                looks=True, available=present),
+    ]

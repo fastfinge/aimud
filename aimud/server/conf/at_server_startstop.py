@@ -139,13 +139,21 @@ def _collect_orphan_rows():
     world.housekeeping.
     """
     from evennia.utils import logger
-    from world.housekeeping import collect_orphans
+    from world.housekeeping import collect_orphans, prune_letter_states
 
     tags, attributes = collect_orphans()
     if tags or attributes:
         logger.log_info(
             f"housekeeping: cleared {tags} tag row(s) and {attributes} "
             f"attribute row(s) that nothing refers to"
+        )
+
+    worlds, things = prune_letter_states()
+    if worlds or things:
+        logger.log_info(
+            f"housekeeping: took the one-letter conditions out of {worlds} "
+            f"world(s) and {things} thing(s); they came of a state written as "
+            f"a word rather than a list of one"
         )
 
 

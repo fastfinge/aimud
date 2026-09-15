@@ -25,7 +25,7 @@ from django.test import SimpleTestCase, tag
 from evennia.utils.test_resources import EvenniaCommandTest, EvenniaTest
 
 from commands.world_cmds import CmdEffects
-from tests.support import FakeSponsor, as_json, immediately, replying
+from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
 from world import checks, conditions as C, effects, standard_rules, verbs
 from world import rulebooks as R
@@ -198,8 +198,10 @@ class ShowingTheRoll(EvenniaTest):
     def forced(self):
         said = []
         with immediately(), replying(
-                as_json({"applies_to": [{"role": "direct"}]}),
-                as_json({"actor": "You heave at it.", "room": "{actor} heaves."})):
+                finishing(
+                    declare_action={"applies_to": [{"role": "direct"}]},
+                    narrate={"actor": "You heave at it.",
+                             "room": "{actor} heaves."})):
             attempt_mod.attempt(
                 self.char1, "force gate", FakeSponsor(),
                 on_message=lambda actor_text, room_text=None:
@@ -232,7 +234,7 @@ class ShowingTheRoll(EvenniaTest):
         self.char2.move_to(self.room1, quiet=True)
         said = []
         with immediately(), replying(
-                as_json({"actor": "It heaves at the gate.", "room": ""})):
+                finishing(narrate={"actor": "It heaves at the gate.", "room": ""})):
             attempt_mod.attempt(
                 self.char2, "force gate", FakeSponsor(),
                 on_message=lambda actor_text, room_text=None:

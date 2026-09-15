@@ -1502,7 +1502,11 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
     if not world_root or not slug:
         return slug
     slug = re.sub(r"[^a-z0-9_]", "", slug.lower().strip())
-    if not slug:
+    # A condition is never one letter. Whatever asked for this was reading a
+    # word a character at a time, and the belt to `listed`'s braces: a world
+    # in the first soak came out of an afternoon with d, e, h, s, t and x in
+    # its vocabulary, none of which anything could mean or ever unset.
+    if len(slug) < 2:
         return ""
 
     vocab = vocabulary(world_root)
@@ -1708,12 +1712,18 @@ def apply_states(obj, add=(), remove=(), world_root=None, announce=True):
     `announce` is for the one caller that is restoring a condition rather than
     causing one, where the character already knows.
     """
+    from world.model_json import listed
+
     current = states(obj)
     before = set(current)
 
-    for slug in remove:
+    # Through `listed`, because this is the innermost door every state comes
+    # through: an effect written "add": "sharpened" rather than ["sharpened"]
+    # was read a letter at a time and each letter registered as a condition of
+    # its own. See `model_json.listed`.
+    for slug in listed(remove):
         current.discard(slug)
-    for slug in add:
+    for slug in listed(add):
         # Registered on the way in, so that every caller gets the same
         # guarantees rather than only the ones that remembered: a meaning, a
         # group, a help entry, and the fold that turns "soaked" into the "wet"
@@ -2029,3 +2039,145 @@ def check(requires, bound, actor, world_root=None):
         limit=MAX_COMPLAINTS,
     )
     return " ".join(said) if said else None
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`list_states`, `show_state` and `list_state_groups`."""
+    from world import kinds as kinds_mod
+    from world import toolbox as tb
+
+    def line(world_root, slug, info):
+        return (f"{slug}: {info.get('means', '')} "
+                f"(group: {group_of(world_root, slug) or 'none'})")
+
+    def listing(ctx, args):
+        vocab = vocabulary(ctx.world_root)
+        kind = str(args.get("kind") or "").strip()
+        slugs = sorted(vocab)
+        if kind:
+            familiar = kinds_mod.states_of(ctx.world_root, [kind])
+            slugs = [slug for slug in slugs if slug in familiar]
+        return tb.paged([line(ctx.world_root, slug, vocab[slug])
+                         for slug in slugs], args, "states")
+
+    def showing(ctx, args):
+        slug = str(args.get("slug") or "").strip().lower()
+        info = vocabulary(ctx.world_root).get(slug)
+        group = group_of(ctx.world_root, slug)
+        if info is None and not group:
+            return f"This world has no state called {slug}."
+        said = [f"{slug}: {(info or {}).get('means', '(not said)')}"]
+        if (info or {}).get("conflicts"):
+            said.append(f"cancels: {', '.join(info['conflicts'])}")
+        if group:
+            rules = group_rules(ctx.world_root, group)
+            members = sorted(group_members(ctx.world_root, group) - {slug})
+            said.append(f"group: {group}"
+                        + (f", with {', '.join(members)}" if members else ""))
+            flags = [flag.replace("_", " ") for flag in
+                     ("exclusive", "ends_on_move", "prevents_acting",
+                      "prevents_moving", "prevents_speaking") if rules.get(flag)]
+            if flags:
+                said.append("the group is: " + ", ".join(flags))
+        return "\n".join(said)
+
+    def grouping(ctx, args):
+        lines = []
+        for group, rules in sorted(groups(ctx.world_root).items()):
+            members = sorted(group_members(ctx.world_root, group))
+            lines.append(f"{group}: {', '.join(members) or '(no members yet)'}"
+                         + ("" if rules.get("exclusive", True)
+                            else " (not exclusive)"))
+        return tb.paged(lines, args, "groups")
+
+    return [
+        tb.Tool("list_states",
+                "The conditions this world already has words for. Reuse one "
+                "rather than coining a second word for the same condition.",
+                tb.params({**tb.PAGE, "kind": {
+                    "type": "string",
+                    "description": "Optional. Only the conditions things of "
+                                   "this sort have been in"}}),
+                tb.answering(listing), doing="looking up this world's states",
+                looks=True),
+        tb.Tool("show_state",
+                "One condition: what it means, its group, and what it stops.",
+                tb.params({"slug": {"type": "string",
+                                    "description": "The state's name"}},
+                          ["slug"]),
+                tb.answering(showing), doing="looking up a state", looks=True),
+        tb.Tool("list_state_groups",
+                "The groups of conditions only one of which can be true at once.",
+                tb.params(tb.PAGE), tb.answering(grouping),
+                doing="looking up state groups", looks=True),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# The shape of a declaration, and whether it is one this world has (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def state_declaration_schema(ctx=None):
+    """One new state, as `register_state` reads it."""
+    world_root = getattr(ctx, "world_root", None)
+    in_use = sorted(groups(world_root)) if world_root is not None else []
+    return {
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "Its name"},
+            "means": {"type": "string",
+                      "description": "What being in it means"},
+            "group": {"type": "string",
+                      "description": "Optional. The set of conditions only "
+                                     "one of which can be true at once"
+                                     + (": reuse one of " + ", ".join(in_use)
+                                        if in_use and len(in_use) <= 50
+                                        else " (list_state_groups)")},
+            "conflicts": {"type": "array", "items": {"type": "string"},
+                          "description": "Optional. States it ends"},
+            "group_ends_on_move": {"type": "boolean",
+                                   "description": "Walking away ends it"},
+            "group_prevents_acting": {"type": "boolean",
+                                      "description": "It stops its holder "
+                                                     "doing anything"},
+            "group_prevents_moving": {"type": "boolean",
+                                      "description": "It stops its holder "
+                                                     "moving"},
+            "group_prevents_speaking": {"type": "boolean",
+                                        "description": "It stops its holder "
+                                                       "speaking"},
+        },
+        "required": ["slug", "means"],
+    }
+
+
+def near_duplicate_state(world_root, slug):
+    """
+    The state this world already keeps that a new one is really another word
+    for, or "".
+
+    A near spelling, as `register_state` would fold it ("emptied" onto
+    "empty"), or a synonym in the dictionary's adjective senses ("shut" beside
+    "closed"). `register_state` puts a synonym in the same group and keeps both
+    words; asked first, the model can use the word the world already has.
+    """
+    wanted = _slug_state(slug)
+    vocab = vocabulary(world_root)
+    if not wanted or wanted in vocab:
+        return ""
+    for existing in sorted(vocab):
+        if _similar(wanted, existing):
+            return existing
+    kin = set()
+    for sense in _adjective_senses(wanted):
+        try:
+            kin |= {name.lower() for name in sense.lemma_names()}
+        except Exception:
+            continue
+    kin.discard(wanted)
+    found = sorted(kin & set(vocab))
+    return found[0] if found else ""

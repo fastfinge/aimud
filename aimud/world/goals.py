@@ -159,7 +159,10 @@ def sanitise(conditions, owner=None):
                 entry[field] = str(raw[field]).strip()
         for field in ("is", "lacks"):
             if raw.get(field):
-                entry[field] = [str(s).lower().strip() for s in raw[field] if s]
+                from world.model_json import listed
+
+                entry[field] = [str(s).lower().strip()
+                                for s in listed(raw[field]) if s]
         for field in ("min", "max"):
             if raw.get(field) is not None:
                 try:
@@ -253,3 +256,197 @@ def describe(conditions, actor=None, world_root=None):
         return ", then ".join(p for p in said if p) or "nothing in particular"
     return ", then ".join(text for _met, text in
                           progress(conditions, actor, world_root))
+
+
+# ---------------------------------------------------------------------------
+# What people want and cannot get
+# ---------------------------------------------------------------------------
+
+def blocked_wants(world_root):
+    """
+    Every want in this world the planner can make no step towards, and why.
+
+    Read off the characters in it. A character's goal already holds a quest it
+    accepted. A player's is kept in two places, because `quests._adopt_goal`
+    copies a quest into `db.goal` for characters only: their own goal, and
+    their active quest. Players who have logged out are in no room and are not
+    counted, which is enough -- rooms and things are made while somebody plays.
+
+    Each entry is a dict:
+
+      who        the character who wants it
+      whose      "quest" or "goal"
+      player     whether a person is playing them
+      condition  the want itself
+      reason     `planner.blocker`'s reason
+      what       what it names
+      words      the exact words it accepts, for a generator to name a thing by
+      avoid      room ids no hint should go to: the quest giver's, and the room
+                 of a character whose own want it is -- finding it should mean
+                 going somewhere
+
+    Player quests first, then players' own goals, then characters' wants.
+    Free: no model, only the tests goals already make and the planner's search.
+    """
+    if world_root is None:
+        return []
+
+    from evennia import search_tag
+    from evennia.objects.models import ObjectDB
+
+    from world import planner, quests
+
+    rooms = list(search_tag(str(world_root.id), category="ai_world"))
+    if world_root not in rooms:
+        rooms.append(world_root)
+
+    found, seen = [], set()
+    for room in rooms:
+        for who in room.contents:
+            if who.id in seen:
+                continue
+            npc = bool(who.db.is_npc)
+            player = not npc and getattr(who, "account", None) is not None
+            if not (npc or player):
+                continue
+            seen.add(who.id)
+
+            wants = []
+            if player:
+                quest = quests.current(who)
+                if quest is not None:
+                    wants.append(("quest", quest.get("goal"), quest))
+                if who.db.goal:
+                    wants.append(("goal", who.db.goal, None))
+            elif who.db.goal:
+                taken = (quests._find(who, who.db.goal_from_quest)
+                         if who.db.goal_from_quest is not None else None)
+                wants.append(("quest" if taken else "goal", who.db.goal, taken))
+
+            for whose, goal, quest in wants:
+                goal = list(goal or [])
+                for condition, (met, _text) in zip(goal, progress(goal, who,
+                                                                  world_root)):
+                    if met:
+                        continue
+                    reason, what = planner.blocker(who, world_root, condition)
+                    if not reason:
+                        continue
+                    avoid = set()
+                    if npc and who.location is not None:
+                        avoid.add(who.location.id)
+                    giver_id = (quest or {}).get("giver_id")
+                    if giver_id:
+                        giver = ObjectDB.objects.filter(id=giver_id).first()
+                        if giver is not None and giver.location is not None:
+                            avoid.add(giver.location.id)
+                    found.append({
+                        "who": who, "whose": whose, "player": player,
+                        "condition": dict(condition), "reason": reason,
+                        "what": what, "avoid": avoid,
+                        "words": accepted_words(condition, reason, what),
+                    })
+
+    rank = {(True, "quest"): 0, (True, "goal"): 1}
+    found.sort(key=lambda entry: rank.get((entry["player"], entry["whose"]), 2))
+    return found
+
+
+def accepted_words(condition, reason, what):
+    """
+    How a thing has to be named for a want to count it, or "" when no thing
+    would help.
+
+    An `object` condition finds a thing whose name contains its words
+    (`find_object` tries the exact key, then a substring), so "unrefined ore
+    chunk" does not satisfy a quest for raw ore however right it looks. A
+    `kind` condition is satisfied by anything of that kind.
+    """
+    from world import planner
+
+    if reason == planner.MISSING_ROOM:
+        return f"a room whose name contains '{what}'"
+    if reason != planner.MISSING_THING:
+        return ""
+    kind = str(condition.get("kind") or "").strip()
+    if kind and not condition.get("object"):
+        return f"of kind '{what}'"
+    return f"named so that the name contains '{what}'"
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`find_rooms`: the rooms built in this world, by name."""
+    from world import toolbox as tb
+
+    def finding(ctx, args):
+        from evennia import search_tag
+
+        root = ctx.world_root
+        rooms = list(search_tag(str(root.id), category="ai_world"))
+        if root not in rooms:
+            rooms.append(root)
+        names = sorted({(room.db.room_title or room.key) for room in rooms
+                        if (room.db.room_title or room.key)})
+        return tb.paged(names, args, "rooms")
+
+    return [tb.Tool(
+        "find_rooms",
+        "The rooms built in this world, by name. A goal or an effect that "
+        "names a room has to name one of these.",
+        tb.params(tb.PAGE), tb.answering(finding),
+        doing="looking up this world's rooms", looks=True,
+        available=lambda ctx: ctx.world_root is not None)]
+
+
+# ---------------------------------------------------------------------------
+# The shape of a goal condition, for a tool's parameters (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def schema(ctx=None):
+    """One goal condition, closed to the types `sanitise` keeps."""
+    from world import relations
+    from world import toolbox as tb
+
+    world_root = getattr(ctx, "world_root", None)
+    known_traits = []
+    if world_root is not None:
+        from world import traits
+
+        known_traits = sorted(traits.vocabulary(world_root))
+    return {
+        "type": "object",
+        "properties": {
+            "type": {"type": "string", "enum": list(CONDITION_TYPES),
+                     "description": "What must become true"},
+            "object": {"type": "string",
+                       "description": "The thing, as it is called; a thing "
+                                      "whose name contains these words "
+                                      "counts"},
+            "kind": {"type": "string",
+                     "description": "Instead of object: any thing of this "
+                                    "sort counts"},
+            "room": {"type": "string",
+                     "description": "in_room: a room's name, as find_rooms "
+                                    "lists them"},
+            "to": {"type": "string",
+                   "description": "delivered: who it is handed to"},
+            "host": {"type": "string",
+                     "description": "placed: what it is put in or on"},
+            "preposition": {"type": "string",
+                            "enum": list(relations.PREPOSITIONS),
+                            "description": "placed: how it goes there"},
+            "trait": tb.choice(known_traits, "trait: the figure",
+                               ask="list_traits"),
+            "min": {"type": "number", "description": "trait: at least"},
+            "max": {"type": "number", "description": "trait: at most"},
+            "is": {"type": "array", "items": {"type": "string"},
+                   "description": "state: conditions it must be in"},
+            "lacks": {"type": "array", "items": {"type": "string"},
+                      "description": "state: conditions it must not be in"},
+        },
+        "required": ["type"],
+    }

@@ -15,7 +15,7 @@ is the composition win showing up as deleted code rather than as an argument.
 from django.test import tag
 from evennia.utils.test_resources import EvenniaTest
 
-from tests.support import FakeSponsor, as_json, immediately, replying
+from tests.support import FakeSponsor, finishing, immediately, replying
 from world import rulebooks as R
 from world import attempt as attempt_mod
 from world import kinds, standard_rules, verb_gen, verbs
@@ -58,9 +58,8 @@ class RunningTheAttempt(EvenniaTest):
     def try_it(self, raw, *replies):
         """One attempt, with the model answering from a script."""
         said = []
-        answers = replies or (as_json({"valid": True, "effects": []}),
-                              as_json({"actor": "You do it.",
-                                       "room": "{actor} does it."}))
+        answers = replies or (finishing(narrate={
+            "actor": "You do it.", "room": "{actor} does it."}),)
         with immediately(), replying(*answers):
             attempt_mod.attempt(
                 self.char1, raw, FakeSponsor(),
@@ -204,7 +203,7 @@ class ThePhasesInOrder(RunningTheAttempt):
                                            "role": "direct",
                                            "add": ["read"]}]})
         self.try_it("read book",
-                    as_json({"actor": "You read it.",
+                    finishing(narrate={"actor": "You read it.",
                              "room": "{actor} reads."}))
         self.assertIn("read", verbs.states(self.obj1))
 
@@ -249,10 +248,11 @@ class RulesAboutAThingWhenThereIsNoThing(RunningTheAttempt):
 
     def test_smiling_is_not_refused_for_reaching_nothing(self):
         said = self.try_it("smile",
-                           as_json({"applies_to": []}),
-                           as_json({"rules": []}),
-                           as_json({"actor": "You smile.",
-                                    "room": "{actor} smiles."}))
+                           finishing(
+                               declare_action={"applies_to": []},
+                               file_rules={"rules": []},
+                               narrate={"actor": "You smile.",
+                                        "room": "{actor} smiles."}))
         self.assertNotIn("nothing here to do that to", said)
         self.assertIn("You smile", said)
 
@@ -274,7 +274,7 @@ class WhenTwoNounsAreBothStrangers(RunningTheAttempt):
     def test_nothing_is_made_when_two_things_would_have_to_be(self):
         before = len(self.room1.contents)
         said = self.try_it("call mom on phone",
-                           as_json({"applies_to": [{"role": "direct"}]}))
+                           finishing(declare_action={"applies_to": [{"role": "direct"}]}))
         self.assertEqual(len(self.room1.contents), before,
                          "nothing should have been conjured")
         self.assertIn("no mom", said)
@@ -282,7 +282,7 @@ class WhenTwoNounsAreBothStrangers(RunningTheAttempt):
 
     def test_and_the_refusal_is_about_the_world_rather_than_the_sentence(self):
         said = self.try_it("call mom on phone",
-                           as_json({"applies_to": [{"role": "direct"}]}))
+                           finishing(declare_action={"applies_to": [{"role": "direct"}]}))
         self.assertNotIn("make sense", said)
 
 

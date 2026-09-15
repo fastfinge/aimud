@@ -535,8 +535,10 @@ def create(spec, location, worn_on=None):
     obj.db.kinds = the_kinds
     obj.db.kind = the_kinds[0] if the_kinds else ""
     obj.db.qualifiers = qualifiers
+    from world.model_json import listed
+
     obj.db.states = sorted({str(s).lower().strip()
-                            for s in (spec.get("states") or []) if s})
+                            for s in listed(spec.get("states")) if s})
 
     # The naming rule, checked rather than only asked for. Reported and not
     # repaired: a name is what everything else has learned to call the thing,
@@ -617,3 +619,89 @@ def create(spec, location, worn_on=None):
 
     ownership.claim(worn_on if worn_on is not None else location, obj)
     return obj
+
+
+# ---------------------------------------------------------------------------
+# The shape of an item, for a tool's parameters (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def spec_schema(ctx=None, worn=False):
+    """
+    One item, as `create` reads it: the shared schema for everything that
+    makes a thing -- an item looked for, a room's contents, what a character
+    wears and carries.
+
+    `worn` is for a garment, which must say what sort of garment it is.
+    """
+    from world import gear, kinds
+
+    world_root = getattr(ctx, "world_root", None)
+    known_traits = []
+    if world_root is not None:
+        from world import traits
+
+        known_traits = sorted(traits.vocabulary(world_root))
+    garments = list(GARMENT_TYPES)
+    return {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string",
+                     "description": "What it is called, with no article; "
+                                    "never its condition"},
+            "description": {"type": "string",
+                            "description": "What it looks like, alone"},
+            "takeable": {"type": "boolean",
+                         "description": "Whether it can be picked up"},
+            "kind": {"type": "string",
+                     "description": "The common noun it is, singular"},
+            "kinds": {"type": "array", "items": {"type": "string"},
+                      "description": "Only for a thing that is genuinely two "
+                                     "things at once"},
+            "qualifiers": {"type": "array", "items": {"type": "string"},
+                           "description": "The describing words taken off "
+                                          "its name"},
+            "sense": {"type": "string",
+                      "description": "Which dictionary sense of its kind, "
+                                     "when asked"},
+            "under": {"type": "string",
+                      "description": "For a kind no dictionary knows: the "
+                                     "nearest real sense"},
+            "holds": {"type": "array",
+                      "items": {"type": "string",
+                                "enum": list(kinds.PLACEMENT)},
+                      "description": "Where things go: in it, on it, both, "
+                                     "or neither"},
+            "affordances": {"type": "object",
+                            "description": "What can be done to it, as a "
+                                           "plain verb to true or false"},
+            "states": {"type": "array", "items": {"type": "string"},
+                       "description": "Conditions true of it now; reuse "
+                                      "this world's words (list_states)"},
+            "clothing_type": {"type": "string", "enum": garments,
+                              "description": "What sort of garment it is"
+                                             + ("" if worn else
+                                                "; leave it out for anything "
+                                                "that is not clothing")},
+            "wearstyle": {"type": "string",
+                          "description": "How it is worn, if that says "
+                                         "something"},
+            "trait_bonuses": {"type": "object",
+                              "description": "What it does for whoever has "
+                                             "it, as {trait: amount}; only "
+                                             "traits this world keeps"
+                                             + (": " + ", ".join(known_traits)
+                                                if known_traits and
+                                                len(known_traits) <= 50
+                                                else " (list_traits)")},
+            "bonus_when": {"type": "string",
+                           "enum": list(gear.CONDITIONS),
+                           "description": "What has to be true for the bonus "
+                                          "to count; leave it out to let the "
+                                          "thing's own affordances decide"},
+            "bonus_while": {"type": "string",
+                            "description": "A condition it must be in for "
+                                           "the bonus to count"},
+        },
+        "required": ["name", "description", "kind"]
+                    + (["clothing_type"] if worn else []),
+    }

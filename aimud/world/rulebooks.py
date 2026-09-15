@@ -503,3 +503,54 @@ def for_attempt(world_root, action, bound=None, actor=None, verb_rule=None,
     ranked = [(rank(r, matches(r, attempt) or 5, world_root), r)
               for r in found] + converted
     return [rule for _key, rule in sorted(ranked, key=lambda pair: pair[0])]
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`list_rules` and `show_rule`: the rulebook, for a model to read."""
+    import json
+
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        action = str(args.get("action") or "").strip().lower()
+        rules = [rule for rule in all_rules(ctx.world_root)
+                 if not action or rule.get("action") == action]
+        return tb.paged(
+            [f"{rule.get('id')} {rule.get('phase')} "
+             f"{rule.get('action') or 'every action'} at "
+             f"{said_scope(rule.get('scope'), ctx.world_root)} -- "
+             f"{rule.get('name') or ''}"
+             + ("" if rule.get("listed", True) else " (suspended)")
+             for rule in rules], args, "rules")
+
+    def showing(ctx, args):
+        from evennia.utils.dbserialize import deserialize
+
+        rule = get(ctx.world_root, str(args.get("id") or "").strip())
+        if rule is None:
+            return "This world has no rule by that id."
+        return json.dumps(deserialize(rule), indent=1, default=str)
+
+    def rooted(ctx):
+        return ctx.world_root is not None
+
+    return [
+        tb.Tool("list_rules",
+                "The rules this world holds: what each is about, where it "
+                "applies, and what it says.",
+                tb.params({**tb.PAGE, "action": {
+                    "type": "string",
+                    "description": "Optional. Only the rules about this verb"}}),
+                tb.answering(listing), doing="reading the rulebook",
+                looks=True, available=rooted),
+        tb.Tool("show_rule", "One rule in full: its conditions and effects.",
+                tb.params({"id": {"type": "string",
+                                  "description": "The rule's id, like r12"}},
+                          ["id"]),
+                tb.answering(showing), doing="reading a rule", looks=True,
+                available=rooted),
+    ]

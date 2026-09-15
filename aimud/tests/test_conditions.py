@@ -169,6 +169,24 @@ class WhatIsWithinReach(EvenniaTest):
         self.obj1.move_to(self.room1, quiet=True)
         self.assertFalse(self.reaches(self.obj1))
 
+    def test_somebody_standing_here(self):
+        """
+        People are not things, and reach only walked things: every character
+        in the game was out of reach of everybody, so every verb naming a
+        person was refused. Found in the first soak of the tool-loop branch.
+        """
+        from evennia import create_object
+        from typeclasses.npcs import NPC
+
+        melia = create_object(NPC, key="Melia", location=self.room2)
+        self.assertTrue(self.reaches(melia))
+        self.char2.move_to(self.room2, quiet=True)
+        self.assertTrue(self.reaches(self.char2))
+
+    def test_but_not_somebody_somewhere_else(self):
+        self.char2.move_to(self.room1, quiet=True)
+        self.assertFalse(self.reaches(self.char2))
+
 @tag("world")
 class SubjectsNobodyNamed(EvenniaTest):
     """The half that `launch` needed."""

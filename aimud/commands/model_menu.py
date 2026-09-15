@@ -101,10 +101,12 @@ def start_model_menu(caller):
     def on_error(failure):
         caller.msg(f"|rCould not fetch models: {failure.getErrorMessage()}|n")
 
-    from world import llm
+    from world import busy, llm
 
+    wait = busy.start(caller, "fetching the list of models")
     llm.fetch(_fetch_models_sync, sponsor,
-              on_success=on_success, on_error=on_error)
+              on_success=busy.closing(wait, on_success),
+              on_error=busy.closing(wait, on_error))
 
 
 def _open_menu(account):
@@ -470,7 +472,13 @@ def node_select_model(caller, raw_string, **kwargs):
     search = kwargs.get("search", "").lower().strip()
 
     account = _get_account(caller)
-    all_models = caller.ndb.openrouter_models_cache or []
+    # Every job in this game uses tools, so a model that cannot is not
+    # offered for any of them. See world.model_params.supports_tools.
+    from world import model_params
+
+    listed = caller.ndb.openrouter_models_cache or []
+    all_models = [m for m in listed if model_params.supports_tools(m)]
+    hidden = len(listed) - len(all_models)
 
     if search:
         models = [
@@ -502,6 +510,10 @@ def node_select_model(caller, raw_string, **kwargs):
             f"Page {page + 1}/{total_pages}  ({total} models) "
             "— type text to filter"
         )
+    if hidden:
+        header.append(
+            f"|x{hidden} {'model that cannot use tools is' if hidden == 1 else 'models that cannot use tools are'} "
+            f"not listed.|n")
     header.append("")
 
     rows = [_fmt_model(i, m) for i, m in enumerate(page_models, 1)] or ["|rNo models match.|n"]

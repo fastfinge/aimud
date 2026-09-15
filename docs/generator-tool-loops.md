@@ -260,12 +260,11 @@ fallback, the retry-and-remember logic, and the tests for all of those.
 * **A refusal from the service** (OpenRouter answers a tools request with an
   error saying no endpoint supports tool use) arrives as an `LLMError` like any
   other, with the service's own words. It needs no special handling.
-* **Check during Phase 3:** does OpenRouter route a request that carries
-  `tools` only to endpoints that support them, for a model where some providers
-  do and some do not? If not, the payload needs
-  `provider: {"require_parameters": true}`. That affects routing for the
-  sampling settings too, so it should be tested against a real model rather
-  than assumed.
+* **Routing needs nothing extra.** OpenRouter sends a request that carries
+  `tools` only to providers that support them, which its documentation says
+  and experience on other projects bears out. So no
+  `provider.require_parameters` is sent, and the sampling settings route as
+  they always have.
 
 ### 3.3 What stays in the prompt
 
@@ -808,9 +807,10 @@ busy off        never
 * **`unknown_cmd`**: open the wait in `waiting()`, the `on_wait` it already
   passes, and close it in `deliver`. `attempt` passes the wait down so
   `actions.learn`, `rule_gen.learn`, `ask_admission` and `narrate` can set
-  stages. This needs a `wait=` parameter through `attempt`, `_admitted`,
-  `_with_rule` and the generators. It travels beside `waiter`, and the two can
-  merge.
+  stages. *As built:* no `wait=` parameter was needed. `attempt` already
+  threads a `waiter` through every step that goes to a model, so the waiter
+  takes a stage phrase, and `attempt` and `_in_turn` gain one `on_stage`
+  callback. Nothing else changed shape.
 * **`look_take_cmds`**: open in `_ai_look`, `_ai_take_nonexistent` and the take
   validation; close in `_finish_look` / `_finish_take`, `_gen_error`,
   `on_invalid` and `on_error`.
@@ -832,7 +832,8 @@ busy off        never
 **Support additions** (`tests/support.py`):
 
 * `tool_reply(*calls, content=None)` builds a reply carrying `tool_calls`, and
-  `call(name, **args)` builds one entry.
+  `tool_call(name, **args)` builds one entry (not `call`, which would read as
+  `llm.call`).
 * `replying` records `tools` and `tool_choice` per call:
   `recorder.tools(i)`, `recorder.tool_choice(i)`, and `recorder.tool_results(i)`
   (the `role: tool` messages that call was sent).
@@ -954,18 +955,60 @@ announcement and the memory. Results still go to working memory.
 room, and a character renaming a thing is seen, remembered, and held to the
 naming rule.
 
+*As built:*
+
+* **Placed things were out of reach,** as §10 suspected. `_nameable` read
+  `room.contents`, and `get` searched the room, so no character could take a
+  letter lying in an open tray. `get`'s choices now come from
+  `relations.reachable`, and a placed thing is taken through
+  `relations._take_from`, the same door a player's "get the letter from the
+  tray" goes through.
+* **`emote` has no `maxLength`.** `maxLength` is not in the conservative
+  dialect (§4.1), so the description asks for a short phrase instead.
+* **The `modify_object` effect is checked, but not asked permission.**
+  `modify_complaints` runs on it, and refuses a name that carries a condition
+  or a description asking for a list nobody keeps. `attempt.permitted` does
+  not, because a rule's effect is the outcome of a verb the world has already
+  allowed. The character's tool asks permission itself.
+* **`check_traits` is offered only beside somebody else.** A character's own
+  figures are already in its prompt, so "myself" alone is not worth a tool.
+* **Unexplored ways out stay in the room context** as well as in `move`'s
+  description, until the room context is reworked with lookup tools
+  (Phase 4).
+
 ### Phase 3: the loop and the toolbox, tools required
 
 `llm.converse`, `world/toolbox.py`, the `models` menu filter and the refusal at
 call time, the stage reports to `busy`, the measurement line with its ledger
 figures, and the `rounds` command (§3.5). First user: the NPC turn. Tool results are returned in-loop,
 `check_traits` becomes a lookup, and the `_note_to_self` routes for refusals
-become results. Settle the OpenRouter routing question in §3.2 against a real
-model.
+become results.
 
 **Done when** a character that checks somebody's traits and then acts on what
 it found does both within one turn, and a toolless model can no longer be
 chosen.
+
+*As built,* in four commits (3a to 3d):
+
+* **The loop** is `llm.converse` and `world/toolbox.py`, as §3.1 describes.
+  Nothing parses JSON out of a reply's text: a reply with no tool calls while
+  a finish tool waits is told to use it.
+* **A round that only acted ends a turn.** With no finish tool, the loop goes
+  round again only if a lookup ran, since only a lookup's answer is something
+  the model needs before deciding. Acting and then being asked again would
+  only buy more acting.
+* **Toolless models** are refused once their record is known. `llm.call` does
+  not fetch the model list itself, because that would add a request to every
+  call; the list is fetched when the `models` menu opens, and a model nobody
+  has listed is asked as ever, so the service refuses in its own words.
+* **`attempt` answers at once, rather than waiting** for the attempt to
+  finish (a change to §10.6). Some of `attempt`'s early returns never call
+  back, and a turn waiting on one would leave the character thinking for
+  ever, holding `ndb.reacting`. So the tool answers "underway", and what
+  comes of it reaches the next prompt, as it always has.
+* **A turn's `on_success`** is handed how often each tool was used, and
+  releases the guard. The tools themselves have already run, so nothing
+  executes the calls a second time.
 
 ### Phase 4: shared schemas and lookup tools
 
@@ -983,6 +1026,64 @@ any prompt changes.
 `goals.blocked_wants` and `rulecheck.relevant` have tests over the exported
 worlds.
 
+*As built* (4a, 4b and 4c):
+
+* **The lookups live beside their registers,** each module's
+  `lookup_tools()` appended to its end, and `world/lookups.py` gathers them by
+  name. `toolbox.py` gained `params`, `PAGE`, `paged` and `answering`, so every
+  list tool pages the same way and every schema stays in the conservative
+  dialect; a test walks every schema to hold it there.
+* **A lookup is offered only where it can answer:** the dictionary's tools
+  with a dictionary, `commonsense` with the corpus, `recall` with a character
+  and a memory, `examine` and `name_taken` with a room.
+* **`recall` asks which bank on the reactor and searches it off it,** since
+  finding the bank reads the database and searching it is slow.
+* **`rulecheck.relevant` takes the registers and the states near an
+  attempt,** not the world. That keeps it as pure as the rest of `rulecheck`,
+  and testable over the small worlds its own tests build; `states_near` is the
+  half that reads the live world.
+* **Characters were given `examine`, `recall`, `list_known_verbs` and
+  `world_faults`,** beside the tools they act with.
+* **`tests.support.tool_call` takes the tool's name positionally,** so a tool
+  whose own argument is called `name` can still be given one.
+* **The schemas sit beside the code that reads them:**
+  * `effects.schema`, `conditions.schema` and `goals.schema`;
+  * `clothing.spec_schema` (with `worn=True`, a garment must give its
+    `clothing_type`);
+  * `token_lists.schema`, `pronouns.set_schema`, `traits.declaration_schema`
+    and `verbs.state_declaration_schema`.
+
+  Each fixed field is an enum built from the tuple its code checks against,
+  and a test holds the two together.
+* **A field that depends on the type is optional, and its description says
+  which types use it.** An effect's `to`, for example, means one thing for
+  `move_object` and another for `set_exit`. The dialect has no `oneOf`, so
+  whoever validates the answer enforces what the type needs, as
+  `rule_gen.validate` already does.
+* **`toolbox.choice` is the enum cap.** Up to `ENUM_MOST` (50) values it is an
+  enum. Past that the field is open, and its description gives the count and
+  the lookup that lists them. A world's traits and state groups go through it.
+* **Near-duplicate complaints are one check per register:**
+  * `verbs.near_duplicate_state`: a prefix spelling, as `register_state`
+    folds it ("opened" onto "open"), or an adjective synonym ("shut" beside
+    "closed");
+  * `traits.near_duplicate`: only what `_matching` folds;
+  * `token_lists.near_duplicate`: a list under another number;
+  * `pronouns.near_duplicate`: a set by its subject form.
+
+  `vocabulary.near_duplicates` puts them together for a finish tool to ask
+  about a whole reply, and adds `claim`'s refusal of a trait and a state that
+  share a word.
+* **What the checks cannot catch:** another word for the same idea
+  ("vigour" beside "stamina") is caught only for states, and only when the
+  dictionary calls the two synonyms. For traits nothing knows the meanings are
+  the same, so a model that does not look the register up can still coin
+  one.
+* **The traits' prefix fold is narrower than its docstring says.** The two
+  names may differ by at most three letters, so "stam" folds onto "stamina"
+  but "str" does not fold onto "strength". Left as it is; the tests use
+  "stam".
+
 ### Phase 5: the verb pipeline
 
 `actions.learn`, `rule_gen.learn`, `ask_admission` and `narrate` on finish
@@ -993,6 +1094,51 @@ the `no_rule` wants from §5.1, and `adopt`.
 **Done when** a new verb learned from a scripted model goes through
 declaration, rules, admission and narration on finish tools, and a rule
 refused in round 1 and corrected in round 2 is kept rather than dropped.
+
+*As built:*
+
+* **Four finish tools:**
+  * `declare_action` (6 rounds): the roles, access and gates are enums. The
+    sense is an enum of the dictionary's senses when there are two or more,
+    and `verb_sense_prompt`'s menu has left the prompt. Rounds out falls back
+    to `observe`, as a failed call did.
+  * `file_rules` (8): the scope is an enum of `menu()`'s tokens, with
+    `effects.schema`, `conditions.schema` and the declaration schemas nested.
+  * `admit` (4): rounds out is an error, as unreadable JSON was.
+  * `narrate` (6): rounds out takes the last narration as it stands.
+* **`file_rules` runs `validate` and sends back what it would have dropped,**
+  together with `vocabulary.near_duplicates` for its new states and traits,
+  unknown `adopt` ids, and an answer that files nothing without saying why.
+  When the rounds run out, the last answer is taken: what is valid in it is
+  kept, and near-duplicates fold as the registers always folded them. A model
+  that never called `file_rules` at all now counts towards `note_fruitless`,
+  where unreadable JSON used to be an error that counted nothing; a network
+  failure still counts nothing.
+* **The prompt keeps the menu, what is already decided, and the objects.**
+  The state and trait registers are behind `LOOKUPS` (states, groups,
+  traits, `verb_info`, rules, `world_faults`, `kind_info`, `commonsense`,
+  `find_rooms`). They are replaced by the states things of these sorts have
+  been in, and by `rule_gen.hints`: `rulecheck.relevant` over one scan, this
+  verb's waiting proposals, and `want_lines`.
+* **`want_lines` shows a `no_rule` want only when its object is bound here,**
+  and a `missing_thing` want only when ConceptNet ties the thing to a bound
+  kind: `PartOf` or `AtLocation` read forward from the thing, or `HasA`
+  from the kind. At most three.
+* **`adopt` is offered only when this verb has proposals waiting,** since an
+  enum cannot be empty. Adopting goes through `suggest.accept`, and an
+  adopted rule counts as a rule for `note_fruitless`.
+* **Narration complaints stop short of the plan.** A name written out, a
+  placeholder that stands for nobody, and an unknown effect type are sent
+  back. An article before a placeholder and a conjugated actor verb are not,
+  because `events.repair` already mends them for nothing on the way in, and a
+  round spent on them is a round a player waits through.
+* **Tests answer by tool name.** `tests.support.finishing(narrate={...},
+  file_rules={...})` answers whichever finish tool a call offers, so a script
+  no longer has to predict which of the four questions an attempt asks.
+  Eleven test files moved to it.
+* **Not converted yet:** the modify naming rule inside `file_rules`
+  (§6.3). A literal `new_name` in a `modify_object` effect is still checked
+  only when the effect runs.
 
 ### Phase 6: items and rooms
 
@@ -1006,12 +1152,176 @@ hand becomes complaints) and `_generate_description`. `populate_room` and
 exploring: a scripted world that builds a matching room produces the thing,
 under words the quest accepts.
 
+*As built, so far* (6a, items):
+
+* **`judge_existence` and `judge_takeable`** (4 rounds each) share
+  `item_gen._judged`. Rounds out is an error, as unreadable JSON was: there is
+  no answer to take as it stands, and a guess would either conjure a thing
+  nobody allowed or refuse one nobody refused.
+* **`make_item`** (6 rounds) is `clothing.spec_schema`, adjusted per word:
+  * `sense` becomes an enum of the head noun's senses when
+    `needs_sense_choice` says they disagree, replacing `sense_prompt`'s menu;
+  * `under` gets the kind buckets and ConceptNet's suggestions in its
+    description when the dictionary has never heard of the word, replacing
+    `anchor_prompt`'s menu;
+  * a `new_token_lists` field is added.
+
+  When the rounds run out, the last item is made as it stands.
+* **`item_complaints`** sends back:
+  * a name carrying a condition (`verbs.name_contradicts_states`);
+  * a sense that contradicts what the thing was said to be
+    (`kinds.sense_contradicts`, which used to be resolved silently);
+  * an `under` the dictionary does not know;
+  * a word list `token_lists.clean` refuses;
+  * a `{slot}` in the description that no list answers;
+  * near-duplicate states and lists.
+* **The prompt keeps the gear and word-list explanations without their
+  registers.** `gear.prompt_block(registers=False)` and
+  `token_lists.TOOL_PROMPT` point at `list_traits` and `list_word_lists`.
+  `_state_hints` adds the states things of this sort have been in and
+  §5.2's unused words in their groups.
+
+*As built, so far* (6b, rooms):
+
+* **Rounds.** `plan_world` and `describe_area` get 10 each: background work
+  nobody waits on. `name_room` (connected and first room) and
+  `describe_room` get 8 each.
+* **Rounds out.** The last plan, area, name or description is used as it
+  stands. A failed or unreadable world plan is still no plan, which is what
+  `_generate_plan` always did.
+* **`name_room` closes what the naming rules would refuse:**
+  * `category` leaves out `destination` when the room being left is one;
+  * exit names are limited to the directions `_allowed_exits` would keep
+    (never the way back, never into a destination next door);
+  * `zone` names what `zones.offerable` offers.
+
+  `_check_name` is the handler, so the conversation `_generate_name` built
+  by hand for three attempts is gone, and so is its `attempts` parameter
+  (nothing passed it).
+* **`describe_area` leaves out `zones` at `MAX_DEPTH`.** Complaints: a
+  single sub-area, more than five, and a singleton type that none of the room
+  types given mentions.
+* **`plan_world` complaints:** a zone count outside 3 to 6, and
+  `singleton_types` naming no zone's room type (never checked before).
+* **`describe_room` sends back what used to be dropped after the fact:**
+  * a trait bonus naming a trait nothing measures;
+  * `light` given as 0 or less;
+  * word lists `register_many` would refuse, and slots nothing answers,
+    through the new `token_lists.complaints`, which `make_item` now shares;
+  * near-duplicate lists.
+
+  The word-list register is behind `list_word_lists`.
+
+*As built* (6c, contents and wants):
+
+* **`furnish_room`** (10 rounds) takes up to three items with
+  `clothing.spec_schema`, plus `wants_npc`. Each item is held to
+  `item_gen.item_complaints`. An item whose head noun the room's description
+  already names is sent back, which is the rule the prompt stated and nothing
+  checked. When the rounds run out, the last contents are placed as they
+  stand; a failure is still an unfurnished room.
+* **`worldgen.contents_hints`** shows `missing_thing` wants in the words they
+  accept.
+  * With ConceptNet, only where `AtLocation` read forward from the thing
+    shares a word with the room's type, title or area.
+  * Without it, the first two, with the instruction to include one only if it
+    belongs.
+  * Never in a room the want avoids: the giver's, or the wanting character's
+    own.
+* **`worldgen.naming_hints`** shows the room namer `missing_room` wants, and,
+  with ConceptNet, where wanted things are found.
+* **Both read `goals.blocked_wants` through `_wants`**, which never raises, and
+  cap at three.
+* **The finish line is `FindingWhatNobodyMade`.**
+  1. A player wants raw ore that exists nowhere.
+  2. A mine is furnished, and its prompt carries the accepted words.
+  3. The ore made there clears the want.
+  4. Picking it up meets the goal.
+* **Not done here:** the unused-vocabulary hint for `furnish_room`. Its items'
+  kinds are not known until they come back, so there are no groups to look in
+  beforehand; `make_item` has it, and `dress_character` comes in Phase 7.
+
 ### Phase 7: characters, quests and the rest
 
 `generate_npc` (whose name retries become complaints), `dress_npc`,
 `formalise`, `formalise_goal`, `fact_gen.distil`, `suggest.judge`, and
 `remember`'s `recall` tool. `dress_npc` gets §5.1's hint for what a character
 might carry. Delete any `vocabulary_block` nothing uses any more.
+
+*As built, so far* (7a, characters):
+
+* **`make_character`** (8 rounds):
+  * `traits[].slug` goes through `toolbox.choice`, so it is closed to the
+    register up to the cap;
+  * `goal` is `goals.schema`, and `new_pronoun_set` is
+    `pronouns.set_schema`;
+  * `pronouns` stays open, because a declared set's subject form goes there
+    too, and its description names the sets.
+
+  The name retries `generate_npc` built by hand for `NAME_ATTEMPTS` tries
+  are the loop's own now, and `NAME_ATTEMPTS` is gone. When the rounds run
+  out, the character is kept anyway and a name clash is logged, as before.
+* **`character_complaints`** sends back a taken name, which was all that was
+  checked before. It also sends back what used to be dropped without a word:
+  * a pronoun set nobody keeps, or one declared incomplete, or one that is
+    another spelling of a kept set;
+  * goal conditions `goals.sanitise` would drop;
+  * traits nothing measures;
+  * word lists that would be refused.
+* **`dress_character`** (10 rounds) takes garments with
+  `spec_schema(worn=True)` and carried things with the plain schema. Each is
+  held to `item_complaints`, and every garment must afford `wear` (prose
+  only, before).
+* **`carry_hints`** shows up to two `missing_thing` wants to a character
+  being dressed. Never the character's own, and never in a room a want
+  avoids.
+* **Registers deleted with their last caller:**
+  * `pronouns.vocabulary_block` and its two prompt tests;
+  * `token_lists.vocabulary_block`, `token_lists.PROMPT` and `MOST_SHOWN`;
+  * `npc_gen._parse_json`.
+
+  `traits.vocabulary_block` stays until the quest generators convert.
+
+*As built, so far* (7b, quests and goals):
+
+* **`write_quest`** (8 rounds) gives `goal` `goals.schema` items, one or
+  two, and `reward` and `punishment` `effects.schema` items. **`write_goal`**
+  (6 rounds) gives `goal` `goals.schema` items and allows an empty list, which
+  the prompt calls a real answer.
+* **Rounds out.** The last quest is offered as it stands (`quests.offer`
+  still refuses one with no testable goal, and logs it) and the last goal is
+  taken as it stands.
+* **`goal_complaints`** sends back what `goals.sanitise` would drop, which
+  used to vanish after the answer was taken. It also sends back, for a quest,
+  a goal with nothing testable left, and a trait condition naming a trait
+  nothing measures. **`effect_complaints`** sends back a reward or punishment
+  effect nothing can apply, and a `set_trait` naming an unmeasured trait.
+* **The last pasted register is gone.** `traits.vocabulary_block` went with
+  the quest prompts, and `gear.prompt_block` lost its `registers` switch: it
+  always points at `list_traits` now. So that pointer is true everywhere,
+  `item_complaints` sends back a `trait_bonuses` key naming a trait nothing
+  measures, as `describe_room` already did.
+* **`_parse_json_object` is gone from `quest_gen` and `worldgen`,** having no
+  callers left.
+
+*As built* (7c, judging and memory):
+
+* **`give_verdicts`** (6 rounds) closes each verdict's `id` to the waiting
+  queue, which is always under the enum cap (`MAX_QUEUE` is 24). The handler
+  still sends back a stray id, since an enum inside an array item is a
+  promise not every provider keeps. When the rounds run out, the last
+  verdicts are applied, and anything outside the queue is still refused. A
+  model that never gives any is an error and changes nothing, as before.
+* **`record_facts`** (6 rounds) takes up to `MAX_FACTS` strings, and more is
+  a complaint. When the rounds run out, the last facts are kept, capped; a
+  failure moves on without moving the mark, as it always did.
+* **`remember` has no finish tool.** It runs `llm.converse` with only
+  `recall`, and its prompt says `recall` may be asked again in other words.
+  The loop ends on a reply that calls nothing, and that reply's prose is the
+  answer. Recalling the first memories still happens before the model is
+  asked, and no memories still means no call.
+* **`fact_gen._parse_facts` is gone.** `_facts_from` reads the tool's list
+  instead: text only, once each, capped at `MAX_FACTS`.
 
 ### Phase 8: soak, then measure and tune
 
@@ -1075,9 +1385,7 @@ Both on the models the account would normally choose.
    * **The ledger records the tier that served each call**, so `rounds` and the
      spending figures can be read correctly.
    * **Check against a real flex endpoint** what happens when a request asks
-     for a tier its provider does not offer. And if Phase 3 had to set
-     `provider.require_parameters` (§3.2), check that sending `service_tier`
-     does not leave a model with no endpoint at all.
+     for a tier its provider does not offer.
 3. **Set reasoning effort per job.** OpenRouter takes
    `reasoning: {"effort": ...}`, with `"none"`, `"minimal"`, `"low"`,
    `"medium"`, `"high"`, `"xhigh"` or `"max"`. A model's record has a
@@ -1112,6 +1420,46 @@ Both on the models the account would normally choose.
 
 **Done when** budgets, caps and any new jobs are set from the soak's numbers,
 and those numbers are recorded for the *As built* section.
+
+#### The baseline, as recorded (2026-09-15)
+
+World 6958, played from 14:31 to 15:05 on the Phase 0 code: timing on,
+generators unchanged. 601 calls, every one timed, and 3,542 seconds of model
+time in 34 minutes of play. That is more model time than play time, because
+characters think while the player acts.
+
+| Job | Model | Timed calls | Average |
+|---|---|---|---|
+| dialogue | inception/mercury-2.5 | 328 | 3.9 s |
+| commands | google/gemini-3.1-pro-preview | 135 | 8.7 s |
+| quests | google/gemini-3.1-pro-preview | 35 | 6.0 s |
+| contents | google/gemini-3.7-flash | 23 | 9.9 s |
+| items | google/gemini-3.1-pro-preview | 21 | 12.1 s |
+| validation | ibm-granite/granite-4.2-8b | 21 | 7.2 s |
+| rooms | google/gemini-3.7-flash | 20 | 5.9 s |
+| naming | google/gemma-4-31b-it | 17 | 4.8 s |
+| npcs | google/gemini-3.1-pro-preview | 9 | 14.6 s |
+
+Eight of the 609 timed calls came from other worlds. The slowest single call
+took 18.3 seconds (npcs).
+
+From the server log for the same session:
+
+* 2 rules dropped, both for `teacup.n.01` being "too near the top of the
+  taxonomy";
+* 1 `cannot_say` (`order`);
+* 2 verbs that learned no rule (`drink`, `order`);
+* 3 NPC turns that failed with `'choices'`: the service sent back an error,
+  and `llm.call` passed it on without reading it.
+
+**What this baseline cannot say,** and what the soak therefore needs:
+
+* **Tokens per job within one world.** The ledger totals by job and by world,
+  but not by job within a world, so these tokens are mixed with older worlds.
+  The soak snapshots `spend_totals` before it starts and compares afterwards.
+* **Waits, as opposed to calls.** A verb that needs four calls is one wait.
+  `busy.Wait` knows how long each wait lasted, so it logs that when it
+  closes, and the soak reads player waits from there.
 
 ### Phase 9: documentation
 
@@ -1148,9 +1496,11 @@ and those numbers are recorded for the *As built* section.
    their enums up to the cap (§4.1). New vocabulary is checked against the
    register and near-duplicates are sent back (§3.3).
 5. **The world pays for `rules judge`**: `sponsor.of_world(root, actor=caller)`.
-6. **A character's turn waits for its `attempt` to finish**, through
-   `on_done`, within the turn's round budget. The character is already holding
-   `ndb.reacting`.
+6. **A character's `attempt` answers at once** that it is underway, and what
+   comes of it reaches the next prompt. The decision was to wait for it
+   through `on_done`; as built it does not, because some of `attempt`'s early
+   returns never call back and a turn waiting on one would never end (Phase 3,
+   *As built*).
 7. **Busy notices go only to players.** Non-player characters are refused as
    waiters and never sent anything (§7.2).
 8. **Tools are required.** Toolless models are left out of the `models` menu,
@@ -1185,11 +1535,6 @@ and those numbers are recorded for the *As built* section.
 
 ### Still open
 
-* **Placed things out of reach.** Can a character reach a thing that is in or
-  on something else? `_nameable` reads `room.contents` only (§6.1, `get`).
-  Check `relations` before Phase 2.
-* **OpenRouter routing** for models with mixed tool support (§3.2), settled in
-  Phase 3.
 
 ---
 

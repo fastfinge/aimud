@@ -153,7 +153,7 @@ def _anchor(bound, actor=None):
 
 
 def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
-            allow_promote=True, fuzzy=False):
+            allow_promote=True, fuzzy=False, on_stage=None):
     """
     Try to perform `raw` as a verb.
 
@@ -166,6 +166,10 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
     on_wait() is called at most once, and only if the attempt is about to go
     to a model, so a cached verb answers instantly with no spurious 'please
     wait' and a slow one does not look like the game ignored the player.
+
+    on_stage(text) is called each time the attempt goes to a model, with what
+    it is about to do -- "working out what pry does" -- so whoever is waiting
+    can be told more than that something is still going. See `world.busy`.
 
     allow_promote decides whether a noun that matches nothing may be conjured
     out of the room's description.
@@ -207,7 +211,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
     spread = bulk.expand(caller, verb, parsed["roles"])
     if spread:
         _in_turn(caller, sponsor, spread, on_message, allow_effects, on_wait,
-                 fuzzy)
+                 fuzzy, on_stage)
         return
 
     bound, unbound, questions = verbs.bind_all(
@@ -220,7 +224,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
         # model is paid to narrate an action nobody has settled the object of.
         on_message(questions[0][1])
         return
-    waiter = _once(on_wait)
+    waiter = _once(on_wait, on_stage)
 
     if _mechanics(caller, verb, parsed, bound, on_message):
         return
@@ -251,7 +255,8 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
 
         # A noun that is not an object yet may still be real -- fixtures live
         # in the room description until something reaches for them.
-        waiter()
+        waiter("looking for " + ", ".join(
+            str(parsed["roles"][role]) for role in unbound))
         _promote(caller, room, sponsor, parsed, bound, unbound, resume,
                  on_message, fuzzy=fuzzy)
         return
@@ -357,7 +362,7 @@ def permitted(caller, verb, bound):
 
 
 def _in_turn(caller, sponsor, spread, on_message, allow_effects, on_wait,
-             fuzzy):
+             fuzzy, on_stage=None):
     """
     Run an expanded bulk command one action at a time, then say what happened.
 
@@ -389,7 +394,7 @@ def _in_turn(caller, sponsor, spread, on_message, allow_effects, on_wait,
             return
         attempt(caller, command, sponsor, collected,
                 allow_effects=allow_effects, on_wait=told,
-                allow_promote=False, fuzzy=fuzzy)
+                allow_promote=False, fuzzy=fuzzy, on_stage=on_stage)
 
     step(list(spread))
 
@@ -539,15 +544,24 @@ def _still_waiting(obj, verb, caller):
     return "Someone else is already doing that."
 
 
-def _once(callback):
-    """Wrap a callback so it fires at most once, and tolerates None."""
+def _once(callback, on_stage=None):
+    """
+    Wrap a callback so it fires at most once, and tolerates None.
+
+    The wrapped call may be told what is about to happen -- "working out what
+    pry does" -- which goes to `on_stage` every time rather than only the
+    first: one attempt can go to a model several times, and each is worth
+    naming. The callback runs first, because it is what opens whatever the
+    stage is said to.
+    """
     fired = []
 
-    def call():
-        if callback is None or fired:
-            return
-        fired.append(True)
-        callback()
+    def call(stage=""):
+        if callback is not None and not fired:
+            fired.append(True)
+            callback()
+        if stage and on_stage is not None:
+            on_stage(stage)
 
     return call
 
@@ -711,7 +725,7 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
             settle()
 
         if actions.spec(world_root, verb) is None:
-            waiter()
+            waiter(f"working out what {verb} takes")
             actions.learn(sponsor, world_root, verb, bound, caller,
                           on_success=lambda spec: guarded(
                               lambda: declared(spec)),
@@ -761,10 +775,22 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
         # one universal definition. The prompt shows what already applies and
         # a menu of places to file against; see world/rule_gen.py for why
         # that is a smaller question than the one it replaces.
-        def written(_rules):
+        def written(rules):
+            # An empty answer means one of two opposite things, and the world
+            # records which. "Nothing needed saying" is how smiling works, and
+            # the verb is narrated like any other. "I cannot say that" -- the
+            # vocabulary has no way to express what this verb does -- must not
+            # be: "you rummage through the stout wooden crate, quickly pulling
+            # out whatever looks useful" was read twice over a crate nothing
+            # came out of, and the third attempt was refused, because by then
+            # the world had stopped paying to be told the same thing again.
+            # The same sentence all three times now.
+            if not rules and rule_gen.cannot_say(world_root, verb):
+                release(f"Nothing here knows how to {verb}.")
+                return
             with_rule({})
 
-        waiter()
+        waiter(f"working out what {verb} does here")
         rule_gen.learn(
             sponsor, world_root, verb, bound, caller,
             on_success=lambda rules: guarded(lambda: written(rules)),
@@ -841,7 +867,7 @@ def _admitted(caller, room, sponsor, raw, verb, bound, rule, release,
         kinds.admit(world_root, obj_kinds, verb, allowed)
         proceed() if allowed else refuse()
 
-    waiter()
+    waiter(f"deciding whether that is something you can {verb}")
     verb_gen.ask_admission(
         sponsor, world_root, verb, rule, obj_kinds[0],
         on_answer=lambda allowed, reason: guarded(
@@ -1189,7 +1215,7 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         return
 
     if waiter:
-        waiter()
+        waiter("seeing what happens")
     # `_finish` changes the world -- effects land, quests are reviewed -- and
     # it runs in a deferred callback, where a raise is swallowed as an
     # unhandled failure and the hold above never comes back. Wrapped so it
