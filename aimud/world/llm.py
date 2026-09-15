@@ -173,7 +173,24 @@ def call(sponsor, model, messages, tools=None, timeout=TIMEOUT,
     reply = _request(_chat_url(sponsor.base_url), sponsor.key(), payload,
                      timeout)
     _spent(sponsor, model, reply, time.monotonic() - started)
+    # An error report can arrive with a 200, and a reply with no choices is
+    # one whatever it says. `ask` already turned that into words; `call` handed
+    # it on, and every caller reading tool calls out of it failed on the key
+    # instead -- the log said an NPC's turn failed with "'choices'", three
+    # times in one baseline session, and never why. Raised after the call is
+    # written down, because it was still a call.
+    if not _has_choices(reply):
+        raise LLMError(_complain(reply)
+                       or "the model service sent back no answer")
     return reply
+
+
+def _has_choices(reply):
+    """Whether a reply carries anything a model said, however little."""
+    try:
+        return bool(reply.get("choices"))
+    except AttributeError:
+        return False
 
 
 def content(reply):

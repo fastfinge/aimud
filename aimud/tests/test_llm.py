@@ -273,6 +273,44 @@ class ScriptingToolCalls(SimpleTestCase):
 
 
 @tag("unit")
+class AReplyThatIsAnErrorReport(SimpleTestCase):
+    """
+    What `call` hands back when the service sent an error instead of an answer.
+
+    It used to hand the error back as though it were a reply, and every caller
+    reading tool calls out of it failed on the missing key: the baseline
+    session logged three NPC turns failing with "'choices'" and nothing else.
+    """
+
+    def setUp(self):
+        _drain_spending()
+
+    def tearDown(self):
+        _drain_spending()
+
+    def test_the_service_says_why_in_its_own_words(self):
+        patch, _sent = sending({"error": {"message": "Rate limit exceeded",
+                                          "code": 429}})
+        with patch, self.assertRaises(llm.LLMError) as raised:
+            llm.call(SPONSOR, "m", [], tools=[{"type": "function",
+                                               "function": {"name": "say"}}])
+        self.assertIn("Rate limit exceeded", str(raised.exception))
+
+    def test_it_is_still_written_down(self):
+        """A refusal the service charged for is still a call that was made."""
+        patch, _sent = sending({"error": {"message": "No endpoints found"}})
+        with patch, self.assertRaises(llm.LLMError):
+            llm.call(SPONSOR, "m", [])
+        self.assertEqual(llm._spending.qsize(), 1)
+
+    def test_no_choices_and_no_explanation_still_says_something(self):
+        patch, _sent = sending({"id": "gen-1"})
+        with patch, self.assertRaises(llm.LLMError) as raised:
+            llm.call(SPONSOR, "m", [])
+        self.assertTrue(str(raised.exception))
+
+
+@tag("unit")
 class WhenItWillNotAnswer(SimpleTestCase):
     """
     The reason this module exists as much as the seam does.
