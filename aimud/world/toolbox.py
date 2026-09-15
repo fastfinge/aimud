@@ -121,10 +121,43 @@ class Tool:
             "function": {
                 "name": self.name,
                 "description": str(filled(self.description) or ""),
-                "parameters": (filled(self.parameters)
-                               or {"type": "object", "properties": {}}),
+                "parameters": portable(filled(self.parameters)
+                                       or {"type": "object",
+                                           "properties": {}}),
             },
         }
+
+
+def portable(schema):
+    """
+    A schema every provider will accept, as far as this game has found out.
+
+    Enums are the sharp edge. An empty member -- which four fields offered to
+    mean "leave this out" -- is refused outright by Google's validation, and
+    the call fails before a tool is ever chosen. In the first soak of the tool
+    loops that was every item, every character and every verb declaration,
+    each failing in a third of a second, while the room schemas, which carry
+    no such enum, went through on the same model.
+
+    Dropped here, at the one point every schema passes through, rather than
+    left to the dozen places that build one -- several of which fill an enum
+    from the world's own names, where a blank is a data question rather than a
+    spelling one. A field left with no members keeps no enum and stays open;
+    its handler checks what comes back, as it did anyway.
+    """
+    if isinstance(schema, dict):
+        cleaned = {key: portable(value) for key, value in schema.items()}
+        if "enum" in cleaned:
+            kept = [member for member in (cleaned.get("enum") or [])
+                    if not isinstance(member, str) or member.strip()]
+            if kept:
+                cleaned["enum"] = kept
+            else:
+                cleaned.pop("enum", None)
+        return cleaned
+    if isinstance(schema, list):
+        return [portable(member) for member in schema]
+    return schema
 
 
 def from_schema(schema, handler, **flags):
@@ -154,6 +187,12 @@ def problems_with(args, parameters):
     for name, value in args.items():
         spec = properties.get(name)
         if spec is None or value is None:
+            continue
+        # A field left out is now said by leaving it out, but a model taught
+        # by every other schema it has read sends "" instead, and refusing
+        # that would cost a round over nothing. An optional field given
+        # nothing is a field nobody filled in.
+        if value == "" and name not in (parameters.get("required") or []):
             continue
         if "enum" in spec and value not in spec["enum"]:
             shown = ", ".join(str(choice) for choice in spec["enum"][:20])

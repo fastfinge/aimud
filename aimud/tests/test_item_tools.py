@@ -153,7 +153,7 @@ class MakingAnItem(_Room):
                                               kind="chest")))
         sense = _offered(recorder, 0, "make_item")["parameters"][
             "properties"]["sense"]
-        self.assertIn("", sense["enum"])
+        self.assertNotIn("", sense["enum"])
         self.assertIn("chest.n.02", sense["enum"])
         self.assertIn("several different kinds of thing", recorder.sent(0))
 

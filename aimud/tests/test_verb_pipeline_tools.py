@@ -215,7 +215,7 @@ class TheOtherThreeQuestions(_Datapad):
                           on_success=lambda spec: None)
         sense = _offered(recorder, 0, "declare_action")["parameters"][
             "properties"]["sense"]
-        self.assertIn("", sense["enum"])
+        self.assertNotIn("", sense["enum"])
         self.assertGreater(len(sense["enum"]), 2)
 
     def test_whether_a_sort_of_thing_admits_a_verb(self):

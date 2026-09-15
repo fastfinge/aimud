@@ -639,7 +639,7 @@ def spec_schema(ctx=None, worn=False):
         from world import traits
 
         known_traits = sorted(traits.vocabulary(world_root))
-    garments = list(GARMENT_TYPES) + ([] if worn else [""])
+    garments = list(GARMENT_TYPES)
     return {
         "type": "object",
         "properties": {
@@ -678,8 +678,8 @@ def spec_schema(ctx=None, worn=False):
             "clothing_type": {"type": "string", "enum": garments,
                               "description": "What sort of garment it is"
                                              + ("" if worn else
-                                                "; empty for anything that is "
-                                                "not clothing")},
+                                                "; leave it out for anything "
+                                                "that is not clothing")},
             "wearstyle": {"type": "string",
                           "description": "How it is worn, if that says "
                                          "something"},
@@ -692,9 +692,10 @@ def spec_schema(ctx=None, worn=False):
                                                 len(known_traits) <= 50
                                                 else " (list_traits)")},
             "bonus_when": {"type": "string",
-                           "enum": list(gear.CONDITIONS) + [""],
+                           "enum": list(gear.CONDITIONS),
                            "description": "What has to be true for the bonus "
-                                          "to count"},
+                                          "to count; leave it out to let the "
+                                          "thing's own affordances decide"},
             "bonus_while": {"type": "string",
                             "description": "A condition it must be in for "
                                            "the bonus to count"},

@@ -63,7 +63,10 @@ class TheShapes(SimpleTestCase):
         self.assertEqual(
             clothing.spec_schema(worn=True)["properties"]["clothing_type"]["enum"],
             list(clothing.GARMENT_TYPES))
-        self.assertIn("", clothing.spec_schema()["properties"]["clothing_type"]["enum"])
+        # Never "" for "not a garment": Google refuses an empty enum member
+        # and the whole call with it. Left out is said by leaving it out.
+        self.assertNotIn(
+            "", clothing.spec_schema()["properties"]["clothing_type"]["enum"])
         self.assertEqual(
             clothing.spec_schema()["properties"]["holds"]["items"]["enum"],
             list(kinds.PLACEMENT))

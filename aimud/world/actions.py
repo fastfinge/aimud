@@ -397,9 +397,11 @@ def declaration_tool(action):
         listed = lexicon.verb_senses(action)
         if len(listed) >= 2:
             properties["sense"] = {
-                "type": "string", "enum": [name for name, _ in listed] + [""],
+                "type": "string", "enum": [name for name, _ in listed],
                 "description": "Which meaning: " + "; ".join(
-                    f"{name} -- {definition}" for name, definition in listed)}
+                    f"{name} -- {definition}" for name, definition in listed)
+                + ". Leave it out if none of them fits, and say what it means "
+                  "in means instead."}
         return tb.params(properties, ["applies_to"])
 
     return tb.Tool(

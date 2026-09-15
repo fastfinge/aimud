@@ -459,12 +459,12 @@ def item_tool(object_name):
             if listed:
                 properties["sense"] = {
                     "type": "string",
-                    "enum": [name for name, _ in listed] + [""],
+                    "enum": [name for name, _ in listed],
                     "description": "Which of these this one is, given the "
                                    "room: " + "; ".join(
                                        f"{name} -- {definition}"
                                        for name, definition in listed)
-                                   + ". Empty if none of them fits."}
+                                   + ". Leave it out if none of them fits."}
         elif _needs_anchor(word):
             proposed = lexicon.suggested_anchors(word)
             properties["under"] = {

@@ -102,9 +102,25 @@ def _complain(body):
         except (ValueError, TypeError):
             return ""
     try:
-        said = str((body.get("error") or {}).get("message") or "").strip()
+        report = body.get("error") or {}
+        said = str(report.get("message") or "").strip()
     except AttributeError:
         return ""
+    # "Provider returned error" is a wrapper, and the sentence worth reading is
+    # underneath it: which provider refused, and what it said -- a schema it
+    # will not accept, a tool call it cannot follow. Without this the log said
+    # only that something went wrong, every time, for the same reason.
+    try:
+        metadata = report.get("metadata") or {}
+        provider = str(metadata.get("provider_name") or "").strip()
+        raw = metadata.get("raw")
+        raw = json.dumps(raw) if isinstance(raw, (dict, list)) else str(raw or "")
+        if provider:
+            said = f"{said} [{provider}]".strip()
+        if raw.strip():
+            said = f"{said}: {raw.strip()}".strip(": ")
+    except Exception:
+        pass
     return said[:MAX_COMPLAINT]
 
 
@@ -342,7 +358,7 @@ def converse(sponsor, model, messages, toolbox, *, on_done, on_error,
         if state["ended"]:
             return
         state["ended"] = True
-        _loop_measured(sponsor, model, toolbox, state, outcome, rounds)
+        _loop_measured(sponsor, model, toolbox, state, outcome, rounds, error)
         if exhausted and on_exhausted is not None:
             return on_exhausted(state["last"])
         if error is not None:
@@ -369,7 +385,10 @@ def converse(sponsor, model, messages, toolbox, *, on_done, on_error,
                                          "answer")
         calls = [entry for entry in (message.get("tool_calls") or [])
                  if (entry or {}).get("type", "function") == "function"]
-        spoken = {"role": "assistant", "content": message.get("content")}
+        # `content` comes back null beside tool calls, and a provider that
+        # will not take null there refuses the whole round -- so the reply is
+        # echoed with the empty string it means.
+        spoken = {"role": "assistant", "content": message.get("content") or ""}
         if calls:
             spoken["tool_calls"] = calls
         convo.append(spoken)
@@ -433,9 +452,15 @@ def converse(sponsor, model, messages, toolbox, *, on_done, on_error,
     ask()
 
 
-def _loop_measured(sponsor, model, toolbox, state, outcome, rounds):
+def _loop_measured(sponsor, model, toolbox, state, outcome, rounds, why=None):
     """
     One line for every loop, which is what the soak reads budgets from.
+
+    With `why` when it failed or ran out, because several generators swallow
+    their errors on purpose -- a room with no contents, a verb that falls back
+    to what an attempt shows -- and this line is then the only place the
+    reason is ever written down: a model that cannot take tools, a schema a
+    provider refused.
 
     Never raises: a measurement must not be able to lose the answer it is
     measuring.
@@ -448,9 +473,11 @@ def _loop_measured(sponsor, model, toolbox, state, outcome, rounds):
         from evennia.utils import logger
 
         logger.log_info(
-            f"llm: loop job={job} rounds={state['round']}/{rounds} "
+            f"llm: loop job={job} model={model} "
+            f"rounds={state['round']}/{rounds} "
             f"seconds={seconds:.1f} tools={lookups} "
-            f"complaints={toolbox.complaints} outcome={outcome}")
+            f"complaints={toolbox.complaints} outcome={outcome}"
+            + (f" why={str(why)[:300]!r}" if why else ""))
 
         from world import ledger
 
