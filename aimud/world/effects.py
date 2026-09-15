@@ -237,6 +237,62 @@ def _resolve_many(effect, key, bound, room, actor):
     return [found] if found is not None else []
 
 
+def _and_then(labels):
+    """"a key, a candle and a coil of rope" -- for reading, not for parsing."""
+    labels = [str(label) for label in labels if label]
+    if len(labels) < 2:
+        return labels[0] if labels else ""
+    return f"{', '.join(labels[:-1])} and {labels[-1]}"
+
+
+def _put(obj, where, effect, bound, room, actor, world_root=None):
+    """
+    Put one thing where an effect says, and answer with what the room saw.
+
+    One account of moving something, because two effects need it now:
+    `move_object` names a thing and `move_contents` empties one out. The
+    destinations are the same for both -- your hands, the floor here, in or on
+    something else involved, or another room entirely -- and a bulk move that
+    understood any fewer of them would be a second, worse answer to a question
+    already settled.
+    """
+    from world import relations
+
+    if where not in ("actor", "room") and where in bound:
+        # In or on something else involved. The case a rule could never say
+        # before, and why a verb that meant to put the key in the box used to
+        # drop it on the floor instead.
+        host = bound[where]
+        preposition = str(effect.get("preposition", "")).strip().lower()
+        if preposition not in relations.PREPOSITIONS:
+            preposition = relations.DEFAULT
+        ok, message = relations.place(obj, host, preposition, quiet=True)
+        return message if ok else None
+
+    # Another room entirely, named the way a rule can name one: a ship that
+    # launches, a letter that is sent, a bin that is emptied somewhere else.
+    if where not in ("actor", "room"):
+        from world import coords
+
+        elsewhere = coords.room_named(world_root, where)
+        if elsewhere is None:
+            return None
+        if not obj.move_to(elsewhere, quiet=True):
+            return None
+        relations.displace(obj)
+        label = obj.get_numbered_name(1, None, return_string=True)
+        return f"{label.capitalize()} is gone."
+
+    destination = actor if where == "actor" else room
+    if obj.move_to(destination, quiet=True):
+        # It is in a hand or on a floor now, not on or in anything.
+        relations.displace(obj)
+        label = obj.get_numbered_name(1, None, return_string=True)
+        return (f"{actor.get_display_name(actor)} takes {label}."
+                if destination is actor else f"{label.capitalize()} is set down.")
+    return None
+
+
 def _resolve(effect, key, bound, room, actor):
     """
     Find the object an effect refers to.
@@ -315,6 +371,13 @@ VOCABULARY = {
                  "inside or on another thing, or another room entirely",
         "takes": 'name_role, to: "actor" | "room" | <role> | <a room\'s name>, '
                  "preposition",
+        "backwards": True, "answers": False,
+    },
+    "move_contents": {
+        "means": "empties something out: everything it holds goes wherever "
+                 "one thing would have gone",
+        "takes": 'name_role, to: "actor" | "room" | <role> | <a room\'s name>, '
+                 'preposition, from: "in" | "on" | "under" | "behind"',
         "backwards": True, "answers": False,
     },
     "set_owner": {
@@ -465,6 +528,14 @@ def say(effect):
             return (f"puts {what} {preposition} "
                     f"{conditions._SUBJECT_WORDS.get(where, where)}")
         return f"sends {what} to {where}"
+
+    if etype == "move_contents":
+        where = str(effect.get("to") or "actor").strip()
+        if where == "actor":
+            return f"empties {what} into your hands"
+        if where == "room":
+            return f"empties {what} out onto the floor"
+        return f"empties {what} into {where}"
 
     if etype == "modify_object":
         said = []
@@ -660,49 +731,44 @@ def _apply_one(actor, room, effect, bound, world_root):
         return None
 
     if etype == "move_object":
-        from world import relations
-
         obj = _resolve(effect, "name", bound, room, actor)
         if obj is None or _protected(obj, room):
             return None
+        return _put(obj, str(effect.get("to", "room")).strip(), effect,
+                    bound, room, actor, world_root)
 
-        # "to" is the actor, the room, or the role of something to put it in
-        # or on. That last case is the one a rule could never say before, and
-        # is why a verb that meant to put the key in the box used to drop it
-        # on the floor instead.
-        where = str(effect.get("to", "room")).strip()
-        if where not in ("actor", "room") and where in bound:
-            host = bound[where]
-            preposition = str(effect.get("preposition", "")).strip().lower()
-            if preposition not in relations.PREPOSITIONS:
-                preposition = relations.DEFAULT
-            ok, message = relations.place(obj, host, preposition, quiet=True)
-            return message if ok else None
+    if etype == "move_contents":
+        # What "loot" needs, and "empty", "unpack", "tip out" and "rob" with
+        # it. Three times over two worlds a model was asked what looting a
+        # crate does and answered, in as many words, that it could not say:
+        # "move all contents of the container to the actor's inventory" was
+        # not something the vocabulary could express, because `move_object`
+        # names one thing. `cannot_say` is what measured that.
+        from world import relations
 
-        # Another room entirely, named the way a rule can name one. Until now
-        # `to` reached the actor, this room, or a role -- never a different
-        # place -- so a ship that launched could not put anything anywhere, and
-        # nor could a verb that sent a letter or emptied a bin.
-        if where not in ("actor", "room"):
-            from world import coords
+        host = _resolve(effect, "name", bound, room, actor)
+        if host is None:
+            return None
+        taken = str(effect.get("from") or "").strip().lower()
+        holding = relations.contents(
+            host, taken if taken in relations.PREPOSITIONS else None)
+        # Worn things are on somebody rather than in them, so looting a body
+        # takes what it carries and leaves its clothes where they are. A verb
+        # that strips somebody is a different rule saying a different thing.
+        holding = [obj for obj in holding
+                   if not obj.db.worn and not _protected(obj, room)]
+        if not holding:
+            return None
 
-            elsewhere = coords.room_named(world_root, where)
-            if elsewhere is None:
-                return None
-            if not obj.move_to(elsewhere, quiet=True):
-                return None
-            relations.displace(obj)
-            label = obj.get_numbered_name(1, None, return_string=True)
-            return f"{label.capitalize()} is gone."
-
-        destination = actor if where == "actor" else room
-        if obj.move_to(destination, quiet=True):
-            # It is in a hand or on a floor now, not on or in anything.
-            relations.displace(obj)
-            label = obj.get_numbered_name(1, None, return_string=True)
-            return (f"{actor.get_display_name(actor)} takes {label}." if destination is actor
-                    else f"{label.capitalize()} is set down.")
-        return None
+        where = str(effect.get("to", "actor")).strip()
+        moved = [obj.get_numbered_name(1, None, return_string=True)
+                 for obj in holding
+                 if _put(obj, where, effect, bound, room, actor, world_root)]
+        if not moved:
+            return None
+        emptied = host.get_numbered_name(1, None, return_string=True)
+        return (f"{actor.get_display_name(actor)} empties {emptied}: "
+                f"{_and_then(moved)}.")
 
     if etype == "set_exit":
         # Where a way out of here leads. The effect a launching ship needs: its
@@ -908,8 +974,9 @@ def schema(ctx=None):
                               "set_state, set_trait: whose state or figure "
                               "changes"),
             "name_role": tb.choice(roles, "destroy_object, move_object, "
-                                          "modify_object, set_owner: which "
-                                          "participant it is about"),
+                                          "move_contents, modify_object, "
+                                          "set_owner: which participant it "
+                                          "is about"),
             "name": {"type": "string",
                      "description": "create_object: what the new thing is "
                                     "called"},
@@ -932,14 +999,20 @@ def schema(ctx=None):
                      "description": "set_trait: change per second from now "
                                     "on; 0 stops it"},
             "to": {"type": "string",
-                   "description": "move_object: 'actor', 'room', a "
-                                  "participant or a room's name; set_owner: "
-                                  "'actor', a participant or 'nobody'; "
-                                  "set_exit, move_actor: a room's name"},
+                   "description": "move_object, move_contents: 'actor', "
+                                  "'room', a participant or a room's name; "
+                                  "set_owner: 'actor', a participant or "
+                                  "'nobody'; set_exit, move_actor: a room's "
+                                  "name"},
             "preposition": {"type": "string",
                             "enum": list(relations.PREPOSITIONS),
-                            "description": "move_object to a participant: "
-                                           "how it goes there"},
+                            "description": "move_object, move_contents to a "
+                                           "participant: how it goes there"},
+            "from": {"type": "string",
+                     "enum": list(relations.PREPOSITIONS),
+                     "description": "move_contents: take only what is in it, "
+                                    "on it, under or behind it; leave it out "
+                                    "for everything it holds"},
             "exit": {"type": "string",
                      "description": "set_exit, move_actor: which way out"},
             "new_name": {"type": "string",

@@ -67,6 +67,11 @@ SCOPE_BREADTH = 2000
 #: same empty answer indefinitely.
 ATTR_FRUITLESS = "verbs_without_rules"
 
+#: Where a world remembers what it was told it could not say. Beside the
+#: count, and not the same thing: a verb nobody needed a rule for is narrated
+#: like any other, and a verb the vocabulary cannot express must not be.
+ATTR_CANNOT_SAY = "verbs_that_cannot_be_said"
+
 #: How many times a world may ask before it stops asking. Two, because the first
 #: answer may have been unlucky -- a malformed reply, a scope the model misread --
 #: and the second is evidence. A network failure is not counted: that path ends in
@@ -485,6 +490,7 @@ _EFFECTS = """An effect is one of:
   {"type": "destroy_object", "name_role": "direct"}
   {"type": "set_owner", "name_role": "direct", "to": "actor"}
   {"type": "set_owner", "name_role": "direct", "to": "nobody"}
+  {"type": "move_contents", "name_role": "direct", "to": "actor"}
   {"type": "narrate"}
   {"type": "move_actor", "exit": "north"}
   {"type": "move_actor", "to": "<a room's name>"}
@@ -497,6 +503,14 @@ letter moves it to the container with "in", one that sets a cup on a table
 moves it to the target with "on", and one that sends a parcel away names the
 room. Never invent a state like "in_box" to stand in for this; where a thing
 is, is not a property of the thing, and the game tracks it properly.
+
+"move_contents" empties a thing out: everything it holds goes wherever a
+single thing would have gone, with the same "to". That is what looting,
+emptying, unpacking and tipping out are, and it is the effect to reach for
+whenever the answer would otherwise be "all of them" -- there is no way to
+write a rule that walks a container's contents itself, and no need. Add
+"from": "in", "on", "under" or "behind" to take only what is there that way.
+Clothes somebody is wearing are never taken: they are on them, not in them.
 
 "set_exit" changes where a way out of this room leads. It and the room form of
 "move_object" both name a room the way somebody reading would -- its name,
@@ -629,7 +643,7 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
             # Asked and answered with nothing usable -- a `cannot_say`, or rules
             # that every one of them failed validation. Counted, so that the next
             # attempt at this verb is not another call to the same effect.
-            note_fruitless(world_root, action)
+            note_fruitless(world_root, action, cannot)
         on_success([rulebooks.add(world_root, rule) for rule in kept]
                    + adopted)
 
@@ -649,17 +663,37 @@ def fruitless(world_root, action):
         return 0
 
 
-def note_fruitless(world_root, action):
-    """Record that asking about a verb produced no rule. Answers with the count."""
+def note_fruitless(world_root, action, why=""):
+    """Record that asking about a verb produced no rule. Answers with the count.
+
+    `why` is what the model said it could not express, when it said so. Kept
+    because the two empty answers mean opposite things to whoever typed the
+    verb: nothing needed saying, which is how smiling works and is narrated
+    like any other verb, or the vocabulary has no way to say it, where
+    narrating would describe a success that did not happen. See
+    `attempt.settle`.
+    """
     if not world_root or not action:
         return 0
     store = dict(getattr(world_root.db, ATTR_FRUITLESS, None) or {})
     count = fruitless(world_root, action) + 1
     store[str(action)] = count
     setattr(world_root.db, ATTR_FRUITLESS, store)
+    if why:
+        unsayable = dict(getattr(world_root.db, ATTR_CANNOT_SAY, None) or {})
+        unsayable[str(action)] = str(why)
+        setattr(world_root.db, ATTR_CANNOT_SAY, unsayable)
     logger.log_info(f"rule_gen: {action} produced no rule ({count} of "
                     f"{ASKS_ALLOWED})")
     return count
+
+
+def cannot_say(world_root, action):
+    """What this world was told it could not express about a verb, or ""."""
+    if not world_root:
+        return ""
+    store = dict(getattr(world_root.db, ATTR_CANNOT_SAY, None) or {})
+    return str(store.get(str(action)) or "")
 
 
 def worth_asking(world_root, action):

@@ -1130,6 +1130,13 @@ def achieves(effect, condition):
     if name == "holds" and etype == "move_object":
         return str(effect.get("to") or "") == "actor"
 
+    if name == "holds" and etype == "move_contents":
+        # Emptying something into your hands is a way to come to hold what was
+        # in it. Which particular thing that is, is a fact about the world at
+        # the moment it happens rather than about the rule, so this says only
+        # "that would help" -- which is all anything here ever says.
+        return str(effect.get("to") or "actor") == "actor"
+
     if name == "owned_by" and etype == "set_owner":
         # Read for the thing the effect names and no further. The cascade is
         # deliberately unreadable backwards: "give her the box" as a way of

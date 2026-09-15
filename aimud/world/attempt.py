@@ -775,7 +775,19 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
         # one universal definition. The prompt shows what already applies and
         # a menu of places to file against; see world/rule_gen.py for why
         # that is a smaller question than the one it replaces.
-        def written(_rules):
+        def written(rules):
+            # An empty answer means one of two opposite things, and the world
+            # records which. "Nothing needed saying" is how smiling works, and
+            # the verb is narrated like any other. "I cannot say that" -- the
+            # vocabulary has no way to express what this verb does -- must not
+            # be: "you rummage through the stout wooden crate, quickly pulling
+            # out whatever looks useful" was read twice over a crate nothing
+            # came out of, and the third attempt was refused, because by then
+            # the world had stopped paying to be told the same thing again.
+            # The same sentence all three times now.
+            if not rules and rule_gen.cannot_say(world_root, verb):
+                release(f"Nothing here knows how to {verb}.")
+                return
             with_rule({})
 
         waiter(f"working out what {verb} does here")
