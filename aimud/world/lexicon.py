@@ -382,6 +382,27 @@ def _verb_exceptions():
     return _VERB_EXCEPTIONS
 
 
+def headword(word):
+    """
+    Whether WordNet files this exact spelling as a noun in its own right.
+
+    "glasses", "stairs", "remains" and "clothes" are; "sarcophagi" and "swords"
+    are only inflections of another word. It is how far a dictionary can go
+    towards telling a plural that names one thing from one that names several
+    -- and no further: "trousers" and "barracks" are not filed as words of
+    their own, and read as several of something. False without a corpus.
+    """
+    wordnet = _wordnet()
+    word = str(word or "").lower().strip().replace(" ", "_")
+    if wordnet is None or not word:
+        return False
+    try:
+        return any(word in (name.lower() for name in synset.lemma_names())
+                   for synset in wordnet.synsets(word, pos="n"))
+    except Exception:
+        return False
+
+
 def hyponyms(sense, limit=40):
     """
     The sorts of thing directly beneath a sense, as words: a sword can be a

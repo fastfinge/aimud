@@ -696,6 +696,20 @@ building:
   (`Naming.plural_for`, `events.subject_plural`). "They hand", "Jessica
   hands". A thing's number is still its name's -- "the coins scatter" -- and a
   subject the sentence has not yet named is taken as named.
+* **Found in playtesting and fixed: "some stick of blue chalk".** The chalk was
+  filed under a substance sense, so the whole object was taken for stuff.
+  `english.is_mass` now asks the name as well: stuff only when the name's head
+  is the substance word. "Some blue chalk", "a stick of blue chalk", "a chalk
+  stick".
+* **Found in playtesting and fixed: looking at sarcophagi made "some
+  sarcophagi".** Two fixes, one each side of creation. The item model is told,
+  when asked to make something plural, to make one of several separate things
+  and name it in the singular, or keep a plural name that is one thing, like
+  trousers (`item_gen._plural_note`) -- a question about English the model can
+  answer and a dictionary cannot. And `naming` scores a plural against its
+  singular as the same word (`english.singular`, guarded by
+  `lexicon.headword` so "glasses" never finds a glass), so "look at sarcophagi"
+  finds the sarcophagus that already exists rather than making another.
 
 ### Phase 3 -- world lists, facts and scope
 

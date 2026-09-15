@@ -117,13 +117,18 @@ def is_proper(obj):
         return False
 
 
-def is_mass(obj):
+def is_mass(obj, noun=None):
     """
     Whether a thing is stuff rather than things.
 
     Read off the sense it was filed under -- its first kind, when that is a
     WordNet id -- and never guessed from its name: "gold" is a metal in one
     sense and a coin's worth in another, and only the thing knows which.
+
+    And, given the name it is being called by, only when that name is of the
+    stuff itself. A stick of blue chalk is filed under chalk, which is a
+    substance, but what is being counted is a stick: "a stick of blue chalk",
+    "some blue chalk". Found in playtesting as "some stick of blue chalk".
     """
     from world import lexicon
 
@@ -131,7 +136,42 @@ def is_mass(obj):
         kinds = list(obj.db.kinds or [])
     except AttributeError:
         return False
-    return bool(kinds) and lexicon.lexical_file(kinds[0]) in MASS_FILES
+    if not kinds or lexicon.lexical_file(kinds[0]) not in MASS_FILES:
+        return False
+    if noun is None:
+        return True
+    stuff = lexicon.word_of(kinds[0]).split()[-1:]
+    head = _head(noun).lower()
+    return bool(stuff and head) and (lexicon.lemma(head, "n")
+                                     == lexicon.lemma(stuff[0], "n"))
+
+
+def singular(noun):
+    """
+    One of something: "sarcophagi" is a sarcophagus, "Stone Sarcophagi" a
+    Stone Sarcophagus, "piles of coins" a pile of coins.
+
+    Only the head changes, and only when it is plural and not a word in its
+    own right -- "glasses", "stairs" and "remains" are left as they are. It
+    cannot tell "trousers" from several trousers, and nothing here should
+    decide what to make on the strength of it; it is for recognising that two
+    spellings are one word. Unchanged without a dictionary.
+    """
+    from world import lexicon
+
+    words = str(noun or "").split()
+    if not words:
+        return ""
+    lowered = [word.lower() for word in words]
+    at = (lowered.index("of", 1) - 1 if "of" in lowered[1:-1]
+          else len(words) - 1)
+    head = words[at]
+    plain = head.lower()
+    base = lexicon.lemma(plain, "n")
+    if base == plain or lexicon.headword(plain):
+        return " ".join(words)
+    words[at] = base.capitalize() if head[:1].isupper() else base
+    return " ".join(words)
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +196,7 @@ def article(noun, obj=None, definite=False):
         return ""
     if definite:
         return "the"
-    if is_mass(obj) or is_plural(noun):
+    if is_mass(obj, noun) or is_plural(noun):
         return "some"
     try:
         return _inflect().a(noun).split(" ", 1)[0]
@@ -180,7 +220,7 @@ def plural(noun, obj=None):
     the bottle, not the soju.
     """
     noun = str(noun or "").strip()
-    if not noun or is_mass(obj) or is_plural(noun):
+    if not noun or is_mass(obj, noun) or is_plural(noun):
         return noun
     try:
         return _inflect().plural_noun(noun) or noun
@@ -201,7 +241,7 @@ def count(n, noun, obj=None):
         return ""
     if n == 1:
         return with_article(noun, obj)
-    if is_mass(obj):
+    if is_mass(obj, noun):
         return f"some {noun}"
     try:
         figure = _inflect().number_to_words(n, threshold=FIGURES_ABOVE)

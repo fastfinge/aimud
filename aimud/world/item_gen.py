@@ -106,6 +106,31 @@ def _parse_json(content):
     return parse_object(content)
 
 
+def _plural_note(object_name):
+    """
+    What to tell the item model when it is asked to make something plural.
+
+    Found in playtesting: looking at the sarcophagi a room described made one
+    object called "Sarcophagi", which the game then called "some sarcophagi"
+    and nobody could ever look at one of. Whether a plural names several
+    separate things or one thing with a plural name -- trousers, barracks --
+    is a question about English that a dictionary cannot settle and the model
+    can, so it is asked rather than the name being changed here. What was
+    typed is kept as an alias either way, and `naming` finds the singular.
+    """
+    from world import english
+
+    if not english.is_plural(object_name):
+        return ""
+    return (
+        f"'{object_name}' is plural. If it names several separate things -- "
+        f"sarcophagi along a wall, statues in a row -- make just ONE of them, "
+        f"named in the singular, so each can be looked at and handled on its "
+        f"own. If it is one thing with a plural name, like trousers or "
+        f"barracks, keep the name as it is.\n\n"
+    )
+
+
 def _room_context(room):
     from world import tokens
 
@@ -267,6 +292,7 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
                 f"{token_lists.vocabulary_block(world_root)}"
                 f"{which_sense}"
                 f"{which_anchor}"
+                f"{_plural_note(object_name)}"
                 f"Generate the item the player is examining: '{object_name}'"
             ),
         },

@@ -108,6 +108,45 @@ class TheWordTable(SimpleTestCase):
 
 
 @tag("unit")
+class OneOfSeveral(SimpleTestCase):
+    """Found in playtesting: looking at sarcophagi made "some sarcophagi"."""
+
+    def test_the_head_is_made_singular(self):
+        for plural, one in (("sarcophagi", "sarcophagus"),
+                            ("stone sarcophagi", "stone sarcophagus"),
+                            ("Stone Sarcophagi", "Stone Sarcophagus"),
+                            ("jars of honey", "jar of honey"),
+                            ("sword", "sword")):
+            with self.subTest(plural=plural):
+                self.assertEqual(english.singular(plural), one)
+
+    def test_but_not_a_plural_that_is_a_word_of_its_own(self):
+        for word in ("glasses", "stairs", "remains", "clothes"):
+            with self.subTest(word=word):
+                self.assertEqual(english.singular(word), word)
+
+    def test_without_a_dictionary_nothing_changes(self):
+        with mock.patch.object(lexicon, "_wordnet", lambda: None):
+            self.assertEqual(english.singular("sarcophagi"), "sarcophagi")
+
+    def test_several_of_a_thing_find_the_thing(self):
+        from world import naming
+
+        self.assertGreaterEqual(
+            naming.resemblance("sarcophagi", "Stone Sarcophagus"),
+            naming.CONFIDENT)
+        # The singular rule does not make "glasses" a glass. (A glass still
+        # contains "glass", and naming by part of a word is its own rule.)
+        self.assertNotEqual(naming._one_of("glasses"), naming._one_of("glass"))
+
+    def test_the_item_model_is_asked_to_make_one(self):
+        from world import item_gen
+
+        self.assertIn("ONE of them", item_gen._plural_note("sarcophagi"))
+        self.assertEqual(item_gen._plural_note("sarcophagus"), "")
+
+
+@tag("unit")
 class RegularPast(SimpleTestCase):
     """The spelling rules, for verbs no table has heard of."""
 
@@ -143,6 +182,19 @@ class WhatTheThingKnows(EvenniaTest):
                          "some water")
         self.assertEqual(water.get_numbered_name(3, None, return_string=True),
                          "some water")
+
+    def test_a_stick_of_stuff_is_a_stick(self):
+        """Found in playtesting: "some stick of blue chalk"."""
+        chalk = self.obj2
+        chalk.db.kinds = ["chalk.n.01"]
+        chalk.key = "stick of blue chalk"
+        self.assertEqual(chalk.get_numbered_name(1, None, return_string=True),
+                         "a stick of blue chalk")
+        self.assertEqual(chalk.get_numbered_name(2, None, return_string=True),
+                         "two sticks of blue chalk")
+        chalk.key = "blue chalk"
+        self.assertEqual(chalk.get_numbered_name(1, None, return_string=True),
+                         "some blue chalk")
 
     def test_a_thing_is_counted(self):
         self.assertEqual(self.sword.get_numbered_name(3, None),
