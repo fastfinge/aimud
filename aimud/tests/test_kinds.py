@@ -77,6 +77,26 @@ class FollowingTheAnchor(SimpleTestCase):
         self.assertTrue(kinds.ancestors(None, "bottle"))
         self.assertEqual(kinds.floor(None, "book"), {"read": True})
 
+    def test_a_word_settles_on_the_thing_rather_than_the_amount(self):
+        """
+        Found in the baseline soak. `teacup` settled on "as much as a teacup
+        will hold", which is a measure and no bucket, so its senses did not
+        count as disagreeing and nobody was asked -- and a rule about drinking
+        from one was refused as being about everything.
+        """
+        self.assertEqual(kinds.canonical("teacup"), "teacup.n.02")
+        self.assertEqual(kinds.canonical("ledger"), "daybook.n.02")
+        self.assertIn(lexicon.PHYSICAL, kinds.ancestors(None, "teacup"))
+
+    def test_a_word_with_no_physical_sense_keeps_its_first(self):
+        self.assertEqual(kinds.canonical("notice"), "notice.n.01")
+
+    def test_a_word_already_settled_on_a_thing_is_unchanged(self):
+        for word, sense in (("bottle", "bottle.n.01"), ("book", "book.n.01"),
+                            ("sword", "sword.n.01"),
+                            ("lantern", "lantern.n.01")):
+            self.assertEqual(kinds.canonical(word), sense, word)
+
     def test_an_unanchored_invented_kind_has_no_ancestry_at_all(self):
         """The state of things before this, and the reason for it."""
         self.assertEqual(kinds.ancestors(None, "datapad"), frozenset())

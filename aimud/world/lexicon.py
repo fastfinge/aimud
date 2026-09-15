@@ -532,18 +532,34 @@ def settled_noun_sense(word):
     being made, so any of them would answer the same". If any of them would
     answer the same, the first will do, and nobody needs to be asked.
 
-    So this is deliberately the frequency-ordered first sense -- the thing
-    `lexicon.py` warns against everywhere else -- and it is safe here for
-    exactly one reason: it is only reached for words whose senses do not
-    disagree about the answer being asked for. A word whose senses do disagree
-    goes to `sense_prompt` and a generator that can see the room.
+    So this is the frequency-ordered first sense -- the thing `lexicon.py`
+    warns against everywhere else -- and it is safe here for one reason: it is
+    only reached for words whose senses do not disagree about the answer being
+    asked for. A word whose senses do disagree goes to `sense_prompt` and a
+    generator that can see the room.
+
+    **The first sense that is a thing, though, when there is one.** A kind
+    names something in the world, and "do not disagree" only means no two
+    senses land in different buckets -- a sense in no bucket at all does not
+    count as disagreeing. So `teacup` settled on its first sense, "as much as a
+    teacup will hold", which is a measure, while the cup was the second; and a
+    rule about drinking from it was refused, because a measure sits six steps
+    from the root and looked like a rule about everything. `ledger` settled on
+    a record rather than the book, and `fire` on an event rather than the
+    burning. An abstraction is kept only when a word has no physical sense to
+    prefer, which is what a notice is.
 
     Empty for a word with no senses at all, which is the case an anchor is for.
     """
     if not word or needs_sense_choice(word):
         return ""
-    listed = senses(word, pos="n", limit=1)
-    return listed[0][0] if listed else ""
+    listed = senses(word, pos="n")
+    if not listed:
+        return ""
+    for name, _definition in listed:
+        if PHYSICAL in ancestors(name):
+            return name
+    return listed[0][0]
 
 
 def needs_sense_choice(word):
