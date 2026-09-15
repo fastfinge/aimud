@@ -182,14 +182,6 @@ class SayingWhatAWorldKeeps(SimpleTestCase):
     def test_a_set_reads_as_somebody_would_say_it(self):
         self.assertEqual(pronouns.spelled(pronouns.SEEDED["she"]), "she/her/hers")
 
-    def test_the_prompt_block_names_every_set(self):
-        block = pronouns.vocabulary_block(None)
-        for slug in pronouns.SEEDED:
-            self.assertIn(slug, block)
-
-    def test_and_tells_a_model_to_reuse_before_inventing(self):
-        self.assertIn("declare a new set only", pronouns.vocabulary_block(None))
-
 
 @tag("world")
 class ReadingAboutThem(EvenniaTest):

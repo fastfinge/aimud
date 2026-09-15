@@ -73,8 +73,7 @@ MOST_ENTRIES = 60
 #: Longest an entry may be.
 LONGEST_ENTRY = 300
 
-#: Most lists a prompt is shown, and most entries shown for each.
-MOST_SHOWN = 20
+#: Most entries shown when a list is spelled out.
 ENTRIES_SHOWN = 6
 
 _NAME = re.compile(r"[a-z_][a-z0-9_]*")
@@ -761,32 +760,9 @@ def spelled(entry, most=ENTRIES_SHOWN):
 
 
 #: What a generator is told, beneath whatever lists this world already keeps.
-PROMPT = """A description may use a word list: write {name} and one entry is
-chosen and kept, so the thing reads the same on every look. Use one only for a
-detail that could reasonably differ between two of the same thing -- most
-descriptions need none. Only name lists shown here or declared in your reply.
-
-To declare a list, add to your JSON:
-"new_token_lists": [{"name": "smell", "means": "what a dockside place smells of",
-                     "entries": ["brine", "tar", "old rope"]}]
-To make the choice a fact rules can read, give the list a "group" and give each
-entry the state it sets:
-{"name": "paint", "means": "the colour something is painted", "group": "colour",
- "entries": [{"text": "red", "sets": {"states": ["red"]}},
-             {"text": "green", "sets": {"states": ["green"]}}]}
-
-A description or an entry may also draw a word from the dictionaries, chosen
-and kept the same way: $hyponym(sword.n.01) is some sort of sword,
-$part_of(ship.n.01) some part of a ship, $found_at(galley) something found in
-a galley, $used_for(cooking) something used for cooking, $kind_of(bread) what
-bread is a sort of. Always give an else for when the dictionary has nothing:
-$found_at(galley, else=a crate).
-"""
-
-
-#: `PROMPT`, for a generator that answers through a tool. The lists are behind
-#: `list_word_lists` rather than pasted in, and a new one is declared in the
-#: tool's `new_token_lists` field rather than in a JSON reply.
+#: How to use and declare word lists, for a generator that answers through a
+#: tool. The lists are behind `list_word_lists` rather than pasted in, and a
+#: new one is declared in the tool's `new_token_lists` field.
 TOOL_PROMPT = """A description may use a word list: write {name} and one entry
 is chosen and kept, so the thing reads the same on every look. Use one only for
 a detail that could reasonably differ between two of the same thing -- most
@@ -803,26 +779,6 @@ a galley, $used_for(cooking) something used for cooking, $kind_of(bread) what
 bread is a sort of. Always give an else for when the dictionary has nothing:
 $found_at(galley, else=a crate).
 """
-
-
-def vocabulary_block(world_root, for_kinds=()):
-    """
-    The lists as a prompt block, and how to use and add to them.
-
-    Lists meant for the kinds in play come first, then the rest, up to
-    `MOST_SHOWN`. A world's lists will outgrow a prompt long before its states
-    do, and the ones for other sorts of thing are the ones to leave out.
-    """
-    wanted = set(for_kinds or ())
-    kept = vocabulary(world_root)
-    ordered = sorted(kept.items(),
-                     key=lambda pair: (not (set(pair[1].get("for") or ())
-                                            & wanted), pair[0]))
-    lines = [f"  {{{name}}}: {spelled(entry)} — {entry.get('means', '')}"
-             for name, entry in ordered[:MOST_SHOWN]]
-    listed = ("Word lists this world keeps:\n" + "\n".join(lines) + "\n"
-              if lines else "")
-    return f"{listed}{PROMPT}\n"
 
 
 # ---------------------------------------------------------------------------

@@ -1248,6 +1248,40 @@ under words the quest accepts.
 `remember`'s `recall` tool. `dress_npc` gets §5.1's hint for what a character
 might carry. Delete any `vocabulary_block` nothing uses any more.
 
+*As built, so far* (7a, characters):
+
+* **`make_character`** (8 rounds):
+  * `traits[].slug` goes through `toolbox.choice`, so it is closed to the
+    register up to the cap;
+  * `goal` is `goals.schema`, and `new_pronoun_set` is
+    `pronouns.set_schema`;
+  * `pronouns` stays open, because a declared set's subject form goes there
+    too, and its description names the sets.
+
+  The name retries `generate_npc` built by hand for `NAME_ATTEMPTS` tries
+  are the loop's own now, and `NAME_ATTEMPTS` is gone. When the rounds run
+  out, the character is kept anyway and a name clash is logged, as before.
+* **`character_complaints`** sends back a taken name, which was all that was
+  checked before. It also sends back what used to be dropped without a word:
+  * a pronoun set nobody keeps, or one declared incomplete, or one that is
+    another spelling of a kept set;
+  * goal conditions `goals.sanitise` would drop;
+  * traits nothing measures;
+  * word lists that would be refused.
+* **`dress_character`** (10 rounds) takes garments with
+  `spec_schema(worn=True)` and carried things with the plain schema. Each is
+  held to `item_complaints`, and every garment must afford `wear` (prose
+  only, before).
+* **`carry_hints`** shows up to two `missing_thing` wants to a character
+  being dressed. Never the character's own, and never in a room a want
+  avoids.
+* **Registers deleted with their last caller:**
+  * `pronouns.vocabulary_block` and its two prompt tests;
+  * `token_lists.vocabulary_block`, `token_lists.PROMPT` and `MOST_SHOWN`;
+  * `npc_gen._parse_json`.
+
+  `traits.vocabulary_block` stays until the quest generators convert.
+
 ### Phase 8: soak, then measure and tune
 
 Measurement waits until everything is built, because every phase moves the

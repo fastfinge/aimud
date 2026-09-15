@@ -304,23 +304,6 @@ def spelled(entry):
                      entry.get("possessive", "")])
 
 
-def vocabulary_block(world_root,
-                     header="Pronoun sets this world already uses"):
-    """
-    The register as a prompt block.
-
-    Every prompt that could invent a set gets this, which is the half of
-    keeping one vocabulary that does the work: a model shown that she/her
-    exists does not declare it again under another name.
-    """
-    vocab = vocabulary(world_root)
-    lines = [f"  {slug}: {spelled(entry)} — {entry.get('means', '')}"
-             for slug, entry in sorted(vocab.items())]
-    return (f"{header} — use one of these by name wherever it fits, and "
-            f"declare a new set only for somebody none of them suits:\n"
-            + "\n".join(lines) + "\n\n")
-
-
 # ---------------------------------------------------------------------------
 # Lookups (docs/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
