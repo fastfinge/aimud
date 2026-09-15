@@ -1710,6 +1710,45 @@ def _toolbox_for(npc, room, depth=0):
     tools = [tb.from_schema(schema, running(schema["function"]["name"]),
                             looks=schema["function"]["name"] in LOOKING)
              for schema in _tools_for(npc, room)]
+    # The first lookups a character is offered: a closer look at something
+    # here, its own memory, what this world already knows how to do, and what
+    # is wrong with its rules. Each is left out where it cannot answer.
+    from world import lookups
+
+    tools += lookups.named("examine", "recall", "list_known_verbs",
+                           "world_faults")
     return tb.Toolbox(tools, tb.ToolContext(
         world_root=room.db.world_root if room else None, room=room,
         actor=npc, job="dialogue"))
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`name_taken`: whether a person's name is free in this world."""
+    from world import toolbox as tb
+
+    def checking(ctx, args):
+        name = str(args.get("name") or "").strip()
+        existing = _people_in_world(ctx.room)
+        if not name:
+            return "Give a name to check."
+        if _too_similar(name, existing):
+            close = sorted(other for other in existing
+                           if _too_similar(name, [other]))
+            return (f"{name} is too close to somebody already in this world: "
+                    f"{', '.join(close) or 'the name is unusable'}. Choose a "
+                    f"different first name.")
+        return f"{name} is free."
+
+    return [tb.Tool(
+        "name_taken",
+        "Whether a person's name is free in this world. A shared first name, "
+        "or the same words in another order, is taken; a shared family name "
+        "is fine.",
+        tb.params({"name": {"type": "string",
+                            "description": "The name to check"}}, ["name"]),
+        tb.answering(checking), doing="checking a name is free", looks=True,
+        available=lambda ctx: ctx.room is not None)]

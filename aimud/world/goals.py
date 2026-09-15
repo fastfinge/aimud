@@ -369,3 +369,31 @@ def accepted_words(condition, reason, what):
     if kind and not condition.get("object"):
         return f"of kind '{what}'"
     return f"named so that the name contains '{what}'"
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`find_rooms`: the rooms built in this world, by name."""
+    from world import toolbox as tb
+
+    def finding(ctx, args):
+        from evennia import search_tag
+
+        root = ctx.world_root
+        rooms = list(search_tag(str(root.id), category="ai_world"))
+        if root not in rooms:
+            rooms.append(root)
+        names = sorted({(room.db.room_title or room.key) for room in rooms
+                        if (room.db.room_title or room.key)})
+        return tb.paged(names, args, "rooms")
+
+    return [tb.Tool(
+        "find_rooms",
+        "The rooms built in this world, by name. A goal or an effect that "
+        "names a room has to name one of these.",
+        tb.params(tb.PAGE), tb.answering(finding),
+        doing="looking up this world's rooms", looks=True,
+        available=lambda ctx: ctx.world_root is not None)]

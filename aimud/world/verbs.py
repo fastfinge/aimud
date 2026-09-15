@@ -2029,3 +2029,79 @@ def check(requires, bound, actor, world_root=None):
         limit=MAX_COMPLAINTS,
     )
     return " ".join(said) if said else None
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`list_states`, `show_state` and `list_state_groups`."""
+    from world import kinds as kinds_mod
+    from world import toolbox as tb
+
+    def line(world_root, slug, info):
+        return (f"{slug}: {info.get('means', '')} "
+                f"(group: {group_of(world_root, slug) or 'none'})")
+
+    def listing(ctx, args):
+        vocab = vocabulary(ctx.world_root)
+        kind = str(args.get("kind") or "").strip()
+        slugs = sorted(vocab)
+        if kind:
+            familiar = kinds_mod.states_of(ctx.world_root, [kind])
+            slugs = [slug for slug in slugs if slug in familiar]
+        return tb.paged([line(ctx.world_root, slug, vocab[slug])
+                         for slug in slugs], args, "states")
+
+    def showing(ctx, args):
+        slug = str(args.get("slug") or "").strip().lower()
+        info = vocabulary(ctx.world_root).get(slug)
+        group = group_of(ctx.world_root, slug)
+        if info is None and not group:
+            return f"This world has no state called {slug}."
+        said = [f"{slug}: {(info or {}).get('means', '(not said)')}"]
+        if (info or {}).get("conflicts"):
+            said.append(f"cancels: {', '.join(info['conflicts'])}")
+        if group:
+            rules = group_rules(ctx.world_root, group)
+            members = sorted(group_members(ctx.world_root, group) - {slug})
+            said.append(f"group: {group}"
+                        + (f", with {', '.join(members)}" if members else ""))
+            flags = [flag.replace("_", " ") for flag in
+                     ("exclusive", "ends_on_move", "prevents_acting",
+                      "prevents_moving", "prevents_speaking") if rules.get(flag)]
+            if flags:
+                said.append("the group is: " + ", ".join(flags))
+        return "\n".join(said)
+
+    def grouping(ctx, args):
+        lines = []
+        for group, rules in sorted(groups(ctx.world_root).items()):
+            members = sorted(group_members(ctx.world_root, group))
+            lines.append(f"{group}: {', '.join(members) or '(no members yet)'}"
+                         + ("" if rules.get("exclusive", True)
+                            else " (not exclusive)"))
+        return tb.paged(lines, args, "groups")
+
+    return [
+        tb.Tool("list_states",
+                "The conditions this world already has words for. Reuse one "
+                "rather than coining a second word for the same condition.",
+                tb.params({**tb.PAGE, "kind": {
+                    "type": "string",
+                    "description": "Optional. Only the conditions things of "
+                                   "this sort have been in"}}),
+                tb.answering(listing), doing="looking up this world's states",
+                looks=True),
+        tb.Tool("show_state",
+                "One condition: what it means, its group, and what it stops.",
+                tb.params({"slug": {"type": "string",
+                                    "description": "The state's name"}},
+                          ["slug"]),
+                tb.answering(showing), doing="looking up a state", looks=True),
+        tb.Tool("list_state_groups",
+                "The groups of conditions only one of which can be true at once.",
+                tb.params(tb.PAGE), tb.answering(grouping),
+                doing="looking up state groups", looks=True),
+    ]

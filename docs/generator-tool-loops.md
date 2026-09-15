@@ -1026,6 +1026,27 @@ any prompt changes.
 `goals.blocked_wants` and `rulecheck.relevant` have tests over the exported
 worlds.
 
+*As built, so far* (4a and 4b):
+
+* **The lookups live beside their registers,** each module's
+  `lookup_tools()` appended to its end, and `world/lookups.py` gathers them by
+  name. `toolbox.py` gained `params`, `PAGE`, `paged` and `answering`, so every
+  list tool pages the same way and every schema stays in the conservative
+  dialect; a test walks every schema to hold it there.
+* **A lookup is offered only where it can answer:** the dictionary's tools
+  with a dictionary, `commonsense` with the corpus, `recall` with a character
+  and a memory, `examine` and `name_taken` with a room.
+* **`recall` asks which bank on the reactor and searches it off it,** since
+  finding the bank reads the database and searching it is slow.
+* **`rulecheck.relevant` takes the registers and the states near an
+  attempt,** not the world. That keeps it as pure as the rest of `rulecheck`,
+  and testable over the small worlds its own tests build; `states_near` is the
+  half that reads the live world.
+* **Characters were given `examine`, `recall`, `list_known_verbs` and
+  `world_faults`,** beside the tools they act with.
+* **`tests.support.tool_call` takes the tool's name positionally,** so a tool
+  whose own argument is called `name` can still be given one.
+
 ### Phase 5: the verb pipeline
 
 `actions.learn`, `rule_gen.learn`, `ask_admission` and `narrate` on finish

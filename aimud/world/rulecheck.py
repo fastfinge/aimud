@@ -596,7 +596,8 @@ def states_near(world_root, bound):
     return near
 
 
-def relevant(findings, registers, verb, near=(), proposals=(), wants=()):
+def relevant(findings, registers, verb, near=(), proposals=(), wants=(),
+             most=MOST_HINTS):
     """
     What this world's faults say about one attempt, as at most `MOST_HINTS`
     lines, the most useful first.
@@ -673,4 +674,48 @@ def relevant(findings, registers, verb, near=(), proposals=(), wants=()):
                      f"{' and '.join(said)}; write the one that works rather "
                      f"than another like them.")
 
-    return lines[:MOST_HINTS]
+    return lines[:most] if most else lines
+
+
+def lookup_tools():
+    """`world_faults`: what `worldcheck` finds, for a model to read."""
+    import re
+
+    from world import toolbox as tb
+
+    def world_faults(ctx, args):
+        registers = of_world(ctx.world_root)
+        findings = scan(registers)
+        verb = str(args.get("verb") or "").strip().lower()
+        kind = str(args.get("kind") or "").strip()
+        if not verb and not kind:
+            from world import lore
+
+            text = report(findings, lore.title(ctx.world_root))
+            return re.sub(r"\|[a-zA-Z]", "", text)
+        near = set()
+        if kind:
+            from world import kinds
+
+            near |= set(kinds.states_of(ctx.world_root, [kind]))
+        from world import suggest
+
+        lines = relevant(findings, registers, verb, near=near,
+                         proposals=suggest.queue(ctx.world_root), most=None)
+        return "\n".join(lines) or "Nothing this world has found bears on that."
+
+    return [tb.Tool(
+        "world_faults",
+        "What this world's own rules say is wrong with them: conditions nothing "
+        "can undo, conditions required that nothing sets, rules that can never "
+        "fire. With a verb or a kind, only what bears on it; with neither, the "
+        "whole report.",
+        tb.params({
+            "verb": {"type": "string",
+                     "description": "Optional. Only what bears on this verb"},
+            "kind": {"type": "string",
+                     "description": "Optional. Only what bears on this sort of "
+                                    "thing"},
+        }),
+        tb.answering(world_faults), doing="reading this world's faults",
+        looks=True, available=lambda ctx: ctx.world_root is not None)]

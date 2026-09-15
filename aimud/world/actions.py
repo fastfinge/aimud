@@ -431,3 +431,30 @@ def learn(sponsor, world_root, action, bound, actor, on_success,
               on_success=answered,
               on_error=lambda failure: fall_back(failure.getErrorMessage()))
 
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`list_known_verbs`: the verbs this world has worked out."""
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        from world import rulebooks
+
+        root = ctx.world_root
+        known = set(vocabulary(root))
+        known |= {key.split("#", 1)[0] for key in (root.db.verb_rules or {})}
+        known |= {rule.get("action") for rule in rulebooks.all_rules(root)
+                  if rule.get("action")}
+        return tb.paged(sorted(known), args, "verbs")
+
+    return [tb.Tool(
+        "list_known_verbs",
+        "The verbs this world has already worked out. Trying one of these "
+        "costs nothing to learn.",
+        tb.params(tb.PAGE), tb.answering(listing),
+        doing="looking up the verbs this world knows", looks=True,
+        available=lambda ctx: ctx.world_root is not None)]

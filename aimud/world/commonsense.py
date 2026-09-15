@@ -477,3 +477,45 @@ def download(on_progress=None, source=None, path=None):
             kept = build_from(tsv, path=path, on_progress=on_progress)
     logger.log_info(f"ConceptNet: {kept} edges indexed at {path or PATH}")
     return kept
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+#: What `commonsense` may be asked, and how. Advisory everywhere, like the rest
+#: of this corpus: it says what people have typed, not what is so.
+LOOKUPS = {
+    "kinds_of": lambda word: kinds_of(word, 12),
+    "parts_of": lambda word: parts_of(word, 24),
+    "opposites": lambda word: opposites(word, 12),
+    "can_be_done_to": lambda word: can_be_done_to(word, 12),
+    "ways_to": lambda word: ways_to(word, 12),
+    "found_at": lambda word: forward(word, "AtLocation", 12),
+    "used_for": lambda word: forward(word, "UsedFor", 12),
+}
+
+
+def lookup_tools():
+    """`commonsense`: the second lexicon. Offered only when it is here."""
+    from world import toolbox as tb
+
+    def asking(ctx, args):
+        word = str(args.get("word") or "").strip()
+        relation = str(args.get("relation") or "")
+        found = LOOKUPS[relation](word) if relation in LOOKUPS else []
+        said = relation.replace("_", " ")
+        return (f"{word}, {said}: " + ", ".join(found) if found
+                else f"Nothing is recorded for {word}, {said}.")
+
+    return [tb.Tool(
+        "commonsense",
+        "What people have written down about a word: what it is a sort of, "
+        "its parts, its opposites, what can be done to it, where it is found, "
+        "what it is used for. A guide, not a fact about this world.",
+        tb.params({"word": {"type": "string", "description": "The word"},
+                   "relation": {"type": "string", "enum": sorted(LOOKUPS),
+                                "description": "What to ask about it"}},
+                  ["word", "relation"]),
+        asking, doing="asking the second lexicon", looks=True, threaded=True,
+        available=lambda ctx: available())]

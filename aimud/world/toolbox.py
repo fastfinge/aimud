@@ -173,6 +173,55 @@ def problems_with(args, parameters):
     return found
 
 
+def params(properties=None, required=()):
+    """A tool's parameters, in the conservative dialect every provider honours."""
+    return {"type": "object", "properties": dict(properties or {}),
+            "required": list(required), "additionalProperties": False}
+
+
+#: The paging arguments every list tool takes, so a model can always ask for
+#: less, or for the rest.
+PAGE = {
+    "query": {"type": "string",
+              "description": "Optional. Only entries containing these words"},
+    "limit": {"type": "integer", "minimum": 1, "maximum": 50,
+              "description": "Optional. How many to show; 20 unless said"},
+    "offset": {"type": "integer", "minimum": 0,
+               "description": "Optional. How many to skip, to see more"},
+}
+
+
+def paged(entries, args, noun="entries", most=20):
+    """A list, filtered by `query` and cut to `limit` from `offset`, as text."""
+    entries = [str(entry) for entry in entries]
+    query = str((args or {}).get("query") or "").lower().strip()
+    if query:
+        entries = [entry for entry in entries if query in entry.lower()]
+    try:
+        limit = max(1, int((args or {}).get("limit") or most))
+        offset = max(0, int((args or {}).get("offset") or 0))
+    except (TypeError, ValueError):
+        limit, offset = most, 0
+    matching = f" matching '{query}'" if query else ""
+    shown = entries[offset:offset + limit]
+    if not shown:
+        return (f"No {noun}{matching}" + (" past that offset" if offset else "")
+                + ".")
+    lines = [f"{len(entries)} {noun}{matching}; showing {offset + 1} to "
+             f"{offset + len(shown)}:"] + shown
+    if offset + len(shown) < len(entries):
+        lines.append(f"(Ask again with offset={offset + len(shown)} for more.)")
+    return "\n".join(lines)
+
+
+def answering(work):
+    """A handler for a lookup that answers at once: `work(ctx, args)` -> text."""
+    def handler(ctx, args, answer):
+        answer(work(ctx, args))
+
+    return handler
+
+
 def said(result):
     """What a tool result tells the model, cut to size."""
     text = result.text if isinstance(result, Complaint) else (

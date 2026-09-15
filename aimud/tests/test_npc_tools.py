@@ -307,3 +307,14 @@ class ATurnThatGoesRound(_Scene):
             self.npc._trigger_reaction()
         self.assertFalse(self.npc.ndb.reacting)
         self.assertEqual(self.said(), ["Hm."])
+
+    def test_a_character_may_look_things_up_as_well_as_act(self):
+        """Phase 4: the first lookups a character is offered."""
+        names = {tool.name for tool in
+                 npc_gen._toolbox_for(self.npc, self.room1).tools}
+        self.assertLessEqual({"examine", "list_known_verbs", "world_faults"},
+                             names)
+        with mock.patch("world.memory.available", return_value=False):
+            names = {tool.name for tool in
+                     npc_gen._toolbox_for(self.npc, self.room1).tools}
+        self.assertNotIn("recall", names, "no memory to search, no tool")

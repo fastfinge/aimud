@@ -542,3 +542,51 @@ def test(obj, preposition, host):
     if not preposition:
         return True
     return preposition_of(obj) == str(preposition).lower().strip()
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`examine`: one thing within reach, as a model needs to know it."""
+    from world import toolbox as tb
+
+    def examining(ctx, args):
+        from world import ownership, tokens, verbs
+
+        name = str(args.get("name") or "").strip()
+        looker = ctx.actor
+        obj = find(looker, name) if looker is not None else None
+        if obj is None and ctx.room is not None:
+            wanted = name.lower()
+            obj = next((thing for thing in ctx.room.contents
+                        if _is_thing(thing) and wanted in thing.key.lower()),
+                       None)
+        if obj is None:
+            return f"There is nothing called {name} within reach."
+        said = [f"{obj.key}: {tokens.text_of(obj) or '(no description)'}",
+                "can be: " + (", ".join(sorted(verbs.affordances(obj)))
+                              or "nothing special"),
+                "currently: " + (", ".join(sorted(verbs.states(obj)))
+                                 or "nothing notable")]
+        where = context_line(obj, looker)
+        if where:
+            said.append(f"sitting: {where}")
+        for preposition in PREPOSITIONS:
+            here = contents(obj, preposition)
+            if here:
+                said.append(f"{preposition} it: "
+                            + ", ".join(thing.key for thing in here))
+        owner = ownership.owner_name(obj)
+        said.append(f"belongs to: {owner}" if owner else "belongs to nobody")
+        return "\n".join(said)
+
+    return [tb.Tool(
+        "examine",
+        "Look closely at one thing within reach: what it is, what can be done "
+        "to it, what condition it is in, where it sits and whose it is.",
+        tb.params({"name": {"type": "string",
+                            "description": "What to look at"}}, ["name"]),
+        tb.answering(examining), doing="looking something over", looks=True,
+        available=lambda ctx: ctx.actor is not None or ctx.room is not None)]

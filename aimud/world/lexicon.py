@@ -1047,3 +1047,92 @@ def anchor_prompt(phrase):
         f"identifier will do, and one that does not exist is ignored. Copy it "
         f"exactly.\n"
     )
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """The dictionary, for a model to read. Offered only when there is one."""
+    from world import toolbox as tb
+
+    def sense_param(what):
+        return tb.params({"sense": {"type": "string",
+                                    "description": f"A WordNet id, like "
+                                                   f"sword.n.01, {what}"}},
+                         ["sense"])
+
+    def listing_senses(ctx, args):
+        word = str(args.get("word") or "").strip()
+        pos = "v" if args.get("pos") == "v" else "n"
+        found = verb_senses(word, limit=12) if pos == "v" else senses(word)
+        return ("\n".join(f"{name} -- {gloss}" for name, gloss in found)
+                or f"The dictionary has no senses of {word}.")
+
+    def defining(ctx, args):
+        sense = str(args.get("sense") or "").strip()
+        gloss = definition(sense)
+        return (f"{sense} ({word_of(sense)}): {gloss}" if gloss
+                else f"{sense} is not a sense the dictionary has.")
+
+    def ancestry(ctx, args):
+        sense = str(args.get("sense") or "").strip()
+        found = sorted(ancestors(sense) - {sense},
+                       key=lambda name: -len(ancestors(name)))
+        return (f"{sense} is a sort of: " + ", ".join(found) if found
+                else f"{sense} has nothing above it in the dictionary.")
+
+    def below(ctx, args):
+        sense = str(args.get("sense") or "").strip()
+        found = hyponyms(sense, limit=40)
+        return (f"Sorts of {word_of(sense)}: " + ", ".join(found) if found
+                else f"The dictionary lists no sorts of {sense}.")
+
+    def made_of(ctx, args):
+        sense = str(args.get("sense") or "").strip()
+        found = parts(sense, limit=40)
+        return (f"Parts of {word_of(sense)}: " + ", ".join(found) if found
+                else f"The dictionary lists no parts of {sense}.")
+
+    def verb_kin(ctx, args):
+        verb = str(args.get("verb") or "").strip()
+        found = verb_ancestors(verb, limit=5)
+        return (f"{verb} is a way of: " + ", ".join(found) if found
+                else f"The dictionary says nothing {verb} is a way of doing.")
+
+    def present(ctx):
+        return available()
+
+    return [
+        tb.Tool("lexicon_senses",
+                "The senses a word has in the dictionary, with what each means.",
+                tb.params({"word": {"type": "string", "description": "The word"},
+                           "pos": {"type": "string", "enum": ["n", "v"],
+                                   "description": "n for a noun, v for a verb; "
+                                                  "n unless said"}},
+                          ["word"]),
+                tb.answering(listing_senses), doing="looking in the dictionary",
+                looks=True, available=present),
+        tb.Tool("lexicon_define", "What one dictionary sense means.",
+                sense_param("to define"), tb.answering(defining),
+                doing="looking in the dictionary", looks=True, available=present),
+        tb.Tool("lexicon_ancestors",
+                "Every sort of thing a sense is, nearest first.",
+                sense_param("to look above"), tb.answering(ancestry),
+                doing="looking in the dictionary", looks=True, available=present),
+        tb.Tool("lexicon_hyponyms",
+                "The sorts of thing directly beneath a sense: a sword can be "
+                "a rapier or a cutlass.",
+                sense_param("to look beneath"), tb.answering(below),
+                doing="looking in the dictionary", looks=True, available=present),
+        tb.Tool("lexicon_parts", "The parts a sense is made of.",
+                sense_param("to take apart"), tb.answering(made_of),
+                doing="looking in the dictionary", looks=True, available=present),
+        tb.Tool("verb_ancestors",
+                "What a verb is a way of doing: prying is a way of opening.",
+                tb.params({"verb": {"type": "string", "description": "The verb"}},
+                          ["verb"]),
+                tb.answering(verb_kin), doing="looking in the dictionary",
+                looks=True, available=present),
+    ]

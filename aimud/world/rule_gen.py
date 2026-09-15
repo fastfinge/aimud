@@ -694,3 +694,58 @@ def _register_states(world_root, reply):
             or traits.DEFAULT_TRAIT_TYPE,
             base=entry.get("base"), min=entry.get("min"),
             max=entry.get("max"))
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`verb_info`: everything this world knows about a verb."""
+    from world import toolbox as tb
+
+    def informing(ctx, args):
+        from world import actions, lexicon, verbs
+
+        verb = verbs.canonical_verb(str(args.get("verb") or "").strip().lower())
+        root = ctx.world_root
+        said = [f"{verb}:"]
+        if verb in verbs.engine_verbs():
+            said.append("The game itself handles this verb.")
+        declared = actions.spec(root, verb)
+        if declared:
+            roles = ", ".join(f"{role.get('role')} ({role.get('access')})"
+                              for role in declared.get("applies_to") or []) \
+                or "nothing"
+            said.append(f"It takes: {roles}.")
+            if declared.get("means"):
+                said.append(f"It means: {declared['means']}")
+        filed = [rule for rule in rulebooks.all_rules(root)
+                 if rule.get("action") == verb]
+        for rule in filed:
+            said.append(f"  {rule.get('id')} {rule.get('phase')} at "
+                        f"{rulebooks.said_scope(rule.get('scope'), root)}"
+                        f" -- {rule.get('name') or ''}"
+                        + ("" if rule.get("listed", True) else " (suspended)"))
+        if not filed and not declared:
+            said.append("This world has decided nothing about it yet.")
+        for ancestor in lexicon.verb_ancestors(verb):
+            count = len([rule for rule in rulebooks.all_rules(root)
+                         if rule.get("action") == ancestor])
+            if count:
+                said.append(f"It is a way of {ancestor}, which this world has "
+                            f"{count} rules about.")
+        asked = fruitless(root, verb)
+        if asked:
+            said.append(f"Asked about {asked} times with no rule to show.")
+        return "\n".join(said)
+
+    return [tb.Tool(
+        "verb_info",
+        "Everything this world knows about a verb: what it takes, the rules "
+        "filed about it, and the verbs it is a way of doing that already have "
+        "rules.",
+        tb.params({"verb": {"type": "string", "description": "The verb"}},
+                  ["verb"]),
+        tb.answering(informing), doing="looking up a verb", looks=True,
+        available=lambda ctx: ctx.world_root is not None)]

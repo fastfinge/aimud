@@ -133,13 +133,16 @@ def as_json(data):
 _CALL_IDS = itertools.count(1)
 
 
-def tool_call(name, **args):
+def tool_call(name, /, **args):
     """
     One tool call, the way a model sends it.
 
     The arguments are a JSON *string*, not an object. That is the detail a
     hand-written fake most often gets wrong, and code tested against the wrong
     shape passes here and fails against a real model.
+
+    The tool's name is positional only, so a tool whose own argument is
+    called `name` -- `create`, `examine`, `name_taken` -- can still be given it.
     """
     return {"id": f"call_{next(_CALL_IDS)}", "type": "function",
             "function": {"name": name, "arguments": json.dumps(args)}}

@@ -319,3 +319,23 @@ def vocabulary_block(world_root,
     return (f"{header} — use one of these by name wherever it fits, and "
             f"declare a new set only for somebody none of them suits:\n"
             + "\n".join(lines) + "\n\n")
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`list_pronoun_sets`: the register, for a model to read."""
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        return "\n".join(f"{slug}: {spelled(entry)} — {entry.get('means', '')}"
+                         for slug, entry in
+                         sorted(vocabulary(ctx.world_root).items()))
+
+    return [tb.Tool(
+        "list_pronoun_sets",
+        "The pronoun sets this world keeps. Use one by name wherever it fits.",
+        tb.params(), tb.answering(listing),
+        doing="looking up this world's pronouns", looks=True)]

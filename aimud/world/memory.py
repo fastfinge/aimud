@@ -1592,3 +1592,40 @@ def _recall_sync(bank, session, query, top_k):
         return found
 
     return _with_memory(bank, session, _read) or []
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`recall`: a character searching its own memory, in its own words."""
+    from world import llm
+    from world import toolbox as tb
+
+    def recalling(ctx, args, answer):
+        query = str(args.get("query") or "").strip()
+        if not query:
+            return answer("Remember what? Give some words to search for.")
+        # Which bank is a database question, so it is asked here, on the
+        # reactor; searching it is slow, so that goes off it.
+        where = where_for(ctx.actor, ctx.world_root)
+
+        def found(rows):
+            lines = [str(row.get("content") or "") for row in rows or []]
+            answer("\n".join(line for line in lines if line)
+                   or f"Nothing comes to mind about {query}.")
+
+        llm.fetch(recall_rows_sync, where, query, 6,
+                  on_success=found,
+                  on_error=lambda _failure: answer("Nothing comes to mind."))
+
+    return [tb.Tool(
+        "recall",
+        "Search your own memory for something older than what is in front of "
+        "you: a person, a place, a promise.",
+        tb.params({"query": {"type": "string",
+                             "description": "What to remember, in a few "
+                                            "words"}}, ["query"]),
+        recalling, doing="remembering", looks=True,
+        available=lambda ctx: ctx.actor is not None and available())]

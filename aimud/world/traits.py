@@ -558,3 +558,52 @@ def lights(world_root):
     world says which it is.
     """
     return LIGHT in vocabulary(world_root)
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`list_traits` and `show_trait`: the register, for a model to read."""
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        return tb.paged(
+            [f"{slug} ({entry.get('trait_type', DEFAULT_TRAIT_TYPE)}): "
+             f"{entry.get('means') or entry.get('name') or ''}"
+             for slug, entry in sorted(vocabulary(ctx.world_root).items())],
+            args, "traits")
+
+    def showing(ctx, args):
+        asked = _slug(args.get("slug"))
+        entry = known(ctx.world_root, asked)
+        if entry is None:
+            near = _matching(ctx.world_root, asked)
+            return (f"This world keeps no trait called {asked}."
+                    + (f" It does keep {near}." if near else ""))
+        said = [f"{asked}: {entry.get('name') or asked}",
+                f"means: {entry.get('means') or '(not said)'}",
+                f"type: {entry.get('trait_type', DEFAULT_TRAIT_TYPE)}"]
+        for field in ("base", "min", "max", "rate"):
+            if entry.get(field) is not None:
+                said.append(f"{field}: {entry[field]}")
+        if entry.get("descs"):
+            said.append("words for it: " + ", ".join(
+                f"up to {top} is {word}" for top, word in
+                sorted(dict(entry["descs"]).items(),
+                       key=lambda pair: float(pair[0]))))
+        return "\n".join(said)
+
+    return [
+        tb.Tool("list_traits",
+                "The traits this world measures people by. Reuse one of these "
+                "rather than inventing another name for the same idea.",
+                tb.params(tb.PAGE), tb.answering(listing),
+                doing="looking up this world's traits", looks=True),
+        tb.Tool("show_trait", "Everything this world says about one trait.",
+                tb.params({"slug": {"type": "string",
+                                    "description": "The trait's name"}},
+                          ["slug"]),
+                tb.answering(showing), doing="looking up a trait", looks=True),
+    ]

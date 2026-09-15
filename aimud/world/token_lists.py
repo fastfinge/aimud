@@ -742,3 +742,80 @@ def vocabulary_block(world_root, for_kinds=()):
     listed = ("Word lists this world keeps:\n" + "\n".join(lines) + "\n"
               if lines else "")
     return f"{listed}{PROMPT}\n"
+
+
+# ---------------------------------------------------------------------------
+# Lookups (docs/generator-tool-loops.md §5)
+# ---------------------------------------------------------------------------
+
+def lookup_tools():
+    """`list_word_lists`, `show_word_list` and `try_text`."""
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        wanted = str(args.get("for_kind") or "").strip()
+        kept = vocabulary(ctx.world_root)
+        ordered = sorted(kept.items(),
+                         key=lambda pair: (wanted not in (pair[1].get("for")
+                                                          or ()), pair[0]))
+        return tb.paged([f"{{{name}}}: {spelled(entry)} — "
+                         f"{entry.get('means', '')}"
+                         for name, entry in ordered], args, "word lists")
+
+    def showing(ctx, args):
+        name = _slug(args.get("name"))
+        entry = get(ctx.world_root, name)
+        if entry is None:
+            return f"This world keeps no word list called {name}."
+        said = [f"{{{name}}}: {entry.get('means', '')}",
+                f"kept per: {entry.get('scope') or DEFAULT_SCOPE}"]
+        if entry.get("group"):
+            said.append(f"sets the group: {entry['group']}")
+        if entry.get("for"):
+            said.append(f"for: {', '.join(entry['for'])}")
+        said.append("entries: " + spelled(entry, most=MOST_ENTRIES))
+        return "\n".join(said)
+
+    def trying(ctx, args):
+        from world import effects, tokens
+
+        text = str(args.get("text") or "")
+        unknown = sorted(
+            name for name in references(text)
+            if name not in effects._BUILTIN_SLOTS
+            and name not in tokens._PROVIDED_SLOTS
+            and get(ctx.world_root, name) is None)
+        shown = tokens.text(text, tokens.Context(
+            viewer=ctx.actor, world_root=ctx.world_root, purpose="display"))
+        said = f"That comes to: {shown}"
+        if unknown:
+            said += ("\nThis world keeps no list called "
+                     + ", ".join("{" + name + "}" for name in unknown)
+                     + "; declare it, or use one it keeps.")
+        return said
+
+    return [
+        tb.Tool("list_word_lists",
+                "The word lists a description here may use, those meant for "
+                "one sort of thing first.",
+                tb.params({**tb.PAGE, "for_kind": {
+                    "type": "string",
+                    "description": "Optional. Put lists meant for this sort of "
+                                   "thing first"}}),
+                tb.answering(listing), doing="looking up word lists",
+                looks=True),
+        tb.Tool("show_word_list", "One word list, every entry.",
+                tb.params({"name": {"type": "string",
+                                    "description": "The list's name, without "
+                                                   "braces"}}, ["name"]),
+                tb.answering(showing), doing="looking up a word list",
+                looks=True),
+        tb.Tool("try_text",
+                "What a description comes to once its word lists are filled "
+                "in, and which lists it asks for that this world does not keep.",
+                tb.params({"text": {"type": "string",
+                                    "description": "The description to try"}},
+                          ["text"]),
+                tb.answering(trying), doing="trying out a description",
+                looks=True),
+    ]
