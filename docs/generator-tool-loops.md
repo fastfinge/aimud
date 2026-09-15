@@ -1304,6 +1304,25 @@ might carry. Delete any `vocabulary_block` nothing uses any more.
 * **`_parse_json_object` is gone from `quest_gen` and `worldgen`,** having no
   callers left.
 
+*As built* (7c, judging and memory):
+
+* **`give_verdicts`** (6 rounds) closes each verdict's `id` to the waiting
+  queue, which is always under the enum cap (`MAX_QUEUE` is 24). The handler
+  still sends back a stray id, since an enum inside an array item is a
+  promise not every provider keeps. When the rounds run out, the last
+  verdicts are applied, and anything outside the queue is still refused. A
+  model that never gives any is an error and changes nothing, as before.
+* **`record_facts`** (6 rounds) takes up to `MAX_FACTS` strings, and more is
+  a complaint. When the rounds run out, the last facts are kept, capped; a
+  failure moves on without moving the mark, as it always did.
+* **`remember` has no finish tool.** It runs `llm.converse` with only
+  `recall`, and its prompt says `recall` may be asked again in other words.
+  The loop ends on a reply that calls nothing, and that reply's prose is the
+  answer. Recalling the first memories still happens before the model is
+  asked, and no memories still means no call.
+* **`fact_gen._parse_facts` is gone.** `_facts_from` reads the tool's list
+  instead: text only, once each, capped at `MAX_FACTS`.
+
 ### Phase 8: soak, then measure and tune
 
 Measurement waits until everything is built, because every phase moves the

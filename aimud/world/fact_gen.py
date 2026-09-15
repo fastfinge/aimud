@@ -34,8 +34,7 @@ MAX_FACTS = 8
 
 _SYSTEM_PROMPT = """You read what one character in a text adventure has been through and say what they now know.
 
-Respond with a single JSON object — no other text — matching:
-{"facts": ["...", "..."]}
+Answer by calling record_facts.
 
 You are given summaries of that character's recent experience, written from
 their point of view. Return the things that are STILL TRUE afterwards and
@@ -54,21 +53,48 @@ Leave out:
 - restatements of a whole summary. A fact is shorter than what it came from.
 
 Give 0 to {max_facts}. An uneventful stretch genuinely yields none, and an
-empty list is a better answer than a padded one.
-Return only the JSON object."""
+empty list is a better answer than a padded one."""
 
 
-def _parse_facts(content):
-    """The facts out of a model response, however tidily it answered."""
-    from world.model_json import parse_object
-
-    data = parse_object(content)
+def _facts_from(items):
+    """The facts worth keeping out of what came back: text, once each, capped."""
     facts = []
-    for item in (data.get("facts") or [])[:MAX_FACTS]:
+    for item in (items if isinstance(items, (list, tuple)) else [])[:MAX_FACTS]:
         text = str(item).strip()
         if text and text not in facts:
             facts.append(text)
     return facts
+
+
+#: Rounds a distillation may take (docs/generator-tool-loops.md §10.3).
+FACT_ROUNDS = 6
+
+
+def facts_tool():
+    """`record_facts`, the finish tool a distillation answers with."""
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        return tb.params({
+            "facts": {"type": "array", "items": {"type": "string"},
+                      "maxItems": MAX_FACTS,
+                      "description": f"0 to {MAX_FACTS} short first-person "
+                                     f"sentences still true afterwards; empty "
+                                     f"for an uneventful stretch"},
+        }, ["facts"])
+
+    def handler(ctx, args, answer):
+        given = args.get("facts")
+        given = given if isinstance(given, list) else []
+        if len(given) > MAX_FACTS:
+            answer(tb.complain(f"That is {len(given)} facts; give at most "
+                               f"{MAX_FACTS}, the ones most worth carrying.",
+                               value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("record_facts", "Say what this character now knows.",
+                   parameters, handler, finishes=True)
 
 
 def _account_for(where):
@@ -149,11 +175,10 @@ def distil(banks=None, on_done=None):
                          + "\n\nWhat do they know now?")},
         ]
 
-        def _answered(content):
-            try:
-                facts = _parse_facts(content)
-            except Exception:
+        def _answered(data):
+            if not isinstance(data, dict):
                 return _next()
+            facts = _facts_from(data.get("facts"))
             if not facts:
                 # Nothing worth keeping, but the reading still counts: without
                 # moving the mark these same summaries come back every pass.
@@ -164,8 +189,15 @@ def distil(banks=None, on_done=None):
             memory.store_facts(where, facts, through,
                                on_done=lambda _n: _next())
 
-        llm.fetch(llm.ask, sponsor, model, messages, llm.SLOW_TIMEOUT,
-                  on_success=_answered, on_error=lambda _f: _next())
+        from world import toolbox as tb
+
+        # Rounds out, the last facts are kept as they stand (capped); a
+        # failure moves on to the next character without moving the mark.
+        box = tb.Toolbox([facts_tool()],
+                         tb.ToolContext(sponsor=sponsor, job="memory"))
+        llm.converse(sponsor, model, messages, box, on_done=_answered,
+                     on_error=lambda _why: _next(), on_exhausted=_answered,
+                     rounds=FACT_ROUNDS, timeout=llm.SLOW_TIMEOUT)
 
     def _finish(why):
         if tally["facts"]:
