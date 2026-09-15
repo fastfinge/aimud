@@ -566,3 +566,111 @@ def report(findings, name=""):
     lines.append(f"|yWorth looking at ({len(trouble)}):|n")
     lines += [f"  {n}. {said}" for n, said in enumerate(trouble, 1)]
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# What the faults say about one attempt
+# ---------------------------------------------------------------------------
+
+#: The most lines a rule-writing prompt is given about this world's faults.
+#: A hint, not a report: `worldcheck` is the report.
+MOST_HINTS = 6
+
+
+def states_near(world_root, bound):
+    """
+    The states that bear on an attempt: what the things involved are in now,
+    and what things of their sorts have been in before.
+    """
+    from world import kinds, verbs
+
+    near = set()
+    for obj in (bound or {}).values():
+        if obj is None:
+            continue
+        try:
+            near |= {str(state).lower() for state in verbs.states(obj)}
+            near |= set(kinds.states_of(world_root, obj.db.kinds))
+        except AttributeError:
+            continue
+    return near
+
+
+def relevant(findings, registers, verb, near=(), proposals=(), wants=()):
+    """
+    What this world's faults say about one attempt, as at most `MOST_HINTS`
+    lines, the most useful first.
+
+    Pure, like everything else here. `near` is the states that bear on the
+    attempt (`states_near`), widened to every other member of their groups;
+    `proposals` is what `suggest.queue` holds; `wants` is lines about wants
+    nothing can satisfy, already worded by whoever asked (§5.1).
+
+    In order: wants; one missing rule seen from both ends; a rule this world
+    has already derived for this verb; conditions rules require and nothing
+    sets; conditions set and never ended; unused words in the groups at hand;
+    this verb's own rules that can never fire or change nothing. What this
+    call can do nothing about -- ungrounded kinds, refusals, forked verbs --
+    is left to `worldcheck`.
+    """
+    from world.suggest import _verb_for_state
+
+    vocabulary = (registers or {}).get("state_vocabulary") or {}
+    near = {str(state).lower() for state in (near or ())}
+    groups = {group_of(state, vocabulary) for state in near} - {""}
+    close = near | {slug for slug in vocabulary
+                    if group_of(slug, vocabulary) in groups}
+
+    def them(items):
+        return "it" if len(items) == 1 else "them"
+
+    lines = [str(line) for line in (wants or ()) if line]
+
+    for stuck, missing, group in findings.get("pairs") or []:
+        if _verb_for_state(missing) == verb or stuck in close or missing in close:
+            lines.append(
+                f"Nothing in this world can make anything {missing}. It and "
+                f"{stuck} are one condition ({group}). If {verb} is what does "
+                f"that, say so.")
+
+    for rule in proposals or ():
+        if rule.get("action") != verb:
+            continue
+        why = f": {rule['why']}" if rule.get("why") else ""
+        lines.append(f"This world has already worked out a rule for {verb}, "
+                     f"waiting to be adopted -- {rule.get('id')}, "
+                     f"{rule.get('name') or 'unnamed'}{why}.")
+
+    required = [state for state in findings.get("unsettable") or []
+                if state in close]
+    if required:
+        lines.append(f"Rules already require {_listed(required)}, and nothing "
+                     f"sets {them(required)}.")
+
+    stuck_on = [state for state in findings.get("one_way") or []
+                if state in close]
+    if stuck_on:
+        lines.append(f"{_listed(stuck_on)} can be set and nothing ever ends "
+                     f"{them(stuck_on)}. If {verb} ends {them(stuck_on)}, "
+                     f"remove {them(stuck_on)}.")
+
+    unused = [state for state in findings.get("dead_vocabulary") or []
+              if group_of(state, vocabulary) in groups]
+    if unused:
+        lines.append(f"Already in the vocabulary and used by nothing: "
+                     f"{_listed(unused)}. Reuse one before coining another.")
+
+    never = [name or rule_id for rule_id, action, _states, name
+             in findings.get("self_defeating") or [] if action == verb]
+    inert = [key for key in findings.get("inert") or [] if verb_of(key) == verb]
+    if never or inert:
+        said = []
+        if never:
+            said.append(f"{len(never)} that can never fire")
+        if inert:
+            said.append(f"{len(inert)} that change nothing")
+        lines.append(f"Rules about {verb} already here include "
+                     f"{' and '.join(said)}; write the one that works rather "
+                     f"than another like them.")
+
+    return lines[:MOST_HINTS]

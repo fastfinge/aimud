@@ -981,12 +981,24 @@ class NPC(ObjectParent, DefaultObject):
             return
 
         from evennia.utils import logger
-        from world import goals
+        from world import goals, planner
+
+        # Why, which is what the soak counts: a want for a thing that exists
+        # nowhere is given up long before the world can grow into it.
+        reason = ""
+        for condition, (met, _text) in zip(goal, goals.progress(goal, self,
+                                                                world_root)):
+            if met:
+                continue
+            why, what = planner.blocker(self, world_root, condition)
+            if why:
+                reason = f" ({why}: {what})"
+            break
 
         logger.log_info(
             f"{self.key}: no way to make progress towards "
             f"{goals.describe(goal, self, world_root)} in {stalls} turns; "
-            f"giving up on it"
+            f"giving up on it{reason}"
         )
 
         # If somebody set this errand, they should not be left waiting on it.
