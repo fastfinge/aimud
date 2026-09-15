@@ -1,6 +1,6 @@
 # Development plan: tokens and phrases
 
-Status: **phase 1 built**; phases 2 to 6 planned. Six phases, §8. Where the
+Status: **phases 1 and 2 built**; phases 3 to 6 planned. Six phases, §8. Where the
 building turned up something the plan had wrong, the phase says so under *As
 built* rather than the plan being quietly corrected.
 
@@ -650,6 +650,44 @@ Acceptance is a word table built from §3's measurements:
 * every row with and without WordNet.
 
 The narration tests pass unchanged. No world reset.
+
+*As built* (`world/english.py`, `tests/test_english.py`). Settled in the
+building:
+
+* **WordNet's verb exceptions come after Evennia, not before.** §7.1 put the
+  tables third, taking a single listed form as the past. The rule fails on
+  "sow", which the table files with "sown" alone because its past is regular:
+  "she sown". But Evennia's table lacks 158 of the 1,392 verbs WordNet lists
+  irregular forms for -- bind, bear, baby-sit, co-star -- so the tables are
+  consulted only when Evennia has nothing. Where they list several forms,
+  those ending "n" or "ne" are set aside as participles: bear gives "bore".
+  "light" stays "lighted", which is Evennia's answer and English.
+* **WordNet's noun exceptions are not used.** `inflect` already knows every
+  irregular plural the table does, and the table says fish becomes "fishes".
+* **`base_form` asks Evennia's infinitive first.** The suffix guesses alone
+  answered "i" for "is", and `repair` had been turning "{actor} is tired" into
+  a template that told its actor "You i tired". It gives `$pconj(be)` now.
+  "{actor} has" is "have" the same way.
+* **Number and article are read from the head of a phrase**, the last word
+  before "of": "a pair of boots", "three pairs of boots". `referents` keeps
+  asking about the last word, because a pile of coins is "them" to somebody
+  typing.
+* **`$an`, `$the`, `$plural` and `$count` are built** on words rather than
+  things. An argument arrives as text, so they cannot know that "water" is
+  stuff; a slot chooses its own article from the thing it names.
+* **`get_numbered_name` is overridden on `ObjectParent`.** Somebody is
+  "Jessica", stuff is "some water" whatever the count, and the plural aliases
+  are registered as Evennia registers them. A name containing colour codes is
+  handed back to Evennia. At a count of one the alias registered is "a
+  sword"; Evennia also registered "one sword".
+* **Known gaps, measured and left:** "scissors" is not detected as plural,
+  because WordNet files it as its own headword; the last-word test in
+  `referents` calls "physics" and "species" plural; `inflect` writes "a
+  8-ball"; a two-syllable verb that should double its last letter
+  ("hotswapped") does not.
+* **Found, not fixed:** `repair` wraps the word after `{actor's}` as well as
+  after `{actor}`, so "{actor's} boots" becomes `$pconj(boot)` and tells the
+  actor "your boot". It was already doing this before phase 1.
 
 ### Phase 3 -- world lists, facts and scope
 

@@ -46,6 +46,38 @@ class ObjectParent:
 
     """
 
+    def get_numbered_name(self, count, looker, **kwargs):
+        """
+        "a sword", "three swords" -- and "some water", "Jessica", "some glasses".
+
+        Evennia's own asks `inflect` alone, which knows spelling and nothing
+        about the thing, and so says "a water", "a Jessica" and "a glasses".
+        `world.english` asks the thing first. The aliases are registered the
+        way Evennia registers them, so "look three swords" still finds them.
+
+        A name with colour codes in it is left to Evennia, whose `inflect` call
+        is written to survive them.
+        """
+        key = kwargs.get("key") or self.get_display_name(looker)
+        if "|" in str(key):
+            return super().get_numbered_name(count, looker, **kwargs)
+
+        from world import english
+
+        key = str(key)
+        singular = english.count(1, key, obj=self)
+        plural = english.count(count, key, obj=self)
+        if not self.aliases.get(plural, category=self.plural_category):
+            self.aliases.clear(category=self.plural_category)
+            self.aliases.add(plural, category=self.plural_category)
+            self.aliases.add(singular, category=self.plural_category)
+
+        if kwargs.get("no_article") and count == 1:
+            return key if kwargs.get("return_string") else (key, key)
+        if kwargs.get("return_string"):
+            return singular if count == 1 else plural
+        return singular, plural
+
     def get_display_desc(self, looker, **kwargs):
         """
         What a look shows: the thing as written, then how it is right now.

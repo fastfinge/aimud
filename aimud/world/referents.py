@@ -106,15 +106,12 @@ def is_plural(obj):
 
     Asked of the dictionary rather than of a suffix rule, and answered "no"
     when there is no dictionary -- which is the neutral answer and the
-    behaviour the game had before any of this. See `world.lexicon`.
+    behaviour the game had before any of this. See `world.english`.
     """
-    from world import lexicon
+    from world import english
 
-    head = str(getattr(obj, "key", "")).split()[-1:] or [""]
-    word = head[0].lower()
-    if not word:
-        return False
-    return lexicon.lemma(word, "n") != word
+    head = str(getattr(obj, "key", "")).split()[-1:]
+    return english.is_plural(head[0] if head else "")
 
 
 def note(caller, obj, world_root=None, last=True):

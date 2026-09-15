@@ -66,13 +66,12 @@ ROLES = ("actor", "direct", "target", "container", "source", "instrument")
 RESERVED_SLOTS = frozenset(ROLES + ("self", "user", "viewer", "here", "world",
                                     "quote"))
 
-#: Call names kept for this game's own use. `pconj` is built now; the rest are
-#: the English and list calls of later phases, reserved from the start so that
-#: no world can have taken them first.
+#: Call names kept for this game's own use. `pconj` and the English calls --
+#: `an`, `the`, `plural`, `count` -- are built; `pick` is the world lists',
+#: reserved from the start so that no world can have taken it first.
 RESERVED_CALLS = frozenset(("pconj", "an", "the", "plural", "count", "pick"))
 
-#: The tenses a rendering can be asked for. Only the present is conjugated
-#: yet; the past arrives with `world.english`.
+#: The tenses a rendering can be asked for. `$pconj` conjugates for either.
 TENSES = ("present", "past")
 
 #: What a rendering is for. `display` is somebody reading, `prompt` is a model
@@ -579,6 +578,8 @@ def _call(node, context):
 
     if node.name == "pconj":
         return _pconj(args, context)
+    if node.name in _ENGLISH:
+        return _english(node, args)
 
     provided = _PROVIDED_CALLS.get(node.name)
     if provided is not None:
@@ -597,10 +598,8 @@ def _call(node, context):
 
 def _pconj(args, context):
     """
-    `$pconj(verb)` and `$pconj(verb, role)`: the verb agreeing with its subject.
-
-    The role defaults to the actor. Only the present tense is conjugated yet;
-    the past arrives with `world.english`.
+    `$pconj(verb)` and `$pconj(verb, role)`: the verb agreeing with its subject,
+    in the rendering's tense. The role defaults to the actor.
     """
     from world.events import conjugate
 
@@ -608,7 +607,39 @@ def _pconj(args, context):
     role = args[1] if len(args) > 1 and args[1] else "actor"
     namer = context.namer()
     return conjugate(verb, context.mapping().get(role), context.viewer,
-                     namer.world_root or context.world_root)
+                     namer.world_root or context.world_root,
+                     tense=context.tense)
+
+
+#: The calls `world.english` answers.
+_ENGLISH = ("an", "the", "plural", "count")
+
+
+def _english(node, args):
+    """
+    `$an(sword)`, `$the(sword)`, `$plural(tooth)`, `$count(3, coin)`.
+
+    On words, not on things: an argument arrives as text, so nothing here
+    knows that "water" is stuff or that "Raldor" is somebody. A slot already
+    chooses its own article from the thing it names; these are for words a
+    template or a list writes out.
+    """
+    from world import english
+
+    noun = args[-1] if args else ""
+    if node.name == "an":
+        return english.with_article(noun)
+    if node.name == "the":
+        return english.with_article(noun, definite=True)
+    if node.name == "plural":
+        return english.plural(noun)
+    if len(args) < 2:
+        return node.raw
+    try:
+        number = int(args[0])
+    except ValueError:
+        return node.raw
+    return english.count(number, noun)
 
 
 # ---------------------------------------------------------------------------

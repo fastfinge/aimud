@@ -329,6 +329,78 @@ def definition(sense):
         return ""
 
 
+#: WordNet's verb exception table, read backwards: {base: [irregular forms]}.
+#: None until somebody asks, and never stored empty -- a first question asked
+#: without a corpus must not answer "nothing" for the life of the process.
+_VERB_EXCEPTIONS = None
+
+
+def verb_exceptions(verb):
+    """
+    The irregular forms WordNet lists for a verb, or [].
+
+    WordNet keeps the table to read "bound" back to "bind". Read the other way
+    it is a list of irregular forms, with two cautions every caller has to
+    keep: it does not say which is the past and which the participle, and a
+    verb whose past is regular lists only its participle -- "sow" is filed with
+    "sown" alone. So it is `world.english`'s fallback for a verb Evennia's
+    table has never heard of, and nothing's first answer. The "-ing" forms and
+    the third person, which the table also holds, are left out.
+    """
+    wanted = str(verb or "").strip().lower()
+    if not wanted or _wordnet() is None:
+        return []
+    return list(_verb_exceptions().get(wanted, ()))
+
+
+def _verb_exceptions():
+    """The inverted table, built on first use."""
+    global _VERB_EXCEPTIONS
+    if _VERB_EXCEPTIONS is not None:
+        return _VERB_EXCEPTIONS
+
+    wordnet = _wordnet()
+    if wordnet is None:
+        return {}
+    with _LOCK:
+        if _VERB_EXCEPTIONS is not None:
+            return _VERB_EXCEPTIONS
+        index = {}
+        try:
+            for form, bases in wordnet._exception_map["v"].items():
+                if form.endswith("ing"):
+                    continue
+                for base in bases:
+                    if form in (base + "s", base + "es", base[:-1] + "ies"):
+                        continue
+                    index.setdefault(base, set()).add(form)
+        except Exception as err:
+            logger.log_info(f"verb exception table unavailable ({err})")
+            return {}
+        _VERB_EXCEPTIONS = {base: sorted(forms)
+                            for base, forms in index.items()}
+    return _VERB_EXCEPTIONS
+
+
+def lexical_file(sense):
+    """
+    The lexicographer's file a sense was filed in -- "noun.substance",
+    "noun.artifact" -- or "" for anything that is not a sense.
+
+    The coarsest thing WordNet knows about a noun, and the one place it says
+    whether something is stuff or things. Read by `world.english` off the
+    sense a thing was actually filed under, never off a word: gold is
+    `noun.possession` in its first sense and `noun.substance` in its third.
+    """
+    synset = _synset(sense)
+    if synset is None:
+        return ""
+    try:
+        return synset.lexname() or ""
+    except Exception:
+        return ""
+
+
 def senses(word, pos="n", limit=12):
     """
     The senses a word has, as [(id, definition)], for a model to choose from.

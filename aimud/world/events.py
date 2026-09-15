@@ -84,7 +84,7 @@ Jessica act, reaches Jessica.
 
 import re
 
-from world import referents, tokens
+from world import english, referents, tokens
 
 #: The roles a narration can name, in the order they rank.
 #:
@@ -211,38 +211,6 @@ _ARTICLE_BEFORE_SLOT = re.compile(r"\b[Aa]n?\b\s+(?=\{)|\b[Tt]he\b\s+(?=\{)")
 _ACTOR_VERB = re.compile(r"(\{actor(?:'s)?\}|\{actor\}'s)(\s+)([a-z]+(?:e?s))\b")
 
 
-def _base_form(word):
-    """
-    The base form of a third-person-singular verb, or "" if it is not one.
-
-    Asked of Evennia's conjugator rather than guessed at with suffix rules,
-    which is the only way "tries" comes back "try" and "watches" "watch"
-    without a table of exceptions here. "" for anything whose third person is
-    not the word given -- "is", "has", a plural noun that happens to end in s
-    -- so the caller leaves alone whatever it cannot be sure about.
-    """
-    for guess in _base_guesses(word):
-        try:
-            if _stance(guess, False)[1] == word:
-                return guess
-        except Exception:
-            continue
-    return ""
-
-
-def _base_guesses(word):
-    """Every base form `word` could be the third person singular of."""
-    if word.endswith("ies") and len(word) > 4:
-        yield word[:-3] + "y"
-    if word.endswith(("ses", "xes", "zes", "ches", "shes")):
-        yield word[:-2]
-    if word.endswith("es"):
-        yield word[:-1]
-        yield word[:-2]
-    if word.endswith("s"):
-        yield word[:-1]
-
-
 def repair(template):
     """
     A narration template that will render, whatever the model sent back.
@@ -278,7 +246,7 @@ def repair(template):
 def _wrap_actor_verb(match):
     """`{actor} hands` -> `{actor} $pconj(hand)`, or leave it be."""
     slot, gap, verb = match.groups()
-    base = _base_form(verb)
+    base = english.base_form(verb)
     return f"{slot}{gap}$pconj({base})" if base else match.group(0)
 
 
@@ -336,7 +304,7 @@ def plain_name(obj, viewer, bare=False):
     up a sword" reads as though one had just appeared. A name that already
     starts with an article is left alone, and `bare` asks for none at all --
     for a thing that follows a possessive, where "her the sword" is not
-    English.
+    English. The article itself is `world.english`'s to choose.
     """
     if obj is None:
         return ""
@@ -344,17 +312,9 @@ def plain_name(obj, viewer, bare=False):
         name = obj.get_display_name(viewer)
     except AttributeError:
         return str(getattr(obj, "key", obj))
-    from world.quests import is_person
-
-    try:
-        person = is_person(obj)
-    except AttributeError:
-        person = False
-    if person or bare or not name:
+    if bare or not name:
         return name
-    if str(name).lower().split(" ", 1)[0] in ("the", "a", "an", "some"):
-        return name
-    return f"the {name}"
+    return english.with_article(name, obj, definite=True)
 
 
 def _reads(viewer):
@@ -454,42 +414,27 @@ def name_for(obj, viewer, role="", event=None):
     return Naming(viewer, event, previous=[]).name(obj, role)
 
 
-def conjugate(verb, subject, viewer, world_root=None):
+def conjugate(verb, subject, viewer, world_root=None, tense="present"):
     """
     A verb agreeing with its subject, as this reader would see it.
 
     "hands" for one person, "hand" for a they/them character or a pile of
-    coins, "hand" for the reader themselves. Only the first word is touched;
-    "pick up" comes back "picks up". Evennia's conjugator does the English,
-    and a verb it cannot place gets the plain third-person suffix rather
-    than nothing at all.
+    coins, "hand" for the reader themselves -- and in the past, "was" for her
+    and "were" for them or for you. Only the first word is touched; "pick up"
+    comes back "picks up". The subject's person and number are decided here,
+    where the reader and pronoun sets are known; the English is
+    `world.english`'s.
     """
-    verb = str(verb or "").strip()
-    if not verb:
-        return ""
-    head, _, tail = verb.partition(" ")
     if subject is not None and subject is viewer:
-        word = _stance(head, False)[0]
+        person, plural = 2, False
     else:
+        person = 3
         plural = bool(pronoun_forms(subject, world_root).get("plural")) \
             if subject is not None else False
-        word = _stance(head, plural)[1]
-    return f"{word} {tail}".strip()
+    return english.conjugate(verb, person=person, plural=plural, tense=tense)
 
 
-def _stance(verb, plural):
-    """(second person, third person) for one word."""
-    try:
-        from evennia.utils.verb_conjugation.conjugate import (
-            verb_actor_stance_components)
-
-        second, third = verb_actor_stance_components(verb, plural=plural)
-        return str(second or verb), str(third or verb)
-    except Exception:
-        return verb, verb if plural else f"{verb}s"
-
-
-def render(template, viewer, event, previous=None):
+def render(template, viewer, event, previous=None, tense="present"):
     """
     The template as this viewer should read it.
 
@@ -503,12 +448,14 @@ def render(template, viewer, event, previous=None):
     it.
 
     `previous` overrides what the reader was last shown; for tests of the
-    rule, and for nothing else.
+    rule, and for nothing else. `tense="past"` is the same narration as
+    something that already happened: "Jessica handed Britney the sword."
     """
     naming = Naming(viewer, event, previous)
     context = tokens.Context(
         viewer=viewer, event=event, world_root=naming.world_root,
-        naming=naming, purpose="display" if naming.reads else "prompt")
+        naming=naming, purpose="display" if naming.reads else "prompt",
+        tense=tense)
     text = tokens.text(template, context)
     if text.strip():
         naming.remember()
