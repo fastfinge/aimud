@@ -99,19 +99,6 @@ odds, numbers or traits, and never say the word "check". The character does
 not know they were measured; they know the blade turned on a rivet."""
 
 
-def _parse_json_object(content):
-    """
-    Parse a model response that should be a single JSON object.
-
-    Delegates to world.model_json, which repairs the near-misses models make
-    -- a trailing comma, a stray comment, an answer cut off mid-object --
-    rather than losing a whole generation over one character.
-    """
-    from world.model_json import parse_object
-
-    return parse_object(content)
-
-
 # ---------------------------------------------------------------------------
 # Rule cache (per world, keyed by verb and the kind of thing acted on)
 # ---------------------------------------------------------------------------
@@ -210,53 +197,6 @@ def _describe_objects(bound, actor):
             entry += f"\n    holding: {'; '.join(holding)}"
         lines.append(entry)
     return "\n".join(lines)
-
-
-def state_block(world_root, bound=None):
-    """
-    The states this world already has, as a generator should be shown them.
-
-    Shared by both generators, because they choose from the same vocabulary
-    and the whole reason to show it is that a word not shown gets coined
-    again under another name.
-
-    Each state is shown with the group it belongs to, and the groups are
-    listed again on their own, because a group can only be reused if it can
-    be seen. Left to guess, one rule called a group "power_state" and the
-    next "charge_status" -- so a thing could be active and uncharged at the
-    same moment, neither name knowing the other existed.
-
-    The conditions things of this sort have actually been in come first and
-    separately. A world's vocabulary runs to sixty states before long, and
-    sixty undifferentiated lines are not read -- which is how "shut" got
-    coined beside "closed" and "dormant" beside "inactive". The handful that
-    have ever been true of a bottle are worth putting in front of the rest.
-    """
-    from world import verbs
-
-    vocab = verbs.vocabulary(world_root)
-
-    def line(slug, info):
-        return (f"  {slug}: {info.get('means','')}"
-                f" (group: {verbs.group_of(world_root, slug) or 'none'};"
-                f" cancels: {', '.join(info.get('conflicts') or []) or 'nothing'})")
-
-    familiar = _states_of_kinds(world_root, bound)
-    near_text = "\n".join(line(slug, vocab[slug])
-                          for slug in sorted(familiar & set(vocab)))
-    vocab_text = "\n".join(
-        line(slug, info) for slug, info in sorted(vocab.items())
-        if slug not in familiar
-    ) or "  (none yet)"
-    group_text = ", ".join(sorted(verbs.groups(world_root))) or "(none yet)"
-
-    return (
-        (f"Conditions things of this sort have been in before, and the ones "
-         f"to reuse if any of them fit:\n{near_text}\n\n"
-         if near_text else "")
-        + f"Every other state this world uses:\n{vocab_text}\n\n"
-        + f"State groups already in use, to be reused rather than renamed: "
-          f"{group_text}\n\n")
 
 
 _ADMISSION_SYSTEM = """You decide whether a sort of thing can be acted on at all.

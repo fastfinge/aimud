@@ -153,13 +153,12 @@ class OfferingSensesToChooseFrom(SimpleTestCase):
 
     def test_a_verb_with_one_sense_is_settled_and_not_asked_about(self):
         self.assertEqual(lexicon.settled_sense("power"), "power.v.01")
-        self.assertEqual(lexicon.verb_sense_prompt("power"), "")
+        self.assertEqual(len(lexicon.verb_senses("power")), 1)
 
     def test_a_verb_with_several_senses_is_asked_about_and_not_settled(self):
         self.assertEqual(lexicon.settled_sense("launch"), "")
-        prompt = lexicon.verb_sense_prompt("launch")
-        self.assertIn("launch.v.03", prompt)
-        self.assertIn("maiden voyage", prompt)
+        glosses = dict(lexicon.verb_senses("launch"))
+        self.assertIn("maiden voyage", glosses["launch.v.03"])
 
     def test_a_verb_nobody_has_heard_of_is_neither(self):
         """
@@ -174,7 +173,7 @@ class OfferingSensesToChooseFrom(SimpleTestCase):
         """
         for verb in ("respawn", "hyperjump"):
             self.assertEqual(lexicon.settled_sense(verb), "", verb)
-            self.assertEqual(lexicon.verb_sense_prompt(verb), "", verb)
+            self.assertEqual(lexicon.verb_senses(verb), [], verb)
 
     def test_the_fantasy_verbs_one_would_expect_to_be_missing_are_not(self):
         for verb in ("scry", "hex", "teleport", "defenestrate"):
@@ -202,7 +201,6 @@ class WithNoDictionaryAtAll(SimpleTestCase):
             self.assertEqual(lexicon.causes("open"), [])
             self.assertEqual(lexicon.entailments("snore"), [])
             self.assertEqual(lexicon.verb_senses("open"), [])
-            self.assertEqual(lexicon.verb_sense_prompt("open"), "")
             self.assertEqual(lexicon.settled_sense("power"), "")
 
     def test_and_so_do_the_sense_readers(self):

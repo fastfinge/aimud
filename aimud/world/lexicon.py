@@ -936,39 +936,14 @@ def verb_senses(verb, limit=5):
     return senses(verb, pos="v", limit=limit)
 
 
-def verb_sense_prompt(verb):
-    """
-    A block asking a model which sense of a verb it means, or "" without one.
-
-    Unlike the noun version this is offered for nearly every verb rather than
-    for the ambiguous few, because 98 of the 100 verbs the exported worlds
-    learned have a WordNet sense and most of those have several. The two that do
-    not are an adverb the old parser mistook for a verb and a misspelling, which
-    is its own small argument for asking.
-
-    Empty for a verb with one sense or none, because a menu of one is not a
-    question -- and one is not rare: `power`, `airlock` and `blaster` all have
-    exactly one. `settled_sense` is what a caller uses in that case.
-    """
-    listed = verb_senses(verb)
-    if len(listed) < 2:
-        return ""          # nothing to choose; see `settled_sense`
-    lines = "\n".join(f"  {name} -- {definition}"
-                      for name, definition in listed)
-    return (
-        f'"{verb}" has more than one meaning. Set "sense" to whichever of '
-        f"these this world means by it, given what is going on:\n{lines}\n"
-        f"Copy the identifier exactly. If none of them fits, leave "
-        f'"sense" empty and say what it means in your own words instead.\n'
-    )
-
-
 def settled_sense(verb):
     """
     The verb's sense when there is only one, so nobody need be asked.
 
-    Paired with `verb_sense_prompt`, which is empty in exactly this case. A
-    verb with one sense has already been disambiguated by English.
+    Paired with `actions.declaration_tool`, which offers the senses as a
+    choice in exactly the other case: two or more. A verb with one sense has
+    already been disambiguated by English -- and one is not rare: `power`,
+    `airlock` and `blaster` all have exactly one.
     """
     listed = verb_senses(verb, limit=2)
     return listed[0][0] if len(listed) == 1 else ""
