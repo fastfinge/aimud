@@ -289,20 +289,28 @@ class CmdAILook(_DefaultLook):
         sponsor = _sponsor_for(caller)
         caller.msg(f"You look carefully for {query}...")
 
+        from world import busy
         from world.item_gen import validate_object_existence, generate_item
 
+        wait = busy.start(caller, f"looking for {query}")
+
         def on_valid(_reason):
+            wait.stage(f"working out what {query} is")
             generate_item(
                 sponsor, room, query,
-                on_success=lambda item: _finish_look(caller, item, room, key),
-                on_error=lambda err: _gen_error(caller, room, key, err),
+                on_success=busy.closing(
+                    wait, lambda item: _finish_look(caller, item, room, key)),
+                on_error=busy.closing(
+                    wait, lambda err: _gen_error(caller, room, key, err)),
             )
 
         def on_invalid(_reason):
+            wait.done()
             _release_gen_lock(room, key)
             caller.msg(f"You don't see any {query} here.")
 
         def on_error(err):
+            wait.done()
             _release_gen_lock(room, key)
             caller.msg(f"|rError: {err}|n")
 
@@ -457,8 +465,11 @@ class CmdAIGet(_DefaultGet):
         # for every table in the world, and for the next one made.
         sponsor = _sponsor_for(caller)
 
-        from world import kinds
+        from world import busy, kinds
         from world.item_gen import validate_object_takeable
+
+        wait = busy.start(caller, f"deciding whether you can take "
+                                  f"{obj.get_display_name(caller)}")
 
         def remember(allowed):
             kinds.admit(_root(room), obj.db.kinds, "get", allowed)
@@ -466,14 +477,17 @@ class CmdAIGet(_DefaultGet):
                                               # thing that has no kind at all
 
         def on_valid(_reason):
+            wait.done()
             remember(True)
             _do_take(caller, obj)
 
         def on_invalid(_reason):
+            wait.done()
             remember(False)
             caller.msg("You can't take that.")
 
         def on_error(err):
+            wait.done()
             caller.msg(f"|rValidation error: {err}|n")
 
         validate_object_takeable(sponsor, room, obj, on_valid, on_invalid, on_error)
@@ -493,20 +507,28 @@ class CmdAIGet(_DefaultGet):
         sponsor = _sponsor_for(caller)
         caller.msg(f"You look for {query}...")
 
+        from world import busy
         from world.item_gen import validate_object_existence, generate_item
 
+        wait = busy.start(caller, f"looking for {query}")
+
         def on_valid(_reason):
+            wait.stage(f"working out what {query} is")
             generate_item(
                 sponsor, room, query,
-                on_success=lambda item: _finish_take(caller, item, room, key),
-                on_error=lambda err: _gen_error(caller, room, key, err),
+                on_success=busy.closing(
+                    wait, lambda item: _finish_take(caller, item, room, key)),
+                on_error=busy.closing(
+                    wait, lambda err: _gen_error(caller, room, key, err)),
             )
 
         def on_invalid(_reason):
+            wait.done()
             _release_gen_lock(room, key)
             caller.msg(f"You don't see any {query} here.")
 
         def on_error(err):
+            wait.done()
             _release_gen_lock(room, key)
             caller.msg(f"|rError: {err}|n")
 

@@ -73,10 +73,13 @@ class CmdGoal(Command):
         caller.ndb.setting_goal = True
         caller.msg(f"Working out how you would {want}...")
 
+        from world import busy
         from world.quest_gen import formalise_goal
 
+        wait = busy.start(caller, f"working out how you would {want}")
         formalise_goal(sponsor, caller, want,
-                       on_success=self._ready, on_error=self._failed)
+                       on_success=busy.closing(wait, self._ready),
+                       on_error=busy.closing(wait, self._failed))
 
     def _clear(self):
         caller = self.caller

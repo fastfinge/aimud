@@ -74,6 +74,67 @@ class CmdApiKey(Command):
             self.caller.msg(f"Unknown subcommand '{self.subcmd}'. Use: apikey, apikey set <key>, apikey delete")
 
 
+class CmdBusy(Command):
+    """
+    How often you are told that a model is still working.
+
+    Usage:
+      busy
+      busy <seconds>
+      busy off
+      busy default
+
+    Some of what you do has to wait for a model: a verb this world has never
+    seen, a room being built behind a door, a thing appearing when you look
+    for it. That can take a minute or more, so every so often you are told it
+    is still going, and what it is doing -- "Still working out what pry does...
+    (20 seconds)" -- so a long wait does not look like the game has stopped.
+
+    This sets how often, from 5 to 120 seconds, or turns it off. Unset, it is
+    every 10 seconds. It is kept on your account, so it follows you into
+    every character and every world.
+    """
+
+    key = "busy"
+    locks = "cmd:all()"
+    help_category = "Account"
+    account_caller = True
+
+    def func(self):
+        from world import busy
+
+        account = _get_account(self.caller)
+        asked = self.args.strip()
+
+        if not asked:
+            seconds = busy.interval_for(account)
+            if not seconds:
+                said = "You are not told when a model is still working."
+            elif busy.chosen(account) is None:
+                said = (f"You are told every {seconds} seconds that a model is "
+                        f"still working. That is the default.")
+            else:
+                said = (f"You are told every {seconds} seconds that a model is "
+                        f"still working.")
+            self.caller.msg(f"{said} |wbusy <seconds>|n, |wbusy off|n or "
+                            f"|wbusy default|n changes it.")
+            return
+
+        seconds, complaint = busy.parse_interval(asked)
+        if complaint:
+            self.caller.msg(complaint)
+            return
+        busy.set_interval(account, seconds)
+        if seconds is None:
+            self.caller.msg(f"Back to the default: every "
+                            f"{busy.DEFAULT_INTERVAL} seconds.")
+        elif seconds == 0:
+            self.caller.msg("You will not be told when a model is still "
+                            "working.")
+        else:
+            self.caller.msg(f"You will be told every {seconds} seconds.")
+
+
 class CmdModels(Command):
     """
     Choose which AI model answers for each part of the game, and how.

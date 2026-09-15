@@ -808,9 +808,10 @@ busy off        never
 * **`unknown_cmd`**: open the wait in `waiting()`, the `on_wait` it already
   passes, and close it in `deliver`. `attempt` passes the wait down so
   `actions.learn`, `rule_gen.learn`, `ask_admission` and `narrate` can set
-  stages. This needs a `wait=` parameter through `attempt`, `_admitted`,
-  `_with_rule` and the generators. It travels beside `waiter`, and the two can
-  merge.
+  stages. *As built:* no `wait=` parameter was needed. `attempt` already
+  threads a `waiter` through every step that goes to a model, so the waiter
+  takes a stage phrase, and `attempt` and `_in_turn` gain one `on_stage`
+  callback. Nothing else changed shape.
 * **`look_take_cmds`**: open in `_ai_look`, `_ai_take_nonexistent` and the take
   validation; close in `_finish_look` / `_finish_take`, `_gen_error`,
   `on_invalid` and `on_error`.
@@ -1113,6 +1114,46 @@ Both on the models the account would normally choose.
 
 **Done when** budgets, caps and any new jobs are set from the soak's numbers,
 and those numbers are recorded for the *As built* section.
+
+#### The baseline, as recorded (2026-09-15)
+
+World 6958, played from 14:31 to 15:05 on the Phase 0 code: timing on,
+generators unchanged. 601 calls, every one timed, and 3,542 seconds of model
+time in 34 minutes of play. That is more model time than play time, because
+characters think while the player acts.
+
+| Job | Model | Timed calls | Average |
+|---|---|---|---|
+| dialogue | inception/mercury-2.5 | 328 | 3.9 s |
+| commands | google/gemini-3.1-pro-preview | 135 | 8.7 s |
+| quests | google/gemini-3.1-pro-preview | 35 | 6.0 s |
+| contents | google/gemini-3.7-flash | 23 | 9.9 s |
+| items | google/gemini-3.1-pro-preview | 21 | 12.1 s |
+| validation | ibm-granite/granite-4.2-8b | 21 | 7.2 s |
+| rooms | google/gemini-3.7-flash | 20 | 5.9 s |
+| naming | google/gemma-4-31b-it | 17 | 4.8 s |
+| npcs | google/gemini-3.1-pro-preview | 9 | 14.6 s |
+
+Eight of the 609 timed calls came from other worlds. The slowest single call
+took 18.3 seconds (npcs).
+
+From the server log for the same session:
+
+* 2 rules dropped, both for `teacup.n.01` being "too near the top of the
+  taxonomy";
+* 1 `cannot_say` (`order`);
+* 2 verbs that learned no rule (`drink`, `order`);
+* 3 NPC turns that failed with `'choices'`: the service sent back an error,
+  and `llm.call` passed it on without reading it.
+
+**What this baseline cannot say,** and what the soak therefore needs:
+
+* **Tokens per job within one world.** The ledger totals by job and by world,
+  but not by job within a world, so these tokens are mixed with older worlds.
+  The soak snapshots `spend_totals` before it starts and compares afterwards.
+* **Waits, as opposed to calls.** A verb that needs four calls is one wait.
+  `busy.Wait` knows how long each wait lasted, so it logs that when it
+  closes, and the soak reads player waits from there.
 
 ### Phase 9: documentation
 

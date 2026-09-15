@@ -177,6 +177,9 @@ class CmdAIUnknown(SystemNoMatch):
                 return
 
         caller.ndb.attempting = raw
+        # Opened only once the attempt goes to a model, and closed before the
+        # answer is shown, so no "still working" line lands after it.
+        wait = []
 
         def deliver(actor_text, event=None):
             # Everyone present sees what happened, each in their own words:
@@ -186,12 +189,22 @@ class CmdAIUnknown(SystemNoMatch):
             from world import events
 
             caller.ndb.attempting = None
+            for opened in wait:
+                opened.done()
             events.show(actor_text, event, caller)
 
         def waiting():
             # Only fires when the attempt actually has to go to a model, so a
             # cached verb stays instant and a slow one does not look ignored.
+            from world import busy
+
             caller.msg(f"You try to {raw}...")
+            wait.append(busy.start(caller, f"trying to {raw}"))
+
+        def staging(text):
+            for opened in wait:
+                opened.stage(text)
 
         from world.attempt import attempt
-        attempt(caller, raw, sponsor, deliver, on_wait=waiting)
+        attempt(caller, raw, sponsor, deliver, on_wait=waiting,
+                on_stage=staging)

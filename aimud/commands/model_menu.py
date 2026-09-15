@@ -101,10 +101,12 @@ def start_model_menu(caller):
     def on_error(failure):
         caller.msg(f"|rCould not fetch models: {failure.getErrorMessage()}|n")
 
-    from world import llm
+    from world import busy, llm
 
+    wait = busy.start(caller, "fetching the list of models")
     llm.fetch(_fetch_models_sync, sponsor,
-              on_success=on_success, on_error=on_error)
+              on_success=busy.closing(wait, on_success),
+              on_error=busy.closing(wait, on_error))
 
 
 def _open_menu(account):

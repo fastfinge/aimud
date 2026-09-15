@@ -164,6 +164,10 @@ class AIExit(ObjectParent, DefaultExit):
             if traversing_object not in self.ndb.waiting_travelers:
                 self.ndb.waiting_travelers.append(traversing_object)
                 traversing_object.msg("A room is already being generated here — you'll be moved when it's ready.")
+                # One wait for the door, however many are queued at it. `add`
+                # keeps only players: a character in the queue is not told.
+                if self.ndb.busy_wait is not None:
+                    self.ndb.busy_wait.add(traversing_object)
             return
 
         # NPCs take turns at this; a player never waits on one.
@@ -179,11 +183,19 @@ class AIExit(ObjectParent, DefaultExit):
         self.ndb.waiting_travelers = [traversing_object]
         traversing_object.msg(f"Generating room to the {self.key}...")
 
+        from world import busy
+
+        self.ndb.busy_wait = busy.start(traversing_object,
+                                        f"building the way {self.key}")
+
         exit_key = self.key  # capture before async
         hint = self.db.destination_hint or ""
 
         def release():
             self.ndb.generating = False
+            if self.ndb.busy_wait is not None:
+                self.ndb.busy_wait.done()
+                self.ndb.busy_wait = None
             if _NPC_BUILDS.get(getattr(world_root, "id", None)) == self.id:
                 del _NPC_BUILDS[world_root.id]
 

@@ -91,7 +91,9 @@ class CmdRemember(Command):
         # had it: `llm.fetch` below is called in this scope, and a name bound
         # inside the inner function is not visible here. Every `recall` raised
         # NameError before it reached the thread pool.
-        from world import llm
+        from world import busy, llm
+
+        wait = busy.start(caller, "casting your mind back")
 
         def _fetch():
             # Recall in the thread pool, off the reactor.
@@ -111,9 +113,11 @@ class CmdRemember(Command):
             try:
                 memories = format_recalled(rows)
             except Exception as exc:
+                wait.done()
                 caller.ndb.recalling = False
                 caller.msg(f"|rYou cannot gather your thoughts: {exc}|n")
                 return
+            wait.stage("putting what you remember into words")
             messages = [
                 {"role": "system", "content": _RECALL_SYSTEM},
                 {
@@ -128,6 +132,7 @@ class CmdRemember(Command):
                       on_success=_answered, on_error=_fail)
 
         def _answered(answer):
+            wait.done()
             caller.ndb.recalling = False
             if answer is None:
                 caller.msg("You cannot bring anything to mind about that.")
@@ -135,6 +140,7 @@ class CmdRemember(Command):
                 caller.msg(str(answer).strip())
 
         def _fail(failure):
+            wait.done()
             caller.ndb.recalling = False
             caller.msg(f"|rYou cannot gather your thoughts: {failure.getErrorMessage()}|n")
 
