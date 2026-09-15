@@ -275,6 +275,157 @@ def _write_down_spending():
         ledger.note(sponsor, model, usage, seconds)
 
 
+def converse(sponsor, model, messages, toolbox, *, on_done, on_error,
+             rounds=8, timeout=TIMEOUT, wait=None, on_exhausted=None):
+    """
+    Ask a model with tools, and keep going until it has answered.
+
+    The loop every generator shares: see docs/generator-tool-loops.md §3.
+    Runs on the reactor and goes through `fetch` for every round, so a test's
+    `immediately()` runs a whole conversation before this returns.
+
+    A round asks, adds the reply to the conversation exactly as it came, and
+    runs its tool calls in order through `toolbox`, adding each result. It
+    ends:
+
+    * when a finish tool **accepts** -- `on_done(value)`;
+    * when there is no finish tool and a reply calls none, or a round only
+      acted -- `on_done(text)`, the reply's own words, or None;
+    * when the rounds run out -- `on_exhausted(last rejected value)` if given,
+      otherwise `on_error(why)`. On the last round the finish tool is named in
+      `tool_choice`, so a model is made to answer rather than merely asked;
+    * when a round fails -- `on_error(why)`, in words, as every generator's
+      error path already takes it.
+
+    A reply with no tool calls while a finish tool is waiting is told to use
+    it. Nothing parses JSON out of the text: one way to answer, one parser.
+    """
+    from world import toolbox as tools_mod
+
+    if wait is not None and toolbox.ctx.wait is None:
+        toolbox.ctx.wait = wait
+    finish = toolbox.finish
+    convo = list(messages)
+    state = {"round": 0, "forced": False, "last": None,
+             "started": time.monotonic(), "ended": False}
+
+    def ended(outcome, value=None, error=None, exhausted=False):
+        if state["ended"]:
+            return
+        state["ended"] = True
+        _loop_measured(sponsor, model, toolbox, state, outcome, rounds)
+        if exhausted and on_exhausted is not None:
+            return on_exhausted(state["last"])
+        if error is not None:
+            return on_error(error)
+        return on_done(value)
+
+    def ask():
+        choice = None
+        if finish is not None and state["round"] >= rounds - 1:
+            choice = {"type": "function", "function": {"name": finish.name}}
+            state["forced"] = True
+        state["round"] += 1
+        fetch(call, sponsor, model, list(convo), toolbox.schemas or None,
+              timeout, choice,
+              on_success=replied,
+              on_error=lambda failure: ended(
+                  "failed", error=failure.getErrorMessage()))
+
+    def replied(reply):
+        try:
+            message = reply["choices"][0]["message"] or {}
+        except (KeyError, IndexError, TypeError):
+            return ended("failed", error="the model service sent back no "
+                                         "answer")
+        calls = [entry for entry in (message.get("tool_calls") or [])
+                 if (entry or {}).get("type", "function") == "function"]
+        spoken = {"role": "assistant", "content": message.get("content")}
+        if calls:
+            spoken["tool_calls"] = calls
+        convo.append(spoken)
+
+        if not calls:
+            if finish is None:
+                return ended("answered", value=message.get("content") or "")
+            if state["round"] >= rounds:
+                return ended("exhausted", exhausted=True,
+                             error=f"the model never answered with "
+                                   f"{finish.name}")
+            convo.append({"role": "user",
+                          "content": f"Answer by calling {finish.name}."})
+            return ask()
+        run(calls, 0, {"looked": False, "complained": False})
+
+    def run(calls, index, seen):
+        if state["ended"]:
+            return None
+        if index >= len(calls):
+            return after(seen)
+        entry = calls[index]
+        if index >= tools_mod.MOST_CALLS_PER_ROUND:
+            answered_with(entry, "Not run: that is too many at once. Ask "
+                                 "again for whatever you still need.")
+            return run(calls, index + 1, seen)
+        name = str(((entry or {}).get("function") or {}).get("name") or "")
+        tool = toolbox.by_name.get(name)
+
+        def answered(result):
+            if isinstance(result, tools_mod.Accepted):
+                answered_with(entry, result)
+                return ended("forced" if state["forced"] else "accepted",
+                             value=result.value)
+            if isinstance(result, tools_mod.Complaint):
+                seen["complained"] = True
+                state["last"] = result.value
+            if tool is not None and tool.looks:
+                seen["looked"] = True
+            answered_with(entry, result)
+            return run(calls, index + 1, seen)
+
+        toolbox.run(entry, answered)
+        return None
+
+    def answered_with(entry, result):
+        convo.append({"role": "tool",
+                      "tool_call_id": str((entry or {}).get("id") or ""),
+                      "content": tools_mod.said(result)})
+
+    def after(seen):
+        if finish is None and not seen["looked"]:
+            return ended("acted")
+        if state["round"] >= rounds:
+            if finish is None:
+                return ended("exhausted", value=None)
+            return ended("exhausted", exhausted=True,
+                         error=f"the model never answered with {finish.name}")
+        return ask()
+
+    ask()
+
+
+def _loop_measured(sponsor, model, toolbox, state, outcome, rounds):
+    """
+    One line for every loop, which is what the soak reads budgets from.
+
+    Never raises: a measurement must not be able to lose the answer it is
+    measuring.
+    """
+    try:
+        job = str(getattr(model, "job", "") or "unknown")
+        seconds = time.monotonic() - state["started"]
+        lookups = ", ".join(f"{name}x{count}" for name, count
+                            in sorted(toolbox.used.items())) or "none"
+        from evennia.utils import logger
+
+        logger.log_info(
+            f"llm: loop job={job} rounds={state['round']}/{rounds} "
+            f"seconds={seconds:.1f} tools={lookups} "
+            f"complaints={toolbox.complaints} outcome={outcome}")
+    except Exception:
+        pass
+
+
 def fetch(work, *args, on_success, on_error):
     """
     Do `work(*args)` off the reactor, and hand what it returns back on it.
