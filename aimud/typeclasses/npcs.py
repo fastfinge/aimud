@@ -164,7 +164,8 @@ class NPC(ObjectParent, DefaultObject):
     # Public API — called by room event hooks, notify_npcs(), and the script
     # ------------------------------------------------------------------ #
 
-    def witness(self, event_type, actor_name, text, _depth=0):
+    def witness(self, event_type, actor_name, text, _depth=0, about=(),
+                addressed=()):
         """
         Record an event and decide whether to answer it.
 
@@ -185,13 +186,18 @@ class NPC(ObjectParent, DefaultObject):
         text       : what was said / what happened
         _depth     : NPC-to-NPC hop count; events with _depth > MAX_NPC_CHAIN
                      are recorded in history but do not trigger a new reaction.
+        about      : who and what it concerned, for the memory
+        addressed  : who was spoken to -- see `world.recognition` -- and the
+                     one way to be addressed without being named: a whisper
         """
-        self._add_to_history(event_type, actor_name, text)
+        self._add_to_history(event_type, actor_name, text, about=about,
+                             addressed=addressed)
 
         if self.ndb.reacting or _depth > MAX_NPC_CHAIN:
             return
 
-        if self.addressed_by(text) or self.only_listener():
+        if (self.addressed_by(text) or self.spoken_to(addressed)
+                or self.only_listener()):
             # Deliberately does not touch the figure. Being spoken to is a
             # different thing from having sat quietly through five exchanges,
             # and answering to your own name should not buy anybody a longer
@@ -262,6 +268,17 @@ class NPC(ObjectParent, DefaultObject):
             if len(word) > 2 and word not in TITLES:
                 names.add(word)
         return {name for name in names if name}
+
+    def spoken_to(self, addressed):
+        """Whether this character is among those `world.recognition` found addressed."""
+        mine = f"#{self.id}"
+        for item in addressed or ():
+            try:
+                if tuple(item)[1] == mine:
+                    return True
+            except (TypeError, IndexError):
+                continue
+        return False
 
     def addressed_by(self, text):
         """
@@ -361,14 +378,16 @@ class NPC(ObjectParent, DefaultObject):
     # Internal
     # ------------------------------------------------------------------ #
 
-    def _add_to_history(self, event_type, actor_name, text):
+    def _add_to_history(self, event_type, actor_name, text, about=(),
+                        addressed=()):
         """
         Record an event this NPC perceived or performed.
 
         action_history is the NPC's working memory: a short tail sent verbatim
         so the immediate exchange stays coherent.  The same event also goes to
         the NPC's memory bank, which has no length limit and is what lets them
-        recall something from an hour ago that matters again now.
+        recall something from an hour ago that matters again now -- with who
+        it concerned, when anybody worked that out.
         """
         history = self.db.action_history or []
         history.append({"type": event_type, "actor": actor_name, "text": text})
@@ -379,11 +398,14 @@ class NPC(ObjectParent, DefaultObject):
         from world.memory import describe_event, remember
 
         mine = actor_name == self.key
+        extra = {name: list(value) for name, value in
+                 (("about", about), ("addressed", addressed)) if value}
         remember(
             self,
             describe_event(event_type, actor_name, text),
             kind="did" if mine else "witnessed",
             importance=0.6 if mine else 0.4,
+            **extra,
         )
 
     def _note_to_self(self, text):
@@ -499,23 +521,59 @@ class NPC(ObjectParent, DefaultObject):
         finally:
             self.ndb.reacting = False
 
-    def _notify_other_npcs(self, room, event_type, text, _depth):
+    def _notify_other_npcs(self, room, event_type, text, _depth, about=(),
+                           addressed=()):
         """
-        Notify other NPCs in the room of this NPC's action.
+        Tell everybody else here about this NPC's action: the players'
+        memories, and the other NPCs.
 
-        Respects MAX_NPC_CHAIN, and each recipient decides for itself whether
-        it is currently allowed to act -- which is what lets two NPCs hold a
-        conversation in a room the players have just left, while a world
-        nobody is watching stays silent.
+        The players first, and whatever the depth. A player who heard a
+        barman speak remembers it, whether or not the conversation has run
+        deep enough that no other character may answer -- remembering is not
+        reacting, and a chain limit exists to stop model calls, not memories.
+        This used to tell only the other NPCs, so nothing an NPC said or did
+        through a tool ever reached a player's memory.
+
+        Then respects MAX_NPC_CHAIN, and each recipient decides for itself
+        whether it is currently allowed to act -- which is what lets two NPCs
+        hold a conversation in a room the players have just left, while a
+        world nobody is watching stays silent.
         """
         from world.activity import npc_may_act
+
+        self._witnessed_by_players(room, event_type, text, about=about,
+                                   addressed=addressed)
 
         next_depth = _depth + 1
         if next_depth > MAX_NPC_CHAIN:
             return
         for obj in room.contents:
             if obj is not self and obj.db.is_npc and npc_may_act(obj):
-                obj.witness(event_type, self.key, text, _depth=next_depth)
+                obj.witness(event_type, self.key, text, _depth=next_depth,
+                            about=about, addressed=addressed)
+
+    def _witnessed_by_players(self, room, event_type, text, about=(),
+                              addressed=()):
+        """
+        Write what this NPC visibly did into the memory of every player here.
+
+        For the acts no other NPC is told about -- asking a favour, handing a
+        thing over, breaking one -- and, through `_notify_other_npcs`, for
+        everything else. NPCs are skipped by `record_room_event`, since they
+        remember through `witness`.
+        """
+        from world.memory import record_room_event
+
+        if room is None or not text:
+            return
+        record_room_event(room, event_type, self.key, text, actor=self,
+                          about=about, addressed=addressed)
+
+    @staticmethod
+    def _involved(event):
+        """An event's participants, as a memory's `about`: bound, so certain."""
+        return [(str(obj.key), f"#{obj.id}", 1.0)
+                for obj in event.participants() if getattr(obj, "id", None)]
 
     def _set_goal(self, want, room):
         """
@@ -657,6 +715,10 @@ class NPC(ObjectParent, DefaultObject):
                 self._aloud(room, '{actor} $pconj(say), "{quote}"',
                             quotes={"quote": request})
                 target.witness("say", self.key, request)
+                self._witnessed_by_players(
+                    room, "say", request,
+                    about=[(str(target.key), f"#{target.id}", 1.0)],
+                    addressed=[(str(target.key), f"#{target.id}", 1.0)])
             else:
                 target.msg(f'{self.key} says, "|w{request}|n"')
                 target.msg(
@@ -666,13 +728,13 @@ class NPC(ObjectParent, DefaultObject):
                 )
                 from world import events
 
-                self._acted(
-                    room,
-                    events.Event(actor=self, room=room, verb="ask",
-                                 roles={"target": target},
-                                 room_template=("{actor} $pconj(ask) {target} "
-                                                "for a favour.")),
-                    exclude=[target])
+                asking = events.Event(actor=self, room=room, verb="ask",
+                                      roles={"target": target},
+                                      room_template=("{actor} $pconj(ask) "
+                                                     "{target} for a favour."))
+                asked = self._acted(room, asking, exclude=[target])
+                self._witnessed_by_players(room, "action", asked,
+                                           about=self._involved(asking))
             self._add_to_history("action", self.key,
                                  f"asked {target.get_display_name(self)} to {quest['title']}")
 
@@ -973,11 +1035,11 @@ class NPC(ObjectParent, DefaultObject):
             events_mod.show_the_room(event)
             # The NPC's own record; _add_to_history also writes to its memory.
             self._add_to_history("action", self.key, visible)
-            # Others present witness it too, through the depth-capped path so
-            # one NPC acting cannot set off an endless chain of reactions.
-            self._notify_other_npcs(room, "action", visible, _depth)
-            from world.memory import record_room_event
-            record_room_event(room, "action", self.key, visible, actor=self)
+            # Others present witness it too -- the players' memories, and the
+            # other NPCs through the depth-capped path, so one NPC acting
+            # cannot set off an endless chain of reactions.
+            self._notify_other_npcs(room, "action", visible, _depth,
+                                    about=self._involved(event))
 
         # Fuzzy binding, because an NPC names things from memory in its own
         # words: "the blackboard" should find the chalkboard already on the
@@ -1097,10 +1159,17 @@ class NPC(ObjectParent, DefaultObject):
         if tool_name == "say":
             msg = str(args.get("message", "")).strip()
             if msg:
+                from world import recognition
+
+                mentions = recognition.recognise(msg, speaker=self, room=room)
+                about = recognition.about(mentions)
+                addressed = recognition.addressed(mentions)
                 self._aloud(room, '{actor} $pconj(say), "|w{quote}|n"',
                             quotes={"quote": msg})
-                self._add_to_history("say", self.key, msg)
-                self._notify_other_npcs(room, "say", msg, _depth)
+                self._add_to_history("say", self.key, msg, about=about,
+                                     addressed=addressed)
+                self._notify_other_npcs(room, "say", msg, _depth, about=about,
+                                        addressed=addressed)
 
         elif tool_name == "emote":
             action = str(args.get("action", "")).strip()
@@ -1108,9 +1177,16 @@ class NPC(ObjectParent, DefaultObject):
                 # "grasps the tongs, testing the grip" is a sentence with its
                 # verb already conjugated for one person; `events.repair`
                 # wraps it so that it agrees with whoever is reading it too.
+                from world import recognition
+
+                mentions = recognition.recognise(action, speaker=self, room=room)
+                about = recognition.about(mentions)
+                addressed = recognition.addressed(mentions)
                 spoken = self._aloud(room, "{actor} " + action, verb="emote")
-                self._add_to_history("emote", self.key, action)
-                self._notify_other_npcs(room, "emote", spoken, _depth)
+                self._add_to_history("emote", self.key, action, about=about,
+                                     addressed=addressed)
+                self._notify_other_npcs(room, "emote", spoken, _depth,
+                                        about=about, addressed=addressed)
 
         elif tool_name == "set_goal":
             self._set_goal(str(args.get("want", "")).strip(), room)
@@ -1181,7 +1257,9 @@ class NPC(ObjectParent, DefaultObject):
 
                     ok, said, event = ownership.give(self, obj, recipient)
                     if ok:
-                        self._acted(room, event)
+                        given = self._acted(room, event)
+                        self._witnessed_by_players(room, "action", given,
+                                                   about=self._involved(event))
                         attempt.consequences(
                             self, "give",
                             {"direct": obj, "target": recipient})
@@ -1211,10 +1289,11 @@ class NPC(ObjectParent, DefaultObject):
                 for line in said:
                     # The effect layer's own sentence about what is gone; the
                     # thing itself is deleted by now and cannot be a role.
-                    self._acted(room, events.Event(
+                    broken = self._acted(room, events.Event(
                         actor=self, room=room, verb="destroy",
                         room_template="{actor} $pconj(destroy) something. {quote}",
                         quotes={"quote": line}))
+                    self._witnessed_by_players(room, "action", broken)
 
         elif tool_name == "modify":
             obj_name = str(args.get("object_name", "")).strip()

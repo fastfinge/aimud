@@ -274,7 +274,7 @@ def world_of(character):
 # ---------------------------------------------------------------------------
 
 def remember(character, text, kind="event", importance=0.5, about=(),
-             metadata=None):
+             metadata=None, addressed=()):
     """
     Record something into a character's memory. Fire-and-forget.
 
@@ -285,9 +285,11 @@ def remember(character, text, kind="event", importance=0.5, about=(),
 
     `about` is (name, dbref) for everything the memory concerns, and is the
     half of this that no extractor could supply: we know who was involved
-    because binding resolved them. `metadata` rides along unread, so a
-    recalled memory can be re-rendered with today's names rather than replayed
-    as the sentence it was written as.
+    because binding resolved them. A third field is how sure that is -- 1.0
+    for a bound role, less for a name `world.recognition` found in speech.
+    `addressed` is the same shape, for whoever was spoken to. `metadata` rides
+    along unread, so a recalled memory can be re-rendered with today's names
+    rather than replayed as the sentence it was written as.
 
     Dropped rather than queued when the server is closing or the backlog is
     already long. A memory is worth having; it is not worth holding a shutdown
@@ -320,7 +322,7 @@ def remember(character, text, kind="event", importance=0.5, about=(),
     def _write():
         try:
             _remember_sync(where.bank, where.session, text, kind, importance,
-                           about=about, metadata=metadata)
+                           about=about, metadata=metadata, addressed=addressed)
         finally:
             _finished()
 
@@ -368,26 +370,30 @@ def describe_event(event_type, actor_name, text):
     return f"{actor_name}: {text}"
 
 
-def record_room_event(room, event_type, actor_name, text, actor=None):
+def record_room_event(room, event_type, actor_name, text, actor=None,
+                      about=(), addressed=()):
     """
     Write an event to the memory of every player character in the room.
 
     NPCs record through their own history hook instead, so they are skipped
     here to avoid remembering the same moment twice.  The actor remembers
-    doing it; everyone else remembers seeing it.
+    doing it; everyone else remembers seeing it. `about` and `addressed` are
+    as `remember` takes them, and every copy of the memory carries them.
     """
     if not room or not available():
         return
     from evennia.objects.objects import DefaultCharacter
 
     line = describe_event(event_type, actor_name, text)
+    extra = {name: list(value) for name, value in
+             (("about", about), ("addressed", addressed)) if value}
     for obj in room.contents:
         if not isinstance(obj, DefaultCharacter):
             continue
         if obj is actor:
-            remember(obj, line, kind="did", importance=0.6)
+            remember(obj, line, kind="did", importance=0.6, **extra)
         else:
-            remember(obj, line, kind="witnessed", importance=0.4)
+            remember(obj, line, kind="witnessed", importance=0.4, **extra)
 
 
 # ---------------------------------------------------------------------------
@@ -1170,7 +1176,7 @@ def format_memories(memories):
 # ---------------------------------------------------------------------------
 
 def _remember_sync(bank, session, text, kind, importance, about=(),
-                   metadata=None):
+                   metadata=None, addressed=()):
     """
     Store one memory, and say what it was about. Runs in a thread.
 
@@ -1190,26 +1196,55 @@ def _remember_sync(bank, session, text, kind, importance, about=(),
         memory_id = memory.remember(
             text, source=kind, importance=importance,
             metadata=dict(metadata or {}) or None)
-        if memory_id and about:
-            _annotate(memory_id, about)
+        if memory_id and (about or addressed):
+            _annotate(memory_id, about, addressed)
         return memory_id
 
     return _with_memory(bank, session, _write)
 
 
-def _annotate(memory_id, about):
-    """File what a memory was about, so a cue can find it by name or by id."""
+def _annotate(memory_id, about, addressed=()):
+    """
+    File what a memory was about, so a cue can find it by name or by id.
+
+    Three kinds: `mentions` by name and `dbref` by id for everything it was
+    about, and `addressed` by id for whoever was spoken to. Each is written at
+    the confidence it arrived with, since `add_many` takes one confidence per
+    call -- a bound role at 1.0 and a name heard in speech below it.
+    """
     from mnemosyne.core.annotations import AnnotationStore
 
     store = AnnotationStore()
-    names = sorted({str(name) for name, _ref in about if name})
-    refs = sorted({str(ref) for _name, ref in about if ref})
-    if names:
-        store.add_many(memory_id=memory_id, kind="mentions", values=names,
-                       source="aimud", confidence=1.0)
-    if refs:
-        store.add_many(memory_id=memory_id, kind="dbref", values=refs,
-                       source="aimud", confidence=1.0)
+    concerned = list(_confident(about))
+    spoken_to = list(_confident(addressed))
+    for kind, rows in (
+            ("mentions", [(name, sure) for name, _ref, sure in concerned]),
+            ("dbref", [(ref, sure) for _name, ref, sure in concerned]),
+            ("addressed", [(ref, sure) for _name, ref, sure in spoken_to])):
+        by_confidence = {}
+        for value, sure in rows:
+            if value:
+                by_confidence.setdefault(sure, set()).add(str(value))
+        for sure, values in sorted(by_confidence.items()):
+            store.add_many(memory_id=memory_id, kind=kind,
+                           values=sorted(values), source="aimud",
+                           confidence=sure)
+
+
+def _confident(pairs):
+    """(name, ref, confidence) from (name, ref) or (name, ref, confidence)."""
+    for item in pairs or ():
+        try:
+            item = tuple(item)
+        except TypeError:
+            continue
+        if len(item) < 2:
+            continue
+        try:
+            sure = float(item[2]) if len(item) > 2 else 1.0
+        except (TypeError, ValueError):
+            sure = 1.0
+        yield item[0], item[1], sure
 
 
 def _recall_sync(bank, session, query, top_k):

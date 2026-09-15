@@ -1,6 +1,6 @@
 # Development plan: tokens and phrases
 
-Status: **phases 1 to 4 built**; phases 5 and 6 planned. Six phases, §8. Where the
+Status: **phases 1 to 5 built**; phase 6 planned. Six phases, §8. Where the
 building turned up something the plan had wrong, the phase says so under *As
 built* rather than the plan being quietly corrected.
 
@@ -688,6 +688,14 @@ building:
 * **Found, not fixed:** `repair` wraps the word after `{actor's}` as well as
   after `{actor}`, so "{actor's} boots" becomes `$pconj(boot)` and tells the
   actor "your boot". It was already doing this before phase 1.
+* **Found and fixed, during phase 5: a named they/them character took a
+  plural verb.** Agreement read the pronoun set whatever the subject was
+  called, so "Jessica hand Britney the sword" -- and `test_centering` asserted
+  it. A verb now agrees with the words its subject was given: `Naming` records
+  whether it named or pronominalised each participant, and `$pconj` asks it
+  (`Naming.plural_for`, `events.subject_plural`). "They hand", "Jessica
+  hands". A thing's number is still its name's -- "the coins scatter" -- and a
+  subject the sentence has not yet named is taken as named.
 
 ### Phase 3 -- world lists, facts and scope
 
@@ -857,6 +865,54 @@ Acceptance:
 * annotations carry the stated confidences.
 
 No world reset.
+
+*As built* (`world/recognition.py`, `tests/test_recognition.py`). Settled in
+the building:
+
+* **Recognition is its own module**, `recognition.recognise(text, speaker,
+  room, targets)`, not `tokens.recognise`: it reads words into references,
+  which is the other direction from anything in `tokens`. It answers with
+  `Mention(ref, name, start, end, addressed, confidence)`.
+* **One word of a person's name counts, at lower confidence.** The plan allowed
+  only a key or an alias, but people say "Barnaby" to Barnaby Royston. The rule
+  is the one `NPC._names` already used to notice being named: every word of the
+  name longer than two letters that is not a title. Whole names outrank parts,
+  and the longest name found wins a stretch of text.
+* **Things are mentioned too, and never addressed.** "Pass me the lamp" names
+  the lamp. The capital rule applies only to people, since a thing is usually
+  named in lower case.
+* **A capital at the start of a sentence proves nothing**, so a name that is a
+  word ("Hope", "Tam") counts there only when it is set off as being spoken to.
+* **Two candidates for one stretch of text name neither**, unless one is surer:
+  a whole name beats one word of somebody else's.
+* **A name followed by the end of its sentence closes the utterance.** "Hello,
+  Raldor. Is the lamp lit?" is said to Raldor.
+* **The confidences:** 1.0 for a command's own target (a whisper's listener),
+  0.8 for a whole name or alias, 0.6 for one word of a name, 0.5 for a name
+  that is an ordinary word.
+* **Annotations are written per confidence**, since `add_many` takes one per
+  call. `addressed` is its own kind, by dbref. `about` accepts
+  `(name, dbref, confidence)`, and the old two-field shape still reads at 1.0.
+* **Where it runs.** `notify_npcs` reads player speech and poses. An NPC's `say`
+  and `emote` read their own words and pass what they found to their own
+  memory and to the NPCs who hear them. A whisper's receivers arrive as
+  targets. And a witnessed action -- which the plan left alone -- now carries
+  its bound participants at 1.0 into every witness's memory, from
+  `events._tell_the_characters`.
+* **An NPC answers when recognition says it was spoken to.** `spoken_to` sits
+  beside `addressed_by`, which is unchanged: any mention of a name still wakes
+  a character. What `spoken_to` adds is being whispered to.
+* **Found and fixed: players never remembered what an NPC said.** An NPC's
+  speech and emotes, and what it produced or picked up, were written to its own
+  memory and told to the other NPCs through `_notify_other_npcs`, which never
+  called `record_room_event`. `memory.py` promises that what a character has
+  witnessed is written as it happens, and for every NPC tool it was not. Now
+  `_notify_other_npcs` writes to the players' memories first -- before the
+  chain limit, which exists to stop model calls rather than memories -- and
+  the acts no other NPC is told about (asking a favour aloud, handing a thing
+  over, breaking one) write through the same `_witnessed_by_players`. The one
+  path that already recorded, a verb attempt, now goes through it too rather
+  than recording twice.
 
 ### Phase 6 -- memory shape, rendering at display, and NPC context
 

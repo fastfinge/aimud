@@ -75,6 +75,18 @@ class TheCentreCarriesIntoTheSubject(Stage):
         self.assertEqual(self.shown(self.hands()),
                          "They hand Britney the sword.")
 
+    def test_but_by_name_they_are_one_person(self):
+        """
+        The verb agrees with the words the subject was given, not with the set
+        they go by. Agreed with the set, a named they/them character read
+        "Jessica hand Britney the sword."
+        """
+        pronouns.give(self.jessica, "they", self.room1)
+        self.assertEqual(self.shown(self.hands()),
+                         "Jessica hands Britney the sword.")
+        self.assertEqual(self.shown(self.picks_up()),
+                         "They pick up the sword.")
+
     def test_and_with_a_name(self):
         self.assertEqual(self.shown(self.picks_up()),
                          "Jessica picks up the sword.")
@@ -364,9 +376,13 @@ class RepairingWhatTheModelSent(Stage):
                          "{actor} $pconj(hand) {target} {direct}.")
 
     def test_and_then_agrees_with_a_they_them_actor(self):
+        """
+        Named, so singular: a they/them character called by name is one
+        person. Rendered for nobody, nobody is ever a pronoun.
+        """
         pronouns.give(self.jessica, "they", self.room1)
         self.assertEqual(self.rendered("{actor} hands {target} {direct}."),
-                         "Jessica hand Britney the sword.")
+                         "Jessica hands Britney the sword.")
 
     def test_and_reads_as_second_person_for_the_actor_themselves(self):
         self.assertEqual(

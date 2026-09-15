@@ -171,10 +171,14 @@ class Character(ObjectParent, DefaultCharacter):
 
         events.noticed(room, self)
 
+        from evennia.utils.utils import make_iter
         from world.npc_gen import notify_npcs
 
+        # A whisper names its listener in the command rather than the words,
+        # and they are spoken to whatever the words say.
         notify_npcs(room, "say", self.get_display_name(self), message,
-                    exclude=self, actor=self)
+                    exclude=self, actor=self,
+                    targets=list(make_iter(receivers)) if receivers else ())
 
     def at_post_move(self, source_location, move_type="move", **kwargs):
         super().at_post_move(source_location, move_type=move_type, **kwargs)

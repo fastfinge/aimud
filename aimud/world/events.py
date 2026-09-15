@@ -61,8 +61,10 @@ slot, both filled here and nowhere else:
         the same participant as a possessor -- "Jessica's", "your", "her".
     $pconj(verb)  $pconj(verb, role)
         a verb agreeing with its subject: "hands" for one person, "hand"
-        for they/them and for the reader. Only the first word is
-        conjugated, so "$pconj(pick) up" and "$pconj(pick up)" both work.
+        for the reader and when the subject was called "they". A they/them
+        character called by name is one person -- "Jessica hands". Only the
+        first word is conjugated, so "$pconj(pick) up" and "$pconj(pick up)"
+        both work.
 
 The grammar itself -- how a template is read, what else a slot may name,
 and the fields a slot may ask for -- is `world.tokens`, shared with
@@ -349,6 +351,10 @@ class Naming:
         self.world_root = event.world_root if event is not None else None
         self.reads = _reads(viewer)
         self.spent = set()
+        # How each participant has been named in this sentence so far:
+        # "you", "pronoun" or "name". A verb agrees with the words its subject
+        # was given, not with the set they go by -- see `plural_for`.
+        self.said = {}
         current = event.participants() if event is not None else []
         if previous is None:
             previous = referents.told(viewer) if self.reads else []
@@ -366,6 +372,7 @@ class Naming:
         if obj is None:
             return ""
         if obj is self.viewer:
+            self.said[id(obj)] = "you"
             return "your" if possessive else "you"
         if obj is self.centre:
             forms = pronoun_forms(obj, self.world_root)
@@ -377,9 +384,22 @@ class Naming:
                 word = forms.get("object", "")
             if word and word not in self.spent:
                 self.spent.add(word)
+                self.said[id(obj)] = "pronoun"
                 return word
+        self.said[id(obj)] = "name"
         name = plain_name(obj, self.viewer, bare=bare)
         return f"{name}'s" if possessive else name
+
+    def plural_for(self, obj):
+        """
+        Whether a verb whose subject is `obj` agrees as plural in this sentence.
+
+        By the words the subject was given. "They" takes a plural verb for a
+        they/them character, but their name is one person: "they hand" and
+        "Jessica hands". Before this, the set decided both, and a named
+        they/them character read "Jessica hand Britney the sword".
+        """
+        return subject_plural(obj, self.world_root, self.said.get(id(obj)))
 
     def remember(self):
         """
@@ -414,24 +434,52 @@ def name_for(obj, viewer, role="", event=None):
     return Naming(viewer, event, previous=[]).name(obj, role)
 
 
-def conjugate(verb, subject, viewer, world_root=None, tense="present"):
+def conjugate(verb, subject, viewer, world_root=None, tense="present",
+              naming=None):
     """
     A verb agreeing with its subject, as this reader would see it.
 
-    "hands" for one person, "hand" for a they/them character or a pile of
+    "hands" for one person, "hand" when they are "they" or for a pile of
     coins, "hand" for the reader themselves -- and in the past, "was" for her
     and "were" for them or for you. Only the first word is touched; "pick up"
     comes back "picks up". The subject's person and number are decided here,
     where the reader and pronoun sets are known; the English is
     `world.english`'s.
+
+    `naming` is the sentence's `Naming`, which knows whether the subject was
+    given a pronoun or a name. Without one the subject is taken as named.
     """
     if subject is not None and subject is viewer:
         person, plural = 2, False
     else:
         person = 3
-        plural = bool(pronoun_forms(subject, world_root).get("plural")) \
-            if subject is not None else False
+        if naming is not None:
+            plural = naming.plural_for(subject)
+        else:
+            plural = subject_plural(subject, world_root)
     return english.conjugate(verb, person=person, plural=plural, tense=tense)
+
+
+def subject_plural(obj, world_root=None, said="name"):
+    """
+    Whether a subject takes a plural verb, given the words it was called by.
+
+    A thing's number is its name's, whatever it was called: "the coins
+    scatter", "they scatter". A person called by a pronoun agrees with the set
+    -- "they pick up" -- and a person called by name is one person, whatever
+    set they go by. A subject not yet named in the sentence is taken as named.
+    """
+    if obj is None:
+        return False
+    from world.quests import is_person
+
+    try:
+        person = is_person(obj)
+    except AttributeError:
+        person = False
+    if person and said != "pronoun":
+        return False
+    return bool(pronoun_forms(obj, world_root).get("plural"))
 
 
 def render(template, viewer, event, previous=None, tense="present"):
@@ -639,5 +687,9 @@ def _tell_the_characters(event, template):
 
         spoken = ownership.witnessed_taking(spoken, actor,
                                             event.roles.get("direct"))
+    # Who it concerned is known, because binding resolved it: every witness's
+    # memory of it carries the participants at full confidence.
+    about = [(str(obj.key), f"#{obj.id}", 1.0)
+             for obj in event.participants() if getattr(obj, "id", None)]
     notify_npcs(room, "action", name_for(actor, None), spoken,
-                exclude=actor, actor=actor)
+                exclude=actor, actor=actor, about=about)

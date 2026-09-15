@@ -1041,7 +1041,8 @@ def _format_history(history):
 # Public sync helper
 # ---------------------------------------------------------------------------
 
-def notify_npcs(room, event_type, actor_name, text, exclude=None, actor=None):
+def notify_npcs(room, event_type, actor_name, text, exclude=None, actor=None,
+                about=None, addressed=None, targets=()):
     """
     Tell everyone in `room` that something happened. Main thread only.
 
@@ -1053,16 +1054,35 @@ def notify_npcs(room, event_type, actor_name, text, exclude=None, actor=None):
     exclude    : an object to skip (e.g. the NPC that caused the event)
     actor      : the character responsible, when it is one -- they remember
                  doing it rather than merely seeing it
+    about      : who and what it concerned, as `memory.remember` takes it
+    addressed  : who was spoken to, the same shape
+    targets    : whoever the command itself named, such as a whisper's
+                 listener
+
+    For speech and poses nobody has said who was involved, so the words are
+    read for names -- see `world.recognition` -- and every memory of the
+    moment, and every NPC deciding whether it was spoken to, gets the answer.
     """
     from world.memory import record_room_event
 
-    record_room_event(room, event_type, actor_name, text, actor=actor)
+    if about is None and addressed is None and event_type in ("say", "emote"):
+        from world import recognition
+
+        mentions = recognition.recognise(text, speaker=actor, room=room,
+                                         targets=targets)
+        about = recognition.about(mentions)
+        addressed = recognition.addressed(mentions)
+    about, addressed = list(about or ()), list(addressed or ())
+
+    record_room_event(room, event_type, actor_name, text, actor=actor,
+                      about=about, addressed=addressed)
 
     for obj in room.contents:
         if obj is exclude:
             continue
         if obj.db.is_npc:
-            obj.witness(event_type, actor_name, text)
+            obj.witness(event_type, actor_name, text, about=about,
+                        addressed=addressed)
 
 
 # ---------------------------------------------------------------------------

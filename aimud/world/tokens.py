@@ -639,7 +639,7 @@ def _pconj(args, context):
     namer = context.namer()
     return conjugate(verb, context.mapping().get(role), context.viewer,
                      namer.world_root or context.world_root,
-                     tense=context.tense)
+                     tense=context.tense, naming=namer)
 
 
 #: The calls `world.english` answers.
