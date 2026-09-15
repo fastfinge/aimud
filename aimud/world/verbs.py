@@ -796,6 +796,75 @@ def name_contradicts_states(name, states, world_root=None):
     return sorted(words & (own | registered))
 
 
+#: Which condition words in a thing's name it has already been given, so that
+#: a state taken away later is not handed straight back by the name.
+NAMED_STATES = "name_states_considered"
+
+
+def adopt_named_states(obj, world_root=None):
+    """
+    Put a thing into the conditions its own name says it is in. Returns what
+    was added.
+
+    Found in playtesting. A "Wax-Sealed Glass Vial" was made in a world that
+    had no `sealed` yet; ten minutes later somebody tried to unseal it, the
+    rule written for that introduced `sealed` and required it -- rightly --
+    and the vial was refused: "Wax-sealed glass vial is not sealed." The
+    naming rule asks generators to keep conditions out of names, and
+    `name_contradicts_states` only reports when they do not, because a name
+    cannot be repaired. But the state can be: whatever the name says is true
+    of the thing from the moment this world knows the word as a condition.
+
+    So this is asked when a thing is made and again whenever it is acted on,
+    before any check is read -- which is what catches a condition a rule has
+    only just introduced.
+
+    **Once per word.** Each condition word in the name is considered a single
+    time and remembered, so a vial that has since been unsealed stays unsealed
+    however often it is picked up afterwards.
+
+    **Things only, and not conditions that belong to people.** A person's name
+    is not a claim about them, and a group that ends when somebody walks away
+    or stops them acting is about people: a sleeping bag is not asleep and a
+    standing stone is not standing. Names only, never descriptions: "stoppered
+    with a wax-dipped cork" says too little too loosely to act on.
+    """
+    from world import relations
+
+    if obj is None or world_root is None:
+        return []
+    try:
+        if not relations._is_thing(obj):
+            return []
+        considered = set(getattr(obj.db, NAMED_STATES, None) or [])
+    except AttributeError:
+        return []
+
+    words = set(re.findall(r"[a-z0-9]+", str(getattr(obj, "key", "")).lower()))
+    registered = set(DEFAULT_STATE_GROUP) | set(vocabulary(world_root))
+    fresh = sorted((words & registered) - considered)
+    if not fresh:
+        return []
+    setattr(obj.db, NAMED_STATES, sorted(considered | set(fresh)))
+
+    held = states(obj)
+    missing = [slug for slug in fresh
+               if slug not in held and not _about_people(world_root, slug)]
+    if missing:
+        apply_states(obj, add=missing, world_root=world_root, announce=False)
+        logger.log_info(f"states: {obj.key} is {', '.join(missing)}, as its "
+                        f"name says")
+    return missing
+
+
+def _about_people(world_root, slug):
+    """Whether a condition belongs to people: it ends on moving or stops acting."""
+    rules = group_rules(world_root, group_of(world_root, slug))
+    return any(rules.get(flag) for flag in
+               ("ends_on_move", "prevents_acting", "prevents_moving",
+                "prevents_speaking"))
+
+
 # ---------------------------------------------------------------------------
 # What the game already answers for itself
 # ---------------------------------------------------------------------------

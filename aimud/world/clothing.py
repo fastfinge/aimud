@@ -561,6 +561,9 @@ def create(spec, location, worn_on=None):
     # half full is gettable as "full bottle" without waiting for a verb.
     from world import verbs
 
+    # And what its name says it is, it is: a "Wax-Sealed Vial" made in a world
+    # that knows `sealed` is sealed. See verbs.adopt_named_states.
+    verbs.adopt_named_states(obj, _root_of(location))
     verbs.refresh_state_aliases(obj)
     # Every choice its description makes, made now, before anything reads it.
     # A choice can be a state, so this comes after the states are written and

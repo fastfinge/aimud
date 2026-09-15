@@ -342,6 +342,11 @@ def permitted(caller, verb, bound):
 
     from world import conditions, rulebooks
 
+    # What a name says a thing is, before its check rules are read. See
+    # `_with_rule` and verbs.adopt_named_states.
+    for obj in list((bound or {}).values()):
+        verbs.adopt_named_states(obj, world_root)
+
     ctx = conditions.context(bound, caller, world_root, verb)
     for gate in rulebooks.for_attempt(world_root, verb, bound, caller,
                                       phase=rulebooks.CHECK):
@@ -979,6 +984,13 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                allow_effects, world_root, waiter=None, guarded=None,
                redirects=0):
     from world import conditions, rulebooks
+
+    # Before anything is checked: a thing is in whatever conditions its name
+    # says, from the moment this world knows them as conditions -- which may
+    # be this very attempt, when the rule it needs was only just written.
+    # See verbs.adopt_named_states.
+    for obj in list((bound or {}).values()):
+        verbs.adopt_named_states(obj, world_root)
 
     ctx = conditions.context(bound, caller, world_root, verb)
     book = rulebooks.for_attempt(world_root, verb, bound, caller,
