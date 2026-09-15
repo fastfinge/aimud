@@ -1,6 +1,8 @@
 # Development plan: tokens and phrases
 
-Status: **planned, nothing built.** Six phases, §8.
+Status: **phase 1 built**; phases 2 to 6 planned. Six phases, §8. Where the
+building turned up something the plan had wrong, the phase says so under *As
+built* rather than the plan being quietly corrected.
 
 Companion to `development-plan.md` (rulebooks) and `pronouns-and-ownership.md`.
 The ground rules in §2 of `development-plan.md` are acceptance criteria here
@@ -539,6 +541,32 @@ result can reach the renderer as a `Phrase` when the call sits inside other
 text, or only as a string. If only as a string, write the parser: §4.1 is two
 productions. Keep Evennia's spelling either way.
 
+*Spike result: only as a string, so the parser is ours.* Measured against
+Evennia 6.1.0:
+
+* **Plain text forces a string.** `parse` sets `return_str = True` the moment
+  it reads a character outside a call, and joins every result with `str()`.
+  `"{actor} $pconj(hand) {target}."` with a callable returning a `Phrase`
+  comes back as the string `"{actor} hands {target}."`. The object survives
+  only when the call is the whole string.
+* **A workaround exists and was not taken.** A callable can append its
+  `Phrase` to a side list passed as a reserved keyword argument and return a
+  placeholder, which the caller splits back into spans. That works for flat
+  calls, keyword arguments included. But a nested call's result reaches the
+  outer call as the placeholder string, and `{slot}` needs a second pass of
+  our own anyway: two parsers, joined by a hack.
+* **What is kept from it** is behaviour, copied and tested:
+  * `\$` escapes a call;
+  * an unknown call (`$nope(x)`) or an unclosed one (`$pconj(hand`) is left as
+    written;
+  * a `$` not followed by a letter or underscore (`$5`) is literal;
+  * a double-quoted argument may contain commas, and is taken as written;
+  * a comma inside braces, brackets or parentheses does not split an argument
+    (an unquoted argument is otherwise read as a template of its own, so a
+    slot or a call inside one still works).
+* **Speed** was not the reason: 5.8 µs a parse against 0.3 µs for the current
+  regex, which is nothing beside a network write.
+
 Then:
 * `world/tokens.py`: parser, `Phrase`, spans, the render context (§4.3), the
   built-in resolvers for roles, possessives, `$pconj`, `{user}` and `self`
@@ -560,6 +588,52 @@ Then:
 * spans carry refs.
 
 No world reset.
+
+*As built* (`world/tokens.py`, `tests/test_tokens.py`). Settled in the
+building:
+
+* **Aliases are accepted on read and not rewritten on store.** §4.1 says
+  `<user>` and friends are normalised when text is stored. `parse` normalises
+  all three spellings before reading, which is all a world needs. Rewriting
+  what an author typed would change stored text in the phase that promised no
+  behaviour change, and would show them `{user}` in `worldedit` where they
+  wrote `<user>`.
+
+  At the time of building, what eats a brace of `{{user}}` on its way to the
+  screen had not been found. It is the ANSI colour escape in Evennia's editor:
+  there `{{` is the escape for writing a single brace among colour and
+  formatting codes. So only the doubled spelling displays wrongly; `{user}`
+  and `<user>` display as typed, and rewriting on store is safe if it is ever
+  wanted.
+* **Effect lines are quotes named `_effect0`, `_effect1` and so on.**
+  `Event.template()` puts them after the repaired narration, and
+  `Event.quoted()` binds them. Every site that rendered
+  `repair(event.room_template)` renders `event.template()` now. One behaviour
+  did change, and it was a bug: an effect line with no narration in front of
+  it was repaired as a fragment and read "Jessica a lamp is now here."
+* **Quotes win over roles**, then roles, then the built-ins, then plugins.
+  The splices that became quotes: an NPC's `say`; its request aloud; the quest
+  giver and title when accepting, declining and abandoning; the effect line
+  after "destroys something"; and clothing's "covering ..." tail, which named
+  garments a model had named.
+* **An NPC's emote stays template text.** It is narration the model wrote
+  about its own character, the same standing as a cached room template, and
+  `repair` needs to read it to wrap its verb. Its only bound role is the
+  actor.
+* **`{viewer}`, `{here}` and `{world}` are built** as well as `{user}` and
+  `{self}`: `here` is the event's room title and `world` is `lore.title`.
+* **The field table** is `name`, the five pronoun forms, `state.<group>`,
+  `trait.<slug>` and `owner`. The reader's own pronoun forms are second
+  person. A field not in the table leaves the slot as written, so
+  `{direct.db.api_key}` renders as itself.
+* **`provide(name, resolver, call=False)` and `withdraw(name)`** are the plugin
+  seam. `scope` and `fields` from §4.4 arrive with phase 3, when there is
+  anything to scope.
+* **`purpose` is set but read by nothing yet.** `events.render` passes
+  `display` for a reader and `prompt` for nobody, and the centering rule still
+  decides on its own whether the reader is somebody.
+* **Tense is carried and not used.** `$pconj` conjugates the present only until
+  phase 2.
 
 ### Phase 2 -- English
 

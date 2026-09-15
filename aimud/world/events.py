@@ -64,6 +64,18 @@ slot, both filled here and nowhere else:
         for they/them and for the reader. Only the first word is
         conjugated, so "$pconj(pick) up" and "$pconj(pick up)" both work.
 
+The grammar itself -- how a template is read, what else a slot may name,
+and the fields a slot may ask for -- is `world.tokens`, shared with
+everything else in the game that puts a variable into a sentence. What stays
+here is what is particular to narration: who is the centre, and what to call
+each participant.
+
+**Words that must not be read as a template travel as quotes.** What an NPC
+said, a name, the game's own line about what an effect changed: each is bound
+to a slot by whoever builds the event -- `{quote}`, `{tail}` -- and inserted
+exactly as it is. Spliced into the template instead, an NPC whose line
+contained `{target}` would have said somebody's name.
+
 Rendering has one side effect, and it is the whole mechanism: the reader's
 `referents` table is told what they were just shown, so that the next line
 knows what they are thinking about and "hug her", typed after watching
@@ -72,24 +84,15 @@ Jessica act, reaches Jessica.
 
 import re
 
-from world import referents
+from world import referents, tokens
 
 #: The roles a narration can name, in the order they rank.
 #:
 #: Grammatical role order, which is what centering theory ranks by: the
 #: subject outranks the object, the object outranks everything oblique.
-#: `participants` returns things in this order and `centre` reads it.
-RANK = ("actor", "direct", "target", "container", "source", "instrument")
-
-#: A placeholder in a narration template: `{actor}`, `{direct}`, and the
-#: possessive `{actor's}` (or `{actor}'s`, which a model writes just as often).
-_SLOT = re.compile(r"\{(\w+)('s)?\}('s)?")
-
-#: A verb to agree with its subject: `$pconj(pick)`, `$pconj(pick, direct)`.
-#: Evennia's funcparser spells it the same way, so a template written for one
-#: reads correctly in the other; the machinery here is ours (see the module
-#: docstring for why).
-_CONJ = re.compile(r"\$pconj\(([^)]*)\)")
+#: `participants` returns things in this order and `centre` reads it. Kept in
+#: `world.tokens`, which reserves the names.
+RANK = tokens.ROLES
 
 
 class Event:
@@ -103,11 +106,13 @@ class Event:
     """
 
     __slots__ = ("actor", "room", "verb", "roles", "outcome", "effects",
-                 "actor_text", "room_template", "raw", "manner", "contested")
+                 "actor_text", "room_template", "raw", "manner", "contested",
+                 "quotes")
 
     def __init__(self, actor=None, room=None, verb="", roles=None,
                  outcome="success", effects=(), actor_text="",
-                 room_template="", raw="", manner=(), contested=False):
+                 room_template="", raw="", manner=(), contested=False,
+                 quotes=None):
         self.actor = actor
         self.room = room if room is not None else getattr(actor, "location", None)
         self.verb = verb
@@ -119,11 +124,36 @@ class Event:
         self.raw = raw
         self.manner = list(manner)
         self.contested = contested
+        self.quotes = dict(quotes or {})
 
     @property
     def seen(self):
         """Whether anybody but the actor has anything to read."""
-        return bool(str(self.room_template or "").strip())
+        return bool(str(self.room_template or "").strip()
+                    or any(str(line).strip() for line in self.effects))
+
+    def template(self):
+        """
+        What the room is told: the narration, repaired, then each effect line.
+
+        The effect lines are the game's own sentences about what changed -- "a
+        lamp is now here." -- and name things by whatever they are called, so
+        they follow the narration as quotes rather than being joined onto its
+        text. Joined, they were also repaired as though they were narration: a
+        line with no narration in front of it had `{actor}` put before it.
+        """
+        text = repair(self.room_template)
+        tail = " ".join("{_effect%d}" % index
+                        for index, line in enumerate(self.effects)
+                        if str(line).strip())
+        return f"{text} {tail}".strip() if tail else text
+
+    def quoted(self):
+        """Every slot this event binds to words that are not to be read."""
+        found = {f"_effect{index}": str(line)
+                 for index, line in enumerate(self.effects)}
+        found.update(self.quotes)
+        return found
 
     def mapping(self):
         """
@@ -463,40 +493,23 @@ def render(template, viewer, event, previous=None):
     """
     The template as this viewer should read it.
 
-    Verbs agree first, then names are chosen, then the reader's table is
-    told what they saw -- the one side effect, and only for a reader who is
-    somebody. A regex rather than `str.format_map`, because a template is
-    often a sentence a model wrote and a stray brace in it must not raise in
-    the middle of delivering something that already happened. A slot naming
-    nothing is left alone and caught by the structural test rather than shown
-    with a guess in it.
+    `world.tokens` reads the template and fills it, asking this module's
+    `Naming` what to call each participant; then the reader's table is told
+    what they saw -- the one side effect, and only for a reader who is
+    somebody. Never `str.format_map`, because a template is often a sentence a
+    model wrote and a stray brace in it must not raise in the middle of
+    delivering something that already happened. A slot naming nothing is left
+    alone and caught by the structural test rather than shown with a guess in
+    it.
 
     `previous` overrides what the reader was last shown; for tests of the
     rule, and for nothing else.
     """
-    mapping = event.mapping()
     naming = Naming(viewer, event, previous)
-
-    def agree(match):
-        verb, _, role = match.group(1).partition(",")
-        role = role.strip() or "actor"
-        return conjugate(verb, mapping.get(role), viewer, naming.world_root)
-
-    def fill(match):
-        role = match.group(1)
-        if role not in mapping:
-            return match.group(0)
-        possessive = bool(match.group(2) or match.group(3))
-        # "{target's} {direct}", "{target's} own {direct}": a thing that
-        # follows a possessive in the same clause is already determined, and
-        # "her the sword" is not English.
-        clause = re.split(r"[.,;:!?]", text[:match.start()])[-1]
-        determined = bool(re.search(r"(?:'s\}|\}'s)\s+(?:\w+\s+){0,2}$", clause))
-        return naming.name(mapping[role], role, possessive,
-                           bare=determined)
-
-    text = _CONJ.sub(agree, str(template or ""))
-    text = _SLOT.sub(fill, text)
+    context = tokens.Context(
+        viewer=viewer, event=event, world_root=naming.world_root,
+        naming=naming, purpose="display" if naming.reads else "prompt")
+    text = tokens.text(template, context)
     if text.strip():
         naming.remember()
     return text[:1].upper() + text[1:] if text[:1].islower() else text
@@ -524,7 +537,7 @@ def deliver(event, to_actor=True):
     if not event.seen or room is None:
         return
 
-    template = repair(event.room_template)
+    template = event.template()
     show_the_room(event, template)
     _tell_the_characters(event, template)
 
@@ -586,7 +599,7 @@ def show_the_room(event, template=None, exclude=()):
     if room is None:
         return
     if template is None:
-        template = repair(event.room_template)
+        template = event.template()
     left_out = set(exclude or ())
     for viewer in list(getattr(room, "contents", []) or []):
         if viewer is actor or viewer in left_out or not hasattr(viewer, "msg"):
@@ -640,7 +653,7 @@ def deliver_many(events, actor_text="", actor=None, room=None):
     if not events or room is None:
         return
 
-    templates = [repair(event.room_template) for event in events]
+    templates = [event.template() for event in events]
     for viewer in list(getattr(room, "contents", []) or []):
         if viewer is actor or not hasattr(viewer, "msg"):
             continue

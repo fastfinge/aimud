@@ -18,23 +18,16 @@ The description may contain <user>, which stands for whoever is playing. It is
 substituted at the moment the text is used, not when it is written, so "<user>
 is the rightful heir" is true of whoever walks in -- and true under whatever
 name they gave themselves in this world. Guidance is substituted the same way.
+
+Both are author text, read with `world.tokens` like any other template, so
+`{user}`, `<user>`, `{{user}}` and `$user` all mean the player. {{user}} was
+what the wizard first offered, and it looks broken in Evennia's editor: there
+`{{` is the escape for writing a single brace among colour and formatting
+codes, so the editor shows "{user}}" while the stored text is perfectly
+correct. <user> and {user} both display as typed.
 """
 
-import re
 from collections import namedtuple
-
-#: What the description calls the player.
-#:
-#: <user> is the spelling to recommend. {{user}} also works, because it is the
-#: obvious thing to type and what the wizard first offered -- but Evennia
-#: reserves "{{" as the escape for a literal brace, so the editor and every
-#: other display eats one of them and shows "{user}}" while the stored text is
-#: perfectly correct. That is alarming to look at, so anything that does not
-#: collide with the markup is better.
-USER_TOKEN = re.compile(
-    r"\{\{\s*user\s*\}\}" r"|<\s*user\s*>" r"|\$user\b",
-    re.IGNORECASE,
-)
 
 #: Stands in when nobody in particular is being addressed -- a room being
 #: generated before anyone arrives, say.
@@ -139,14 +132,22 @@ def description(obj, viewer=None):
     """
     if isinstance(obj, dict):
         text = obj.get("description") or ""
-        return USER_TOKEN.sub(user_name(None, viewer), text) if text else ""
+        return _resolved(text, None, viewer) if text else ""
     root = _root(obj)
     if root is None:
         return ""
     text = root.db.world_description or ""
     if not text:
         return ""
-    return USER_TOKEN.sub(user_name(root, viewer), text)
+    return _resolved(text, root, viewer)
+
+
+def _resolved(text, root, viewer):
+    """Author text with its tokens filled in for `viewer`, for a model to read."""
+    from world import tokens
+
+    return tokens.text(text, tokens.Context(viewer=viewer, world_root=root,
+                                            purpose="prompt"))
 
 
 def _guidance_map(obj):
@@ -167,7 +168,7 @@ def guidance(obj, facet, viewer=None):
     text = str(_guidance_map(obj).get(facet) or "").strip()
     if not text:
         return ""
-    return USER_TOKEN.sub(user_name(_root(obj), viewer), text)
+    return _resolved(text, _root(obj), viewer)
 
 
 def guidance_block(obj, facet, viewer=None):

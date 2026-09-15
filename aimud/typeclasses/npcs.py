@@ -654,7 +654,8 @@ class NPC(ObjectParent, DefaultObject):
                 # Asked out loud, so the room sees the arrangement being made.
                 # The offer now sits in their quest list, and they answer it on
                 # their own next turn.
-                self._aloud(room, '{actor} $pconj(say), "' + request + '"')
+                self._aloud(room, '{actor} $pconj(say), "{quote}"',
+                            quotes={"quote": request})
                 target.witness("say", self.key, request)
             else:
                 target.msg(f'{self.key} says, "|w{request}|n"')
@@ -703,15 +704,16 @@ class NPC(ObjectParent, DefaultObject):
             quest, _message = quests.accept(self)
             if quest is None:
                 return
-            template = ("{actor} $pconj(agree) to "
-                        f"{quest['giver']}'s request: {quest['title']}.")
+            template = "{actor} $pconj(agree) to {giver}'s request: {title}."
         else:
             quest, _message = quests.decline(self)
             if quest is None:
                 return
-            template = f"{{actor}} $pconj(turn) down {quest['giver']}'s request."
+            template = "{actor} $pconj(turn) down {giver}'s request."
 
-        said = self._aloud(room, template, verb="answer")
+        said = self._aloud(room, template, verb="answer",
+                           quotes={"giver": quest["giver"],
+                                   "title": quest["title"]})
         self._add_to_history("action", self.key, said)
 
         from world.npc_gen import notify_npcs
@@ -899,9 +901,9 @@ class NPC(ObjectParent, DefaultObject):
             if quest is not None and self.location:
                 self._aloud(
                     self.location,
-                    "{actor} $pconj(give) up on "
-                    f"{quest['giver']}'s errand: {quest['title']}.",
-                    verb="abandon")
+                    "{actor} $pconj(give) up on {giver}'s errand: {title}.",
+                    verb="abandon",
+                    quotes={"giver": quest["giver"], "title": quest["title"]})
 
         self.db.goal = []
         self.db.goal_stalls = 0
@@ -953,8 +955,7 @@ class NPC(ObjectParent, DefaultObject):
             # broadcasting that would tell the room it had done the thing.
             from world import events as events_mod
 
-            visible = (events_mod.render(events_mod.repair(event.room_template),
-                                         None, event)
+            visible = (events_mod.render(event.template(), None, event)
                        if event is not None and event.seen else "")
             if not visible:
                 # Nothing happened in the room, so there is nothing to show
@@ -1029,21 +1030,24 @@ class NPC(ObjectParent, DefaultObject):
                 lambda message: self._note_to_self(_as_noticed(message)),
                 fuzzy=True)
 
-    def _aloud(self, room, template, verb="say", exclude=None):
+    def _aloud(self, room, template, verb="say", exclude=None, quotes=None):
         """
         Say something the room hears, each hearer in their own words.
 
         Speech, emotes, and the quest arrangements that are the game saying
         what has been agreed rather than an action on anything. A template
         like everything else this character does -- `{actor} $pconj(say),
-        "..."` -- because a speaker named in full on every line is exactly
+        "{quote}"` -- because a speaker named in full on every line is exactly
         what pronouns are for, and because two lines running about one
         speaker is the clearest case the centering rule has: the first names
         Garrick Pyre and the second is "he".
 
-        The words themselves are not touched. A model wrote them and they may
-        contain anything, braces included; `events.render` leaves a slot it
-        does not recognise exactly as it found it.
+        The words themselves are never part of the template. A model wrote
+        them and they may contain anything, and they used to be spliced in:
+        `events.render` left a slot it did not recognise alone, but one it did
+        -- `{target}`, `$pconj(...)` -- was filled, so a character could say
+        somebody's name without meaning to. They are bound as `quotes` and
+        inserted exactly as said. See `world.tokens`.
         """
         from world import events
 
@@ -1051,7 +1055,7 @@ class NPC(ObjectParent, DefaultObject):
             return ""
         return self._acted(
             room, events.Event(actor=self, room=room, verb=verb,
-                               room_template=template),
+                               room_template=template, quotes=quotes),
             exclude=exclude)
 
     def _acted(self, room, event, exclude=None):
@@ -1075,7 +1079,7 @@ class NPC(ObjectParent, DefaultObject):
 
         if room is None:
             return ""
-        template = events.repair(event.room_template)
+        template = event.template()
         events.show_the_room(event, template, exclude=exclude or ())
         return events.render(template, None, event)
 
@@ -1093,7 +1097,8 @@ class NPC(ObjectParent, DefaultObject):
         if tool_name == "say":
             msg = str(args.get("message", "")).strip()
             if msg:
-                self._aloud(room, '{actor} $pconj(say), "|w' + msg + '|n"')
+                self._aloud(room, '{actor} $pconj(say), "|w{quote}|n"',
+                            quotes={"quote": msg})
                 self._add_to_history("say", self.key, msg)
                 self._notify_other_npcs(room, "say", msg, _depth)
 
@@ -1208,8 +1213,8 @@ class NPC(ObjectParent, DefaultObject):
                     # thing itself is deleted by now and cannot be a role.
                     self._acted(room, events.Event(
                         actor=self, room=room, verb="destroy",
-                        room_template=(
-                            "{actor} $pconj(destroy) something. " + line)))
+                        room_template="{actor} $pconj(destroy) something. {quote}",
+                        quotes={"quote": line}))
 
         elif tool_name == "modify":
             obj_name = str(args.get("object_name", "")).strip()

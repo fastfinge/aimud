@@ -1119,11 +1119,15 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             actor_text = "\n".join(
                 part for part in [actor_text] + extra if part).strip()
             extra = []
-        template = " ".join([events_mod.repair(room_text)] + extra).strip()
+        # The narration and the effect lines travel apart. The effect lines
+        # are the game's own sentences and name things by whatever they are
+        # called, so `Event.template` puts them after the narration as quotes
+        # rather than as more template to be read.
         event = events_mod.Event(
             actor=caller, room=room, verb=verb, roles=bound,
             outcome=outcome, effects=list(extra), raw=raw,
-            contested=result is not None, room_template=template)
+            contested=result is not None,
+            room_template=events_mod.repair(room_text))
         # AFTER. What follows from it having worked, gathered before any of
         # it landed so that nothing an after-rule does can set another one
         # going. Bounded by the action, which is how consequence happens here
