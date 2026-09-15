@@ -1,6 +1,6 @@
 # Development plan: tokens and phrases
 
-Status: **phases 1 to 3 built**; phases 4 to 6 planned. Six phases, §8. Where the
+Status: **phases 1 to 4 built**; phases 5 and 6 planned. Six phases, §8. Where the
 building turned up something the plan had wrong, the phase says so under *As
 built* rather than the plan being quietly corrected.
 
@@ -792,6 +792,37 @@ Acceptance:
   deterministic and pass the filter.
 
 No world reset.
+
+*As built* (`world/token_lists.py` `SOURCES`, `world/lexicon.py`,
+`tests/test_lexicon_sources.py`). Settled in the building:
+
+* **A dictionary's answer is made into a list on the spot and chosen from by
+  the same path a kept list is.** `token_lists.resolve` was split so that
+  `choose` takes any list, kept or not. So every call has a scope, a seed and
+  an `as=` label for free, and is kept under the call itself --
+  `hyponym:sword.n.01` -- so two different calls on one thing are two choices.
+* **A plain word is accepted where a sense is**, when it settles to one:
+  `$hyponym(sword)` is `$hyponym(sword.n.01)`. A word whose senses disagree
+  settles to nothing and the call says its `else`.
+* **WordNet gives one word per sense**, its first lemma with underscores as
+  spaces, and only the senses directly beneath or directly part of it. Two
+  steps down "tree" is already an opepe.
+* **The ConceptNet filter is `token_lists.plausible`**: three words at most, a
+  head noun WordNet knows, and not settled into the `person` bucket. "cook" is
+  in a galley and is refused. An ambiguous word such as "sailor" settles to no
+  sense and is let through -- the filter refuses only what it can be sure of.
+* **Without WordNet nothing from ConceptNet passes**, because the filter needs
+  a dictionary to say a word is a word. Every call then says its `else`, and
+  one with no `else` says nothing.
+* **A choice once made stays made** whatever a corpus says later. A call that
+  found nothing stores nothing, so a world that later downloads ConceptNet
+  starts choosing where it used to say its `else`.
+* **No choice becomes a kind.** §6 allowed a hyponym to become an object's kind
+  at creation. Phase 3 settled that nothing a list chooses changes what a
+  thing is, and a dictionary's list is no different.
+* **Known gap:** arguments are expanded before the call is made, so an `else`
+  holding a list slot makes that list's choice even when the dictionary
+  answered.
 
 ### Phase 5 -- recognition
 

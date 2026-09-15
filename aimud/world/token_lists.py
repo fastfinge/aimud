@@ -413,14 +413,25 @@ def resolve(name, context, label="", scope=None):
     What a list comes to in this rendering, as a Phrase, or None if the world
     keeps no such list.
     """
-    from world import tokens
-
     entry = get(context.world_root, name)
     if entry is None:
         return None
-    name = _slug(name)
+    return choose(_slug(name), entry, context, label=label, scope=scope)
+
+
+def choose(step, entry, context, label="", scope=None):
+    """
+    What a list -- one the world keeps, or one a dictionary made up on the spot
+    -- comes to in this rendering, as a Phrase.
+
+    `step` is the name the choice is kept under: the list's own name, or the
+    call that produced the list, so that `$found_at(galley)` and
+    `$found_at(forge)` on one thing are two choices.
+    """
+    from world import tokens
+
     scope = scope if scope in SCOPES else entry.get("scope", DEFAULT_SCOPE)
-    step = f"{name}#{_slug(label)}" if label else name
+    step = f"{step}#{_slug(label)}" if label else step
     path = tuple(context.path) + (step,)
     holder, key = _holder(scope, context, path)
     outermost = not context.path
@@ -566,6 +577,119 @@ def _apply(holder, sets, world_root):
 
 
 # ---------------------------------------------------------------------------
+# Lists nobody wrote: the dictionaries
+# ---------------------------------------------------------------------------
+
+#: Longest a ConceptNet answer may be, in words. The corpus is crowdsourced,
+#: and past three words an answer is a sentence somebody typed rather than a
+#: thing that could be lying about.
+MOST_WORDS = 3
+
+#: A WordNet sense id, as a call's argument: `sword.n.01`.
+_SENSE = re.compile(r"[\w'\-]+\.[nv]\.\d+")
+
+
+def _sense(argument):
+    """A sense id as given, or the one sense a plain word settles to, or ""."""
+    from world import lexicon
+
+    argument = str(argument or "").strip()
+    if _SENSE.fullmatch(argument):
+        return argument
+    return lexicon.settled_noun_sense(lexicon.head_noun(argument))
+
+
+def plausible(word):
+    """
+    Whether something ConceptNet said is fit to be a word in a description.
+
+    The corpus is advisory everywhere in this game, and this is where its
+    advice is checked before anybody reads it: a few words at most, a head
+    noun the dictionary knows, and not a person -- "cook" is found in a
+    galley, and a galley description is no place to conjure one. False for
+    everything without WordNet, which leaves every call to its `else`.
+    """
+    from world import lexicon
+
+    words = str(word or "").split()
+    if not words or len(words) > MOST_WORDS:
+        return False
+    head = lexicon.head_noun(word)
+    if not head or not lexicon.known(head):
+        return False
+    sense = lexicon.settled_noun_sense(head)
+    return not (sense and "person" in lexicon.buckets(sense))
+
+
+def _hyponym(argument):
+    from world import lexicon
+
+    return lexicon.hyponyms(_sense(argument))
+
+
+def _part_of(argument):
+    from world import lexicon
+
+    return lexicon.parts(_sense(argument))
+
+
+def _conceptnet(relation, forward=False):
+    def lookup(argument):
+        from world import commonsense
+
+        asked = commonsense.forward if forward else commonsense.backward
+        return [word for word in asked(argument, relation, 24)
+                if plausible(word)]
+    return lookup
+
+
+#: The calls a description or a list entry may make on the dictionaries, and
+#: what each asks. `tokens` reserves the names.
+SOURCES = {
+    "hyponym": _hyponym,                          # a sort of sword
+    "part_of": _part_of,                          # a part of a ship
+    "found_at": _conceptnet("AtLocation"),        # something lying in a galley
+    "used_for": _conceptnet("UsedFor"),           # something used for cooking
+    "kind_of": _conceptnet("IsA", forward=True),  # what bread is a sort of
+}
+
+
+def source(name, args, kwargs, context):
+    """
+    `$hyponym(sword.n.01)`, `$found_at(galley, else=a crate)`: a word chosen
+    from a dictionary, kept the way a world list's choice is kept.
+
+    The answer is made into a list on the spot and chosen from by the same
+    path a kept list is, so it has the same scope, seeding and `as=` label --
+    and a galley that says "a pot" keeps saying "a pot". `else=` is what it
+    says when the dictionary has nothing: no corpus, a word nobody has heard
+    of, or nothing that passed `plausible`. A choice already made stays made
+    whatever the corpus says later.
+    """
+    from world import tokens
+
+    lookup = SOURCES.get(name)
+    argument = (args[0] if args else "").strip()
+    fallback = str(kwargs.get("else") or "")
+    words = []
+    if lookup is not None and argument:
+        try:
+            words = [word for word in lookup(argument) if word]
+        except Exception as exc:
+            logger.log_info(f"tokens: ${name}({argument}) failed ({exc})")
+    if not words:
+        return tokens.Phrase(fallback)
+    entry = {
+        "scope": DEFAULT_SCOPE, "group": "", "fallback": fallback,
+        "entries": [{"text": re.sub(r"([\\{}$])", r"\\\1", word), "weight": 1.0}
+                    for word in dict.fromkeys(words)],
+    }
+    step = f"{name}:{argument.lower().replace('/', ' ')}"
+    return choose(step, entry, context, label=kwargs.get("as", ""),
+                  scope=kwargs.get("scope"))
+
+
+# ---------------------------------------------------------------------------
 # Saying what a world keeps
 # ---------------------------------------------------------------------------
 
@@ -590,6 +714,13 @@ entry the state it sets:
 {"name": "paint", "means": "the colour something is painted", "group": "colour",
  "entries": [{"text": "red", "sets": {"states": ["red"]}},
              {"text": "green", "sets": {"states": ["green"]}}]}
+
+A description or an entry may also draw a word from the dictionaries, chosen
+and kept the same way: $hyponym(sword.n.01) is some sort of sword,
+$part_of(ship.n.01) some part of a ship, $found_at(galley) something found in
+a galley, $used_for(cooking) something used for cooking, $kind_of(bread) what
+bread is a sort of. Always give an else for when the dictionary has nothing:
+$found_at(galley, else=a crate).
 """
 
 

@@ -382,6 +382,46 @@ def _verb_exceptions():
     return _VERB_EXCEPTIONS
 
 
+def hyponyms(sense, limit=40):
+    """
+    The sorts of thing directly beneath a sense, as words: a sword can be a
+    rapier, a falchion, a fencing sword.
+
+    One word per sense -- its first lemma, which is the one WordNet leads
+    with -- and only the senses directly below, because two steps down a tree
+    is already an opepe and a shaving-brush tree. `[]` without a corpus, and
+    for anything that is not a sense.
+    """
+    return _related_nouns(sense, "hyponyms", limit)
+
+
+def parts(sense, limit=40):
+    """
+    The parts a sense is made of, as words: a sword has a hilt, a blade, a
+    point. WordNet's part meronyms, one word each, `[]` without a corpus.
+    """
+    return _related_nouns(sense, "part_meronyms", limit)
+
+
+def _related_nouns(sense, relation, limit):
+    synset = _synset(sense)
+    if synset is None:
+        return []
+    try:
+        related = getattr(synset, relation)()
+    except Exception:
+        return []
+    found = []
+    for other in related:
+        names = other.lemma_names()
+        if not names:
+            continue
+        word = names[0].replace("_", " ")
+        if word not in found:
+            found.append(word)
+    return found[:limit]
+
+
 def lexical_file(sense):
     """
     The lexicographer's file a sense was filed in -- "noun.substance",

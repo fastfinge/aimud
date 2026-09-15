@@ -66,9 +66,15 @@ ROLES = ("actor", "direct", "target", "container", "source", "instrument")
 RESERVED_SLOTS = frozenset(ROLES + ("self", "user", "viewer", "here", "world",
                                     "quote"))
 
+#: The calls that choose a word from a dictionary rather than a world list.
+#: `world.token_lists.SOURCES` answers them.
+SOURCE_CALLS = ("hyponym", "part_of", "found_at", "used_for", "kind_of")
+
 #: Call names kept for this game's own use: `pconj`, the English calls -- `an`,
-#: `the`, `plural`, `count` -- and `pick`, which chooses from a world list.
-RESERVED_CALLS = frozenset(("pconj", "an", "the", "plural", "count", "pick"))
+#: `the`, `plural`, `count` -- `pick`, which chooses from a world list, and the
+#: dictionary calls.
+RESERVED_CALLS = frozenset(("pconj", "an", "the", "plural", "count", "pick")
+                           + SOURCE_CALLS)
 
 #: The tenses a rendering can be asked for. `$pconj` conjugates for either.
 TENSES = ("present", "past")
@@ -600,6 +606,11 @@ def _call(node, context):
                                     label=kwargs.get("as", ""),
                                     scope=kwargs.get("scope"))
         return node.raw if found is None else found
+    if node.name in SOURCE_CALLS:
+        # `$hyponym(sword.n.01)`, `$found_at(galley, else=a crate)`.
+        from world import token_lists
+
+        return token_lists.source(node.name, args, kwargs, context)
 
     provided = _PROVIDED_CALLS.get(node.name)
     if provided is not None:
