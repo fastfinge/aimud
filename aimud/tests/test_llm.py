@@ -273,6 +273,69 @@ class ScriptingToolCalls(SimpleTestCase):
 
 
 @tag("unit")
+class ModelsThatCannotUseTools(SimpleTestCase):
+    """Tools are required: a model known not to take them is refused."""
+
+    TOOLS = [{"type": "function", "function": {"name": "say"}}]
+
+    def setUp(self):
+        llm._RECORDS.clear()
+
+    def tearDown(self):
+        llm._RECORDS.clear()
+
+    def know(self, *records):
+        llm._RECORDS[llm._models_url(SPONSOR.base_url)] = {
+            record["id"]: record for record in records}
+
+    def test_the_list_remembers_what_each_model_supports(self):
+        patch, _sent = sending({"data": [
+            {"id": "b/one", "supported_parameters": ["tools"]},
+            {"id": "a/two", "supported_parameters": ["temperature"]}]})
+        with patch:
+            listed = llm.models(SPONSOR)
+        self.assertEqual([record["id"] for record in listed], ["a/two", "b/one"])
+        self.assertEqual(llm.model_record(SPONSOR, "a/two")[
+            "supported_parameters"], ["temperature"])
+
+    def test_one_known_to_lack_tools_is_refused_before_anything_is_sent(self):
+        from world.model_params import ModelChoice
+
+        self.know({"id": "a/two", "supported_parameters": ["temperature"]})
+        patch, sent = sending(reply())
+        with patch, self.assertRaises(llm.LLMError) as raised:
+            llm.call(SPONSOR, ModelChoice("a/two", job="dialogue"), [],
+                     tools=self.TOOLS)
+        said = str(raised.exception)
+        self.assertIn("a/two", said)
+        self.assertIn("dialogue", said)
+        self.assertIn("models", said)
+        self.assertNotIn("url", sent)
+
+    def test_without_tools_it_is_asked_as_ever(self):
+        self.know({"id": "a/two", "supported_parameters": ["temperature"]})
+        patch, sent = sending(reply("x"))
+        with patch:
+            llm.call(SPONSOR, "a/two", [])
+        self.assertIn("url", sent)
+
+    def test_a_model_nobody_has_listed_is_given_the_benefit_of_the_doubt(self):
+        patch, sent = sending(reply())
+        with patch:
+            llm.call(SPONSOR, "never/listed", [], tools=self.TOOLS)
+        self.assertEqual(sent["payload"]["tools"], self.TOOLS)
+
+    def test_what_counts_as_supporting_tools(self):
+        from world.model_params import supports_tools
+
+        self.assertTrue(supports_tools({"supported_parameters": ["tools"]}))
+        self.assertFalse(supports_tools({"supported_parameters": ["seed"]}))
+        self.assertTrue(supports_tools({"supported_parameters": []}))
+        self.assertTrue(supports_tools({}))
+        self.assertTrue(supports_tools(None))
+
+
+@tag("unit")
 class AReplyThatIsAnErrorReport(SimpleTestCase):
     """
     What `call` hands back when the service sent an error instead of an answer.

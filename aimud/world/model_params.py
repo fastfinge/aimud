@@ -75,6 +75,21 @@ _ALIASES = {
 }
 
 
+def supports_tools(model_record):
+    """
+    Whether a model can be offered tools, which every generator now needs.
+
+    A model that publishes its parameter list and leaves `tools` out of it
+    cannot use them, and is not offered. A record that publishes no list at
+    all is given the benefit of the doubt, as `supported` gives it -- which is
+    what keeps a provider other than OpenRouter usable, since it may not say.
+    """
+    listed = (model_record or {}).get("supported_parameters")
+    if not listed:
+        return True
+    return "tools" in listed
+
+
 def supported(param, model_record):
     """
     True when this model accepts this setting.

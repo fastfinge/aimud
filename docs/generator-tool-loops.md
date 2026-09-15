@@ -260,12 +260,11 @@ fallback, the retry-and-remember logic, and the tests for all of those.
 * **A refusal from the service** (OpenRouter answers a tools request with an
   error saying no endpoint supports tool use) arrives as an `LLMError` like any
   other, with the service's own words. It needs no special handling.
-* **Check during Phase 3:** does OpenRouter route a request that carries
-  `tools` only to endpoints that support them, for a model where some providers
-  do and some do not? If not, the payload needs
-  `provider: {"require_parameters": true}`. That affects routing for the
-  sampling settings too, so it should be tested against a real model rather
-  than assumed.
+* **Routing needs nothing extra.** OpenRouter sends a request that carries
+  `tools` only to providers that support them, which its documentation says
+  and experience on other projects bears out. So no
+  `provider.require_parameters` is sent, and the sampling settings route as
+  they always have.
 
 ### 3.3 What stays in the prompt
 
@@ -983,8 +982,7 @@ naming rule.
 call time, the stage reports to `busy`, the measurement line with its ledger
 figures, and the `rounds` command (§3.5). First user: the NPC turn. Tool results are returned in-loop,
 `check_traits` becomes a lookup, and the `_note_to_self` routes for refusals
-become results. Settle the OpenRouter routing question in §3.2 against a real
-model.
+become results.
 
 **Done when** a character that checks somebody's traits and then acts on what
 it found does both within one turn, and a toolless model can no longer be
@@ -1098,9 +1096,7 @@ Both on the models the account would normally choose.
    * **The ledger records the tier that served each call**, so `rounds` and the
      spending figures can be read correctly.
    * **Check against a real flex endpoint** what happens when a request asks
-     for a tier its provider does not offer. And if Phase 3 had to set
-     `provider.require_parameters` (§3.2), check that sending `service_tier`
-     does not leave a model with no endpoint at all.
+     for a tier its provider does not offer.
 3. **Set reasoning effort per job.** OpenRouter takes
    `reasoning: {"effort": ...}`, with `"none"`, `"minimal"`, `"low"`,
    `"medium"`, `"high"`, `"xhigh"` or `"max"`. A model's record has a
@@ -1248,8 +1244,6 @@ From the server log for the same session:
 
 ### Still open
 
-* **OpenRouter routing** for models with mixed tool support (§3.2), settled in
-  Phase 3.
 
 ---
 

@@ -472,7 +472,13 @@ def node_select_model(caller, raw_string, **kwargs):
     search = kwargs.get("search", "").lower().strip()
 
     account = _get_account(caller)
-    all_models = caller.ndb.openrouter_models_cache or []
+    # Every job in this game uses tools, so a model that cannot is not
+    # offered for any of them. See world.model_params.supports_tools.
+    from world import model_params
+
+    listed = caller.ndb.openrouter_models_cache or []
+    all_models = [m for m in listed if model_params.supports_tools(m)]
+    hidden = len(listed) - len(all_models)
 
     if search:
         models = [
@@ -504,6 +510,10 @@ def node_select_model(caller, raw_string, **kwargs):
             f"Page {page + 1}/{total_pages}  ({total} models) "
             "— type text to filter"
         )
+    if hidden:
+        header.append(
+            f"|x{hidden} {'model that cannot use tools is' if hidden == 1 else 'models that cannot use tools are'} "
+            f"not listed.|n")
     header.append("")
 
     rows = [_fmt_model(i, m) for i, m in enumerate(page_models, 1)] or ["|rNo models match.|n"]

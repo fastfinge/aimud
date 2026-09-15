@@ -165,6 +165,20 @@ def call(sponsor, model, messages, tools=None, timeout=TIMEOUT,
     payload = {"model": model, "messages": messages}
     payload.update(settings(model))
     if tools:
+        # Refused before anything is sent, when the model is known not to
+        # take tools: a job that needs them cannot be done by it, and asking
+        # anyway only buys the provider's refusal. Known means the model list
+        # was fetched this session -- the `models` menu fetches it -- and a
+        # model nobody has listed is asked as ever, so the service can say so
+        # in its own words.
+        from world.model_params import supports_tools
+
+        record = model_record(sponsor, model)
+        if record is not None and not supports_tools(record):
+            job = getattr(model, "job", "") or "this job"
+            raise LLMError(f"{model} cannot use tools, and {job} needs them. "
+                           f"Choose another model for {job} with the models "
+                           f"command.")
         payload["tools"] = tools
         payload["tool_choice"] = tool_choice or "auto"
     # Timed here, around the request and nothing else, because how long a
@@ -223,15 +237,30 @@ def ask(sponsor, model, messages, timeout=TIMEOUT):
     raise LLMError(_complain(reply) or "the model returned no text")
 
 
+#: What each service last said about its models, by the URL they were listed
+#: from: {url: {model id: record}}. Filled whenever the list is fetched, and
+#: read by `call` to refuse a model that cannot use tools. In memory only; a
+#: reload forgets it, and the next fetch of the list fills it again.
+_RECORDS = {}
+
+
 def models(sponsor, timeout=LIST_TIMEOUT):
     """Every model this key can reach, ordered by id. For the `models` menu."""
-    listed = _request(_models_url(sponsor.base_url), sponsor.key(),
-                      timeout=timeout)
+    url = _models_url(sponsor.base_url)
+    listed = _request(url, sponsor.key(), timeout=timeout)
     try:
-        return sorted(listed["data"], key=lambda record: record["id"])
+        found = sorted(listed["data"], key=lambda record: record["id"])
     except (KeyError, TypeError) as err:
         raise LLMError(_complain(listed)
                        or "the model service sent no list of models") from err
+    _RECORDS[url] = {str(record["id"]): record for record in found}
+    return found
+
+
+def model_record(sponsor, model_id):
+    """What the service said about one model, or None if it has not said."""
+    known = _RECORDS.get(_models_url(getattr(sponsor, "base_url", None)))
+    return (known or {}).get(str(model_id or ""))
 
 
 #: Calls that have happened but have not been written down yet.

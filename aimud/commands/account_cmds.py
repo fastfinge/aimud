@@ -164,6 +164,10 @@ class CmdModels(Command):
 
     Requires an API key (see |wapikey|n). Use |wmodels refresh|n to re-fetch
     the model list from OpenRouter.
+
+    Only models that can use tools are listed. Every job in this game hands
+    the model tools to look things up and to give its answer, so a model
+    without them could do none of it.
     """
 
     key = "models"
