@@ -157,6 +157,11 @@ class MakingAnItem(_Room):
         self.assertIn("chest.n.02", sense["enum"])
         self.assertIn("several different kinds of thing", recorder.sent(0))
 
+    def test_a_bonus_to_a_trait_nothing_measures_is_sent_back(self):
+        said = item_gen.item_complaints(
+            dict(LAMP, trait_bonuses={"zorbitude": 1}), self.root)
+        self.assertTrue(any("zorbitude" in line for line in said), said)
+
     def test_a_sense_that_contradicts_the_thing_is_sent_back(self):
         said = item_gen.item_complaints(
             dict(LAMP, sense="structure.n.01", takeable=True), self.root)

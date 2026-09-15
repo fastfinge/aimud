@@ -192,25 +192,6 @@ def register(world_root, slug, name="", means="", trait_type=DEFAULT_TRAIT_TYPE,
     return slug
 
 
-def vocabulary_block(world_root, header="Traits this world already uses"):
-    """
-    The register as a prompt block, or "" when the world has none yet.
-
-    Every prompt that could invent a trait gets this, which is the part of
-    keeping one vocabulary that actually does the work: a model shown that
-    "stamina" exists does not go on to invent "vigour".
-    """
-    vocab = vocabulary(world_root)
-    if not vocab:
-        return ""
-    lines = []
-    for slug, entry in sorted(vocab.items()):
-        means = entry.get("means") or entry.get("name") or ""
-        lines.append(f"  {slug} ({entry.get('trait_type', 'counter')}): {means}")
-    return (f"{header} — reuse these rather than inventing another name for "
-            f"the same idea:\n" + "\n".join(lines) + "\n\n")
-
-
 # ---------------------------------------------------------------------------
 # Reading a character
 # ---------------------------------------------------------------------------

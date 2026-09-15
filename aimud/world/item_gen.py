@@ -225,7 +225,7 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
             "role": "user",
             "content": (
                 f"{_world_and_room(room, 'items')}\n\n"
-                f"{gear.prompt_block(world_root, registers=False)}"
+                f"{gear.prompt_block(world_root)}"
                 f"{token_lists.TOOL_PROMPT}\n"
                 f"{_sense_note(object_name)}"
                 f"{_state_hints(world_root, [lexicon.head_noun(object_name)])}"
@@ -533,6 +533,17 @@ def item_complaints(args, world_root):
     if under and lexicon.available() and not lexicon.definition(under):
         said.append(f"{under} is not a sense the dictionary knows; give a "
                     f"real identifier, such as device.n.01")
+
+    bonuses = args.get("trait_bonuses")
+    if isinstance(bonuses, dict) and bonuses:
+        from world import traits
+
+        strange = sorted(slug for slug in bonuses
+                         if traits._slug(slug) not in traits.vocabulary(world_root))
+        if strange:
+            said.append("trait_bonuses names " + ", ".join(strange) + ", which "
+                        "this world does not measure; list_traits shows what "
+                        "it does")
 
     lists = [entry for entry in _listed(args.get("new_token_lists"))
              if isinstance(entry, dict)]

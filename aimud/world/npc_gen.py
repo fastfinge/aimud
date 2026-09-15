@@ -1453,7 +1453,7 @@ def dress_npc(sponsor, npc):
                 f"Their body: {tokens.text_of(npc) or '(not described)'}\n"
                 f"Who they are: {npc.db.manner or '(not described)'}\n"
                 f"What they want: {goals.describe(npc.db.goal)}\n\n"
-                f"{gear.prompt_block(room.db.world_root, registers=False)}"
+                f"{gear.prompt_block(room.db.world_root)}"
                 + _hints_block(
                     carry_hints(npc),
                     "Somebody in this world wants these, and there are none "

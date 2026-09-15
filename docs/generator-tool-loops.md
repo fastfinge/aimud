@@ -1282,6 +1282,28 @@ might carry. Delete any `vocabulary_block` nothing uses any more.
 
   `traits.vocabulary_block` stays until the quest generators convert.
 
+*As built, so far* (7b, quests and goals):
+
+* **`write_quest`** (8 rounds) gives `goal` `goals.schema` items, one or
+  two, and `reward` and `punishment` `effects.schema` items. **`write_goal`**
+  (6 rounds) gives `goal` `goals.schema` items and allows an empty list, which
+  the prompt calls a real answer.
+* **Rounds out.** The last quest is offered as it stands (`quests.offer`
+  still refuses one with no testable goal, and logs it) and the last goal is
+  taken as it stands.
+* **`goal_complaints`** sends back what `goals.sanitise` would drop, which
+  used to vanish after the answer was taken. It also sends back, for a quest,
+  a goal with nothing testable left, and a trait condition naming a trait
+  nothing measures. **`effect_complaints`** sends back a reward or punishment
+  effect nothing can apply, and a `set_trait` naming an unmeasured trait.
+* **The last pasted register is gone.** `traits.vocabulary_block` went with
+  the quest prompts, and `gear.prompt_block` lost its `registers` switch: it
+  always points at `list_traits` now. So that pointer is true everywhere,
+  `item_complaints` sends back a `trait_bonuses` key naming a trait nothing
+  measures, as `describe_room` already did.
+* **`_parse_json_object` is gone from `quest_gen` and `worldgen`,** having no
+  callers left.
+
 ### Phase 8: soak, then measure and tune
 
 Measurement waits until everything is built, because every phase moves the

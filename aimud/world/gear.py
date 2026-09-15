@@ -66,7 +66,7 @@ WIELD_LIMIT = 2
 VERBS = ("wield", "unwield", "hold")
 
 
-def prompt_block(world_root, registers=True):
+def prompt_block(world_root):
     """
     How to declare what an item is worth, for any generator that makes one.
 
@@ -75,13 +75,12 @@ def prompt_block(world_root, registers=True):
     a verb that conjures something -- and a world where only some of them can
     arm a character is worse than one where none of them can.
 
-    It ends with the world's trait register, for the same reason every other
-    prompt that could invent a trait gets it: a model shown that "defence"
-    exists does not go on to invent "protection", and half the armour in the
-    world would otherwise measure something the other half does not.
+    It ends by pointing at the world's trait register rather than pasting it
+    in. `list_traits` answers when a bonus needs a name, and a bonus naming a
+    trait nothing measures is sent back by whichever finish tool took it --
+    which is what stops half the armour in a world measuring "protection"
+    while the other half measures "defence".
     """
-    from world import traits
-
     return (
         "trait_bonuses is what this item does for whoever has it, as\n"
         '{"trait": amount} — {"defence": 2}, {"stealth": -1}. This is the\n'
@@ -110,11 +109,8 @@ def prompt_block(world_root, registers=True):
         "simply existing, which is most things. Use it whenever the object has\n"
         "a condition that could be turned off — otherwise a lamp in a pack\n"
         "shines as brightly as one alight.\n\n"
-        + (traits.vocabulary_block(
-            world_root, "Traits this world already measures")
-           if registers else
-           "list_traits shows the traits this world measures; a bonus names "
-           "one of those.\n\n")
+        "list_traits shows the traits this world measures; a bonus names "
+        "one of those.\n\n"
     )
 
 

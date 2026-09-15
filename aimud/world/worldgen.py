@@ -202,19 +202,6 @@ def _affordance_rule():
 # Parsing (pure Python, safe anywhere)
 # ---------------------------------------------------------------------------
 
-def _parse_json_object(content):
-    """
-    Parse a model response that should be a single JSON object.
-
-    Delegates to world.model_json, which repairs the near-misses models make
-    -- a trailing comma, a stray comment, an answer cut off mid-object --
-    rather than losing a whole generation over one character.
-    """
-    from world.model_json import parse_object
-
-    return parse_object(content)
-
-
 # ---------------------------------------------------------------------------
 # Context building (runs in main thread — DB access)
 # ---------------------------------------------------------------------------
@@ -1380,7 +1367,7 @@ def populate_room(sponsor, room):
                 f"Kind: {room.db.room_type or 'unspecified'} "
                 f"({room.db.room_category or 'unspecified'})\n\n"
                 f"Description: {tokens.text_of(room)}\n\n"
-                f"{gear.prompt_block(room.db.world_root, registers=False)}"
+                f"{gear.prompt_block(room.db.world_root)}"
                 + _hints_block(
                     contents_hints(room.db.world_root, room),
                     "Wanted by somebody in this world, and to be found "

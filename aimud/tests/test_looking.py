@@ -556,7 +556,7 @@ class WhatGenerationCanNowSay(EvenniaTest):
         self.assertIn("bonus_while", items["properties"])
         self.assertEqual(items, clothing.spec_schema(None))
         self.assertIn("bonus_while",
-                      gear.prompt_block(self.room1, registers=False))
+                      gear.prompt_block(self.room1))
 
     def test_and_a_generated_item_keeps_it(self):
         from world import clothing
