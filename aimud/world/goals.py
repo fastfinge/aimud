@@ -397,3 +397,53 @@ def lookup_tools():
         tb.params(tb.PAGE), tb.answering(finding),
         doing="looking up this world's rooms", looks=True,
         available=lambda ctx: ctx.world_root is not None)]
+
+
+# ---------------------------------------------------------------------------
+# The shape of a goal condition, for a tool's parameters (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def schema(ctx=None):
+    """One goal condition, closed to the types `sanitise` keeps."""
+    from world import relations
+    from world import toolbox as tb
+
+    world_root = getattr(ctx, "world_root", None)
+    known_traits = []
+    if world_root is not None:
+        from world import traits
+
+        known_traits = sorted(traits.vocabulary(world_root))
+    return {
+        "type": "object",
+        "properties": {
+            "type": {"type": "string", "enum": list(CONDITION_TYPES),
+                     "description": "What must become true"},
+            "object": {"type": "string",
+                       "description": "The thing, as it is called; a thing "
+                                      "whose name contains these words "
+                                      "counts"},
+            "kind": {"type": "string",
+                     "description": "Instead of object: any thing of this "
+                                    "sort counts"},
+            "room": {"type": "string",
+                     "description": "in_room: a room's name, as find_rooms "
+                                    "lists them"},
+            "to": {"type": "string",
+                   "description": "delivered: who it is handed to"},
+            "host": {"type": "string",
+                     "description": "placed: what it is put in or on"},
+            "preposition": {"type": "string",
+                            "enum": list(relations.PREPOSITIONS),
+                            "description": "placed: how it goes there"},
+            "trait": tb.choice(known_traits, "trait: the figure",
+                               ask="list_traits"),
+            "min": {"type": "number", "description": "trait: at least"},
+            "max": {"type": "number", "description": "trait: at most"},
+            "is": {"type": "array", "items": {"type": "string"},
+                   "description": "state: conditions it must be in"},
+            "lacks": {"type": "array", "items": {"type": "string"},
+                      "description": "state: conditions it must not be in"},
+        },
+        "required": ["type"],
+    }

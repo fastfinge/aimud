@@ -191,6 +191,33 @@ PAGE = {
 }
 
 
+#: The most values a field is closed to by an enum. An enum is a list too, and
+#: it sits in the tool schema, which is part of every round's prompt; past
+#: this, a field is left open and its handler checks membership instead. A
+#: starting point for the soak to revisit (§4.1).
+ENUM_MOST = 50
+
+
+def choice(values, description="", most=ENUM_MOST, ask=""):
+    """
+    A string field closed to `values` while there are few enough to list.
+
+    Past `most` the field is open, and its description says how many there are
+    and which lookup lists them, so a model can still find the one it wants.
+    The handler is then what refuses a value that is not one of them.
+    """
+    values = list(dict.fromkeys(str(value) for value in values
+                                if str(value)))
+    field = {"type": "string", "description": str(description or "")}
+    if values and len(values) <= most:
+        field["enum"] = values
+    elif values and ask:
+        field["description"] = (f"{field['description']} There are "
+                                f"{len(values)} to choose from; {ask} lists "
+                                f"them.").strip()
+    return field
+
+
 def paged(entries, args, noun="entries", most=20):
     """A list, filtered by `query` and cut to `limit` from `offset`, as text."""
     entries = [str(entry) for entry in entries]

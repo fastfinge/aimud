@@ -1026,7 +1026,7 @@ any prompt changes.
 `goals.blocked_wants` and `rulecheck.relevant` have tests over the exported
 worlds.
 
-*As built, so far* (4a and 4b):
+*As built* (4a, 4b and 4c):
 
 * **The lookups live beside their registers,** each module's
   `lookup_tools()` appended to its end, and `world/lookups.py` gathers them by
@@ -1046,6 +1046,43 @@ worlds.
   `world_faults`,** beside the tools they act with.
 * **`tests.support.tool_call` takes the tool's name positionally,** so a tool
   whose own argument is called `name` can still be given one.
+* **The schemas sit beside the code that reads them:**
+  * `effects.schema`, `conditions.schema` and `goals.schema`;
+  * `clothing.spec_schema` (with `worn=True`, a garment must give its
+    `clothing_type`);
+  * `token_lists.schema`, `pronouns.set_schema`, `traits.declaration_schema`
+    and `verbs.state_declaration_schema`.
+
+  Each fixed field is an enum built from the tuple its code checks against,
+  and a test holds the two together.
+* **A field that depends on the type is optional, and its description says
+  which types use it.** An effect's `to`, for example, means one thing for
+  `move_object` and another for `set_exit`. The dialect has no `oneOf`, so
+  whoever validates the answer enforces what the type needs, as
+  `rule_gen.validate` already does.
+* **`toolbox.choice` is the enum cap.** Up to `ENUM_MOST` (50) values it is an
+  enum. Past that the field is open, and its description gives the count and
+  the lookup that lists them. A world's traits and state groups go through it.
+* **Near-duplicate complaints are one check per register:**
+  * `verbs.near_duplicate_state`: a prefix spelling, as `register_state`
+    folds it ("opened" onto "open"), or an adjective synonym ("shut" beside
+    "closed");
+  * `traits.near_duplicate`: only what `_matching` folds;
+  * `token_lists.near_duplicate`: a list under another number;
+  * `pronouns.near_duplicate`: a set by its subject form.
+
+  `vocabulary.near_duplicates` puts them together for a finish tool to ask
+  about a whole reply, and adds `claim`'s refusal of a trait and a state that
+  share a word.
+* **What the checks cannot catch:** another word for the same idea
+  ("vigour" beside "stamina") is caught only for states, and only when the
+  dictionary calls the two synonyms. For traits nothing knows the meanings are
+  the same, so a model that does not look the register up can still coin
+  one.
+* **The traits' prefix fold is narrower than its docstring says.** The two
+  names may differ by at most three letters, so "stam" folds onto "stamina"
+  but "str" does not fold onto "strength". Left as it is; the tests use
+  "stam".
 
 ### Phase 5: the verb pipeline
 

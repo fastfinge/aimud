@@ -160,3 +160,75 @@ def permit(world_root, word, register):
     if complaint:
         logger.log_info(f"vocabulary: {complaint}")
     return allowed
+
+
+# ---------------------------------------------------------------------------
+# A reply's new words, against what this world already says (docs §3.3)
+# ---------------------------------------------------------------------------
+
+def near_duplicates(world_root, new_states=(), new_traits=(),
+                    new_token_lists=(), new_pronoun_set=None):
+    """
+    What is wrong with the words a reply wants to add, as sentences.
+
+    The registers used to be pasted into every prompt so that "a word not shown
+    gets coined again under another name". With the registers behind lookup
+    tools, a model that does not look will coin it again. So a finish tool asks
+    this before accepting, and sends back what it finds: "this world already
+    has closed; use it, or say how shut differs". The registers still fold
+    these silently on their own; this is the chance to be told first.
+
+    Also the one collision `claim` refuses outright: a trait and a state with
+    the same name.
+    """
+    from world import pronouns, token_lists, traits, verbs
+
+    if world_root is None:
+        return []
+    said = []
+
+    for entry in new_states or ():
+        slug = _field(entry, "slug")
+        existing = verbs.near_duplicate_state(world_root, slug)
+        if existing:
+            group = verbs.group_of(world_root, existing)
+            said.append(f"This world already has the state '{existing}'"
+                        + (f" (group: {group})" if group else "")
+                        + f"; use it, or say how '{slug}' differs.")
+        allowed, complaint = claim(world_root, slug, "state")
+        if not allowed:
+            said.append(complaint[:1].upper() + complaint[1:] + ".")
+
+    for entry in new_traits or ():
+        slug = _field(entry, "slug")
+        existing = traits.near_duplicate(world_root, slug)
+        if existing:
+            said.append(f"This world already measures '{existing}'; use it "
+                        f"rather than '{slug}'.")
+        allowed, complaint = claim(world_root, slug, "trait")
+        if not allowed:
+            said.append(complaint[:1].upper() + complaint[1:] + ".")
+
+    for entry in new_token_lists or ():
+        name = _field(entry, "name")
+        existing = token_lists.near_duplicate(world_root, name)
+        if existing:
+            said.append(f"This world already keeps the word list "
+                        f"{{{existing}}}; add to it rather than declaring "
+                        f"{{{name}}}.")
+
+    if new_pronoun_set:
+        existing = pronouns.near_duplicate(world_root, new_pronoun_set)
+        if existing:
+            entry = pronouns.get(world_root, existing)
+            said.append(f"This world already keeps "
+                        f"{pronouns.spelled(entry)}; give it by name "
+                        f"('{existing}') rather than declaring it again.")
+    return said
+
+
+def _field(entry, name):
+    try:
+        return str(dict(entry).get(name) or "").strip().lower()
+    except (TypeError, ValueError):
+        return str(entry or "").strip().lower()

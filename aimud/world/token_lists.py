@@ -819,3 +819,47 @@ def lookup_tools():
                 tb.answering(trying), doing="trying out a description",
                 looks=True),
     ]
+
+
+# ---------------------------------------------------------------------------
+# The shape of a declaration, and whether it is one this world has (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def schema(ctx=None):
+    """One word list, as `clean` reads it."""
+    return {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string",
+                     "description": "The list's name, as it is written in "
+                                    "braces"},
+            "means": {"type": "string",
+                      "description": "One sentence on what the list is for"},
+            "scope": {"type": "string", "enum": list(SCOPES),
+                      "description": "What a choice is kept on"},
+            "group": {"type": "string",
+                      "description": "Optional. The state group its entries "
+                                     "set"},
+            "for": {"type": "array", "items": {"type": "string"},
+                    "description": "Optional. The sorts of thing it is meant "
+                                   "for"},
+            "fallback": {"type": "string",
+                         "description": "Optional. What to say if nothing can "
+                                        "be chosen"},
+            "entries": {"type": "array",
+                        "items": {"type": "object", "properties": {
+                            "text": {"type": "string"},
+                            "weight": {"type": "number"},
+                            "sets": {"type": "object"}},
+                            "required": ["text"]},
+                        "description": "The words it chooses between"},
+        },
+        "required": ["name", "means", "entries"],
+    }
+
+
+def near_duplicate(world_root, name):
+    """The list this world already keeps under another spelling, or ""."""
+    wanted = _slug(name)
+    folded = _fold(world_root, wanted) if wanted else ""
+    return folded if folded and folded != wanted else ""

@@ -607,3 +607,48 @@ def lookup_tools():
                           ["slug"]),
                 tb.answering(showing), doing="looking up a trait", looks=True),
     ]
+
+
+# ---------------------------------------------------------------------------
+# The shape of a declaration, and whether it is one this world has (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def declaration_schema(ctx=None):
+    """One new trait, as `register` reads it."""
+    return {
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "Its name"},
+            "name": {"type": "string",
+                     "description": "Optional. How it is said"},
+            "means": {"type": "string",
+                      "description": "One sentence on what it measures"},
+            "trait_type": {"type": "string", "enum": list(TRAIT_TYPES),
+                           "description": "counter moves from a base; gauge "
+                                          "empties and refills; static stays "
+                                          "put"},
+            "base": {"type": "number", "description": "Where it starts"},
+            "min": {"type": "number", "description": "Optional. Its floor"},
+            "max": {"type": "number", "description": "Optional. Its ceiling"},
+            "rate": {"type": "number",
+                     "description": "Optional. Change per second"},
+            "descs": {"type": "object",
+                      "description": "Optional. Words for standing at it, as "
+                                     "{top of band: word}"},
+        },
+        "required": ["slug", "means", "trait_type"],
+    }
+
+
+def near_duplicate(world_root, slug):
+    """
+    The trait this world already keeps under a near spelling, or "".
+
+    Only what `_matching` would fold: an abbreviation, a plural, a separator.
+    A different word for the same idea -- "vigour" beside "stamina" -- is not
+    caught here, because nothing here knows the two mean the same; the
+    register being in front of the model is what catches that.
+    """
+    asked = _slug(slug)
+    found = _matching(world_root, asked) if asked else None
+    return found if found and found != asked else ""

@@ -1431,3 +1431,63 @@ def as_goals(conditions, bound=None, actor=None):
             found.append(wanted)
     return found
 
+
+
+# ---------------------------------------------------------------------------
+# The shape of a condition, for a tool's parameters (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def schema(ctx=None):
+    """
+    One condition, as a finish tool's parameters describe it: a subject and
+    one predicate. Which predicate is the model's choice, so every predicate
+    is an optional field and `predicate_of` is what checks there is one.
+    """
+    from world import toolbox as tb
+
+    world_root = getattr(ctx, "world_root", None)
+    known_traits = []
+    if world_root is not None:
+        from world import traits
+
+        known_traits = sorted(traits.vocabulary(world_root))
+
+    def names(what):
+        return {"type": "array", "items": {"type": "string"},
+                "description": what}
+
+    return {
+        "type": "object",
+        "properties": {
+            "subject": {"description": "Whose condition: a participant ("
+                                       + ", ".join(ROLES) + "), 'here', "
+                                       "{\"enclosure\": <a kind>} or "
+                                       "{\"zone\": true}"},
+            "is": names("states it must be in"),
+            "lacks": names("states it must not be in"),
+            "affords": names("what must be doable to it"),
+            "holds": names("what the subject must be carrying"),
+            "wears": names("what the subject must have on"),
+            "kind": {"description": "a sort of thing it must be"},
+            "owned_by": {"description": "'actor', a participant, 'nobody' or "
+                                        "'somebody'"},
+            "placed": {"description": "where it must be put"},
+            "trait": tb.choice(known_traits, "a figure it must reach",
+                               ask="list_traits"),
+            "min": {"type": "number", "description": "with trait: at least"},
+            "max": {"type": "number", "description": "with trait: at most"},
+            "in_room": {"description": "a room it must be in"},
+            "exists": {"type": "boolean", "description": "it must exist"},
+            "gone": {"type": "boolean", "description": "it must be gone"},
+            "able": {"type": "string", "enum": sorted(GATES),
+                     "description": "what the subject must be free to do"},
+            "reachable_by": {"description": "who must be able to reach it"},
+            "visible_to": {"description": "who must be able to see it"},
+            "leads_to": {"description": "where a way out must lead"},
+            "never": {"type": "boolean",
+                      "description": "never true: a rule nothing can pass"},
+            "unbound": {"type": "boolean",
+                        "description": "nobody named one"},
+        },
+        "required": ["subject"],
+    }

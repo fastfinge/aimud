@@ -869,3 +869,91 @@ def _apply_one(actor, room, effect, bound, world_root):
         return None
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# The shape of an effect, for a tool's parameters (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def schema(ctx=None):
+    """
+    One effect, as a finish tool's parameters describe it.
+
+    In the conservative dialect: `type` is closed to what this module can
+    apply, and every other field is optional, its description saying which
+    types use it. What depends on the type is enforced by whoever validates
+    the answer, as `rule_gen.validate` does, rather than by `oneOf`, which not
+    every provider honours.
+    """
+    from world import conditions, relations
+    from world import toolbox as tb
+
+    world_root = getattr(ctx, "world_root", None)
+    known_traits = []
+    if world_root is not None:
+        from world import traits
+
+        known_traits = sorted(traits.vocabulary(world_root))
+    roles = list(conditions.ROLES)
+    return {
+        "type": "object",
+        "properties": {
+            "type": {"type": "string", "enum": sorted(VOCABULARY),
+                     "description": "What it does: " + "; ".join(
+                         f"{name} {entry['means']}"
+                         for name, entry in sorted(VOCABULARY.items()))},
+            "role": tb.choice(roles + list(PLURAL_ROLES),
+                              "set_state, set_trait: whose state or figure "
+                              "changes"),
+            "name_role": tb.choice(roles, "destroy_object, move_object, "
+                                          "modify_object, set_owner: which "
+                                          "participant it is about"),
+            "name": {"type": "string",
+                     "description": "create_object: what the new thing is "
+                                    "called"},
+            "description": {"type": "string",
+                            "description": "create_object: what it looks like"},
+            "location": {"type": "string", "enum": ["room", "actor"],
+                         "description": "create_object: on the floor, or in "
+                                        "the hands of whoever acted"},
+            "add": {"type": "array", "items": {"type": "string"},
+                    "description": "set_state: conditions to put it in"},
+            "remove": {"type": "array", "items": {"type": "string"},
+                       "description": "set_state: conditions to take away"},
+            "trait": tb.choice(known_traits, "set_trait: the figure",
+                               ask="list_traits"),
+            "change": {"type": "number",
+                       "description": "set_trait: how far to move it"},
+            "set_to": {"type": "number",
+                       "description": "set_trait: where to put it"},
+            "rate": {"type": "number",
+                     "description": "set_trait: change per second from now "
+                                    "on; 0 stops it"},
+            "to": {"type": "string",
+                   "description": "move_object: 'actor', 'room', a "
+                                  "participant or a room's name; set_owner: "
+                                  "'actor', a participant or 'nobody'; "
+                                  "set_exit, move_actor: a room's name"},
+            "preposition": {"type": "string",
+                            "enum": list(relations.PREPOSITIONS),
+                            "description": "move_object to a participant: "
+                                           "how it goes there"},
+            "exit": {"type": "string",
+                     "description": "set_exit, move_actor: which way out"},
+            "new_name": {"type": "string",
+                         "description": "modify_object, modify_room: what "
+                                        "it is called from now on"},
+            "new_description": {"type": "string",
+                                "description": "modify_object, modify_room: "
+                                               "what it looks like from now "
+                                               "on"},
+            "action": {"type": "string",
+                       "description": "try: the verb this means instead"},
+            "roles": {"type": "object",
+                      "description": "try: the participants for that verb"},
+            "cascade": {"type": "boolean",
+                        "description": "set_owner: whether what it holds "
+                                       "changes hands too"},
+        },
+        "required": ["type"],
+    }

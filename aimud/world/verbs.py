@@ -2105,3 +2105,69 @@ def lookup_tools():
                 tb.params(tb.PAGE), tb.answering(grouping),
                 doing="looking up state groups", looks=True),
     ]
+
+
+# ---------------------------------------------------------------------------
+# The shape of a declaration, and whether it is one this world has (docs §4.1)
+# ---------------------------------------------------------------------------
+
+def state_declaration_schema(ctx=None):
+    """One new state, as `register_state` reads it."""
+    world_root = getattr(ctx, "world_root", None)
+    in_use = sorted(groups(world_root)) if world_root is not None else []
+    return {
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "Its name"},
+            "means": {"type": "string",
+                      "description": "What being in it means"},
+            "group": {"type": "string",
+                      "description": "Optional. The set of conditions only "
+                                     "one of which can be true at once"
+                                     + (": reuse one of " + ", ".join(in_use)
+                                        if in_use and len(in_use) <= 50
+                                        else " (list_state_groups)")},
+            "conflicts": {"type": "array", "items": {"type": "string"},
+                          "description": "Optional. States it ends"},
+            "group_ends_on_move": {"type": "boolean",
+                                   "description": "Walking away ends it"},
+            "group_prevents_acting": {"type": "boolean",
+                                      "description": "It stops its holder "
+                                                     "doing anything"},
+            "group_prevents_moving": {"type": "boolean",
+                                      "description": "It stops its holder "
+                                                     "moving"},
+            "group_prevents_speaking": {"type": "boolean",
+                                        "description": "It stops its holder "
+                                                       "speaking"},
+        },
+        "required": ["slug", "means"],
+    }
+
+
+def near_duplicate_state(world_root, slug):
+    """
+    The state this world already keeps that a new one is really another word
+    for, or "".
+
+    A near spelling, as `register_state` would fold it ("emptied" onto
+    "empty"), or a synonym in the dictionary's adjective senses ("shut" beside
+    "closed"). `register_state` puts a synonym in the same group and keeps both
+    words; asked first, the model can use the word the world already has.
+    """
+    wanted = _slug_state(slug)
+    vocab = vocabulary(world_root)
+    if not wanted or wanted in vocab:
+        return ""
+    for existing in sorted(vocab):
+        if _similar(wanted, existing):
+            return existing
+    kin = set()
+    for sense in _adjective_senses(wanted):
+        try:
+            kin |= {name.lower() for name in sense.lemma_names()}
+        except Exception:
+            continue
+    kin.discard(wanted)
+    found = sorted(kin & set(vocab))
+    return found[0] if found else ""
