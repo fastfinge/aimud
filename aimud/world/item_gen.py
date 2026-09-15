@@ -80,19 +80,6 @@ usually empty for a new object.
 # ---------------------------------------------------------------------------
 
 
-def _parse_json(content):
-    """
-    Parse a model response that should be a single JSON object.
-
-    Delegates to world.model_json, which repairs the near-misses models make
-    -- a trailing comma, a stray comment, an answer cut off mid-object --
-    rather than losing a whole generation over one character.
-    """
-    from world.model_json import parse_object
-
-    return parse_object(content)
-
-
 def _plural_note(object_name):
     """
     What to tell the item model when it is asked to make something plural.
@@ -516,8 +503,7 @@ def item_complaints(args, world_root):
     be, an anchor the dictionary does not know, a word list nothing keeps, and
     a state or list that is another spelling of one this world has.
     """
-    from world import effects, kinds, lexicon, token_lists, tokens, verbs
-    from world import vocabulary
+    from world import kinds, lexicon, token_lists, verbs, vocabulary
 
     said = []
     name = str(args.get("name") or "").strip()
@@ -548,33 +534,11 @@ def item_complaints(args, world_root):
         said.append(f"{under} is not a sense the dictionary knows; give a "
                     f"real identifier, such as device.n.01")
 
-    declared, lists = set(), []
-    for entry in _listed(args.get("new_token_lists")):
-        if not isinstance(entry, dict):
-            said.append("a word list that was not an object")
-            continue
-        list_name = token_lists._slug(entry.get("name"))
-        cleaned, why = token_lists.clean(entry)
-        if cleaned is None or not list_name:
-            said.append(f"the word list {list_name or '(unnamed)'} cannot be "
-                        f"kept: {why or 'it has no name'}")
-            continue
-        declared.add(list_name)
-        lists.append(entry)
-
-    if world_root is not None:
-        description = str(args.get("description") or "")
-        unknown = sorted(
-            slot for slot in token_lists.references(description)
-            if slot not in effects._BUILTIN_SLOTS
-            and slot not in tokens._PROVIDED_SLOTS
-            and slot not in declared
-            and token_lists.get(world_root, slot) is None)
-        if unknown:
-            said.append("the description asks for word lists this world does "
-                        "not keep: " + ", ".join(f"{{{slot}}}" for slot in unknown)
-                        + "; declare them in new_token_lists or write the "
-                          "words out")
+    lists = [entry for entry in _listed(args.get("new_token_lists"))
+             if isinstance(entry, dict)]
+    said += token_lists.complaints(world_root,
+                                   _listed(args.get("new_token_lists")),
+                                   [args.get("description")])
 
     vocab = verbs.vocabulary(world_root)
     said += [line.rstrip(".") for line in vocabulary.near_duplicates(

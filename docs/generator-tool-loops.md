@@ -1181,6 +1181,37 @@ under words the quest accepts.
   `_state_hints` adds the states things of this sort have been in and
   §5.2's unused words in their groups.
 
+*As built, so far* (6b, rooms):
+
+* **Rounds.** `plan_world` and `describe_area` get 10 each: background work
+  nobody waits on. `name_room` (connected and first room) and
+  `describe_room` get 8 each.
+* **Rounds out.** The last plan, area, name or description is used as it
+  stands. A failed or unreadable world plan is still no plan, which is what
+  `_generate_plan` always did.
+* **`name_room` closes what the naming rules would refuse:**
+  * `category` leaves out `destination` when the room being left is one;
+  * exit names are limited to the directions `_allowed_exits` would keep
+    (never the way back, never into a destination next door);
+  * `zone` names what `zones.offerable` offers.
+
+  `_check_name` is the handler, so the conversation `_generate_name` built
+  by hand for three attempts is gone, and so is its `attempts` parameter
+  (nothing passed it).
+* **`describe_area` leaves out `zones` at `MAX_DEPTH`.** Complaints: a
+  single sub-area, more than five, and a singleton type that none of the room
+  types given mentions.
+* **`plan_world` complaints:** a zone count outside 3 to 6, and
+  `singleton_types` naming no zone's room type (never checked before).
+* **`describe_room` sends back what used to be dropped after the fact:**
+  * a trait bonus naming a trait nothing measures;
+  * `light` given as 0 or less;
+  * word lists `register_many` would refuse, and slots nothing answers,
+    through the new `token_lists.complaints`, which `make_item` now shares;
+  * near-duplicate lists.
+
+  The word-list register is behind `list_word_lists`.
+
 ### Phase 7: characters, quests and the rest
 
 `generate_npc` (whose name retries become complaints), `dress_npc`,

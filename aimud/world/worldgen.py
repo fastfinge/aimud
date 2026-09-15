@@ -58,16 +58,8 @@ BUILDABLE_DIRECTIONS = ["north", "south", "east", "west", "up", "down"]
 CATEGORIES = ("circulation", "destination", "threshold")
 
 _PLAN_SYSTEM_PROMPT = """You plan the layout of a world for a text-based MUD.
-Respond with a single JSON object — no other text — matching:
-{
-  "zones": [
-    {"name": "short zone name",
-     "purpose": "one sentence on what happens here",
-     "room_types": ["slug", "slug"],
-     "room_budget": 8}
-  ],
-  "singleton_types": ["slug", "slug"]
-}
+Answer by calling plan_world.
+
 Zones are the areas a place is made of — a school has an admin wing, a
 classroom wing, a gym block. Give 3 to 6 zones.
 room_types are lowercase underscore slugs ("classroom", "chem_lab", "corridor").
@@ -78,18 +70,10 @@ and the world goes on growing somewhere else instead.
 singleton_types lists the slugs that must exist only ONCE in the whole world —
 a school has one principal's office and one gymnasium, but many classrooms.
 Judge this at the scale of the WHOLE world: a world that is one school has one
-gymnasium, but a world that is a county has one of very little.
-Return only the JSON object."""
+gymnasium, but a world that is a county has one of very little."""
 
 _ZONE_SYSTEM_PROMPT = """You describe one area of a world for a text-based MUD.
-Respond with a single JSON object — no other text — matching:
-{
-  "purpose": "one sentence on what happens here",
-  "room_types": ["slug", "slug"],
-  "room_budget": 8,
-  "singleton_types": ["slug"],
-  "zones": []
-}
+Answer by calling describe_area.
 
 You are told the name of an area somebody has just arrived in, and what
 contains it. Say what it actually is.
@@ -110,19 +94,12 @@ wharf and a residential quarter; a single corridor is none of these and gets
 an empty list. Give 0, or 2 to 5 — one sub-area is not a division. When you
 give them, keep this area's own room_budget small: it covers only the rooms
 that belong to the place as a whole rather than to any part of it — its
-entrance, its main corridor, the yard everything opens onto.
-Return only the JSON object."""
+entrance, its main corridor, the yard everything opens onto."""
 
 _NAME_SYSTEM_PROMPT = """You decide what one room in a text-based MUD is, and where it leads.
-Respond with a single JSON object — no other text — matching:
-{
-  "name": "Room name, 2-6 words",
-  "type": "slug",
-  "category": "circulation|destination|threshold",
-  "zone": "zone name",
-  "zone_purpose": "",
-  "exits": [{"name": "direction", "destination_hint": "one sentence on what lies that way"}]
-}
+Answer by calling name_room. The name is 2-6 words, type is a lowercase
+underscore slug, and each exit's destination_hint is one sentence on what lies
+that way.
 
 category:
 - "circulation": how people move between places (corridor, stairwell, lobby, junction)
@@ -145,11 +122,10 @@ A room only changes zone at a seam. Either the room being left is a threshold
 or the room being entered is one: a doorway, a gate, a stair head, the mouth of
 a tunnel. Two ordinary rooms in different zones never open onto each other.
 
-Write no prose beyond the destination hints. Return only the JSON object."""
+Write no prose beyond the destination hints."""
 
 _DESC_SYSTEM_PROMPT = """You write the description of one room in a text-based MUD.
-Respond with a single JSON object — no other text — matching:
-{"description": "2-4 sentences", "trait_bonuses": {}}
+Answer by calling describe_room, with a description of 2-4 sentences.
 
 trait_bonuses is what being in this room does to whoever is in it, as
 {"trait": amount}. Almost always empty. Use it only for something the
@@ -175,8 +151,7 @@ Never mention:
 
 Present tense. Concrete and sensory rather than ornate. It may echo a
 neighbouring area in general terms — chlorine on the air, a hum through the
-bulkhead — but never name another room.
-Return only the JSON object."""
+bulkhead — but never name another room."""
 
 _CONTENTS_SYSTEM_PROMPT = """You populate a room in a text-based MUD with its loose contents.
 Respond with a single JSON object — no other text — matching:
@@ -1064,9 +1039,9 @@ def _generate_plan(sponsor, world_description, guidance, on_done):
          "content": f"World theme: {world_description}\n\n{guidance}Plan its zones."},
     ]
 
-    def _done(content):
+    def _done(raw):
         try:
-            raw = _parse_json_object(content)
+            raw = dict(raw or {})
             from world import zones as zonelib
 
             zones = [
@@ -1084,8 +1059,15 @@ def _generate_plan(sponsor, world_description, guidance, on_done):
         except Exception:
             on_done({})
 
-    llm.fetch(llm.ask, sponsor, model, messages, llm.SLOW_TIMEOUT,
-              on_success=_done, on_error=lambda _f: on_done({}))
+    from world import toolbox as tb
+
+    # Rounds out, the last plan is used as it stands; a failure is no plan.
+    llm.converse(sponsor, model, messages,
+                 tb.Toolbox([plan_world_tool()],
+                            tb.ToolContext(sponsor=sponsor, job="rooms")),
+                 on_done=_done, on_error=lambda _why: on_done({}),
+                 on_exhausted=_done, rounds=PLAN_ROUNDS,
+                 timeout=llm.SLOW_TIMEOUT)
 
 
 #: (world id, zone id) for the areas currently being described.
@@ -1148,11 +1130,9 @@ def plan_zone(sponsor, world_root, zone_id):
         },
     ]
 
-    def _done(content):
+    def _done(data):
         _PLANNING.discard(ticket)
-        try:
-            data = _parse_json_object(content)
-        except Exception:
+        if not isinstance(data, dict):
             return
         try:
             opened = zones.apply_plan(world_root, zone_id, data)
@@ -1168,14 +1148,22 @@ def plan_zone(sponsor, world_root, zone_id):
     def _failed(_reason):
         _PLANNING.discard(ticket)
 
-    llm.fetch(llm.ask, sponsor, sponsor.model_for("rooms"), messages,
-              llm.SLOW_TIMEOUT, on_success=_done, on_error=_failed)
+    from world import lookups
+    from world import toolbox as tb
+
+    box = tb.Toolbox([area_tool(world_root, zone_id)]
+                     + lookups.named(*AREA_LOOKUPS),
+                     tb.ToolContext(world_root=world_root, sponsor=sponsor,
+                                    job="rooms"))
+    llm.converse(sponsor, sponsor.model_for("rooms"), messages, box,
+                 on_done=_done, on_error=_failed, on_exhausted=_done,
+                 rounds=PLAN_ROUNDS, timeout=llm.SLOW_TIMEOUT)
 
 
 def _generate_name(sponsor, world_description, context, source_room,
-                   exit_name, hint, on_success, on_error, attempts=3):
+                   exit_name, hint, on_success, on_error):
     """
-    Async. Name the room, retrying while validation rejects the answer.
+    Async. Name the room, sending back whatever validation rejects.
 
     Short output, so a rejected answer costs one small call rather than a whole
     room's worth of prose.
@@ -1237,27 +1225,23 @@ def _generate_name(sponsor, world_description, context, source_room,
         {"role": "user", "content": base},
     ]
 
-    def attempt(remaining, convo):
-        def _done(content):
-            try:
-                data = _parse_json_object(content)
-            except Exception as exc:
-                return _retry(remaining, convo, f"That was not valid JSON: {exc}")
-            complaint = _check_name(data, existing, world_root, source_room, target,
-                                    exit_name)
-            if complaint and remaining > 1:
-                return _retry(remaining, convo + [
-                    {"role": "assistant", "content": content},
-                ], complaint)
-            on_success(data)
+    from world import lookups
+    from world import toolbox as tb
 
-        llm.fetch(llm.ask, sponsor, model, convo, llm.SLOW_TIMEOUT,
-                  on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
-
-    def _retry(remaining, convo, complaint):
-        attempt(remaining - 1, convo + [{"role": "user", "content": complaint}])
-
-    attempt(attempts, messages)
+    # The conversation this used to build by hand -- the answer, then the
+    # complaint as a user turn, three times -- is the loop's own now, with the
+    # complaint as the tool's result. Rounds out, the last name is taken as it
+    # stands, as the third retry's always was.
+    box = tb.Toolbox(
+        [name_tool(existing, world_root, source_room, target, exit_name)]
+        + lookups.named(*NAME_LOOKUPS),
+        tb.ToolContext(world_root=world_root, room=source_room,
+                       sponsor=sponsor, job="naming"))
+    llm.converse(sponsor, model, messages, box, on_done=on_success,
+                 on_error=on_error,
+                 on_exhausted=lambda last: on_success(last) if last
+                 else on_error("no room name came back"),
+                 rounds=NAME_ROUNDS, timeout=llm.SLOW_TIMEOUT)
 
 
 def _allowed_exits(raw_exits, source_room, arrival_exit, reverse):
@@ -1327,7 +1311,7 @@ def _generate_description(sponsor, world_description, guidance, context,
             "content": (
                 f"World theme: {world_description}\n\n"
                 f"{guidance}"
-                f"{token_lists.vocabulary_block(world_root, [room_type])}"
+                f"{token_lists.TOOL_PROMPT}\n"
                 f"Room: {name}\n"
                 f"Kind: {room_type or 'unspecified'} ({category or 'unspecified'})\n\n"
                 f"Surrounding area, for continuity only — do not name these rooms:\n"
@@ -1337,19 +1321,30 @@ def _generate_description(sponsor, world_description, guidance, context,
         },
     ]
 
-    def _done(content):
-        try:
-            data = _parse_json_object(content)
-            desc = str(data.get("description", "")).strip()
-            if not desc:
-                raise ValueError("empty description")
-            on_success(desc, data.get("trait_bonuses") or {},
-                       data.get("new_token_lists") or [])
-        except Exception as exc:
-            on_error(str(exc))
+    def _done(data):
+        data = data if isinstance(data, dict) else {}
+        desc = str(data.get("description") or "").strip()
+        if not desc:
+            on_error("no description came back")
+            return
+        bonuses = data.get("trait_bonuses")
+        lists = data.get("new_token_lists")
+        on_success(desc, bonuses if isinstance(bonuses, dict) else {},
+                   lists if isinstance(lists, list) else [])
 
-    llm.fetch(llm.ask, sponsor, model, messages, llm.SLOW_TIMEOUT,
-              on_success=_done, on_error=lambda f: on_error(f.getErrorMessage()))
+    from world import lookups
+    from world import toolbox as tb
+
+    # Rounds out, the last description is used as it stands: a room with a
+    # slot nobody fills reads a little oddly, and a room that was never built
+    # strands whoever walked towards it.
+    box = tb.Toolbox([description_tool()]
+                     + lookups.named(*DESCRIPTION_LOOKUPS),
+                     tb.ToolContext(world_root=world_root, sponsor=sponsor,
+                                    job="rooms"))
+    llm.converse(sponsor, model, messages, box, on_done=_done,
+                 on_error=on_error, on_exhausted=_done,
+                 rounds=DESCRIPTION_ROUNDS, timeout=llm.SLOW_TIMEOUT)
 
 
 def _join_names(names):
@@ -1486,12 +1481,8 @@ def generate_first_room(sponsor, spec, on_success, on_error,
             },
         ]
 
-        def with_name(content):
-            try:
-                named = _parse_json_object(content)
-            except Exception as exc:
-                return on_error(str(exc))
-
+        def with_name(named):
+            named = named if isinstance(named, dict) else {}
             name = str(named.get("name", "")).strip() or "Unnamed Room"
             room_type = str(named.get("type", "")).strip().lower()
             category = str(named.get("category", "")).strip().lower()
@@ -1500,7 +1491,7 @@ def generate_first_room(sponsor, spec, on_success, on_error,
             zone = str(named.get("zone", "")).strip()
             exits = [
                 {"name": d, "destination_hint": str(e.get("destination_hint", "")).strip()}
-                for e in (named.get("exits") or [])
+                for e in (named.get("exits") or []) if isinstance(e, dict)
                 for d in [canonical_direction(str(e.get("name", "")).strip())]
                 if d in BUILDABLE_DIRECTIONS
             ]
@@ -1547,8 +1538,15 @@ def generate_first_room(sponsor, spec, on_success, on_error,
                 on_success=finish, on_error=on_error,
             )
 
-        llm.fetch(llm.ask, sponsor, model, messages, llm.SLOW_TIMEOUT,
-                  on_success=with_name, on_error=lambda f: on_error(f.getErrorMessage()))
+        from world import toolbox as tb
+
+        llm.converse(sponsor, model, messages,
+                     tb.Toolbox([first_name_tool(plan)],
+                                tb.ToolContext(sponsor=sponsor, job="rooms")),
+                     on_done=with_name, on_error=on_error,
+                     on_exhausted=lambda last: with_name(last) if last
+                     else on_error("no room name came back"),
+                     rounds=NAME_ROUNDS, timeout=llm.SLOW_TIMEOUT)
 
     _generate_plan(sponsor, world_description, rooms_guidance, with_plan)
 
@@ -1622,3 +1620,339 @@ def generate_connected_room(sponsor, world_description, source_room, exit_name,
         on_success=with_name,
         on_error=on_error,
     )
+
+
+# ---------------------------------------------------------------------------
+# The finish tools (docs/generator-tool-loops.md §4.2)
+# ---------------------------------------------------------------------------
+
+#: Rounds each may take (§10.3). Planning is background work nobody waits on;
+#: a room's name and description are waited on by whoever walked that way.
+PLAN_ROUNDS = 10
+NAME_ROUNDS = 8
+DESCRIPTION_ROUNDS = 8
+
+#: The lookups offered to each.
+AREA_LOOKUPS = ("list_zones", "zone_info")
+NAME_LOOKUPS = ("list_zones", "zone_info", "find_rooms")
+DESCRIPTION_LOOKUPS = ("list_word_lists", "show_word_list", "list_traits")
+
+
+def _listed(value):
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _zone_item():
+    """One area, as the world plan and an area's plan both give it."""
+    from world import zones
+
+    return {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "A short name"},
+            "purpose": {"type": "string",
+                        "description": "One sentence on what happens there"},
+            "room_types": {"type": "array", "items": {"type": "string"},
+                           "description": "The kinds of room it is made of, "
+                                          "as lowercase underscore slugs"},
+            "room_budget": {"type": "integer", "minimum": zones.MIN_BUDGET,
+                            "maximum": zones.MAX_BUDGET,
+                            "description": "How many rooms it is worth "
+                                           "walking through"},
+        },
+        "required": ["name", "purpose", "room_types", "room_budget"],
+    }
+
+
+def _singletons_unknown(singletons, zones_given, own_types=()):
+    """Singleton types no room type anywhere in the answer mentions."""
+    types = {str(t).strip().lower() for t in _listed(own_types)}
+    for zone in zones_given:
+        types |= {str(t).strip().lower() for t in _listed(zone.get("room_types"))}
+    return sorted({str(t).strip().lower() for t in _listed(singletons)} - types)
+
+
+def plan_world_tool():
+    """`plan_world`, the finish tool `_generate_plan` answers with."""
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        return tb.params({
+            "zones": {"type": "array", "items": _zone_item(), "minItems": 3,
+                      "maxItems": 6, "description": "The areas the place is "
+                                                    "made of"},
+            "singleton_types": {"type": "array", "items": {"type": "string"},
+                                "description": "Room types that exist only "
+                                               "once in the whole world"},
+        }, ["zones"])
+
+    def handler(ctx, args, answer):
+        given = [zone for zone in _listed(args.get("zones"))
+                 if isinstance(zone, dict)]
+        said = []
+        if not 3 <= len(given) <= 6:
+            said.append(f"give 3 to 6 zones, not {len(given)}")
+        stray = _singletons_unknown(args.get("singleton_types"), given)
+        if stray:
+            said.append("singleton_types names " + ", ".join(stray)
+                        + ", which no zone has among its room_types")
+        if said:
+            answer(tb.complain("Not planned: " + "; ".join(said) + ".",
+                               value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("plan_world", "Plan the areas this world is made of.",
+                   parameters, handler, finishes=True)
+
+
+def area_tool(world_root, zone_id):
+    """
+    `describe_area`, the finish tool `plan_zone` answers with.
+
+    `zones` is left out entirely for an area already at `zones.MAX_DEPTH`,
+    where `apply_plan` would ignore it: a field that cannot be used is not
+    offered.
+    """
+    from world import toolbox as tb
+    from world import zones
+
+    def parameters(ctx):
+        properties = {
+            "purpose": {"type": "string",
+                        "description": "One sentence on what happens here"},
+            "room_types": {"type": "array", "items": {"type": "string"},
+                           "description": "The kinds of room it is made of, "
+                                          "as lowercase underscore slugs"},
+            "room_budget": {"type": "integer", "minimum": zones.MIN_BUDGET,
+                            "maximum": zones.MAX_BUDGET,
+                            "description": "How many rooms of its own it is "
+                                           "worth"},
+            "singleton_types": {"type": "array", "items": {"type": "string"},
+                                "description": "Room types that exist only "
+                                               "once inside this area"},
+        }
+        if zones.depth(world_root, zone_id) < zones.MAX_DEPTH:
+            properties["zones"] = {
+                "type": "array", "items": _zone_item(), "maxItems": 5,
+                "description": "The smaller areas it is made of: none, or "
+                               "2 to 5"}
+        return tb.params(properties, ["purpose", "room_types", "room_budget"])
+
+    def handler(ctx, args, answer):
+        inner = [zone for zone in _listed(args.get("zones"))
+                 if isinstance(zone, dict)]
+        said = []
+        if len(inner) == 1:
+            said.append("one smaller area is not a division: give none, or "
+                        "2 to 5")
+        elif len(inner) > 5:
+            said.append(f"give at most 5 smaller areas, not {len(inner)}")
+        stray = _singletons_unknown(args.get("singleton_types"), inner,
+                                    args.get("room_types"))
+        if stray:
+            said.append("singleton_types names " + ", ".join(stray)
+                        + ", which is not among the room types given")
+        if said:
+            answer(tb.complain("Not planned: " + "; ".join(said) + ".",
+                               value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("describe_area", "Say what this area is.", parameters,
+                   handler, finishes=True)
+
+
+def _open_directions(world_root, target, reverse):
+    """
+    The directions a new room's exits may take: what `_allowed_exits` keeps.
+
+    Never the way back, never a diagonal, and never into a destination next
+    door -- so the schema offers exactly what would survive, instead of the
+    model asking for a door that is then quietly dropped.
+    """
+    from world import coords
+
+    found = []
+    for direction in BUILDABLE_DIRECTIONS:
+        if direction == reverse:
+            continue
+        if target is not None and world_root is not None:
+            neighbour = coords.room_at(world_root, coords.step(target, direction))
+            if (neighbour is not None
+                    and neighbour.db.room_category == "destination"):
+                continue
+        found.append(direction)
+    return found
+
+
+def _name_parameters(categories, directions, zone_names=()):
+    from world import toolbox as tb
+
+    exit_name = {"type": "string", "description": "Which way"}
+    if directions:
+        exit_name["enum"] = list(directions)
+    zone_said = ("The area this room belongs to: "
+                 + (", ".join(zone_names) + ", or a new area's name"
+                    if zone_names else "a new area's name"))
+    return tb.params({
+        "name": {"type": "string", "description": "The room's name, 2-6 words"},
+        "type": {"type": "string",
+                 "description": "What kind of room, as a lowercase underscore "
+                                "slug"},
+        "category": {"type": "string", "enum": list(categories),
+                     "description": "circulation, destination or threshold"},
+        "zone": {"type": "string", "description": zone_said},
+        "zone_purpose": {"type": "string",
+                         "description": "Only for a new area: what happens "
+                                        "there"},
+        "exits": {"type": "array", "maxItems": len(directions),
+                  "items": {"type": "object",
+                            "properties": {
+                                "name": exit_name,
+                                "destination_hint": {
+                                    "type": "string",
+                                    "description": "One sentence on what lies "
+                                                   "that way"}},
+                            "required": ["name"],
+                            "additionalProperties": False},
+                  "description": "The ways on, besides the way back"},
+    }, ["name", "category", "zone"])
+
+
+def name_tool(existing, world_root, source_room, target, arrival_exit):
+    """
+    `name_room`, the finish tool `_generate_name` answers with.
+
+    The category leaves out `destination` when the room being left is one,
+    the exits are limited to the directions that would survive, and `zone`
+    names the areas this room could be put in. `_check_name` is the handler,
+    so what it would have said in a retry is the tool's result instead.
+    """
+    from world import toolbox as tb
+    from world import zones
+
+    source_category = source_room.db.room_category if source_room else ""
+    reverse = OPPOSITES.get(arrival_exit, "back")
+
+    def parameters(ctx):
+        categories = [category for category in CATEGORIES
+                      if not (category == "destination"
+                              and source_category == "destination")]
+        source_zone = zones.slugify(source_room.db.zone) if source_room else ""
+        names = [zones.name_of(world_root, zone_id) for zone_id
+                 in zones.offerable(world_root, target, source_zone)]
+        return _name_parameters(categories,
+                                _open_directions(world_root, target, reverse),
+                                names)
+
+    def handler(ctx, args, answer):
+        data = dict(args, exits=[entry for entry in _listed(args.get("exits"))
+                                 if isinstance(entry, dict)])
+        complaint = _check_name(data, existing, world_root, source_room,
+                                target, arrival_exit)
+        if complaint:
+            answer(tb.complain(complaint, value=data))
+            return
+        answer(tb.accept(data))
+
+    return tb.Tool("name_room", "Say what this room is, and where it leads.",
+                   parameters, handler, finishes=True)
+
+
+def first_name_tool(plan):
+    """`name_room` for a world's first room: a way in, in any direction."""
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        names = [zone.get("name") for zone in (plan or {}).get("zones", [])
+                 if isinstance(zone, dict) and zone.get("name")]
+        return _name_parameters(("circulation", "threshold"),
+                                BUILDABLE_DIRECTIONS, names)
+
+    return tb.Tool("name_room", "Say what this world's first room is, and "
+                                "where it leads.",
+                   parameters, lambda ctx, args, answer: answer(tb.accept(args)),
+                   finishes=True)
+
+
+def description_tool():
+    """`describe_room`, the finish tool `_generate_description` answers with."""
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        from world import token_lists, traits
+
+        known = sorted(traits.vocabulary(ctx.world_root))
+        return tb.params({
+            "description": {"type": "string",
+                            "description": "2-4 sentences on the room's "
+                                           "permanent fabric"},
+            "trait_bonuses": {
+                "type": "object",
+                "description": "Almost always empty. What being here does to "
+                               "whoever is here, as {trait: amount}, naming "
+                               "only traits this world measures"
+                               + (": " + ", ".join(known)
+                                  if known and len(known) <= tb.ENUM_MOST
+                                  else " (list_traits)")},
+            "new_token_lists": {"type": "array",
+                                "items": token_lists.schema(ctx),
+                                "description": "Word lists the description "
+                                               "uses that this world does not "
+                                               "keep yet"},
+        }, ["description"])
+
+    def handler(ctx, args, answer):
+        said = description_complaints(args, ctx.world_root)
+        if said:
+            answer(tb.complain("Not described: " + "; ".join(said) + ". Send "
+                               "the description again with that put right.",
+                               value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("describe_room", "Describe this room.", parameters,
+                   handler, finishes=True)
+
+
+def description_complaints(args, world_root):
+    """
+    What is wrong with a room's description that asking again can put right.
+
+    A trait nothing measures, light given as nothing, a word list that would
+    be refused, a slot no list answers, and a list the world keeps under
+    another spelling. All of these used to be dropped after the fact.
+    """
+    from world import token_lists, traits, vocabulary
+
+    said = []
+    bonuses = args.get("trait_bonuses")
+    if bonuses is not None and not isinstance(bonuses, dict):
+        said.append("trait_bonuses has to be an object of {trait: amount}")
+    elif bonuses:
+        known = traits.vocabulary(world_root)
+        strange = sorted(slug for slug in bonuses
+                         if traits._slug(slug) not in known
+                         and traits._slug(slug) != "light")
+        if strange:
+            said.append("trait_bonuses names " + ", ".join(strange)
+                        + ", which this world does not measure; list_traits "
+                          "shows what it does")
+        for slug, amount in bonuses.items():
+            try:
+                number = float(amount)
+            except (TypeError, ValueError):
+                said.append(f"the bonus for {slug} has to be a number")
+                continue
+            if traits._slug(slug) == "light" and number <= 0:
+                said.append("a dark room gives no light bonus at all: leave "
+                            "light out rather than giving it 0")
+
+    declared = _listed(args.get("new_token_lists"))
+    said += token_lists.complaints(world_root, declared,
+                                   [args.get("description")])
+    said += [line.rstrip(".") for line in vocabulary.near_duplicates(
+        world_root, new_token_lists=[entry for entry in declared
+                                     if isinstance(entry, dict)])]
+    return said

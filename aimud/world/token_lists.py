@@ -296,6 +296,66 @@ def _settle_facts(world_root, name, entry):
     return ""
 
 
+def complaints(world_root, declared=(), texts=()):
+    """
+    What `register_many` would refuse in these declarations, and the slots in
+    `texts` nothing would answer, as short phrases; [] when there is nothing.
+
+    For a finish tool, so a list is sent back rather than refused and logged
+    after the answer was taken. The same checks, over the same candidate set:
+    everything this world keeps plus everything declared here, so declared
+    lists may name each other. A list already kept under another spelling is
+    not a complaint here -- `vocabulary.near_duplicates` says that.
+    """
+    said, batch = [], {}
+    for given in list(declared or []):
+        if not isinstance(given, dict):
+            said.append("a word list that was not an object")
+            continue
+        asked = _slug(given.get("name"))
+        if not asked or not _NAME.fullmatch(asked):
+            said.append(f"a word list needs a name of letters, digits and "
+                        f"underscores, not {given.get('name')!r}")
+            continue
+        if _reserved(asked):
+            said.append(f"{{{asked}}} is a name the game itself answers; "
+                        f"choose another")
+            continue
+        if world_root is not None and _fold(world_root, asked):
+            continue
+        entry, complaint = clean(given)
+        if complaint:
+            said.append(f"the word list {{{asked}}} cannot be kept: {complaint}")
+            continue
+        batch[asked] = entry
+
+    kept = vocabulary(world_root) if world_root is not None else {}
+    candidate = {**kept, **batch}
+    good = productive(candidate)
+    for name, entry in batch.items():
+        unknown = sorted(
+            ref for item in entry["entries"] for ref in references(item["text"])
+            if ref not in candidate and not _known_name(ref, world_root))
+        if name not in good:
+            said.append(f"the word list {{{name}}} can never finish expanding")
+        elif unknown:
+            said.append(f"the word list {{{name}}} names "
+                        + ", ".join(f"{{{ref}}}" for ref in unknown)
+                        + ", which nothing answers")
+
+    if world_root is not None:
+        unknown = sorted({ref for text in texts or ()
+                          for ref in references(str(text or ""))
+                          if ref not in candidate
+                          and not _known_name(ref, world_root)})
+        if unknown:
+            said.append("the description asks for word lists this world does "
+                        "not keep: " + ", ".join(f"{{{ref}}}" for ref in unknown)
+                        + "; declare them in new_token_lists or write the "
+                          "words out")
+    return said
+
+
 def register_many(world_root, declared):
     """
     Put lists in the world's register. Returns {asked: name in use}.
