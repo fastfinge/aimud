@@ -36,13 +36,13 @@ NPC_TOOLS = [
         "type": "function",
         "function": {
             "name": "move",
-            "description": "Move through an available exit.",
+            "description": "Leave by one of the ways out of this room.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "direction": {
                         "type": "string",
-                        "description": "Exit direction or name (e.g. 'north', 'east')",
+                        "description": "Which way out, by its name",
                     }
                 },
                 "required": ["direction"],
@@ -57,7 +57,17 @@ NPC_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "message": {"type": "string"}
+                    "message": {
+                        "type": "string",
+                        "description": "The words, as you would say them",
+                    },
+                    "to": {
+                        "type": "string",
+                        "description": (
+                            "Optional. Who you are speaking to, when it is "
+                            "somebody in particular"
+                        ),
+                    },
                 },
                 "required": ["message"],
             },
@@ -67,11 +77,17 @@ NPC_TOOLS = [
         "type": "function",
         "function": {
             "name": "get",
-            "description": "Pick up an object from the room.",
+            "description": (
+                "Pick up something within reach: lying here, or in or on "
+                "something that is open."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "object_name": {"type": "string"}
+                    "object_name": {
+                        "type": "string",
+                        "description": "What to pick up",
+                    }
                 },
                 "required": ["object_name"],
             },
@@ -85,7 +101,10 @@ NPC_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "object_name": {"type": "string"},
+                    "object_name": {
+                        "type": "string",
+                        "description": "What to hand over, from what you are carrying",
+                    },
                     "recipient": {
                         "type": "string",
                         "description": "Name of the player or NPC to give to",
@@ -105,7 +124,10 @@ NPC_TOOLS = [
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "Third-person description, e.g. 'nods solemnly' or 'adjusts her hood'",
+                        "description": (
+                            "A short third-person phrase, e.g. 'nods solemnly' "
+                            "or 'adjusts her hood'"
+                        ),
                     }
                 },
                 "required": ["action"],
@@ -157,10 +179,13 @@ NPC_TOOLS = [
                 "properties": {
                     "person": {
                         "type": "string",
-                        "description": "Which of the people here to size up.",
+                        "description": (
+                            "Which of the people here to size up, or "
+                            "'myself'"
+                        ),
                     },
                 },
-                "required": [],
+                "required": ["person"],
             },
         },
     },
@@ -227,7 +252,10 @@ NPC_TOOLS = [
                     },
                     "time_limit_seconds": {
                         "type": "integer",
-                        "description": "Optional deadline in seconds. Omit if there is no hurry.",
+                        "description": (
+                            "Optional deadline in seconds. Leave it out if "
+                            "there is no hurry."
+                        ),
                     },
                 },
                 "required": ["person", "request", "offer"],
@@ -291,11 +319,17 @@ NPC_TOOLS = [
         "type": "function",
         "function": {
             "name": "destroy",
-            "description": "Destroy an object in the room or in your inventory.",
+            "description": (
+                "Destroy something lying here or that you carry. Ways out "
+                "and people cannot be destroyed."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "object_name": {"type": "string"}
+                    "object_name": {
+                        "type": "string",
+                        "description": "What to destroy",
+                    }
                 },
                 "required": ["object_name"],
             },
@@ -305,16 +339,32 @@ NPC_TOOLS = [
         "type": "function",
         "function": {
             "name": "modify",
-            "description": "Change the name or description of an existing object.",
+            "description": (
+                "Change what something within reach is called, or how it "
+                "looks. A name says what a thing IS -- what it is made of, "
+                "what it is for, whose it is -- and never its condition: "
+                "'glass bottle', not 'broken glass bottle'. Everyone here sees "
+                "you do it, and a change the world's rules refuse is not made."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "object_name": {
                         "type": "string",
-                        "description": "Current name of the object to modify",
+                        "description": "What to change, as it is called now",
                     },
-                    "new_name": {"type": "string"},
-                    "new_description": {"type": "string"},
+                    "new_name": {
+                        "type": "string",
+                        "description": "What it is called from now on, if that changes",
+                    },
+                    "new_description": {
+                        "type": "string",
+                        "description": (
+                            "What it looks like from now on, if that changes: "
+                            "what it is made of and what it is for, not how "
+                            "full, lit or damaged it is"
+                        ),
+                    },
                 },
                 "required": ["object_name"],
             },
@@ -326,6 +376,20 @@ NPC_TOOLS = [
 #: anything else, which is how a model inventing a tool gets noticed rather
 #: than quietly ignored. Read off the list above, so the two cannot disagree.
 TOOL_NAMES = frozenset(tool["function"]["name"] for tool in NPC_TOOLS)
+
+#: How many things a character may DO in one turn. The prompt always said so,
+#: and nothing held a model to it: a reply with eight tool calls was eight
+#: actions.
+MOST_ACTS = 3
+
+#: Tools that only look, and so do not count against `MOST_ACTS`. Sizing
+#: somebody up before deciding what to do about them is not a second action.
+LOOKING = frozenset(["check_traits"])
+
+#: How many of this world's known verbs `attempt`'s description names, and how
+#: many things `get`'s description says where they are and whose they are.
+MOST_VERBS_NAMED = 30
+MOST_THINGS_SAID = 20
 
 # ---------------------------------------------------------------------------
 # Prompt templates
@@ -440,10 +504,10 @@ _NPC_REACT_SYSTEM = (
     "Current room: [{room_title}]\n"
     "{room_desc}\n"
     "{room_contents}\n\n"
-    "{known_verbs}"
     "{want}"
     "Use the available tools to react naturally to recent events. "
-    "You may call 0-3 tools per response. "
+    "You may do up to three things per response; sizing somebody up with "
+    "check_traits does not count as one. "
     "If nothing warrants a response, call no tools. Keep reactions brief and in-character.\n\n"
     "To do something physical, use the `attempt` tool with the action written "
     "as a short command — 'light candle', 'open drawer', 'read notice'. That "
@@ -748,12 +812,14 @@ def _want_line(npc):
     # leaving it unsaid would be offering a tool with no reason given.
     offer = quests.offered_to(npc)
     if offer is not None:
-        asked = offer.get("description") or offer.get("title")
+        # What was asked, what is offered and by when are on answer_quest
+        # itself, where the choice is made.
         return (
-            f"{offer['giver']} has asked something of you: {asked}\n"
-            "Answer with answer_quest, as this character would. You are free "
-            "to refuse; agreeing means you will work at it until it is done "
-            "or you give it up.\n\n"
+            f"{offer['giver']} has asked something of you and is waiting for "
+            "your answer; answer_quest says what they asked and what they "
+            "offer. Answer as this character would. You are free to refuse; "
+            "agreeing means you will work at it until it is done or you give "
+            "it up.\n\n"
         )
 
     goal = list(npc.db.goal or [])
@@ -787,11 +853,11 @@ def _want_line(npc):
 #: closed list would be exactly the wrong shape for either.
 _TOOL_CHOICES = {
     "move":         {"direction": "exits"},
-    "get":          {"object_name": "objects"},
+    "get":          {"object_name": "within_reach"},
     "give":         {"object_name": "carried", "recipient": "people"},
-    "check_traits": {"person": "people"},
+    "check_traits": {"person": "sizable"},
     "destroy":      {"object_name": "reachable"},
-    "modify":       {"object_name": "reachable"},
+    "modify":       {"object_name": "changeable"},
 }
 
 
@@ -822,16 +888,40 @@ def _nameable(npc, room):
     """
     from evennia.objects.objects import DefaultCharacter
 
-    people, objects, exits = [], [], []
+    from world import ownership, relations
+
+    people, objects, exits, unexplored = [], [], [], []
     for obj in (room.contents if room else ()):
         if obj is npc:
             continue
         if getattr(obj, "destination", None) is not None:
             exits.append(obj.key)
+            if obj.db.pending_generation or obj.destination is room:
+                unexplored.append(obj.key)
         elif obj.db.is_npc or isinstance(obj, DefaultCharacter):
             people.append(obj.get_display_name(npc))
         else:
             objects.append(obj.key)
+
+    # Within reach is wider than lying loose: into whatever is open, and onto
+    # whatever something else is on. A letter in an open tray is a letter
+    # anybody here can take, and `get` searched the room alone, so no
+    # character ever could.
+    within = [obj for obj in relations.reachable(npc)
+              if obj.location is not npc]
+    said = []
+    for obj in within:
+        where = []
+        host = relations.host_of(obj)
+        if host is not None:
+            where.append(f"{relations.preposition_of(obj)} {host.key}")
+        if ownership.owner_of(obj) is npc:
+            where.append("yours")
+        elif ownership.owner_name(obj):
+            where.append(f"{ownership.owner_name(obj)}'s")
+        else:
+            where.append("nobody's")
+        said.append(f"{obj.key} ({', '.join(where)})")
 
     # What it is wearing is not what it can hand over.
     carried = [obj.key for obj in npc.contents if not obj.db.worn]
@@ -839,10 +929,18 @@ def _nameable(npc, room):
     here = {
         "people": _distinct(people),
         "objects": _distinct(objects),
+        "within_reach": _distinct(obj.key for obj in within),
+        "said_within_reach": _distinct(said)[:MOST_THINGS_SAID],
         "exits": _distinct(exits),
+        "unexplored": _distinct(unexplored),
         "carried": _distinct(carried),
     }
+    # Loose or carried, which is what the effect layer finds by name.
     here["reachable"] = _distinct(here["objects"] + here["carried"])
+    here["changeable"] = _distinct(here["within_reach"] + here["carried"])
+    # Sizing up yourself is worth offering only beside somebody else to size
+    # up: a character's own figures are already in its prompt.
+    here["sizable"] = here["people"] + ["myself"] if here["people"] else []
     return here
 
 
@@ -871,6 +969,11 @@ def _tools_for(npc, room):
     What is deliberately NOT listed: `attempt` and `create`. Those are how
     something the room merely describes becomes real, and a closed list is
     the one thing that would take that away.
+
+    What is said about this moment goes into the descriptions: whose each thing
+    within reach is and where it sits, which ways out lead somewhere nobody has
+    been, the terms of a request waiting on an answer, and what this world
+    already knows how to do.
     """
     from world import quests
 
@@ -883,15 +986,32 @@ def _tools_for(npc, room):
         name = tool["function"]["name"]
 
         if name == "answer_quest":
-            if quests.offered_to(npc) is None:
+            offer = quests.offered_to(npc)
+            if offer is None:
                 continue
-            offered.append(tool)
+            offered.append(_described(tool, _terms_of(offer)))
             continue
 
         if name == "offer_quest":
             if not askable:
                 continue
-            offered.append(_with_choices(tool, {"person": askable}))
+            tool = _with_choices(tool, {"person": askable})
+            deadline = tool["function"]["parameters"]["properties"][
+                "time_limit_seconds"]
+            deadline["minimum"] = quests.MIN_TIME_LIMIT
+            deadline["maximum"] = quests.MAX_TIME_LIMIT
+            offered.append(_described(tool, _carrying_note(here["carried"])))
+            continue
+
+        if name == "attempt":
+            offered.append(_described(tool, _attempt_note(room)))
+            continue
+
+        if name == "say":
+            # Anybody in particular to speak to, or nobody, in which case the
+            # argument is not offered at all.
+            offered.append(_with_choices(tool, {"to": here["people"]})
+                           if here["people"] else _without(tool, "to"))
             continue
 
         wanted = _TOOL_CHOICES.get(name)
@@ -905,7 +1025,9 @@ def _tools_for(npc, room):
         # nobody to give it to is as useless as `give` with neither.
         if not all(choices.values()):
             continue
-        offered.append(_with_choices(tool, choices))
+        tool = _with_choices(tool, choices)
+        noting = _NOTES.get(name)
+        offered.append(_described(tool, noting(here)) if noting else tool)
 
     return offered
 
@@ -919,6 +1041,98 @@ def _with_choices(tool, choices):
     for argument, values in choices.items():
         properties[argument]["enum"] = list(values)
     return tool
+
+
+def _described(tool, note):
+    """A copy of `tool` with something about this moment added to what it says."""
+    if not note:
+        return tool
+    from copy import deepcopy
+
+    tool = deepcopy(tool)
+    tool["function"]["description"] = f"{tool['function']['description']} {note}"
+    return tool
+
+
+def _without(tool, argument):
+    """A copy of `tool` that does not offer `argument` at all."""
+    from copy import deepcopy
+
+    tool = deepcopy(tool)
+    tool["function"]["parameters"]["properties"].pop(argument, None)
+    return tool
+
+
+def _unexplored_note(here):
+    names = here["unexplored"]
+    if not names:
+        return ""
+    return (f"Nobody has been through {', '.join(names)} yet: going that way "
+            f"builds somewhere new, and takes a while.")
+
+
+def _within_reach_note(here):
+    said = here["said_within_reach"]
+    return f"Within reach: {'; '.join(said)}." if said else ""
+
+
+#: What each tool is told about this moment, beyond what it may name.
+_NOTES = {
+    "move": _unexplored_note,
+    "get": _within_reach_note,
+}
+
+
+def _carrying_note(carried):
+    """What a character has to offer, so a reward it promises is a real one."""
+    if carried:
+        return f"You are carrying {', '.join(carried)}."
+    return ("You are carrying nothing to give, so offer something you can do "
+            "rather than something you have.")
+
+
+def _terms_of(offer):
+    """A request waiting on an answer, as the character choosing is told it."""
+    from world import quests
+
+    asked = str(offer.get("description") or offer.get("title")
+                or "something").strip().rstrip(".")
+    said = [f"{offer.get('giver') or 'Somebody'} has asked you: {asked}.",
+            f"They offer: {quests._summarise(offer.get('reward'))}."]
+    if offer.get("punishment"):
+        said.append(f"If it is not done: "
+                    f"{quests._summarise(offer.get('punishment'))}.")
+    if offer.get("time_limit"):
+        said.append(f"It has to be done within "
+                    f"{quests._short_time(offer['time_limit'])}.")
+    return " ".join(said)
+
+
+def _attempt_note(room):
+    """
+    What `attempt` can already do here, which was a line of the system prompt
+    and belongs beside the tool it is about.
+
+    Named in two halves. The verbs the game itself handles, read off the
+    modules that take them over, so a character knows wearing and putting are
+    already understood. And the verbs this world has worked out, capped,
+    because a world learns verbs without end.
+    """
+    from world import clothing, gear, ownership, relations
+
+    handled = sorted({str(verb) for module in (clothing, gear, ownership,
+                                               relations)
+                      for verb in getattr(module, "VERBS", ())})
+    said = []
+    if handled:
+        said.append(f"The game itself handles {', '.join(handled)}.")
+    known = _known_verbs(room)
+    if known:
+        shown = known[:MOST_VERBS_NAMED]
+        more = len(known) - len(shown)
+        said.append(f"This world has already worked out {', '.join(shown)}"
+                    + (f", and {more} more." if more else "."))
+    return " ".join(said)
 
 def _known_verbs(room):
     """
@@ -1323,10 +1537,39 @@ def dress_npc(sponsor, npc):
 
 def generate_npc_idle(sponsor, npc, room, on_success, on_error):
     """
-    Async. Prompt the NPC to take a spontaneous, self-initiated action.
-    Uses the same tool-calling infrastructure as generate_npc_reaction but
-    asks the model what the NPC would do of its own accord right now.
+    Async. The character does something of its own accord. See `_npc_turn`.
     Calls on_success(list[{"name", "args"}]) or on_error(msg) in the main thread.
+    """
+    _npc_turn(
+        sponsor, npc, room, on_success, on_error,
+        remembered="What you remember about this place and these people, "
+                   "oldest first:",
+        asked=("Nothing has just happened — act of your own accord. "
+               "What do you do right now, naturally and in character? "
+               "Choose something that fits the moment and the world."),
+    )
+
+
+def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
+    """
+    Async. The character answers what has just happened. See `_npc_turn`.
+    Calls on_success(list[{"name", "args"}]) or on_error(msg) in the main thread.
+    """
+    _npc_turn(
+        sponsor, npc, room, on_success, on_error,
+        remembered="What you remember that bears on this, oldest first:",
+        asked="How do you respond?",
+    )
+
+
+def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked):
+    """
+    One turn for a character: its prompt, its memories, its tools, and what
+    it chose to do.
+
+    Idle and reaction were this function twice, down to the parsing of the
+    tool calls, and differed only in how their memories were introduced and
+    what they were finally asked.
     """
     model = sponsor.model_for("dialogue")
     try:
@@ -1337,10 +1580,8 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
 
     # {{user}} names whoever is here, so an NPC reads the world the way
     # the player it is talking to appears in it.
-    from world import clothing, lore
+    from world import clothing, lore, tokens
     from world.activity import active_players_in
-
-    from world import tokens
 
     nearby = active_players_in(room)
     world_desc = (lore.description(room, nearby[0] if nearby else None)
@@ -1348,13 +1589,10 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
     room_title = room.db.room_title or room.key
     room_desc = tokens.text_of(room)
     room_contents = _room_context(room, npc)
-    history_text, bank, cues, on_show = _memory_inputs(npc, room, room_title)
 
-    verbs_known = _known_verbs(room)
-    known_line = (
-        f"Actions this world already understands: {', '.join(verbs_known)}\n\n"
-        if verbs_known else ""
-    )
+    # Working memory verbatim, long memory by relevance.  Anything the model
+    # needs from further back is recalled rather than replayed.
+    history_text, bank, cues, on_show = _memory_inputs(npc, room, room_title)
 
     tools = _tools_for(npc, room)
 
@@ -1369,7 +1607,6 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
         room_title=room_title,
         room_desc=room_desc,
         room_contents=room_contents,
-        known_verbs=known_line,
         want=_want_line(npc),
     )
 
@@ -1397,14 +1634,8 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
             {"role": "system", "content": system},
             {
                 "role": "user",
-                "content": (
-                    f"What you remember about this place and these people, "
-                    f"oldest first:\n{recalled}\n\n"
-                    f"Just now:\n{history_text}\n\n"
-                    "Nothing has just happened — act of your own accord. "
-                    "What do you do right now, naturally and in character? "
-                    "Choose something that fits the moment and the world."
-                ),
+                "content": (f"{remembered}\n{recalled}\n\n"
+                            f"Just now:\n{history_text}\n\n{asked}"),
             },
         ]
         llm.fetch(lambda: llm.call(sponsor, model, messages, tools=tools),
@@ -1412,20 +1643,7 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
 
     def _done(raw):
         try:
-            message = raw["choices"][0]["message"]
-            tool_calls_raw = message.get("tool_calls") or []
-            parsed = []
-            for tc in tool_calls_raw:
-                if tc.get("type") == "function":
-                    fn = tc["function"]
-                    try:
-                        # Repaired rather than parsed: a tool call whose
-                        # arguments will not parse used to arrive empty, and
-                        # an NPC saying nothing is worse than a stray comma.
-                        call_args = _parse_json(fn.get("arguments") or "{}")
-                    except ValueError:
-                        call_args = {}
-                    parsed.append({"name": fn["name"], "args": call_args})
+            parsed = _tool_calls_of(raw)
         except Exception as exc:
             on_error(str(exc))
             return
@@ -1441,117 +1659,20 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
     llm.fetch(_recall, on_success=_recalled, on_error=_fail)
 
 
-def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
-    """
-    Async. Send the NPC's context + history to the dialogue model with tool-calling.
-    Calls on_success(list[{"name", "args"}]) or on_error(msg) in the main thread.
-    """
-    model = sponsor.model_for("dialogue")
-    try:
-        sponsor.key()          # refuse early rather than mid-prompt
-    except ValueError as e:
-        on_error(str(e))
-        return
-
-    # {{user}} names whoever is here, so an NPC reads the world the way
-    # the player it is talking to appears in it.
-    from world import clothing, lore
-    from world.activity import active_players_in
-
-    from world import tokens
-
-    nearby = active_players_in(room)
-    world_desc = (lore.description(room, nearby[0] if nearby else None)
-                  or npc.db.world_description or "")
-    room_title = room.db.room_title or room.key
-    room_desc = tokens.text_of(room)
-    room_contents = _room_context(room, npc)
-
-    # Working memory verbatim, long memory by relevance.  Anything the model
-    # needs from further back is recalled rather than replayed.
-    history_text, bank, cues, on_show = _memory_inputs(npc, room, room_title)
-
-    verbs_known = _known_verbs(room)
-    known_line = (
-        f"Actions this world already understands: {', '.join(verbs_known)}\n\n"
-        if verbs_known else ""
-    )
-
-    tools = _tools_for(npc, room)
-
-    system = _NPC_REACT_SYSTEM.format(
-        npc_name=npc.key,
-        world_desc=world_desc,
-        guidance=lore.guidance_block(room, "dialogue",
-                                     nearby[0] if nearby else None),
-        npc_desc=clothing.own_appearance(npc, tokens.text_of(npc)) or "(no description)",
-        npc_traits=_trait_line(npc),
-        npc_manner=(f"Who you are: {npc.db.manner}\n\n" if npc.db.manner else "\n"),
-        room_title=room_title,
-        room_desc=room_desc,
-        room_contents=room_contents,
-        known_verbs=known_line,
-        want=_want_line(npc),
-    )
-
-    def _recall():
-        # In the thread pool, off the reactor: recall is SQLite and slow.
-        from world.memory import recall_for_cues
-
-        return recall_for_cues(bank, cues, top_k=6, already_known=on_show,
-                               rows=True)
-
-    def _recalled(rows):
-        # Back on the main thread to say each memory again with the names
-        # things have now, which reads the game's database -- then out again
-        # for the model. See `generate_npc_idle`.
-        from world.memory import format_recalled
-
+def _tool_calls_of(raw):
+    """The tool calls in a reply, as [{"name", "args"}], in the order sent."""
+    message = raw["choices"][0]["message"]
+    parsed = []
+    for tc in message.get("tool_calls") or []:
+        if tc.get("type") != "function":
+            continue
+        fn = tc["function"]
         try:
-            recalled = format_recalled(rows)
-        except Exception as exc:
-            on_error(str(exc))
-            return
-        messages = [
-            {"role": "system", "content": system},
-            {
-                "role": "user",
-                "content": (
-                    f"What you remember that bears on this, oldest first:\n"
-                    f"{recalled}\n\n"
-                    f"Just now:\n{history_text}\n\nHow do you respond?"
-                ),
-            },
-        ]
-        llm.fetch(lambda: llm.call(sponsor, model, messages, tools=tools),
-                  on_success=_done, on_error=_fail)
-
-    def _done(raw):
-        try:
-            message = raw["choices"][0]["message"]
-            tool_calls_raw = message.get("tool_calls") or []
-            parsed = []
-            for tc in tool_calls_raw:
-                if tc.get("type") == "function":
-                    fn = tc["function"]
-                    try:
-                        # Repaired rather than parsed: a tool call whose
-                        # arguments will not parse used to arrive empty, and
-                        # an NPC saying nothing is worse than a stray comma.
-                        call_args = _parse_json(fn.get("arguments") or "{}")
-                    except ValueError:
-                        call_args = {}
-                    parsed.append({"name": fn["name"], "args": call_args})
-        except Exception as exc:
-            on_error(str(exc))
-            return
-        # Outside the guard above on purpose. Doing what the model asked for
-        # is the caller's business and can fail on its own terms; reporting
-        # that as a failed model call sent whoever read the log looking at
-        # the provider for a bug that was in the world.
-        on_success(parsed)
-
-    def _fail(failure):
-        on_error(failure.getErrorMessage())
-
-    llm.fetch(_recall, on_success=_recalled, on_error=_fail)
+            # Repaired rather than parsed: a tool call whose arguments will
+            # not parse used to arrive empty, and an NPC saying nothing is
+            # worse than a stray comma.
+            call_args = _parse_json(fn.get("arguments") or "{}")
+        except ValueError:
+            call_args = {}
+        parsed.append({"name": fn["name"], "args": call_args})
+    return parsed

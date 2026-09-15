@@ -27,6 +27,109 @@ def forget_narrations(obj):
         obj.db.ai_commands = {}
 
 
+#: Slots a description may use that are not word lists: they are answered by
+#: the renderer itself. See `tokens._slot`.
+_BUILTIN_SLOTS = frozenset(["self", "viewer", "user", "here", "world"])
+
+
+def modify_complaints(obj, new_name="", new_description="", world_root=None,
+                      room=None):
+    """
+    What stops this change being made, as short sentences; [] when nothing
+    does.
+
+    Shared by the `modify_object` effect and a character's `modify` tool, so a
+    rule and a character cannot differ about what renaming a thing may do --
+    and held to what every generator's names and descriptions are held to:
+
+    * A name says what a thing is and never its condition. `broken`, `lit`
+      and `half-empty` belong in states, where something can undo them; a
+      name carrying one is wrong the moment the condition changes. See
+      `verbs.name_contradicts_states`.
+    * A description may only ask for word lists this world keeps. A slot
+      nothing answers is shown to players as a raw `{smell}`. Checked by
+      name and never by rendering, because rendering would keep the choices
+      it made on the thing even for a change that is then refused.
+
+    Permission is not asked here. A rule's effect is the result of a verb the
+    world already allowed; a character's tool asks `attempt.permitted` itself.
+    """
+    from world import token_lists, tokens, verbs
+
+    if obj is None:
+        return ["there is nothing by that name to change"]
+    if _protected(obj, room if room is not None else obj.location):
+        return [f"{obj.key} is not something that can be changed"]
+
+    complaints = []
+    if new_name:
+        wrong = verbs.name_contradicts_states(new_name, verbs.states(obj),
+                                              world_root)
+        if wrong:
+            complaints.append(
+                f"a name says what a thing is and not what condition it is "
+                f"in, and {', '.join(wrong)} "
+                f"{'is a condition' if len(wrong) == 1 else 'are conditions'}")
+    if new_description:
+        unknown = sorted(
+            name for name in token_lists.references(new_description)
+            if name not in _BUILTIN_SLOTS
+            and name not in tokens._PROVIDED_SLOTS
+            and (world_root is None
+                 or token_lists.get(world_root, name) is None))
+        if unknown:
+            complaints.append(
+                "the description asks for word lists this world does not "
+                "keep: " + ", ".join("{" + name + "}" for name in unknown))
+    return complaints
+
+
+def modify(obj, new_name="", new_description="", affordances=None,
+           world_root=None):
+    """
+    Change what a thing is called, how it looks, or what can be done to it.
+
+    Nothing here refuses: `modify_complaints` is asked first. Answers whether
+    anything changed.
+
+    The old name is kept as a name the thing still answers to. Whoever
+    remembered "the brass key" should still find it after it has been bent,
+    and anything that learned the old name -- a goal, a quest, a character's
+    memory -- would otherwise be looking for a thing that has vanished.
+    """
+    from world import tokens, verbs
+
+    changed = False
+    if new_name:
+        old = str(obj.key or "")
+        obj.key = new_name
+        # The aliases its condition earns it spell out its name, so they
+        # are stale the moment the name changes.
+        verbs.refresh_state_aliases(obj)
+        if old and old.lower() != new_name.lower():
+            obj.aliases.add(old.lower())
+        verbs.adopt_named_states(obj, world_root)
+        changed = True
+    if new_description:
+        obj.db.desc = new_description
+        tokens.settle(obj)
+        changed = True
+    if affordances is not None:
+        # An object's affordances come from its kind, and this is the one
+        # thing that may overrule them -- because a rule changing what a
+        # particular thing can do is a deliberate act rather than drift.
+        # Burning one book does not stop books being readable.
+        from world import affordances as af
+
+        obj.db.affordances = af.normalise(affordances)
+    if changed:
+        # Narrations were written about what this object was. A charred stub
+        # is not the candle whose description was cached, so the stored text
+        # is dropped and rewritten on next use.
+        forget_narrations(obj)
+    return changed
+
+
 def _note_states(actor, obj, added, removed, world_root):
     """
     Write what a verb made true, and what it ended, as the world's history.
@@ -642,33 +745,19 @@ def _apply_one(actor, room, effect, bound, world_root):
         obj = _resolve(effect, "name", bound, room, actor)
         if obj is None or _protected(obj, room):
             return None
-        changed = False
-        if effect.get("new_name"):
-            obj.key = str(effect["new_name"]).strip()
-            changed = True
-        if effect.get("new_description"):
-            obj.db.desc = str(effect["new_description"]).strip()
-            from world import tokens
-
-            tokens.settle(obj)
-            changed = True
-        if effect.get("affordances") is not None:
-            # An object's affordances come from its kind, and this is the one
-            # thing that may overrule them -- because a rule changing what a
-            # particular thing can do is a deliberate act rather than drift.
-            # Burning one book does not stop books being readable.
-            from world import affordances as af
-
-            obj.db.affordances = af.normalise(effect["affordances"])
-        if effect.get("new_name"):
-            # The aliases its condition earns it spell out its name, so they
-            # are stale the moment the name changes.
-            verbs.refresh_state_aliases(obj)
-        if changed:
-            # Narrations were written about what this object was. A charred
-            # stub is not the candle whose description was cached, so the
-            # stored text is dropped and rewritten on next use.
-            forget_narrations(obj)
+        new_name = str(effect.get("new_name") or "").strip()
+        new_description = str(effect.get("new_description") or "").strip()
+        complaints = modify_complaints(obj, new_name, new_description,
+                                       world_root, room=room)
+        if complaints:
+            # Refused rather than half-done, and said where somebody reading
+            # the log can find it: a rule that tries this every time it runs
+            # is a rule worth rewriting.
+            logger.log_info(f"effects: {obj.key} not changed: "
+                            f"{'; '.join(complaints)}")
+            return None
+        modify(obj, new_name=new_name, new_description=new_description,
+               affordances=effect.get("affordances"), world_root=world_root)
         return None
 
     if etype == "set_trait":

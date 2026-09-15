@@ -501,8 +501,14 @@ class NPC(ObjectParent, DefaultObject):
         character that spoke and then failed to pick up the cup it mentioned
         still said what it said, and losing the sentence because of the cup
         is the wrong half to throw away.
+
+        At most `npc_gen.MOST_ACTS` of them act, in the order sent. The prompt
+        always said so and nothing held a model to it, so a reply of eight
+        calls was eight actions. Looking does not count.
         """
         from evennia.utils import logger
+
+        from world.npc_gen import LOOKING, MOST_ACTS, TOOL_NAMES
 
         # Reset idle probability whenever the NPC actually does something.
         if tool_calls:
@@ -512,8 +518,16 @@ class NPC(ObjectParent, DefaultObject):
             self.ndb.reacting = False
             return
         try:
+            acted = 0
             for call in tool_calls:
                 name = call.get("name", "")
+                if name in TOOL_NAMES and name not in LOOKING:
+                    if acted >= MOST_ACTS:
+                        logger.log_info(
+                            f"{self.key}: {name!r} not done; {MOST_ACTS} "
+                            f"things are enough for one turn")
+                        continue
+                    acted += 1
                 try:
                     self._execute_one(name, call.get("args", {}), room, _depth)
                 except Exception:
@@ -1179,6 +1193,18 @@ class NPC(ObjectParent, DefaultObject):
                 mentions = recognition.recognise(msg, speaker=self, room=room)
                 about = recognition.about(mentions)
                 addressed = recognition.addressed(mentions)
+                # Said to somebody in particular, which the words themselves
+                # may never name: "Pass the salt." Recognition stays for
+                # everybody the words do name.
+                listener_name = str(args.get("to", "") or "").strip()
+                if listener_name:
+                    listener, _ = _find_one(self, listener_name, location=room)
+                    if listener is not None and listener is not self:
+                        entry = (str(listener.key), f"#{listener.id}", 1.0)
+                        if all(held[1] != entry[1] for held in addressed):
+                            addressed = list(addressed) + [entry]
+                        if all(held[1] != entry[1] for held in about):
+                            about = list(about) + [entry]
                 self._aloud(room, '{actor} $pconj(say), "|w{quote}|n"',
                             quotes={"quote": msg})
                 self._add_to_history("say", self.key, msg, about=about,
@@ -1233,8 +1259,17 @@ class NPC(ObjectParent, DefaultObject):
         elif tool_name == "get":
             obj_name = str(args.get("object_name", "")).strip()
             if obj_name:
-                obj, _ = _find_one(self, obj_name, location=room)
-                if obj and obj is not self:
+                from world import relations
+
+                # Anything within reach, as a player reaches: loose in the
+                # room, or in or on something open.
+                obj = relations.find(self, obj_name)
+                if obj is None:
+                    obj, _ = _find_one(self, obj_name, location=room)
+                host = relations.host_of(obj) if obj is not None else None
+                if host is not None and obj.location is not self:
+                    self._take_out(obj, host, room, _depth)
+                elif obj and obj is not self:
                     from world import attempt, events, ownership
 
                     # The rules a player taking it meets, and told why when
@@ -1316,17 +1351,93 @@ class NPC(ObjectParent, DefaultObject):
                     self._witnessed_by_players(room, "action", broken)
 
         elif tool_name == "modify":
-            obj_name = str(args.get("object_name", "")).strip()
-            if obj_name:
-                from world.effects import apply as apply_effects
+            self._modify(args, room, _depth)
 
-                apply_effects(
-                    self, room,
-                    [{
-                        "type": "modify_object",
-                        "name": obj_name,
-                        "new_name": args.get("new_name"),
-                        "new_description": args.get("new_description"),
-                    }],
-                    world_root=room.db.world_root,
-                )
+    def _take_out(self, obj, host, room, _depth=0):
+        """
+        Take something out of, off or from under whatever holds it.
+
+        Through `relations._take_from`, the same door a player's "get the
+        letter from the tray" goes through: it asks this world's rules about
+        taking, refuses a closed lid, and follows through on what taking
+        means, ownership included. A refusal goes where the next prompt reads
+        it, as every other refusal does.
+        """
+        from world import ownership, relations
+
+        def told(text, event=None):
+            if event is None:
+                self._note_to_self(_as_noticed(text))
+                return
+            said = self._acted(room, event)
+            witnessed = ownership.witnessed_taking(said, self, obj)
+            if witnessed != said:
+                self._notify_other_npcs(room, "action", witnessed, _depth)
+
+        relations._take_from(self, obj, host, told)
+
+    def _modify(self, args, room, _depth=0):
+        """
+        Change what something is called or how it looks, held to the rules
+        everything else is.
+
+        This went straight to the effect layer and asked nothing: no check
+        rule could refuse it, a name could carry a condition the naming rule
+        keeps out of every generated name, the old name stopped finding the
+        thing, and nobody in the room saw it happen. Now the world's check
+        rules are asked, `effects.modify_complaints` holds it to what every
+        generator is held to, and the change is done in front of everyone and
+        remembered.
+        """
+        from commands.look_take_cmds import _find_one
+
+        from world import attempt, effects, events, relations
+
+        name = str(args.get("object_name", "") or "").strip()
+        new_name = str(args.get("new_name", "") or "").strip()
+        new_description = str(args.get("new_description", "") or "").strip()
+        if not name:
+            return
+        if not (new_name or new_description):
+            self._note_to_self(f"changing {name} needs a new name or a new "
+                               f"look")
+            return
+
+        obj = relations.find(self, name)
+        if obj is None:
+            obj, _ = _find_one(self, name, location=self)
+        if obj is None:
+            self._note_to_self(f"there is no {name} here to change")
+            return
+
+        world_root = room.db.world_root
+        complaints = effects.modify_complaints(obj, new_name, new_description,
+                                               world_root, room=room)
+        if not complaints:
+            refused = attempt.permitted(self, "modify", {"direct": obj})
+            if refused:
+                complaints = [_as_noticed(refused)]
+        if complaints:
+            self._note_to_self(f"{obj.key} was not changed: "
+                               + "; ".join(complaints))
+            return
+
+        was = obj.get_numbered_name(1, None, return_string=True)
+        effects.modify(obj, new_name=new_name, new_description=new_description,
+                       world_root=world_root)
+        if new_name:
+            event = events.Event(actor=self, room=room, verb="modify",
+                                 roles={"direct": obj},
+                                 room_template="{actor} $pconj(turn) {was} "
+                                               "into {direct}.",
+                                 quotes={"was": was})
+        else:
+            event = events.Event(actor=self, room=room, verb="modify",
+                                 roles={"direct": obj},
+                                 room_template="{actor} $pconj(change) how "
+                                               "{direct} looks.")
+        said = self._acted(room, event)
+        self._add_to_history("action", self.key, said,
+                             about=self._involved(event))
+        self._notify_other_npcs(room, "action", said, _depth,
+                                about=self._involved(event))

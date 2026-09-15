@@ -956,6 +956,27 @@ announcement and the memory. Results still go to working memory.
 room, and a character renaming a thing is seen, remembered, and held to the
 naming rule.
 
+*As built:*
+
+* **Placed things were out of reach,** as §10 suspected. `_nameable` read
+  `room.contents`, and `get` searched the room, so no character could take a
+  letter lying in an open tray. `get`'s choices now come from
+  `relations.reachable`, and a placed thing is taken through
+  `relations._take_from`, the same door a player's "get the letter from the
+  tray" goes through.
+* **`emote` has no `maxLength`.** `maxLength` is not in the conservative
+  dialect (§4.1), so the description asks for a short phrase instead.
+* **The `modify_object` effect is checked, but not asked permission.**
+  `modify_complaints` runs on it, and refuses a name that carries a condition
+  or a description asking for a list nobody keeps. `attempt.permitted` does
+  not, because a rule's effect is the outcome of a verb the world has already
+  allowed. The character's tool asks permission itself.
+* **`check_traits` is offered only beside somebody else.** A character's own
+  figures are already in its prompt, so "myself" alone is not worth a tool.
+* **Unexplored ways out stay in the room context** as well as in `move`'s
+  description, until the room context is reworked with lookup tools
+  (Phase 4).
+
 ### Phase 3: the loop and the toolbox, tools required
 
 `llm.converse`, `world/toolbox.py`, the `models` menu filter and the refusal at
@@ -1227,9 +1248,6 @@ From the server log for the same session:
 
 ### Still open
 
-* **Placed things out of reach.** Can a character reach a thing that is in or
-  on something else? `_nameable` reads `room.contents` only (§6.1, `get`).
-  Check `relations` before Phase 2.
 * **OpenRouter routing** for models with mixed tool support (§3.2), settled in
   Phase 3.
 
