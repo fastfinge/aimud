@@ -44,7 +44,20 @@ PREPOSITION_ROLES = {
     "behind": "target",
     "for": "target",
     "about": "target",
+    # What something is done by way of: "look at the moon through the
+    # spyglass" keeps the moon and the spyglass both, which `target` could not
+    # -- the moon has already taken it.
+    "through": "instrument",
 }
+
+#: Verbs whose object may arrive behind a preposition, when nothing came
+#: before one. "look at the lamp", "look in the chest", "look through the
+#: spyglass" all name what is looked at, and read strictly each of them named
+#: nothing to look at -- which the rules answer by describing the room, and
+#: the look command answered by conjuring a thing called "at the lamp". The
+#: preposition is kept, so a world can still tell looking into a chest from
+#: looking at one.
+PREPOSITION_MAY_NAME_DIRECT = frozenset(["look"])
 
 # Words that carry no meaning in a command. One list, in world.nounphrase,
 # which is also where "my" stopped being noise and started being a claim.
@@ -197,6 +210,16 @@ def parse(raw):
         current.append(word)
 
     flush()
+
+    # "look at the lamp": the first phrase is what is acted on when nothing
+    # came before a preposition. See PREPOSITION_MAY_NAME_DIRECT.
+    if verb in PREPOSITION_MAY_NAME_DIRECT and roles and "direct" not in roles:
+        first = next(iter(roles))
+        roles = {"direct": roles.pop(first), **roles}
+        word = prepositions.pop(first, "")
+        if word:
+            prepositions = {"direct": word, **prepositions}
+
     return {"verb": verb, "roles": roles, "prepositions": prepositions,
             "manner": manner}
 

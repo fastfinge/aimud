@@ -231,27 +231,34 @@ class CmdAILook(_DefaultLook):
             return
 
         query = self.args.strip()
-        obj = _counted(caller, query)
+        # What is looked at is the noun the parser finds, not the words typed.
+        # "look at the lamp", "look in the chest", "look through the spyglass"
+        # were each searched for whole, found nothing, and conjured a thing
+        # called "at the lamp" beside the lamp already there.
+        from world import verbs
+
+        named = verbs.parse(f"look {query}")["roles"].get("direct") or query
+        obj = _counted(caller, named)
         multiple = False
         if obj is None:
-            obj, multiple = _find_one(caller, query)
+            obj, multiple = _find_one(caller, named)
 
         if multiple:
-            caller.search(query)  # let Evennia show disambiguation
+            caller.search(named)  # let Evennia show disambiguation
             return
 
         if not obj:
             # Before conjuring anything, look outward: on the table, in the
             # open drawer. Inventing a second mug because the first one was
             # put down somewhere would be the worst of both.
-            obj = _reach(caller, query)
+            obj = _reach(caller, named)
         if not obj:
-            obj, complaint = _or_typo(caller, query)
+            obj, complaint = _or_typo(caller, named)
             if complaint:
                 caller.msg(complaint)
                 return
         if not obj:
-            self._ai_look(caller, query)
+            self._ai_look(caller, named)
             return
 
         if root is None:

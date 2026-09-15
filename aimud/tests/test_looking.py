@@ -35,6 +35,36 @@ class TheVerbThePipelineOwns(EvenniaTest):
 
 
 @tag("unit")
+class APrepositionCanIntroduceWhatIsLookedAt(SimpleTestCase):
+    """
+    "look at the lamp" names the lamp. Read strictly, the lamp was a target
+    and nothing was looked at -- so the rules described the room, and the look
+    command, searching for "at the lamp", conjured a second lamp.
+    """
+
+    def test_at_in_and_through_all_name_the_thing(self):
+        for raw, word in (("look at the lamp", "at"),
+                          ("look in the lamp", "in"),
+                          ("look through the lamp", "through")):
+            parsed = verbs.parse(raw)
+            self.assertEqual(parsed["roles"], {"direct": "lamp"}, raw)
+            self.assertEqual(parsed["prepositions"], {"direct": word}, raw)
+
+    def test_a_second_phrase_keeps_its_own_role(self):
+        parsed = verbs.parse("look at the moon through the spyglass")
+        self.assertEqual(parsed["roles"],
+                         {"direct": "moon", "instrument": "spyglass"})
+
+    def test_a_thing_named_first_is_still_the_thing(self):
+        self.assertEqual(verbs.parse("put key in box")["roles"],
+                         {"direct": "key", "container": "box"})
+
+    def test_and_only_looking_reads_a_preposition_this_way(self):
+        self.assertEqual(verbs.parse("smile at jessica")["roles"],
+                         {"target": "jessica"})
+
+
+@tag("unit")
 class DescribeSpeaksAndAchievesNothing(SimpleTestCase):
     """
     The one assertion in this file with no database in it, and it is here on
@@ -105,6 +135,11 @@ class WhatLookingCosts(Looking):
         appearance, so there is nothing for a narrator to write.
         """
         said = self.look("look lantern")
+        self.assertEqual(self.asked, 0, "nothing should have been asked")
+        self.assertIn("dented brass lantern", said)
+
+    def test_looking_at_a_thing_is_looking_at_it(self):
+        said = self.look("look at the lantern")
         self.assertEqual(self.asked, 0, "nothing should have been asked")
         self.assertIn("dented brass lantern", said)
 
@@ -353,6 +388,21 @@ class TheVerbTheCommandSetStillAnswers(EvenniaTest):
             joined = " ".join(said)
             self.assertIn("dented brass lantern", joined, raw)
             self.assertEqual(joined.count("dented brass lantern"), 1, raw)
+
+    def test_a_preposition_is_not_part_of_the_things_name(self):
+        """
+        The bug as reported: "look through spyglass" conjured a second
+        spyglass. "look at", "look in" and "look at the" did the same, because
+        the command searched for the words typed rather than the thing named.
+        """
+        before = set(self.room2.contents)
+        for raw in ("look at lantern", "look at the lantern",
+                    "look through lantern", "look in lantern",
+                    "l at lantern", "examine the lantern"):
+            joined = " ".join(self.typed(raw))
+            self.assertEqual(joined.count("dented brass lantern"), 1, raw)
+        self.assertEqual(set(self.room2.contents), before,
+                         "nothing should have been conjured")
 
     def test_and_bare_looking_describes_the_room_once(self):
         for raw in ("look", "l"):

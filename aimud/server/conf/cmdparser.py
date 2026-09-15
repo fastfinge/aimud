@@ -1,55 +1,118 @@
 """
-Changing the default command parser
+The command parser: Evennia's own, with one rule for generated worlds.
 
-The cmdparser is responsible for parsing the raw text inserted by the
-user, identifying which command/commands match and return one or more
-matching command objects. It is called by Evennia's cmdhandler and
-must accept input and return results on the same form. The default
-handler is very generic so you usually don't need to overload this
-unless you have very exotic parsing needs; advanced parsing is best
-done at the Command.parse level.
+**Inside a generated world, a building, admin or system command has to be
+typed with its prefix.** `@open`, `@examine`, `@create`, `@force`. Typed bare,
+the word is left for the world, where it is something a character does.
 
-The default cmdparser understands the following command combinations
-(where [] marks optional parts.)
+The collision this settles is between Evennia's staff commands and the verbs a
+world is made of. On a self-hosted server the player is usually the superuser,
+so every staff command is always in reach: `open door` made an exit called
+"door", `examine lantern` dumped the lantern's attributes, and `force the lock`
+tried to make somebody run a command. Evennia already spells most of them with
+an "@" -- the key is `@open` -- and a bare `open` reached it only because the
+parser strips `CMD_IGNORE_PREFIXES` and tries again when nothing matched.
 
-[cmdname[ cmdname2 cmdname3 ...] [the rest]
+**Why a rule about where you are and not a rename.** Renaming or overwriting
+Evennia's commands would break its documentation, its builders' habits and
+any plugin that adds to them, and outside a world -- Limbo, anything built by
+hand -- there is no verb to collide with. `quell` does work, the superuser
+included, but it switches building off everywhere until somebody remembers to
+unquell, and forgetting it is exactly how an exit called "door" gets made. And
+deciding per word, by whether this world has a rule for `open`, would make a
+command change meaning as a world learns.
 
-A command may consist of any number of space-separated words of any
-length, and contain any character. It may also be empty.
-
-The parser makes use of the cmdset to find command candidates. The
-parser return a list of matches. Each match is a tuple with its first
-three elements being the parsed cmdname (lower case), the remaining
-arguments, and the matched cmdobject from the cmdset.
-
-
-This module is not accessed by default. To tell Evennia to use it
-instead of the default command parser, add the following line to
-your settings file:
-
-    COMMAND_PARSER = "server.conf.cmdparser.cmdparser"
-
+**Which commands.** Those defined in Evennia's building, admin and system
+modules, whatever their key is spelled with: `force`, `emit` and `wall` have
+no "@", and typing `@force` reaches them all the same, because the prefix is
+stripped in matching. The game's own commands -- `look`, `worldedit`,
+`tokens` -- and Evennia's general, account and communication commands are not
+staff tools and never need a prefix. The batch processor's interactive
+commands are left alone too: they exist only while a batch is running.
 """
 
+from django.conf import settings
+from evennia.commands.cmdparser import cmdparser as evennia_cmdparser
 
-def cmdparser(raw_string, cmdset, caller, match_index=None):
+#: Where Evennia keeps the commands that are for building and running a
+#: server rather than playing on one.
+STAFF_MODULES = frozenset((
+    "evennia.commands.default.building",
+    "evennia.commands.default.admin",
+    "evennia.commands.default.system",
+))
+
+#: What counts as having typed a prefix. Evennia's own list.
+PREFIXES = settings.CMD_IGNORE_PREFIXES
+
+
+def cmdparser(raw_string, cmdset, caller, match_index=None, session=None,
+              **kwargs):
     """
-    This function is called by the cmdhandler once it has
-    gathered and merged all valid cmdsets valid for this particular parsing.
+    Evennia's matches, less any staff command typed bare inside a world.
 
-    raw_string - the unparsed text entered by the caller.
-    cmdset - the merged, currently valid cmdset
-    caller - the caller triggering this parsing
-    match_index - an optional integer index to pick a given match in a
-                  list of same-named command matches.
-
-    Returns:
-     list of tuples: [(cmdname, args, cmdobj, cmdlen, mratio), ...]
-            where cmdname is the matching command name and args is
-            everything not included in the cmdname. Cmdobj is the actual
-            command instance taken from the cmdset, cmdlen is the length
-            of the command name and the mratio is some quality value to
-            (possibly) separate multiple matches.
-
+    Removing a match rather than choosing another is what hands the input on:
+    with nothing left, the command handler runs the no-match command, which in
+    a generated world is `CmdAIUnknown`, which sends it to the world.
     """
-    # Your implementation here
+    matches = evennia_cmdparser(raw_string, cmdset, caller,
+                                match_index=match_index, session=session,
+                                **kwargs)
+    if not matches or _prefixed(raw_string) or not in_generated_world(caller):
+        return matches
+    return [match for match in matches if not is_staff(match[2])]
+
+
+def is_staff(command):
+    """Whether a command is one of Evennia's building, admin or system tools."""
+    return type(command).__module__ in STAFF_MODULES
+
+
+def _prefixed(raw_string):
+    text = str(raw_string or "").lstrip()
+    return bool(text) and text[0] in PREFIXES
+
+
+def in_generated_world(caller):
+    """
+    Whether whoever typed this is standing in a generated world.
+
+    The same test the no-match command makes, so the two cannot disagree about
+    where a world begins: a room with a world description. A session or an
+    account is placed by the character it is puppeting.
+    """
+    body = caller if hasattr(caller, "location") else getattr(caller, "puppet",
+                                                              None)
+    room = getattr(body, "location", None)
+    try:
+        return bool(room is not None and room.db.world_description)
+    except AttributeError:
+        return False
+
+
+def staff_spelling(cmdset, caller, word):
+    """
+    How to type the staff command `word` names, if `caller` may use one.
+
+    "@open" for `open`, "@force" for `force`, or "" when no staff command
+    answers to the word or the caller may not run it -- so a player who was
+    never a builder is never told about building commands.
+    """
+    word = str(word or "").lower().lstrip(PREFIXES)
+    if not word or cmdset is None:
+        return ""
+    for command in getattr(cmdset, "commands", []) or []:
+        if not is_staff(command):
+            continue
+        for name in [command.key] + list(command.aliases or []):
+            name = str(name or "").lower()
+            if name.lstrip(PREFIXES) != word:
+                continue
+            try:
+                allowed = command.access(caller, "cmd")
+            except Exception:
+                allowed = False
+            if not allowed:
+                return ""
+            return name if name[:1] in PREFIXES else f"@{name}"
+    return ""
