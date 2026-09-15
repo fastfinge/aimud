@@ -832,7 +832,8 @@ busy off        never
 **Support additions** (`tests/support.py`):
 
 * `tool_reply(*calls, content=None)` builds a reply carrying `tool_calls`, and
-  `call(name, **args)` builds one entry.
+  `tool_call(name, **args)` builds one entry (not `call`, which would read as
+  `llm.call`).
 * `replying` records `tools` and `tool_choice` per call:
   `recorder.tools(i)`, `recorder.tool_choice(i)`, and `recorder.tool_results(i)`
   (the `role: tool` messages that call was sent).

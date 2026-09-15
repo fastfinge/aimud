@@ -150,6 +150,22 @@ class AskingAModel(SimpleTestCase):
         self.assertEqual(sent["payload"]["tools"], tools)
         self.assertEqual(sent["payload"]["tool_choice"], "auto")
 
+    def test_a_caller_may_name_the_tool_a_reply_must_call(self):
+        """How a tool loop's last round insists on an answer."""
+        tools = [{"type": "function", "function": {"name": "give"}}]
+        choice = {"type": "function", "function": {"name": "give"}}
+        patch, sent = sending(reply())
+        with patch:
+            llm.call(SPONSOR, "m", [], tools=tools, tool_choice=choice)
+        self.assertEqual(sent["payload"]["tool_choice"], choice)
+
+    def test_a_tool_choice_with_no_tools_is_not_sent(self):
+        """It means nothing without them, and a provider may refuse it."""
+        patch, sent = sending(reply())
+        with patch:
+            llm.call(SPONSOR, "m", [], tool_choice="required")
+        self.assertNotIn("tool_choice", sent["payload"])
+
     def test_the_default_wait_is_thirty_seconds(self):
         patch, sent = sending(reply("x"))
         with patch:
@@ -170,6 +186,90 @@ class AskingAModel(SimpleTestCase):
         with patch:
             llm.ask(SPONSOR, "plain/model", [])
         self.assertEqual(set(sent["payload"]), {"model", "messages"})
+
+
+def _drain_spending():
+    """Empty the hand-off queue, so a test reads only the calls it made."""
+    while True:
+        try:
+            llm._spending.get_nowait()
+        except llm.queue.Empty:
+            return
+
+
+@tag("unit")
+class TimingACall(SimpleTestCase):
+    """
+    How long a player waited, carried from the thread to the ledger.
+
+    The soak at the end of the tool-loop plan reads these, against a baseline
+    taken before anything changed, so they have to be there from the start.
+    """
+
+    def setUp(self):
+        _drain_spending()
+
+    def tearDown(self):
+        _drain_spending()
+
+    def test_a_call_leaves_how_long_it_took(self):
+        patch, _sent = sending(reply("x"))
+        with patch:
+            llm.call(SPONSOR, "m", [])
+        _sponsor, _model, _usage, seconds = llm._spending.get_nowait()
+        self.assertIsInstance(seconds, float)
+        self.assertGreaterEqual(seconds, 0)
+
+    def test_and_it_reaches_the_ledger_beside_the_usage(self):
+        noted = []
+        patch, _sent = sending(reply("x", usage={"prompt_tokens": 3}))
+        with patch, mock.patch("world.ledger.note",
+                               lambda *args: noted.append(args)):
+            llm.call(SPONSOR, "m", [])
+            llm._write_down_spending()
+        self.assertEqual(len(noted), 1)
+        self.assertEqual(noted[0][2], {"prompt_tokens": 3})
+        self.assertGreaterEqual(noted[0][3], 0)
+
+
+@tag("unit")
+class ScriptingToolCalls(SimpleTestCase):
+    """The helpers a tool loop's tests are written with, held to the real shape."""
+
+    def test_a_scripted_call_reads_back_the_way_a_model_sends_one(self):
+        from tests.support import replying, tool_call, tool_reply
+
+        tools = [{"type": "function", "function": {"name": "say"}}]
+        messages = [{"role": "user", "content": "hello"},
+                    {"role": "tool", "tool_call_id": "call_x",
+                     "content": "done"}]
+        with replying(tool_reply(tool_call("say", message="hi"))) as recorder:
+            got = llm.call(SPONSOR, "m", messages, tools=tools,
+                           tool_choice="auto")
+
+        sent_back = got["choices"][0]["message"]["tool_calls"][0]
+        self.assertEqual(sent_back["type"], "function")
+        self.assertEqual(sent_back["function"]["name"], "say")
+        # A string, as a model sends it, and not an object.
+        self.assertEqual(json.loads(sent_back["function"]["arguments"]),
+                         {"message": "hi"})
+        self.assertEqual(recorder.tools(0), tools)
+        self.assertEqual(recorder.tool_choice(0), "auto")
+        self.assertEqual(recorder.tool_results(0), [messages[1]])
+
+    def test_two_calls_to_one_tool_can_be_told_apart(self):
+        from tests.support import tool_call
+
+        self.assertNotEqual(tool_call("say")["id"], tool_call("say")["id"])
+
+    def test_a_reply_of_only_tool_calls_still_reads_as_sent(self):
+        """Its content is null, and the recorder must not trip over that."""
+        from tests.support import replying, tool_call, tool_reply
+
+        with replying(tool_reply(tool_call("say"))) as recorder:
+            llm.call(SPONSOR, "m", [{"role": "assistant", "content": None}])
+        self.assertEqual(recorder.sent(), "")
+        self.assertIsNone(recorder.tools(0))
 
 
 @tag("unit")

@@ -122,3 +122,62 @@ class WhatACallCost(EvenniaTest):
         totals = ledger.totals(self.account)
         self.assertEqual(totals["calls"], 0)
         self.assertEqual(totals["by_job"], {})
+        self.assertEqual(totals["seconds"], 0.0)
+        self.assertEqual(totals["timed"], 0)
+
+
+@tag("world")
+class HowLongACallTook(EvenniaTest):
+    """
+    Seconds per call, per job and per world.
+
+    What a player actually waited, which the tool-loop plan's soak compares
+    against a baseline taken before anything changed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.room1.db.world_root = self.root
+        self.model = ModelChoice("test/model", {}, job="commands")
+        self.sponsor = Sponsor(world_root=self.root, account=self.account,
+                               actor=self.char1)
+
+    def test_the_time_is_added_up_everywhere_the_tokens_are(self):
+        ledger.note(self.sponsor, self.model, usage(), 1.5)
+        ledger.note(self.sponsor, self.model, usage(), 2.25)
+        totals = ledger.totals(self.account)
+        self.assertAlmostEqual(totals["seconds"], 3.75)
+        self.assertEqual(totals["timed"], 2)
+        self.assertAlmostEqual(totals["by_job"]["commands"]["seconds"], 3.75)
+        self.assertEqual(totals["by_job"]["commands"]["timed"], 2)
+        self.assertAlmostEqual(
+            totals["by_world"][str(self.root.id)]["seconds"], 3.75)
+
+    def test_a_call_nobody_timed_counts_but_adds_no_time(self):
+        """
+        An average is the seconds over the timed calls. An untimed call counted
+        as zero would make every figure look faster than it was.
+        """
+        ledger.note(self.sponsor, self.model, usage())
+        ledger.note(self.sponsor, self.model, usage(), 2.0)
+        totals = ledger.totals(self.account)
+        self.assertEqual(totals["calls"], 2)
+        self.assertEqual(totals["timed"], 1)
+        self.assertAlmostEqual(totals["seconds"], 2.0)
+
+    def test_the_recent_entry_says_how_long(self):
+        ledger.note(self.sponsor, self.model, usage(), 0.4567)
+        ledger.note(self.sponsor, self.model, usage())
+        newest, older = ledger.recent(self.account)[:2]
+        self.assertIsNone(newest["seconds"])
+        self.assertEqual(older["seconds"], 0.457)
+
+    def test_nonsense_for_a_time_is_no_time_at_all(self):
+        ledger.note(self.sponsor, self.model, usage(), "soon")
+        ledger.note(self.sponsor, self.model, usage(), -3)
+        ledger.note(self.sponsor, self.model, usage(), float("nan"))
+        totals = ledger.totals(self.account)
+        self.assertEqual(totals["calls"], 3)
+        self.assertEqual(totals["timed"], 0)
+        self.assertEqual(totals["seconds"], 0.0)

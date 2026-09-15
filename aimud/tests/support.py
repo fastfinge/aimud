@@ -6,6 +6,9 @@ untestable half into tier `world`: a way to make the one async door
 synchronous, a way to answer as a model would, and a stand-in for a sponsor so
 a generator can be called without a world or an account behind it.
 
+And, for code that offers tools, a way to write the tool calls a model would
+send back (`tool_call`, `tool_reply`), and a clock a test can move by hand.
+
 The door is `world.llm.fetch`. Without a running reactor a `deferToThread`
 callback never fires -- so a test that drove a generator through one would pass
 having asserted nothing, which is the worst way for a test to behave.
@@ -15,6 +18,7 @@ is over.
 """
 
 import contextlib
+import itertools
 import json
 import pathlib
 from unittest import mock
@@ -55,10 +59,14 @@ def replying(*answers, tools=None):
     text of one (what `llm.ask` returns), so a test writes the shape it means.
 
     Records what was asked, which is most of what there is to assert about a
-    prompt: `recorder.prompts[0]` is the messages list of the first call.
+    prompt: `recorder.prompts[0]` is the messages list of the first call. What
+    each call offered is recorded too -- `recorder.tools(0)`,
+    `recorder.tool_choice(0)` -- along with the tool results it was sent, which
+    is what a test of a tool loop asserts on.
     """
     scripted = list(answers) or [""]
     asked = []
+    offered = []        # (tools, tool_choice) for each call, in order
 
     def reply_for(messages):
         asked.append(messages)
@@ -67,13 +75,16 @@ def replying(*answers, tools=None):
             raise answer
         return answer
 
-    def fake_call(sponsor, model, messages, tools=None, timeout=llm.TIMEOUT):
+    def fake_call(sponsor, model, messages, tools=None, timeout=llm.TIMEOUT,
+                  tool_choice=None):
+        offered.append((tools, tool_choice))
         answer = reply_for(messages)
         if isinstance(answer, dict):
             return answer
         return {"choices": [{"message": {"content": answer}}]}
 
     def fake_ask(sponsor, model, messages, timeout=llm.TIMEOUT):
+        offered.append((None, None))
         answer = reply_for(messages)
         if isinstance(answer, dict):
             return llm.content(answer)
@@ -90,8 +101,22 @@ def replying(*answers, tools=None):
 
         def sent(self, index=0):
             """Everything in one call's messages, as a single string."""
-            return "\n".join(m.get("content", "")
+            # `or ""`, not a default: a reply that carried only tool calls is
+            # sent back with its content null, which `get` hands over as None.
+            return "\n".join(m.get("content") or ""
                              for m in asked[index])
+
+        def tools(self, index=0):
+            """The tools one call offered, or None for a call that had none."""
+            return offered[index][0]
+
+        def tool_choice(self, index=0):
+            """What one call said about using its tools, as the caller gave it."""
+            return offered[index][1]
+
+        def tool_results(self, index=0):
+            """The `role: tool` messages one call was sent."""
+            return [m for m in asked[index] if m.get("role") == "tool"]
 
     with mock.patch.object(llm, "call", fake_call), \
             mock.patch.object(llm, "ask", fake_ask):
@@ -101,6 +126,43 @@ def replying(*answers, tools=None):
 def as_json(data):
     """A reply whose text is this object, the way a generator expects it."""
     return json.dumps(data)
+
+
+#: Tool call ids, unique across a test run, so two calls to one tool in one
+#: reply can still be told apart by the results that answer them.
+_CALL_IDS = itertools.count(1)
+
+
+def tool_call(name, **args):
+    """
+    One tool call, the way a model sends it.
+
+    The arguments are a JSON *string*, not an object. That is the detail a
+    hand-written fake most often gets wrong, and code tested against the wrong
+    shape passes here and fails against a real model.
+    """
+    return {"id": f"call_{next(_CALL_IDS)}", "type": "function",
+            "function": {"name": name, "arguments": json.dumps(args)}}
+
+
+def tool_reply(*calls, content=None):
+    """A whole reply carrying these tool calls, for `replying` to send back."""
+    message = {"role": "assistant", "content": content}
+    if calls:
+        message["tool_calls"] = list(calls)
+    return {"choices": [{"message": message}]}
+
+
+def clock():
+    """
+    A reactor clock a test moves by hand.
+
+    Anything that runs on a timer takes one of these, so a test can advance
+    ten seconds with `clock.advance(10)` instead of waiting ten seconds.
+    """
+    from twisted.internet import task
+
+    return task.Clock()
 
 
 class FakeSponsor:
@@ -119,7 +181,7 @@ class FakeSponsor:
 
     def __init__(self, model="test/model", key="sk-test", params=None,
                  base_url="https://example.test/v1", actor=None,
-                 world_root=None):
+                 world_root=None, record=None):
         self._model = model
         self._key = key
         self.params = params or {}
@@ -127,6 +189,11 @@ class FakeSponsor:
         self.account = None
         self.actor = actor
         self.world_root = world_root
+        #: The model's entry in the service's model list, for code that asks
+        #: what a model supports. Tools by default, because every generator
+        #: needs them; pass a record without them to test a model that cannot.
+        self.record = record if record is not None else {
+            "id": model, "supported_parameters": ["tools", "tool_choice"]}
 
     @property
     def payer(self):

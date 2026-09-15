@@ -280,9 +280,14 @@ class CmdNPCGen(Command):
             caller.msg("An NPC is already being generated for this room.")
             return
 
-        account = _get_account(caller)
+        # The world pays for its own people, the same sponsor every character's
+        # own turns are paid by (`NPC._sponsor`). This handed `generate_npc` an
+        # account where it takes a sponsor, so the command raised before it
+        # reached a model -- after the flag below was already up, which left
+        # the room refusing `npcgen` until a reload.
+        sponsor = sponsor_mod.of(caller)
         try:
-            sponsor_mod.of_account(account).key()
+            sponsor.key()
         except ValueError as e:
             caller.msg(str(e))
             return
@@ -301,7 +306,7 @@ class CmdNPCGen(Command):
             caller.msg(f"|rNPC generation failed: {err}|n")
 
         from world.npc_gen import generate_npc
-        generate_npc(account=account, room=room,
+        generate_npc(sponsor=sponsor, room=room,
                      on_success=on_success, on_error=on_error)
 
 
@@ -929,7 +934,10 @@ class CmdRules(Command):
                         "which.|n")
             self.caller.msg("\n".join(said))
 
-        suggest.judge(_get_account(self.caller), root, on_success=done,
+        # The world pays for judging itself. An account used to go here, and
+        # an account's `key` is its name rather than a way to get an API key,
+        # so every judgement raised before it was asked.
+        suggest.judge(sponsor_mod.of(self.caller), root, on_success=done,
                       on_error=lambda err: self.caller.msg(f"|r{err}|n"))
 
     def _suspend(self, root, asked, listed):

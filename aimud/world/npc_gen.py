@@ -322,6 +322,11 @@ NPC_TOOLS = [
     },
 ]
 
+#: Every tool a character may be offered, by name. `NPC._execute_one` refuses
+#: anything else, which is how a model inventing a tool gets noticed rather
+#: than quietly ignored. Read off the list above, so the two cannot disagree.
+TOOL_NAMES = frozenset(tool["function"]["name"] for tool in NPC_TOOLS)
+
 # ---------------------------------------------------------------------------
 # Prompt templates
 # ---------------------------------------------------------------------------

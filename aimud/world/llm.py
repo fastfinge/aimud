@@ -39,6 +39,7 @@ synchronous.
 
 import json
 import queue
+import time
 import urllib.error
 import urllib.request
 
@@ -138,7 +139,8 @@ def _request(url, api_key, payload=None, timeout=TIMEOUT):
                                f"({err.code})") from err
 
 
-def call(sponsor, model, messages, tools=None, timeout=TIMEOUT):
+def call(sponsor, model, messages, tools=None, timeout=TIMEOUT,
+         tool_choice=None):
     """
     Ask a model, and answer with the whole reply.
 
@@ -150,6 +152,11 @@ def call(sponsor, model, messages, tools=None, timeout=TIMEOUT):
     carries -- the service to talk to and who to charge come with it -- and
     unpacking it into a key at the top of every generator is what left the
     other two with nowhere to travel.
+
+    `tool_choice` says whether a reply must use a tool, and which one: "auto"
+    when it is left out, or `{"type": "function", "function": {"name": ...}}`
+    to name the tool the reply has to call. It means nothing without tools, so
+    it is only sent with them.
     """
     # The sampling settings chosen for this job ride on the model choice. See
     # world.model_params: only what the player actually set is sent.
@@ -159,10 +166,13 @@ def call(sponsor, model, messages, tools=None, timeout=TIMEOUT):
     payload.update(settings(model))
     if tools:
         payload["tools"] = tools
-        payload["tool_choice"] = "auto"
+        payload["tool_choice"] = tool_choice or "auto"
+    # Timed here, around the request and nothing else, because how long a
+    # player waits is made of these and the ledger is where it is added up.
+    started = time.monotonic()
     reply = _request(_chat_url(sponsor.base_url), sponsor.key(), payload,
                      timeout)
-    _spent(sponsor, model, reply)
+    _spent(sponsor, model, reply, time.monotonic() - started)
     return reply
 
 
@@ -221,15 +231,17 @@ def models(sponsor, timeout=LIST_TIMEOUT):
 _spending = queue.Queue()
 
 
-def _spent(sponsor, model, reply):
+def _spent(sponsor, model, reply, seconds=None):
     """
-    Note what a reply cost, from inside the thread that received it.
+    Note what a reply cost, and how long it took, from inside the thread that
+    received it.
 
     Never raises and never touches the database. Bookkeeping must not be able
     to lose an answer somebody is waiting for.
     """
     try:
-        _spending.put_nowait((sponsor, model, (reply or {}).get("usage")))
+        _spending.put_nowait((sponsor, model, (reply or {}).get("usage"),
+                              seconds))
     except Exception:
         pass
 
@@ -240,10 +252,10 @@ def _write_down_spending():
 
     while True:
         try:
-            sponsor, model, usage = _spending.get_nowait()
+            sponsor, model, usage, seconds = _spending.get_nowait()
         except queue.Empty:
             return
-        ledger.note(sponsor, model, usage)
+        ledger.note(sponsor, model, usage, seconds)
 
 
 def fetch(work, *args, on_success, on_error):

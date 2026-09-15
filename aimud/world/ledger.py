@@ -63,70 +63,95 @@ def _count(usage, names):
     return 0
 
 
-def note(sponsor, model, usage):
+def note(sponsor, model, usage, seconds=None):
     """
     Record one model call. Main thread only; never raises.
 
     Takes the whole sponsor rather than an account because the three facts
     that make an entry worth having -- who paid, who acted, which world -- are
     only together on that object.
+
+    `seconds` is how long the request took, when it was timed. A call without
+    it still counts as a call, but adds no time and is not counted as timed:
+    an average is the seconds over the timed calls, and an untimed call
+    counted as zero would make every figure look faster than it was.
     """
     try:
-        _note(sponsor, model, usage)
+        _note(sponsor, model, usage, seconds)
     except Exception as exc:
         logger.log_info(f"ledger: could not record a call: {exc}")
 
 
-def _note(sponsor, model, usage):
+def _seconds(value):
+    """How long a call took, as a number no smaller than zero, or None."""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return None
+    # NaN fails this comparison too, which is the answer wanted for it.
+    return seconds if seconds >= 0 else None
+
+
+def _note(sponsor, model, usage, seconds=None):
     account = getattr(sponsor, "account", None)
     if account is None:
         return      # nobody paid: a call that never went out
 
     prompt = _count(usage or {}, _PROMPT)
     completion = _count(usage or {}, _COMPLETION)
+    seconds = _seconds(seconds)
     job = str(getattr(model, "job", "") or "unknown")
     world = getattr(getattr(sponsor, "world_root", None), "id", None)
 
-    _add_totals(account, job, world, prompt, completion)
-    _add_recent(account, sponsor, model, job, world, prompt, completion)
+    _add_totals(account, job, world, prompt, completion, seconds)
+    _add_recent(account, sponsor, model, job, world, prompt, completion,
+                seconds)
 
 
 def _blank():
-    return {"calls": 0, "prompt": 0, "completion": 0}
+    return {"calls": 0, "prompt": 0, "completion": 0, "seconds": 0.0,
+            "timed": 0}
 
 
-def _bump(into, key, prompt, completion):
-    row = dict(into.get(key) or _blank())
+def _add(row, prompt, completion, seconds):
+    """One call's figures, added to a row of running totals in place."""
     row["calls"] = row.get("calls", 0) + 1
     row["prompt"] = row.get("prompt", 0) + prompt
     row["completion"] = row.get("completion", 0) + completion
+    if seconds is not None:
+        row["seconds"] = round(row.get("seconds", 0.0) + seconds, 3)
+        row["timed"] = row.get("timed", 0) + 1
+
+
+def _bump(into, key, prompt, completion, seconds=None):
+    row = dict(into.get(key) or _blank())
+    _add(row, prompt, completion, seconds)
     into[key] = row
 
 
-def _add_totals(account, job, world, prompt, completion):
+def _add_totals(account, job, world, prompt, completion, seconds=None):
     """
     The running figures. Read far more often than any one entry, and written
-    on every call, so this is deliberately a few integers rather than anything
+    on every call, so this is deliberately a few numbers rather than anything
     that has to be walked.
     """
     totals = dict(account.db.spend_totals or {})
-    totals["calls"] = totals.get("calls", 0) + 1
-    totals["prompt"] = totals.get("prompt", 0) + prompt
-    totals["completion"] = totals.get("completion", 0) + completion
+    _add(totals, prompt, completion, seconds)
 
     by_job = dict(totals.get("by_job") or {})
-    _bump(by_job, job, prompt, completion)
+    _bump(by_job, job, prompt, completion, seconds)
     totals["by_job"] = by_job
 
     if world is not None:
         by_world = dict(totals.get("by_world") or {})
-        _bump(by_world, str(world), prompt, completion)
+        _bump(by_world, str(world), prompt, completion, seconds)
         totals["by_world"] = by_world
 
     account.db.spend_totals = totals
 
 
-def _add_recent(account, sponsor, model, job, world, prompt, completion):
+def _add_recent(account, sponsor, model, job, world, prompt, completion,
+                seconds=None):
     """The short tail, newest last, trimmed to RECENT."""
     actor = getattr(sponsor, "actor", None)
     entry = {
@@ -137,6 +162,7 @@ def _add_recent(account, sponsor, model, job, world, prompt, completion):
         "actor": getattr(actor, "key", "") if actor is not None else "",
         "prompt": prompt,
         "completion": completion,
+        "seconds": round(seconds, 3) if seconds is not None else None,
     }
     recent = list(account.db.spend_recent or [])
     recent.append(entry)
@@ -148,11 +174,13 @@ def _add_recent(account, sponsor, model, job, world, prompt, completion):
 # ---------------------------------------------------------------------------
 
 def totals(account):
-    """What this account has spent, as plain integers."""
+    """What this account has spent, and how long it waited, as plain numbers."""
     stored = dict((account.db.spend_totals if account else None) or {})
     stored.setdefault("calls", 0)
     stored.setdefault("prompt", 0)
     stored.setdefault("completion", 0)
+    stored.setdefault("seconds", 0.0)
+    stored.setdefault("timed", 0)
     stored.setdefault("by_job", {})
     stored.setdefault("by_world", {})
     return stored

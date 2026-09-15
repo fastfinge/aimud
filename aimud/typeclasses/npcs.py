@@ -89,15 +89,6 @@ class NPC(ObjectParent, DefaultObject):
     #: model call that cannot possibly fix it.
     GOAL_STALL_LIMIT = 10
 
-    #: Everything _execute_one implements. A call outside this set means the
-    #: model invented a tool, which is worth knowing about rather than
-    #: dropping in silence.
-    KNOWN_TOOLS = frozenset([
-        "say", "emote", "move", "get", "give", "attempt", "offer_quest",
-        "answer_quest", "set_goal", "check_traits", "create", "destroy",
-        "modify",
-    ])
-
     @lazy_property
     def traits(self):
         """What is measurably true of this character. See world.traits."""
@@ -1170,8 +1161,9 @@ class NPC(ObjectParent, DefaultObject):
 
     def _execute_one(self, tool_name, args, room, _depth=0):
         from commands.look_take_cmds import _find_one
+        from world.npc_gen import TOOL_NAMES
 
-        if tool_name not in self.KNOWN_TOOLS:
+        if tool_name not in TOOL_NAMES:
             # Silently ignoring these is how a model quietly doing the wrong
             # thing stays invisible.
             from evennia.utils import logger
