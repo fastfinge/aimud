@@ -88,9 +88,14 @@ class ObjectParent:
         also lets a thing be several things at once -- empty and sticky and
         scorched -- which is exactly what a name has no room for.
         """
-        from world import verbs
+        from world import tokens, verbs
 
         base = super().get_display_desc(looker, **kwargs) or ""
+        # The stored text keeps its tokens, so what a word list chose -- and
+        # the state behind it, which a rule may have changed -- is read now.
+        base = tokens.text(base, tokens.Context(
+            viewer=looker, about=self, world_root=tokens.world_root_of(self),
+            purpose="display"))
         line = verbs.condition(self, looker)
         if not line:
             return base

@@ -125,10 +125,13 @@ class Character(ObjectParent, DefaultCharacter):
         `super()`, which would be ObjectParent's -- that one appends the
         condition itself, and it must not arrive twice.
         """
-        from world import clothing, verbs
+        from world import clothing, tokens, verbs
 
         base = self.world_desc() or DefaultCharacter.get_display_desc(
             self, looker, **kwargs)
+        base = tokens.text(base, tokens.Context(
+            viewer=looker, about=self, world_root=tokens.world_root_of(self),
+            purpose="display"))
         text = clothing.appearance(self, base, looker)
         line = verbs.condition(self, looker)
         if not line:

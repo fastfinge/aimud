@@ -10,7 +10,7 @@ import re
 
 from evennia.utils import logger
 
-from world import llm
+from world import llm, tokens
 
 
 DIRECTION_ALIASES = {
@@ -356,7 +356,7 @@ def _neighbourhood(source_room, arrival_exit, radius=2, max_chars=4000):
             "opens_onto": _room_exit_directions(room),
         }
         if _offset_direction(offset) is not None:
-            desc = room.db.desc or ""
+            desc = tokens.text_of(room)
             if total + len(desc) <= max_chars:
                 entry["description"] = desc
                 total += len(desc)
@@ -389,7 +389,7 @@ def _parent_chain_context(source_room, max_chars=4000):
     while room is not None and room.id not in visited:
         visited.add(room.id)
         title = room.db.room_title or room.key
-        desc = room.db.desc or ""
+        desc = tokens.text_of(room)
         block = f"[{title}]\n{desc}"
         if total + len(block) > max_chars:
             break
@@ -407,7 +407,7 @@ def _parent_chain_context(source_room, max_chars=4000):
 
 def _create_room(title, description, exits, world_description, source_room, arrival_exit,
                  world_root=None, creator=None, room_type="", category="", zone="",
-                 zone_purpose="", plan=None, bonuses=None):
+                 zone_purpose="", plan=None, bonuses=None, token_lists=None):
     """
     Create an Evennia Room and its exits.  Must run in the main thread.
 
@@ -465,6 +465,13 @@ def _create_room(title, description, exits, world_description, source_room, arri
             room.db.world_creator = creator
     # Tag lets us find all rooms belonging to a world efficiently.
     room.tags.add(str(actual_root.id), category="ai_world")
+
+    # The lists this room's description declared, then the choices it makes:
+    # both need the world to exist, and the first room is the world.
+    from world import token_lists as token_lists_mod, tokens
+
+    token_lists_mod.declare(actual_root, token_lists)
+    tokens.settle(room)
 
     # Place the room on the world's sparse map.  The first room defines the
     # origin; every other room sits one step from where the player came.
@@ -1301,8 +1308,17 @@ def _nearby_names(source_room, exit_name):
 
 
 def _generate_description(sponsor, world_description, guidance, context,
-                          name, room_type, category, on_success, on_error):
-    """Async. Write the room's description, given the area around it."""
+                          name, room_type, category, on_success, on_error,
+                          world_root=None):
+    """
+    Async. Write the room's description, given the area around it.
+
+    `on_success(description, bonuses, token_lists)`: the lists are whatever
+    the description declared, for `_create_room` to register once there is a
+    world to register them in.
+    """
+    from world import token_lists
+
     model = sponsor.model_for("rooms")
     messages = [
         {"role": "system", "content": _DESC_SYSTEM_PROMPT},
@@ -1311,6 +1327,7 @@ def _generate_description(sponsor, world_description, guidance, context,
             "content": (
                 f"World theme: {world_description}\n\n"
                 f"{guidance}"
+                f"{token_lists.vocabulary_block(world_root, [room_type])}"
                 f"Room: {name}\n"
                 f"Kind: {room_type or 'unspecified'} ({category or 'unspecified'})\n\n"
                 f"Surrounding area, for continuity only — do not name these rooms:\n"
@@ -1326,7 +1343,8 @@ def _generate_description(sponsor, world_description, guidance, context,
             desc = str(data.get("description", "")).strip()
             if not desc:
                 raise ValueError("empty description")
-            on_success(desc, data.get("trait_bonuses") or {})
+            on_success(desc, data.get("trait_bonuses") or {},
+                       data.get("new_token_lists") or [])
         except Exception as exc:
             on_error(str(exc))
 
@@ -1371,7 +1389,7 @@ def populate_room(sponsor, room):
                 f"Room: {room.db.room_title or room.key}\n"
                 f"Kind: {room.db.room_type or 'unspecified'} "
                 f"({room.db.room_category or 'unspecified'})\n\n"
-                f"Description: {room.db.desc}\n\n"
+                f"Description: {tokens.text_of(room)}\n\n"
                 f"{gear.prompt_block(room.db.world_root)}"
                 f"What loose items are here?"
             ),
@@ -1487,12 +1505,12 @@ def generate_first_room(sponsor, spec, on_success, on_error,
                 if d in BUILDABLE_DIRECTIONS
             ]
 
-            def finish(description, bonuses=None):
+            def finish(description, bonuses=None, lists=None):
                 try:
                     room = _create_room(
                         name, description, exits, world_description, None, None,
                         creator=sponsor.account, room_type=room_type, category=category,
-                        zone=zone, plan=plan, bonuses=bonuses,
+                        zone=zone, plan=plan, bonuses=bonuses, token_lists=lists,
                     )
 
                     # Title, long description, and the player's name and
@@ -1571,20 +1589,21 @@ def generate_connected_room(sponsor, world_description, source_room, exit_name,
         _generate_description(
             sponsor, world_description, rooms_guidance, context, name,
             room_type, category,
-            on_success=lambda description, bonuses=None: finish(
+            on_success=lambda description, bonuses=None, lists=None: finish(
                 name, description, exits, room_type, category, zone,
-                zone_purpose, bonuses),
+                zone_purpose, bonuses, lists),
             on_error=on_error,
+            world_root=source_room.db.world_root,
         )
 
     def finish(name, description, exits, room_type, category, zone,
-               zone_purpose, bonuses=None):
+               zone_purpose, bonuses=None, lists=None):
         try:
             room = _create_room(
                 name, description, exits, world_description, source_room, exit_name,
                 world_root=source_room.db.world_root,
                 room_type=room_type, category=category, zone=zone,
-                zone_purpose=zone_purpose, bonuses=bonuses,
+                zone_purpose=zone_purpose, bonuses=bonuses, token_lists=lists,
             )
             # The player moves now; contents arrive behind them, and so does
             # any thinking about the place they have just walked into.

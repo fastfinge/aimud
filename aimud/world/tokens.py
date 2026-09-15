@@ -66,9 +66,8 @@ ROLES = ("actor", "direct", "target", "container", "source", "instrument")
 RESERVED_SLOTS = frozenset(ROLES + ("self", "user", "viewer", "here", "world",
                                     "quote"))
 
-#: Call names kept for this game's own use. `pconj` and the English calls --
-#: `an`, `the`, `plural`, `count` -- are built; `pick` is the world lists',
-#: reserved from the start so that no world can have taken it first.
+#: Call names kept for this game's own use: `pconj`, the English calls -- `an`,
+#: `the`, `plural`, `count` -- and `pick`, which chooses from a world list.
 RESERVED_CALLS = frozenset(("pconj", "an", "the", "plural", "count", "pick"))
 
 #: The tenses a rendering can be asked for. `$pconj` conjugates for either.
@@ -179,7 +178,7 @@ class Context:
     """
 
     __slots__ = ("viewer", "event", "about", "world_root", "tense", "purpose",
-                 "naming", "quotes", "_bound", "_mapping")
+                 "naming", "quotes", "path", "_bound", "_mapping")
 
     def __init__(self, viewer=None, event=None, about=None, world_root=None,
                  tense="present", purpose="display", naming=None, quotes=None):
@@ -193,6 +192,9 @@ class Context:
         self.purpose = purpose if purpose in PURPOSES else "display"
         self.naming = naming
         self.quotes = dict(quotes or {})
+        # The word-list slots being expanded around this one, outermost first.
+        # See `world.token_lists`.
+        self.path = ()
         self._bound = None
         self._mapping = None
 
@@ -459,6 +461,15 @@ def _slot(node, context, bare=False):
             found.text = words
             return found
 
+    if not fields and context.world_root is not None:
+        from world import token_lists
+
+        found = token_lists.resolve(name, context)
+        if found is not None:
+            if possessive and found.text:
+                found.text = f"{found.text}'s"
+            return found
+
     provided = _PROVIDED_SLOTS.get(name)
     if provided is not None:
         try:
@@ -580,6 +591,15 @@ def _call(node, context):
         return _pconj(args, context)
     if node.name in _ENGLISH:
         return _english(node, args)
+    if node.name == "pick":
+        # `$pick(color)`, `$pick(color, scope=room)`, `$pick(color, as=stripes)`:
+        # a world list with its defaults overridden. See `world.token_lists`.
+        from world import token_lists
+
+        found = token_lists.resolve(args[0] if args else "", context,
+                                    label=kwargs.get("as", ""),
+                                    scope=kwargs.get("scope"))
+        return node.raw if found is None else found
 
     provided = _PROVIDED_CALLS.get(node.name)
     if provided is not None:
@@ -675,3 +695,52 @@ def withdraw(name):
     """Take back whatever `provide` added under this name."""
     _PROVIDED_SLOTS.pop(name, None)
     _PROVIDED_CALLS.pop(name, None)
+
+
+# ---------------------------------------------------------------------------
+# A thing's own text
+# ---------------------------------------------------------------------------
+
+def world_root_of(obj):
+    """The world a thing belongs to: its own for a room, or wherever it is."""
+    where, steps = obj, 0
+    while where is not None and steps < 20:
+        root = getattr(getattr(where, "db", None), "world_root", None)
+        if root is not None:
+            return root
+        where = getattr(where, "location", None)
+        steps += 1
+    return None
+
+
+def text_of(obj, attribute="desc", viewer=None, purpose="prompt"):
+    """
+    A thing's stored text with its tokens filled in: what a prompt reads.
+
+    Everything that puts a description in front of a model comes through
+    here rather than reading `db.desc`, because the stored text keeps its
+    tokens -- so that a fact behind one goes on rendering live -- and a model
+    shown a raw `{color}` will invent one.
+    """
+    if obj is None:
+        return ""
+    try:
+        raw = getattr(obj.db, attribute, None)
+    except AttributeError:
+        return ""
+    if not raw:
+        return ""
+    return text(raw, Context(viewer=viewer, about=obj,
+                             world_root=world_root_of(obj), purpose=purpose))
+
+
+def settle(obj, attribute="desc"):
+    """
+    Make every choice a thing's own text depends on, now.
+
+    Called where a thing is made and where its text is rewritten, so that a
+    choice exists before anything -- a player, or a model writing a rule about
+    it -- reads the text. A choice once per viewer cannot be made in advance
+    and is left for whoever looks.
+    """
+    return text_of(obj, attribute)

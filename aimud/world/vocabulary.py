@@ -36,7 +36,7 @@ from evennia.utils import logger
 
 #: The registers, in the order a word is looked for. Traits and states first,
 #: because those are the pair a claim can actually block.
-REGISTERS = ("trait", "state", "kind", "affordance", "pronoun")
+REGISTERS = ("trait", "state", "kind", "affordance", "pronoun", "token")
 
 #: Which pairs may not share a word. Symmetric; only the one pair, and the
 #: reasoning is in the module docstring -- both answer "what is true of this
@@ -59,6 +59,12 @@ def _traits_of(world_root):
         return set(dict(world_root.db.trait_vocabulary or {}))
     except (AttributeError, TypeError, ValueError):
         return set()
+
+
+def _tokens_of(world_root):
+    from world import token_lists
+
+    return set(token_lists.vocabulary(world_root))
 
 
 def _states_of(world_root):
@@ -98,6 +104,7 @@ _READERS = {
     "kind": _kinds_of,
     "affordance": _affordances_of,
     "pronoun": _pronouns_of,
+    "token": _tokens_of,
 }
 
 

@@ -1,6 +1,6 @@
 # Development plan: tokens and phrases
 
-Status: **phases 1 and 2 built**; phases 3 to 6 planned. Six phases, §8. Where the
+Status: **phases 1 to 3 built**; phases 4 to 6 planned. Six phases, §8. Where the
 building turned up something the plan had wrong, the phase says so under *As
 built* rather than the plan being quietly corrected.
 
@@ -717,6 +717,69 @@ Acceptance is the ball, end to end:
   braces.
 
 No world reset: new attributes only.
+
+*As built* (`world/token_lists.py`, `commands/token_cmds.py`,
+`tests/test_token_lists.py`). Settled in the building:
+
+* **Lists are their own module.** §5.6 named the door `tokens.register`. It is
+  `token_lists.register_many`, with `register` for one list, `declare` for a
+  generator's reply and `unregister`, because `tokens` is the grammar and a
+  world's register is a different job. `tokens` asks `token_lists.resolve` for
+  any slot that is not a quote, a role or a built-in, and `$pick` goes to the
+  same place.
+* **A reference nobody answers is refused as well as a list that cannot
+  finish.** §5.6 had only the productivity check. But a list whose entry says
+  `{beast}` when no `beast` list exists would show its braces for ever, so the
+  references are checked over everything the world keeps plus everything in
+  the same batch. Lists declared together may name each other.
+* **The fold is exact or singular.** `smells` folds onto `smell` through the
+  lemma; nothing looser, because a list's name is typed into text and a fold
+  that surprised whoever typed it would be worse than a second list.
+* **Facts are states and traits, and nothing else.** §5.2 allowed kinds and
+  affordances at creation. `clothing.create` settles an object's kinds before
+  the object exists, a kind is a rule cache key, and an affordance belongs to
+  a kind rather than to one thing -- so a list has no safe moment to change
+  either.
+* **A list with a group declares its states; a list without one may only name
+  states the world keeps.** An unknown state in a grouped list is registered
+  into that group, as a state declared anywhere else would be. A trait must
+  already be kept, because a trait has a type and bounds and a word in a list
+  says neither. Traits are set only on people.
+* **The state is read before the remembered word.** A grouped list on a thing
+  already in one of its states renders that entry, or the state's own word if
+  no entry sets it -- which is how paint reads "red". If a choice was made and
+  the state has since been taken away, the list renders its fallback or
+  nothing, rather than a colour the thing no longer is.
+* **Only object, room and world scopes write facts.** A choice made once per
+  viewer cannot put one thing in two states, and one made every render has
+  nowhere to stay.
+* **Two references in one entry share a choice** because they share a path:
+  "The {beast} and {beast}" is one animal twice. Past a depth of eight, only
+  entries that name no other list are chosen from.
+* **Choices are made at creation in three places and remade in two.**
+  `clothing.create` covers items, clothes and room contents; `_create_room`
+  declares the room's lists once the world exists -- the first room *is* the
+  world -- and settles them; the NPC spawn settles the body. `modify_object`
+  and `modify_room` settle again after rewriting a description. A viewer-scoped
+  choice is left for whoever looks.
+* **Every prompt read of a description goes through `tokens.text_of`**:
+  `item_gen`, `npc_gen`, `verb_gen` and `worldgen`, eleven sites in all. A
+  structural test fails on any `.db.desc` read in `world/` outside `tokens`.
+  Looks render through `ObjectParent.get_display_desc`, which covers objects,
+  rooms and NPCs, and `Character.get_display_desc`.
+* **Three generators may declare lists**: items, NPCs and room descriptions.
+  Each is shown `token_lists.vocabulary_block` in its user message, with the
+  instructions for `new_token_lists` in the block rather than in a system
+  prompt -- ordered by `for` kinds: nothing for an item, `person` for an NPC,
+  the room type for a room. The contents and clothing passes, and the rule and
+  verb generators, declare none.
+* **`tokens` lists, shows, tries, adds and removes.** Adding and removing is for
+  the world's creator or a superuser, the line `worldedit` draws. `tokens add`
+  makes decoration only; a list of states comes from a generator for now.
+  Lists are `help` topics under "word lists", filed after every other register
+  so the bare word stays with a kind or a condition of the same name.
+* **Found, not fixed:** a description that names a list nobody declared shows
+  its braces. Declarations are checked; the text a list is used in is not.
 
 ### Phase 4 -- lexicon sources
 

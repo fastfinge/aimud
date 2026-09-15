@@ -562,6 +562,12 @@ def create(spec, location, worn_on=None):
     from world import verbs
 
     verbs.refresh_state_aliases(obj)
+    # Every choice its description makes, made now, before anything reads it.
+    # A choice can be a state, so this comes after the states are written and
+    # can add to them. See `world.token_lists`.
+    from world import tokens
+
+    tokens.settle(obj)
     if garment_type in GARMENT_TYPES:
         obj.db.clothing_type = garment_type
 

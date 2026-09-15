@@ -451,13 +451,13 @@ def _describe_objects(bound, actor):
     knowing the bowl is a container and that it already has something in it,
     and a model told neither will invent a state to stand in for both.
     """
-    from world import relations, verbs
+    from world import relations, tokens, verbs
 
     lines = [f"actor: {actor.get_display_name(actor)}"]
     for role, obj in sorted(bound.items()):
         marks = ", ".join(sorted(verbs.affordances(obj))) or "no special properties"
         condition = ", ".join(sorted(verbs.states(obj))) or "nothing notable"
-        entry = (f"{role}: {obj.key} — {obj.db.desc or '(no description)'}\n"
+        entry = (f"{role}: {obj.key} — {tokens.text_of(obj) or '(no description)'}\n"
                  f"    properties: {marks}\n    currently: {condition}")
 
         where = relations.context_line(obj, actor)

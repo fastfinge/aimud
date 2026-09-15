@@ -10,7 +10,7 @@ import re
 
 from evennia.utils import logger
 
-from world import llm
+from world import llm, tokens
 
 
 #: How many times a character may be sent back to be renamed. Each retry is a
@@ -1081,11 +1081,11 @@ def generate_npc(sponsor, room, on_success, on_error):
         on_error(str(e))
         return
 
-    from world import lore, pronouns, traits
+    from world import lore, pronouns, token_lists, tokens, traits
 
     world_desc = lore.description(room)
     room_title = room.db.room_title or room.key
-    room_desc = room.db.desc or ""
+    room_desc = tokens.text_of(room)
 
     # Who is already here, so the model is not asked to invent a stranger in
     # ignorance of everyone it has invented before. Listing them is most of
@@ -1105,6 +1105,7 @@ def generate_npc(sponsor, room, on_success, on_error):
                 f"{lore.guidance_block(room, 'npcs')}"
                 f"{traits.vocabulary_block(room.db.world_root)}"
                 f"{pronouns.vocabulary_block(room.db.world_root)}"
+                f"{token_lists.vocabulary_block(room.db.world_root, ['person'])}"
                 f"Room: [{room_title}]\n{room_desc}\n\n"
                 f"{taken}"
                 "Generate an NPC who would naturally be found here."
@@ -1151,12 +1152,15 @@ def generate_npc(sponsor, room, on_success, on_error):
             from typeclasses.npcs import NPC
             from world import kinds
 
+            token_lists.declare(room.db.world_root, data.get("new_token_lists"))
             npc = create_object(NPC, key=name, location=room)
             npc.db.desc = description
             # A character is a sort of thing. Said here as well as in the
             # typeclass because a generated character is given its description
             # and its manner in this order, and a kind belongs beside them.
             kinds.ensure_person(npc)
+            # Their eyes are one colour from the first moment, whoever looks.
+            tokens.settle(npc)
             # Kept apart from the description: this is who they are, which
             # players never see by looking, and which the character itself
             # needs in order to behave like anyone in particular.
@@ -1243,9 +1247,9 @@ def dress_npc(sponsor, npc):
                 f"World: {lore.description(room)}\n\n"
                 f"{lore.guidance_block(room, 'npcs')}"
                 f"Room: [{room.db.room_title or room.key}]\n"
-                f"{room.db.desc or ''}\n\n"
+                f"{tokens.text_of(room)}\n\n"
                 f"Character: {npc.key}\n"
-                f"Their body: {npc.db.desc or '(not described)'}\n"
+                f"Their body: {tokens.text_of(npc) or '(not described)'}\n"
                 f"Who they are: {npc.db.manner or '(not described)'}\n"
                 f"What they want: {goals.describe(npc.db.goal)}\n\n"
                 f"{gear.prompt_block(room.db.world_root)}"
@@ -1300,11 +1304,13 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
     from world import clothing, lore
     from world.activity import active_players_in
 
+    from world import tokens
+
     nearby = active_players_in(room)
     world_desc = (lore.description(room, nearby[0] if nearby else None)
                   or npc.db.world_description or "")
     room_title = room.db.room_title or room.key
-    room_desc = room.db.desc or ""
+    room_desc = tokens.text_of(room)
     room_contents = _room_context(room, npc)
     history_text, bank, cues, on_show = _memory_inputs(npc, room, room_title)
 
@@ -1321,7 +1327,7 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
         world_desc=world_desc,
         guidance=lore.guidance_block(room, "dialogue",
                                      nearby[0] if nearby else None),
-        npc_desc=clothing.own_appearance(npc, npc.db.desc or "") or "(no description)",
+        npc_desc=clothing.own_appearance(npc, tokens.text_of(npc)) or "(no description)",
         npc_traits=_trait_line(npc),
         npc_manner=(f"Who you are: {npc.db.manner}\n\n" if npc.db.manner else "\n"),
         room_title=room_title,
@@ -1400,11 +1406,13 @@ def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
     from world import clothing, lore
     from world.activity import active_players_in
 
+    from world import tokens
+
     nearby = active_players_in(room)
     world_desc = (lore.description(room, nearby[0] if nearby else None)
                   or npc.db.world_description or "")
     room_title = room.db.room_title or room.key
-    room_desc = room.db.desc or ""
+    room_desc = tokens.text_of(room)
     room_contents = _room_context(room, npc)
 
     # Working memory verbatim, long memory by relevance.  Anything the model
@@ -1424,7 +1432,7 @@ def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
         world_desc=world_desc,
         guidance=lore.guidance_block(room, "dialogue",
                                      nearby[0] if nearby else None),
-        npc_desc=clothing.own_appearance(npc, npc.db.desc or "") or "(no description)",
+        npc_desc=clothing.own_appearance(npc, tokens.text_of(npc)) or "(no description)",
         npc_traits=_trait_line(npc),
         npc_manner=(f"Who you are: {npc.db.manner}\n\n" if npc.db.manner else "\n"),
         room_title=room_title,

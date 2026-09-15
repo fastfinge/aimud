@@ -613,6 +613,9 @@ def _apply_one(actor, room, effect, bound, world_root):
             changed = True
         if effect.get("new_description"):
             obj.db.desc = str(effect["new_description"]).strip()
+            from world import tokens
+
+            tokens.settle(obj)
             changed = True
         if effect.get("affordances") is not None:
             # An object's affordances come from its kind, and this is the one
@@ -699,6 +702,9 @@ def _apply_one(actor, room, effect, bound, world_root):
     if etype == "modify_room":
         if effect.get("new_description"):
             room.db.desc = str(effect["new_description"]).strip()
+            from world import tokens
+
+            tokens.settle(room)
         if effect.get("new_name"):
             new_name = str(effect["new_name"]).strip()
             room.key = new_name
