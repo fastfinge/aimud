@@ -154,16 +154,7 @@ neighbouring area in general terms — chlorine on the air, a hum through the
 bulkhead — but never name another room."""
 
 _CONTENTS_SYSTEM_PROMPT = """You populate a room in a text-based MUD with its loose contents.
-Respond with a single JSON object — no other text — matching:
-{
-  "items": [
-    {"name": "item name", "description": "1-2 sentences", "takeable": true,
-     "kind": "flyer", "under": "", "holds": [],
-     "affordances": {"read": true}, "states": [], "clothing_type": "",
-     "trait_bonuses": {}, "bonus_when": "", "bonus_while": ""}
-  ],
-  "wants_npc": <true or false>
-}
+Answer by calling furnish_room. Each item's description is 1-2 sentences.
 
 items are the portable, removable things that happen to be here — never the
 room's fixtures, which are already in its description. Give 0 to 3, and prefer
@@ -193,8 +184,7 @@ room: a place people work in, wait in, staff or gather in usually has somebody
 there — an office has whoever works at it, a classroom has a teacher or a
 pupil, a shop has someone behind the counter. Passageways, storerooms and
 empty thresholds usually do not. Decide honestly for this room rather than
-defaulting either way; a world where nobody is ever anywhere feels dead.
-Return only the JSON object."""
+defaulting either way; a world where nobody is ever anywhere feels dead."""
 
 
 # ---------------------------------------------------------------------------
@@ -1202,6 +1192,11 @@ def _generate_name(sponsor, world_description, context, source_room,
         + f"The player leaves '{source_room.db.room_title or source_room.key}' "
         f"(category: {source_category or 'unknown'}) through its '{exit_name}' exit.\n\n"
         + (f"That exit was written as leading to: \"{hint}\"\n\n" if hint else "")
+        + _hints_block(
+            naming_hints(world_root),
+            "Places and things somebody in this world is looking for, which "
+            "nothing here provides yet. A way out may lead somewhere like "
+            "one of these, if it fits:")
         + f"Surrounding area:\n{context}\n\n"
         f"'adjacent' gives each direction from the new room. Being next to a room "
         f"does NOT mean a door joins them: classrooms along a corridor share walls "
@@ -1385,22 +1380,26 @@ def populate_room(sponsor, room):
                 f"Kind: {room.db.room_type or 'unspecified'} "
                 f"({room.db.room_category or 'unspecified'})\n\n"
                 f"Description: {tokens.text_of(room)}\n\n"
-                f"{gear.prompt_block(room.db.world_root)}"
-                f"What loose items are here?"
+                f"{gear.prompt_block(room.db.world_root, registers=False)}"
+                + _hints_block(
+                    contents_hints(room.db.world_root, room),
+                    "Wanted by somebody in this world, and to be found "
+                    "nowhere yet. Include one only if it genuinely belongs in "
+                    "this room, and name it as the line says:")
+                + "What loose items are here?"
             ),
         },
     ]
 
-    def _done(content):
+    def _done(data):
         from world import clothing
 
-        try:
-            data = _parse_json_object(content)
-        except Exception:
+        if not isinstance(data, dict):
             return
 
         created = []
-        for item in (data.get("items") or [])[:3]:
+        for item in [entry for entry in (data.get("items") or [])
+                     if isinstance(entry, dict)][:3]:
             # Through the clothing layer, so a coat left over the back of a
             # chair is a coat somebody can pick up and put on.
             obj = clothing.create(item, location=room)
@@ -1426,8 +1425,18 @@ def populate_room(sponsor, room):
                          on_success=arrived,
                          on_error=lambda _err: None)
 
-    llm.fetch(llm.ask, sponsor, model, messages, llm.SLOW_TIMEOUT,
-              on_success=_done, on_error=lambda _f: None)
+    from world import lookups
+    from world import toolbox as tb
+
+    # Rounds out, the last contents are placed as they stand; a failure is an
+    # unfurnished room, which is the small loss it always was.
+    box = tb.Toolbox([contents_tool(tokens.text_of(room))]
+                     + lookups.named(*CONTENTS_LOOKUPS),
+                     tb.ToolContext(world_root=room.db.world_root, room=room,
+                                    sponsor=sponsor, job="contents"))
+    llm.converse(sponsor, model, messages, box, on_done=_done,
+                 on_error=lambda _why: None, on_exhausted=_done,
+                 rounds=CONTENTS_ROUNDS, timeout=llm.SLOW_TIMEOUT)
 
 
 # ---------------------------------------------------------------------------
@@ -1956,3 +1965,172 @@ def description_complaints(args, world_root):
         world_root, new_token_lists=[entry for entry in declared
                                      if isinstance(entry, dict)])]
     return said
+
+
+# ---------------------------------------------------------------------------
+# A room's contents, and what people want that nothing provides (§5.1)
+# ---------------------------------------------------------------------------
+
+#: Rounds `populate_room` may take (§10.3): nobody waits on it.
+CONTENTS_ROUNDS = 10
+
+CONTENTS_LOOKUPS = ("list_states", "list_state_groups", "list_traits",
+                    "kind_info", "commonsense")
+
+#: The most wants shown to one generator call (§5.1).
+MOST_WANTS = 3
+
+#: How many wanted things a room is shown when there is no corpus to say
+#: which of them belong in it.
+UNSORTED_WANTS = 2
+
+
+def _hints_block(lines, header):
+    """A header and its lines for a prompt, or "" when there are none."""
+    if not lines:
+        return ""
+    return header + "\n" + "\n".join(f"  - {line}" for line in lines) + "\n\n"
+
+
+def _wants(world_root):
+    """`goals.blocked_wants`, never raising: a hint must not cost a room."""
+    from world import goals
+
+    try:
+        return goals.blocked_wants(world_root)
+    except Exception:
+        logger.log_trace("worldgen: the wants could not be worked out")
+        return []
+
+
+def _spelled(items):
+    return {str(item).lower().replace("_", " ") for item in items}
+
+
+def contents_hints(world_root, room):
+    """
+    Things somebody wants that exist nowhere, and that belong in this room.
+
+    With ConceptNet, a thing belongs where `AtLocation` read forward from it
+    shares a word with the room's type, name or area -- ore goes to mines and
+    quarries. Without it, the first `UNSORTED_WANTS` are shown anyway, and the
+    prompt says to include one only if it belongs. Never in a room the want
+    says to avoid: the giver's, or the wanting character's own.
+    """
+    if world_root is None or room is None:
+        return []
+    from world import commonsense, planner, zones
+
+    wanted = [want for want in _wants(world_root)
+              if want.get("reason") == planner.MISSING_THING
+              and want.get("what") and want.get("words")
+              and room.id not in (want.get("avoid") or ())]
+    if not wanted:
+        return []
+
+    def said(want):
+        who = getattr(want.get("who"), "key", "somebody")
+        return f"{who} wants something {want['words']}."
+
+    if not commonsense.available():
+        return [said(want) for want in wanted[:UNSORTED_WANTS]]
+
+    here = set()
+    for text in (room.db.room_type, room.db.room_title or room.key,
+                 zones.name_of(world_root, zones.slugify(room.db.zone or ""))
+                 if room.db.zone else ""):
+        here |= set(str(text or "").lower().replace("_", " ").split())
+    lines = []
+    for want in wanted:
+        places = _spelled(commonsense.forward(want["what"], "AtLocation"))
+        if {word for place in places for word in place.split()} & here:
+            lines.append(said(want))
+        if len(lines) >= MOST_WANTS:
+            break
+    return lines
+
+
+def naming_hints(world_root):
+    """
+    Rooms somebody wants that nobody has built, and where the things somebody
+    wants are found, for the room namer.
+    """
+    if world_root is None:
+        return []
+    from world import commonsense, planner
+
+    corpus = commonsense.available()
+    lines = []
+    for want in _wants(world_root):
+        if len(lines) >= MOST_WANTS:
+            break
+        who = getattr(want.get("who"), "key", "somebody")
+        if want.get("reason") == planner.MISSING_ROOM and want.get("words"):
+            lines.append(f"{who} is looking for {want['words']}, which nobody "
+                         f"has built.")
+        elif (want.get("reason") == planner.MISSING_THING and corpus
+              and want.get("what")):
+            places = sorted(_spelled(
+                commonsense.forward(want["what"], "AtLocation")))[:3]
+            if places:
+                lines.append(f"{who} wants something {want['words']}, which "
+                             f"is found at {', '.join(places)}.")
+    return lines
+
+
+def _named_in(name, text):
+    """Whether a thing's head noun is already written into a description."""
+    import re
+
+    from world import lexicon
+
+    word = lexicon.head_noun(name)
+    return bool(word) and re.search(rf"(?<![a-z]){re.escape(word)}",
+                                    str(text or "").lower()) is not None
+
+
+def contents_tool(description):
+    """
+    `furnish_room`, the finish tool `populate_room` answers with.
+
+    Up to three items with `clothing.spec_schema`, each held to what
+    `make_item` holds one to, and none that the room's description already
+    names -- the rule the prompt stated and nothing checked.
+    """
+    from world import clothing, item_gen
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        return tb.params({
+            "items": {"type": "array", "items": clothing.spec_schema(ctx),
+                      "maxItems": 3,
+                      "description": "0 to 3 loose things; none for a bare "
+                                     "corridor"},
+            "wants_npc": {"type": "boolean",
+                          "description": "Whether somebody is in this room "
+                                         "right now"},
+        }, ["items", "wants_npc"])
+
+    def handler(ctx, args, answer):
+        items = [item for item in _listed(args.get("items"))
+                 if isinstance(item, dict)]
+        said = []
+        if len(items) > 3:
+            said.append(f"give at most 3 items, not {len(items)}")
+        for item in items[:3]:
+            name = str(item.get("name") or "").strip() or "an item"
+            said += [f"{name}: {line}"
+                     for line in item_gen.item_complaints(item, ctx.world_root)]
+            if _named_in(name, description):
+                said.append(f"{name}: the room's description already has "
+                            f"one, as part of the room; give loose things it "
+                            f"does not mention")
+        if said:
+            answer(tb.complain("Not placed: " + "; ".join(said) + ". Send the "
+                               "contents again with that put right.",
+                               value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("furnish_room", "Give this room its loose contents.",
+                   parameters, handler, finishes=True)

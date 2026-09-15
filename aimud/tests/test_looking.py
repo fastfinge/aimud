@@ -543,10 +543,20 @@ class WhatGenerationCanNowSay(EvenniaTest):
                       "a dark room must be told to say nothing, not to say 0")
 
     def test_the_contents_prompt_offers_the_state_gate(self):
-        """`gear._gate_open` has implemented this all along."""
-        from world import worldgen
+        """
+        `gear._gate_open` has implemented this all along.
 
-        self.assertIn("bonus_while", worldgen._CONTENTS_SYSTEM_PROMPT)
+        Offered in the finish tool's schema now, beside every other field an
+        item has, and explained by the gear block the prompt still carries.
+        """
+        from world import clothing, gear, worldgen
+
+        tool = worldgen.contents_tool("")
+        items = tool.parameters(None)["properties"]["items"]["items"]
+        self.assertIn("bonus_while", items["properties"])
+        self.assertEqual(items, clothing.spec_schema(None))
+        self.assertIn("bonus_while",
+                      gear.prompt_block(self.room1, registers=False))
 
     def test_and_a_generated_item_keeps_it(self):
         from world import clothing

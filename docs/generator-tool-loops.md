@@ -1212,6 +1212,35 @@ under words the quest accepts.
 
   The word-list register is behind `list_word_lists`.
 
+*As built* (6c, contents and wants):
+
+* **`furnish_room`** (10 rounds) takes up to three items with
+  `clothing.spec_schema`, plus `wants_npc`. Each item is held to
+  `item_gen.item_complaints`. An item whose head noun the room's description
+  already names is sent back, which is the rule the prompt stated and nothing
+  checked. When the rounds run out, the last contents are placed as they
+  stand; a failure is still an unfurnished room.
+* **`worldgen.contents_hints`** shows `missing_thing` wants in the words they
+  accept.
+  * With ConceptNet, only where `AtLocation` read forward from the thing
+    shares a word with the room's type, title or area.
+  * Without it, the first two, with the instruction to include one only if it
+    belongs.
+  * Never in a room the want avoids: the giver's, or the wanting character's
+    own.
+* **`worldgen.naming_hints`** shows the room namer `missing_room` wants, and,
+  with ConceptNet, where wanted things are found.
+* **Both read `goals.blocked_wants` through `_wants`**, which never raises, and
+  cap at three.
+* **The finish line is `FindingWhatNobodyMade`.**
+  1. A player wants raw ore that exists nowhere.
+  2. A mine is furnished, and its prompt carries the accepted words.
+  3. The ore made there clears the want.
+  4. Picking it up meets the goal.
+* **Not done here:** the unused-vocabulary hint for `furnish_room`. Its items'
+  kinds are not known until they come back, so there are no groups to look in
+  beforehand; `make_item` has it, and `dress_character` comes in Phase 7.
+
 ### Phase 7: characters, quests and the rest
 
 `generate_npc` (whose name retries become complaints), `dress_npc`,
