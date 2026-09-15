@@ -451,6 +451,13 @@ def _loop_measured(sponsor, model, toolbox, state, outcome, rounds):
             f"llm: loop job={job} rounds={state['round']}/{rounds} "
             f"seconds={seconds:.1f} tools={lookups} "
             f"complaints={toolbox.complaints} outcome={outcome}")
+
+        from world import ledger
+
+        ledger.note_loop(sponsor, model, {
+            "rounds": state["round"], "limit": rounds, "seconds": seconds,
+            "outcome": outcome, "complaints": toolbox.complaints,
+            "tools": dict(toolbox.used)})
     except Exception:
         pass
 

@@ -212,3 +212,110 @@ def forget_world(account, world_id):
     kept = [e for e in (account.db.spend_recent or [])
             if e.get("world") != world_id]
     account.db.spend_recent = kept
+
+    # Round counts are not money, so a gone world's go with it entirely.
+    loops_now = dict(account.db.loop_totals or {})
+    by_world_loops = dict(loops_now.get("by_world") or {})
+    if by_world_loops.pop(str(world_id), None) is not None:
+        loops_now["by_world"] = by_world_loops
+        account.db.loop_totals = loops_now
+
+
+# ---------------------------------------------------------------------------
+# Tool loops
+# ---------------------------------------------------------------------------
+#
+# How many rounds each job's conversations take, which is what the round
+# budgets in docs/generator-tool-loops.md are set from. Kept apart from what
+# was spent, because these figures are for tuning and may be cleared to start
+# counting again after a change, and money spent may not.
+
+def note_loop(sponsor, model, loop):
+    """
+    Record one tool loop, as `llm.converse` reports it. Main thread only;
+    never raises.
+
+    `loop` carries `rounds`, `limit`, `seconds`, `outcome`, `complaints`,
+    `tools` ({name: calls}), and `hints_shown` / `hints_used` once there are
+    hints to count.
+    """
+    try:
+        _note_loop(sponsor, model, loop)
+    except Exception as exc:
+        logger.log_info(f"ledger: could not record a loop: {exc}")
+
+
+def _blank_loop():
+    return {"loops": 0, "rounds": 0, "most_rounds": 0, "limit": 0,
+            "forced": 0, "failed": 0, "complaints": 0, "seconds": 0.0,
+            "tools": {}, "hints_shown": 0, "hints_used": 0}
+
+
+def _whole(value):
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _add_loop(row, loop):
+    row = {**_blank_loop(), **dict(row or {})}
+    rounds = _whole(loop.get("rounds"))
+    row["loops"] += 1
+    row["rounds"] += rounds
+    row["most_rounds"] = max(row["most_rounds"], rounds)
+    row["limit"] = _whole(loop.get("limit")) or row["limit"]
+    outcome = str(loop.get("outcome") or "")
+    if outcome == "forced":
+        row["forced"] += 1
+    elif outcome in ("failed", "exhausted"):
+        row["failed"] += 1
+    row["complaints"] += _whole(loop.get("complaints"))
+    seconds = _seconds(loop.get("seconds"))
+    if seconds is not None:
+        row["seconds"] = round(row["seconds"] + seconds, 3)
+    tools = dict(row["tools"] or {})
+    for name, calls in dict(loop.get("tools") or {}).items():
+        tools[str(name)] = _whole(tools.get(str(name))) + _whole(calls)
+    row["tools"] = tools
+    row["hints_shown"] += _whole(loop.get("hints_shown"))
+    row["hints_used"] += _whole(loop.get("hints_used"))
+    return row
+
+
+def _note_loop(sponsor, model, loop):
+    account = getattr(sponsor, "account", None)
+    if account is None:
+        return
+    job = str(getattr(model, "job", "") or "unknown")
+    world = getattr(getattr(sponsor, "world_root", None), "id", None)
+
+    stored = dict(account.db.loop_totals or {})
+    by_job = dict(stored.get("by_job") or {})
+    by_job[job] = _add_loop(by_job.get(job), loop)
+    stored["by_job"] = by_job
+    if world is not None:
+        by_world = dict(stored.get("by_world") or {})
+        here = dict(by_world.get(str(world)) or {})
+        here[job] = _add_loop(here.get(job), loop)
+        by_world[str(world)] = here
+        stored["by_world"] = by_world
+    account.db.loop_totals = stored
+
+
+def loops(account, world_id=None):
+    """Loop figures by job, as plain dicts: every world's, or one world's."""
+    from evennia.utils.dbserialize import deserialize
+
+    stored = deserialize((account.db.loop_totals if account else None) or {})
+    if world_id is None:
+        found = stored.get("by_job") or {}
+    else:
+        found = (stored.get("by_world") or {}).get(str(world_id)) or {}
+    return {job: {**_blank_loop(), **dict(row)} for job, row in found.items()}
+
+
+def forget_loops(account):
+    """Start counting rounds again. What was spent is untouched."""
+    if account is not None and account.attributes.has("loop_totals"):
+        account.attributes.remove("loop_totals")
