@@ -237,14 +237,15 @@ class Character(ObjectParent, DefaultCharacter):
 
         notice_changes(self)
 
-        # Where the character has been is part of what they know.
+        # Where the character has been is part of what they know. Named and in
+        # the past tense, never "I": a memory is searched by the names in it.
         from world.memory import remember
 
         where = room.db.room_title or room.key
         came_from = source_location.db.room_title or source_location.key if source_location else None
         remember(
             self,
-            f"I arrived in {where}" + (f", coming from {came_from}" if came_from else ""),
+            f"{self.key} arrived in {where}" + (f" from {came_from}" if came_from else ""),
             kind="moved",
             importance=0.3,
         )

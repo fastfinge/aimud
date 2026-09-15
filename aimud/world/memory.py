@@ -24,9 +24,11 @@ Two rules govern everything here:
   main thread would stall every player in the game.
 """
 
+import json
 import re
 import threading
 from collections import namedtuple
+from datetime import datetime
 
 from twisted.internet import threads
 
@@ -359,7 +361,9 @@ def describe_event(event_type, actor_name, text):
     otherwise events read as "Bob Bob smiles".
     """
     if event_type == "say":
-        return f'{actor_name} said: "{text}"'
+        # Past tense and a comma, the way the narration's own "said" reads, so
+        # a memory of speech and a memory of an action are one voice.
+        return f'{actor_name} said, "{text}"'
     # Some callers hand over text that already opens with the actor's name --
     # a pose, or an action narrated as a whole sentence. Prefixing it again
     # gives "Aria Delacroix Aria Delacroix lights the candle."
@@ -371,7 +375,7 @@ def describe_event(event_type, actor_name, text):
 
 
 def record_room_event(room, event_type, actor_name, text, actor=None,
-                      about=(), addressed=()):
+                      about=(), addressed=(), line=None, metadata=None):
     """
     Write an event to the memory of every player character in the room.
 
@@ -379,14 +383,20 @@ def record_room_event(room, event_type, actor_name, text, actor=None,
     here to avoid remembering the same moment twice.  The actor remembers
     doing it; everyone else remembers seeing it. `about` and `addressed` are
     as `remember` takes them, and every copy of the memory carries them.
+
+    `line` is the memory already written -- an episode, in the past tense,
+    from `episode_of` -- and `metadata` what lets it be rendered again later.
+    Without a line the event is described from its type and text.
     """
     if not room or not available():
         return
     from evennia.objects.objects import DefaultCharacter
 
-    line = describe_event(event_type, actor_name, text)
+    line = line or describe_event(event_type, actor_name, text)
     extra = {name: list(value) for name, value in
              (("about", about), ("addressed", addressed)) if value}
+    if metadata:
+        extra["metadata"] = dict(metadata)
     for obj in room.contents:
         if not isinstance(obj, DefaultCharacter):
             continue
@@ -394,6 +404,94 @@ def record_room_event(room, event_type, actor_name, text, actor=None,
             remember(obj, line, kind="did", importance=0.6, **extra)
         else:
             remember(obj, line, kind="witnessed", importance=0.4, **extra)
+
+
+# ---------------------------------------------------------------------------
+# Episodes: what happened, as it will be remembered
+#
+# See docs/tokens-and-phrases.md, phase 6. An episode is an event's narration
+# rendered in the past tense for nobody -- names throughout, no pronouns, no
+# "I" -- so it is the same sentence for whoever did it and whoever watched,
+# and it stays true for ever because it happened. What an event changed is not
+# in it: "the candle is now lit" is a state, and states can stop being true.
+# They are written as triples instead, by `effects`, which close themselves
+# when something else becomes true.
+# ---------------------------------------------------------------------------
+
+#: The shape a memory is written in. A recalled memory whose metadata carries
+#: this is rendered again with the names things have now; anything else --
+#: a world written before phase 6, a line with no event behind it -- is shown
+#: as it was stored.
+SHAPE = 2
+
+#: The word a verb wants before its object when there is no narration to say
+#: it: "looked at the lantern", not "looked the lantern".
+_OBJECT_PREPOSITION = {"look": "at"}
+
+#: The other roles, and the word that introduces each, for the same fallback.
+_ROLE_WORDS = (("instrument", "with"), ("target", "to"),
+               ("container", "in"), ("source", "from"))
+
+
+def _plain_template(event):
+    """A narration for an event that brought none: "{actor} $pconj(hug) {direct}."."""
+    verb = str(event.verb or "").strip() or "act"
+    template = "{actor} $pconj(" + verb + ")"
+    roles = event.roles or {}
+    if roles.get("direct") is not None:
+        word = _OBJECT_PREPOSITION.get(verb)
+        template += f" {word} {{direct}}" if word else " {direct}"
+    for role, word in _ROLE_WORDS:
+        if roles.get(role) is not None:
+            template += f" {word} {{{role}}}"
+    return template + "."
+
+
+def episode_line(event):
+    """
+    (the sentence, the template it came from) for an event, in the past tense.
+
+    The narration when there is one, repaired, without the effect lines that
+    follow it -- and a plain one from the verb and its roles when there is not,
+    which is every look and every mechanic. A contested action says how it
+    went, because "attacked the guard" on its own reads as a victory.
+    """
+    from world import checks, events
+
+    template = events.repair(event.room_template) or _plain_template(event)
+    line = events.render(template, None, event, tense="past").strip()
+    if event.contested:
+        line = line.rstrip(".!") + (", and succeeded." if event.outcome in checks.GOOD
+                                    else ", and failed.")
+    return line, template
+
+
+def episode_of(event):
+    """
+    (line, about, metadata) for an event: what to remember, who it concerned,
+    and what lets it be rendered again with tomorrow's names.
+
+    `about` is every participant at full confidence, because binding resolved
+    them. `metadata` is the template, the verb, the outcome, and every
+    participant by id -- the quotes too, so that what somebody said survives a
+    re-rendering word for word.
+    """
+    line, template = episode_line(event)
+    about = [(str(obj.key), f"#{obj.id}")
+             for obj in event.participants() if getattr(obj, "id", None)]
+    metadata = {
+        "shape": SHAPE,
+        "template": template,
+        "verb": event.verb,
+        "outcome": event.outcome,
+        "contested": bool(event.contested),
+        "actor": getattr(event.actor, "id", None),
+        "roles": {role: obj.id for role, obj in (event.roles or {}).items()
+                  if getattr(obj, "id", None)},
+        "quotes": {str(key): str(value)
+                   for key, value in (event.quotes or {}).items()},
+    }
+    return line, about, metadata
 
 
 # ---------------------------------------------------------------------------
@@ -433,12 +531,20 @@ def _query_variants(query):
 
 
 def recall_sync(where, query, top_k=6, already_known=()):
-    """
-    Fetch relevant memories as a list of strings, best match first.
+    """Relevant memories as strings, best match first. See `recall_rows_sync`."""
+    return [row["content"]
+            for row in recall_rows_sync(where, query, top_k, already_known)]
 
-    MUST be called from inside a thread -- never the reactor.  Callers already
-    running in a deferred fetch (the NPC dialogue call, the remember command)
-    should call this directly there rather than paying for a second hop.
+
+def recall_rows_sync(where, query, top_k=6, already_known=()):
+    """
+    Fetch relevant memories as rows, best match first.
+
+    A row is {"id", "content", "timestamp", "metadata"}: the stored sentence,
+    when it was written, and what lets `rerender` say it again with today's
+    names. MUST be called from inside a thread -- never the reactor -- and
+    whatever renders the rows must not be, since rendering reads the game's
+    own database.
 
     `already_known` is anything the caller is going to show anyway. Those
     lines are dropped from the result, because a memory is only worth the
@@ -459,7 +565,7 @@ def recall_sync(where, query, top_k=6, already_known=()):
     skip = {line for line in already_known if line}
     wanted = top_k + len(skip)
 
-    found = []
+    found, seen = [], set()
     for variant in _query_variants(query):
         try:
             hits = _recall_sync(where.bank, where.session, variant, wanted)
@@ -467,8 +573,11 @@ def recall_sync(where, query, top_k=6, already_known=()):
             logger.log_info(f"memory recall failed: {exc}")
             return found[:top_k]
         for hit in hits:
-            if hit not in found and hit not in skip:
-                found.append(hit)
+            said = hit.get("content", "")
+            if said in seen or said in skip:
+                continue
+            seen.add(said)
+            found.append(hit)
         if len(found) >= top_k:
             break
     return found[:top_k]
@@ -482,7 +591,8 @@ def recall_sync(where, query, top_k=6, already_known=()):
 MAX_CUES = 6
 
 
-def recall_for_cues(where, cues, top_k=6, per_cue=2, already_known=()):
+def recall_for_cues(where, cues, top_k=6, per_cue=2, already_known=(),
+                    rows=False):
     """
     Recall against several cues at once, taking a little from each.
 
@@ -500,6 +610,9 @@ def recall_for_cues(where, cues, top_k=6, per_cue=2, already_known=()):
 
     Cues are given best-first and honoured in that order, so when the budget
     runs out it is the weakest cue that goes without.
+
+    `rows` answers with rows rather than sentences, for a caller that will
+    render them -- see `format_recalled`.
     """
     if not available():
         return []
@@ -509,20 +622,22 @@ def recall_for_cues(where, cues, top_k=6, per_cue=2, already_known=()):
     for cue in list(cues)[:MAX_CUES]:
         if not cue:
             continue
-        hits = recall_sync(where, cue, top_k=per_cue, already_known=skip)
+        hits = recall_rows_sync(where, cue, top_k=per_cue, already_known=skip)
         if hits:
             per_cue_hits.append(hits)
 
-    found = []
+    found, seen = [], set()
     for rank in range(per_cue):
         for hits in per_cue_hits:
             if rank >= len(hits):
                 continue
-            if hits[rank] not in found:
+            said = hits[rank].get("content", "")
+            if said not in seen:
+                seen.add(said)
                 found.append(hits[rank])
                 if len(found) >= top_k:
-                    return found
-    return found
+                    return found if rows else [row["content"] for row in found]
+    return found if rows else [row["content"] for row in found]
 
 
 # ---------------------------------------------------------------------------
@@ -887,6 +1002,74 @@ def end_triples(where, subject, predicate, object_=None):
     threads.deferToThread(_with_triples, where.bank, _write).addErrback(_swallow)
 
 
+def note_whereabouts(obj, world_root=None):
+    """
+    Record where a thing is now, closing where it was. Fire-and-forget.
+
+    Called for every story move of a thing -- taken, dropped, put on a table,
+    handed over, sent somewhere by an effect -- from `ObjectParent.at_post_move`.
+    The predicate is `located` and supersedes, so "where was the sword before
+    Raldor took it" is an `as_of` question the triples can answer.
+    """
+    if obj is None:
+        return
+    if world_root is None:
+        from world import tokens
+
+        world_root = tokens.world_root_of(obj)
+    where = Where(bank_for(world_root), "")
+    if not where.bank:
+        return
+    note_triple(where, f"#{obj.id}", "located", _whereabouts(obj),
+                supersede=True)
+
+
+def note_destroyed(obj, world_root=None):
+    """
+    Record that a thing stopped existing. Fire-and-forget.
+
+    Its location is closed rather than replaced -- nothing is where it went --
+    and `is destroyed` is written beside whatever else was true of it, which is
+    what somebody asking after a sword that is not there wants to learn. Called
+    before the thing is deleted, while its world can still be found from where
+    it is.
+    """
+    if obj is None:
+        return
+    if world_root is None:
+        from world import tokens
+
+        world_root = tokens.world_root_of(obj)
+    where = Where(bank_for(world_root), "")
+    if not where.bank:
+        return
+    end_triples(where, f"#{obj.id}", "located")
+    note_triple(where, f"#{obj.id}", "is", "destroyed", supersede=False)
+
+
+def _whereabouts(obj):
+    """
+    Where a thing is, as a triple's object: "carried_by #5", "in #1", "on #7".
+
+    By dbref, as ownership's triples are, because a triple is a structured
+    record queried by identity: two swords share a name, and a room renamed
+    is still the room. Names belong in the facts and in the memories.
+    """
+    from evennia.objects.objects import DefaultRoom
+
+    from world import relations
+    from world.quests import is_person
+
+    holder = getattr(obj, "location", None)
+    if holder is None:
+        return "nowhere"
+    if is_person(holder):
+        return f"carried_by #{holder.id}"
+    if isinstance(holder, DefaultRoom):
+        return f"in #{holder.id}"
+    return f"{relations.preposition_of(obj)} #{holder.id}"
+
+
 def triples_sync(where, subject=None, predicate=None, object_=None, as_of=None):
     """
     What was true, as of a moment or as of now. MUST run in a thread.
@@ -1168,6 +1351,139 @@ def format_memories(memories):
     return "\n".join(f"- {m}" for m in memories)
 
 
+#: Most things a present-state line speaks for.
+MOST_NOW = 3
+
+
+def format_recalled(rows, now=None):
+    """
+    Recalled rows as a prompt reads them: oldest first, each with its age,
+    then what is true now of the things they name. Main thread only.
+
+    Chosen by relevance and shown in order, because a character remembering
+    three things wants to know which came first -- and aged, because nothing
+    else in the prompt says whether "Raldor handed Jessica the sword" was a
+    minute ago or a week. The present-state line is what lets an old memory
+    sit beside the truth without contradicting it.
+    """
+    if not rows:
+        return "(nothing comes to mind)"
+    ordered = sorted(rows, key=lambda row: str(row.get("timestamp") or ""))
+    lines = []
+    for row in ordered:
+        said = rerender(row) or row.get("content", "")
+        age = age_of(row.get("timestamp"), now)
+        lines.append(f"- {age}: {said}" if age else f"- {said}")
+    state = present_state(rows)
+    if state:
+        lines.append(state)
+    return "\n".join(lines)
+
+
+def rerender(row):
+    """
+    A recalled episode said again with the names things have now, or "".
+
+    "" when the row was not written as an episode, or when anybody in it no
+    longer exists -- in which case the stored sentence is what is shown, since
+    a memory is never retired because its subject is gone. Main thread only:
+    it reads the game's database.
+    """
+    metadata = row.get("metadata") or {}
+    if metadata.get("shape") != SHAPE or not metadata.get("template"):
+        return ""
+    from world import events
+
+    actor = _object(metadata.get("actor"))
+    if actor is None:
+        return ""
+    roles = {}
+    for role, ref in (metadata.get("roles") or {}).items():
+        obj = _object(ref)
+        if obj is None:
+            return ""
+        roles[role] = obj
+    event = events.Event(
+        actor=actor, room=getattr(actor, "location", None),
+        verb=metadata.get("verb", ""), roles=roles,
+        outcome=metadata.get("outcome", "success"),
+        contested=bool(metadata.get("contested")),
+        room_template=metadata["template"],
+        quotes=metadata.get("quotes") or {})
+    return episode_line(event)[0]
+
+
+def _object(ref):
+    from evennia.objects.models import ObjectDB
+
+    try:
+        return ObjectDB.objects.filter(id=int(ref)).first()
+    except (TypeError, ValueError):
+        return None
+
+
+def age_of(timestamp, now=None):
+    """
+    How long ago, in the words a person would use: "moments ago", "earlier
+    today", "yesterday", "3 days ago". "" for a timestamp that does not read.
+
+    Real time, because that is what a timestamp holds. A world with a clock
+    of its own would want in-game time here instead, and has none yet.
+    """
+    try:
+        then = datetime.fromisoformat(str(timestamp))
+    except (TypeError, ValueError):
+        return ""
+    now = now or datetime.now(then.tzinfo)
+    seconds = max((now - then).total_seconds(), 0)
+    if seconds < 600:
+        return "moments ago"
+    if seconds < 7200:
+        return "a little while ago"
+    days = (now.date() - then.date()).days
+    if days <= 0:
+        return "earlier today"
+    if days == 1:
+        return "yesterday"
+    return f"{days} days ago"
+
+
+def present_state(rows, limit=MOST_NOW):
+    """
+    "Now: the sword is Raldor's and carried by Raldor." for the things the
+    recalled memories name, read from the world rather than from memory.
+    Capped, and people are left out: what matters about a person is in the room
+    or in the memories already. Main thread only.
+    """
+    from world import english, ownership
+    from world.quests import is_person
+
+    seen, parts = set(), []
+    for row in rows or ():
+        metadata = row.get("metadata") or {}
+        for ref in (metadata.get("roles") or {}).values():
+            if ref in seen or len(parts) >= limit:
+                continue
+            seen.add(ref)
+            obj = _object(ref)
+            if obj is None or is_person(obj):
+                continue
+            bits = []
+            owner = ownership.owner_name(obj)
+            if owner:
+                bits.append(f"{owner}'s")
+            where = getattr(obj, "location", None)
+            if where is not None:
+                if is_person(where):
+                    bits.append(f"carried by {where.key}")
+                else:
+                    bits.append(f"in {where.db.room_title or where.key}")
+            if bits:
+                parts.append(f"{english.with_article(obj.key, obj, definite=True)}"
+                             f" is {' and '.join(bits)}")
+    return ("Now: " + "; ".join(parts) + ".") if parts else ""
+
+
 # ---------------------------------------------------------------------------
 # The mnemosyne boundary
 #
@@ -1256,7 +1572,23 @@ def _recall_sync(bank, session, query, top_k):
     rather than one file, and is why `_configure_backend` pins the toggle that
     would remove it.
     """
-    results = _with_memory(
-        bank, session, lambda memory: memory.recall(query, top_k=top_k)
-    ) or []
-    return [r["content"] for r in results if r.get("content")]
+    def _read(memory):
+        found = []
+        for result in memory.recall(query, top_k=top_k) or []:
+            if not result.get("content"):
+                continue
+            row = {"id": result.get("id"), "content": result["content"],
+                   "timestamp": result.get("timestamp") or "", "metadata": {}}
+            # Recall answers without metadata; `get` has it, by id, and is a
+            # plain read in the same connection.
+            try:
+                stored = memory.get(result["id"]) if result.get("id") else None
+                raw = (stored or {}).get("metadata")
+                row["metadata"] = (json.loads(raw) if isinstance(raw, str) and raw
+                                   else dict(raw or {}))
+            except Exception:
+                pass
+            found.append(row)
+        return found
+
+    return _with_memory(bank, session, _read) or []

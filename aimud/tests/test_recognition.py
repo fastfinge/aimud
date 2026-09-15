@@ -177,7 +177,7 @@ class WhereItGoes(EvenniaTest):
         """
         heard = self.heard_from("say", {"message": "Hello, Raldor."})
         self.assertEqual(len(heard), 1, heard)
-        self.assertEqual(heard[0]["text"], 'Barnaby said: "Hello, Raldor."')
+        self.assertEqual(heard[0]["text"], 'Barnaby said, "Hello, Raldor."')
         self.assertEqual(heard[0]["kind"], "witnessed")
         wanted = [("Raldor", f"#{self.char2.id}", recognition.FULL_NAME)]
         self.assertEqual(heard[0]["about"], wanted)
@@ -186,7 +186,7 @@ class WhereItGoes(EvenniaTest):
     def test_and_what_an_npc_did(self):
         heard = self.heard_from("emote", {"action": "waves at Raldor"})
         self.assertEqual(len(heard), 1, heard)
-        self.assertEqual(heard[0]["text"], "Barnaby waves at Raldor")
+        self.assertEqual(heard[0]["text"], "Barnaby waved at Raldor")
 
     def test_an_npc_knows_when_it_was_the_one_spoken_to(self):
         from typeclasses.npcs import NPC

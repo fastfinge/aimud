@@ -1,6 +1,6 @@
 # Development plan: tokens and phrases
 
-Status: **phases 1 to 5 built**; phase 6 planned. Six phases, §8. Where the
+Status: **all six phases built.** Six phases, §8. Where the
 building turned up something the plan had wrong, the phase says so under *As
 built* rather than the plan being quietly corrected.
 
@@ -992,6 +992,73 @@ Acceptance:
   falls back to its stored text.
 * **NPC context:** in time order with ages; the dedupe test from 6b; the
   present-state line appears and is capped.
+
+*As built* (`world/memory.py` episodes and recall, `tests/test_episodes.py`).
+Settled in the building:
+
+* **One builder, two functions.** `memory.episode_line(event)` renders the
+  narration -- repaired, without effect lines -- in the past tense for nobody,
+  and adds ", and failed." or ", and succeeded." to a contest.
+  `memory.episode_of(event)` adds `about` and metadata. An event with no
+  narration, which is every look and every mechanic, gets a plain one from its
+  verb and roles: "Jessica hugged Britney.", "Jessica looked at the sword."
+* **Metadata is `shape: 2`** with the template, verb, outcome, whether it was
+  contested, the actor's id, every role's id, and the quotes. Anything recalled
+  without `shape: 2` is shown exactly as it was stored.
+* **Every path a witnessed action takes carries the line and metadata**:
+  `events._tell_the_characters`, `notify_npcs`, `record_room_event`,
+  `NPC.witness`, `_add_to_history`, `_notify_other_npcs` and
+  `_witnessed_by_players`. An NPC's working-memory entry keeps the same line it
+  remembered, so "Just now" and recall are the same words.
+* **`_acted` now answers with the episode**, so an NPC's own mechanic acts --
+  picking up, handing over, producing, breaking, asking a favour, agreeing to
+  an errand -- are remembered in the past tense. They carry no metadata, and
+  are not re-rendered.
+* **Speech is `Raldor said, "..."`**, and movement is "Raldor arrived in the
+  galley from the corridor" and "Barnaby walked north to the dock". An NPC's
+  emote is its template in the past tense: "Barnaby waved at Raldor". **A
+  player's pose is stored as typed**, present tense and all: it is typed text,
+  which is never read as a template, and nothing can safely change its tense.
+* **`set_state` effects write triples** (`effects._note_states`): a state in an
+  exclusive group supersedes the rest of its group, one in no group is `is`,
+  and a removal closes its triple. Ownership already wrote facts.
+* **Moving and destroying things write triples too.** Every story move of a
+  thing -- taken, dropped, placed, given, sent by an effect -- reaches
+  `ObjectParent.at_post_move`, which writes `located` ("carried_by #5", "in
+  #1", "on #7") and supersedes where it was. Every triple here -- states,
+  location, destruction -- is keyed by dbref, as ownership's already were: a
+  triple is queried by identity, two swords share a name, and a renamed room is
+  still the room. Names stay in the facts and the memories. Teleports are left out,
+  since that is Evennia's housekeeping when something holding things is
+  deleted, and so are people, rooms and exits. The `destroy_object` effect
+  closes `located` and writes `is destroyed`, before the deletion; deletion
+  itself is not hooked, because a world being reset deletes everything in it.
+* **Creating a thing writes nothing, on purpose.** Things are made when first
+  needed, not when first mentioned: the blackboard a room describes becomes an
+  object the first time somebody reaches for it. A record of the moment it was
+  made would say when somebody first reached for it and read as when it came to
+  be. The hook skips an arrival from nowhere for that reason.
+* **Recall does not return metadata; `get` does.** `_recall_sync` reads each
+  hit's metadata by id in the same connection, and returns rows. `recall_sync`
+  still returns strings for anything that wants them.
+* **Rendering happens on the main thread, in one extra hop.** Both NPC prompts
+  and the `remember` command now recall in the thread pool, format on the main
+  thread -- re-rendering and the present-state line read the game database --
+  and send the model call back out. **Not measured under load.** The fallback
+  the plan names, stored text for anything the main thread did not already
+  hold, has not been needed.
+* **Deduplication is still by the words, not by memory ids.** A working-memory
+  entry never learns its memory's id, because remembering is fire-and-forget.
+  It holds exactly the line it remembered, so comparing the words keeps working
+  once both sides are episodes.
+* **Ages are real-time buckets**: "moments ago", "a little while ago", "earlier
+  today", "yesterday", "N days ago". **The present-state line** covers at most
+  three things, never people, and says whose each is and where: "Now: the
+  sword is Britney's and carried by Britney."
+* **Known gaps:** ownership's ", which belongs to Olara Voss" note on a
+  witnessed theft is in the stored line but not re-rendered, and memories
+  written before this phase stay in the bank until the world is reset --
+  nothing in the code forces the reset.
 
 ---
 

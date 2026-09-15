@@ -165,7 +165,7 @@ class NPC(ObjectParent, DefaultObject):
     # ------------------------------------------------------------------ #
 
     def witness(self, event_type, actor_name, text, _depth=0, about=(),
-                addressed=()):
+                addressed=(), line=None, metadata=None):
         """
         Record an event and decide whether to answer it.
 
@@ -191,7 +191,8 @@ class NPC(ObjectParent, DefaultObject):
                      one way to be addressed without being named: a whisper
         """
         self._add_to_history(event_type, actor_name, text, about=about,
-                             addressed=addressed)
+                             addressed=addressed, line=line,
+                             metadata=metadata)
 
         if self.ndb.reacting or _depth > MAX_NPC_CHAIN:
             return
@@ -379,7 +380,7 @@ class NPC(ObjectParent, DefaultObject):
     # ------------------------------------------------------------------ #
 
     def _add_to_history(self, event_type, actor_name, text, about=(),
-                        addressed=()):
+                        addressed=(), line=None, metadata=None):
         """
         Record an event this NPC perceived or performed.
 
@@ -389,20 +390,28 @@ class NPC(ObjectParent, DefaultObject):
         recall something from an hour ago that matters again now -- with who
         it concerned, when anybody worked that out.
         """
+        from world.memory import describe_event, remember
+
+        # One sentence for working memory and the bank alike, so that "Just
+        # now" and a recalled memory are the same words and recall can leave
+        # out what is already on show. An episode when there is an event
+        # behind it, in the past tense; otherwise described from the text.
+        said = line or describe_event(event_type, actor_name, text)
         history = self.db.action_history or []
-        history.append({"type": event_type, "actor": actor_name, "text": text})
+        history.append({"type": event_type, "actor": actor_name, "text": text,
+                        "line": said})
         if len(history) > MAX_HISTORY:
             history = history[-MAX_HISTORY:]
         self.db.action_history = history
 
-        from world.memory import describe_event, remember
-
         mine = actor_name == self.key
         extra = {name: list(value) for name, value in
                  (("about", about), ("addressed", addressed)) if value}
+        if metadata:
+            extra["metadata"] = dict(metadata)
         remember(
             self,
-            describe_event(event_type, actor_name, text),
+            said,
             kind="did" if mine else "witnessed",
             importance=0.6 if mine else 0.4,
             **extra,
@@ -522,7 +531,7 @@ class NPC(ObjectParent, DefaultObject):
             self.ndb.reacting = False
 
     def _notify_other_npcs(self, room, event_type, text, _depth, about=(),
-                           addressed=()):
+                           addressed=(), line=None, metadata=None):
         """
         Tell everybody else here about this NPC's action: the players'
         memories, and the other NPCs.
@@ -542,7 +551,8 @@ class NPC(ObjectParent, DefaultObject):
         from world.activity import npc_may_act
 
         self._witnessed_by_players(room, event_type, text, about=about,
-                                   addressed=addressed)
+                                   addressed=addressed, line=line,
+                                   metadata=metadata)
 
         next_depth = _depth + 1
         if next_depth > MAX_NPC_CHAIN:
@@ -550,10 +560,11 @@ class NPC(ObjectParent, DefaultObject):
         for obj in room.contents:
             if obj is not self and obj.db.is_npc and npc_may_act(obj):
                 obj.witness(event_type, self.key, text, _depth=next_depth,
-                            about=about, addressed=addressed)
+                            about=about, addressed=addressed, line=line,
+                            metadata=metadata)
 
     def _witnessed_by_players(self, room, event_type, text, about=(),
-                              addressed=()):
+                              addressed=(), line=None, metadata=None):
         """
         Write what this NPC visibly did into the memory of every player here.
 
@@ -567,7 +578,8 @@ class NPC(ObjectParent, DefaultObject):
         if room is None or not text:
             return
         record_room_event(room, event_type, self.key, text, actor=self,
-                          about=about, addressed=addressed)
+                          about=about, addressed=addressed, line=line,
+                          metadata=metadata)
 
     @staticmethod
     def _involved(event):
@@ -831,7 +843,9 @@ class NPC(ObjectParent, DefaultObject):
 
             from world.memory import remember
 
-            remember(self, f"I went {direction} to see what was there",
+            # Named, never "I": a memory is searched by the names in it, and
+            # everybody's memories of moving read in one voice.
+            remember(self, f"{self.key} went {direction} to see what was there",
                      kind="moved", importance=0.3)
             return True
 
@@ -839,7 +853,7 @@ class NPC(ObjectParent, DefaultObject):
             from world.memory import remember
 
             where = destination.db.room_title or destination.key
-            remember(self, f"I walked {direction} to {where}",
+            remember(self, f"{self.key} walked {direction} to {where}",
                      kind="moved", importance=0.3)
             return True
         return False
@@ -1034,12 +1048,19 @@ class NPC(ObjectParent, DefaultObject):
             # the rendering for nobody: names throughout, for the records.
             events_mod.show_the_room(event)
             # The NPC's own record; _add_to_history also writes to its memory.
-            self._add_to_history("action", self.key, visible)
+            # What everybody remembers is the episode, in the past tense, with
+            # the metadata it can be said again from. See `memory.episode_of`.
+            from world.memory import episode_of
+
+            line, about, metadata = episode_of(event)
+            self._add_to_history("action", self.key, visible, about=about,
+                                 line=line, metadata=metadata)
             # Others present witness it too -- the players' memories, and the
             # other NPCs through the depth-capped path, so one NPC acting
             # cannot set off an endless chain of reactions.
             self._notify_other_npcs(room, "action", visible, _depth,
-                                    about=self._involved(event))
+                                    about=about, line=line,
+                                    metadata=metadata)
 
         # Fuzzy binding, because an NPC names things from memory in its own
         # words: "the blackboard" should find the chalkboard already on the
@@ -1132,18 +1153,20 @@ class NPC(ObjectParent, DefaultObject):
         chosen every name in it, once, for everybody, which is precisely what
         `world.events` exists to stop.
 
-        Returns the rendering for nobody -- names throughout and no pronouns
-        -- which is what this character's own record and the other NPCs'
-        prompts want, since a model reading it has no attention to resolve a
-        pronoun with.
+        Returns the episode -- the narration for nobody, in the past tense,
+        names throughout and no pronouns, no effect lines -- which is what this
+        character's own record, the other NPCs' prompts and every memory of it
+        want: a model reading it has no attention to resolve a pronoun with,
+        and a memory is of something that already happened.
         """
         from world import events
+        from world.memory import episode_line
 
         if room is None:
             return ""
         template = event.template()
         events.show_the_room(event, template, exclude=exclude or ())
-        return events.render(template, None, event)
+        return episode_line(event)[0]
 
     def _execute_one(self, tool_name, args, room, _depth=0):
         from commands.look_take_cmds import _find_one
@@ -1182,11 +1205,16 @@ class NPC(ObjectParent, DefaultObject):
                 mentions = recognition.recognise(action, speaker=self, room=room)
                 about = recognition.about(mentions)
                 addressed = recognition.addressed(mentions)
-                spoken = self._aloud(room, "{actor} " + action, verb="emote")
+                # `_aloud` answers with the episode: the pose in the past
+                # tense, "Barnaby waved at Raldor", which is what everybody
+                # here remembers.
+                remembered = self._aloud(room, "{actor} " + action,
+                                         verb="emote")
                 self._add_to_history("emote", self.key, action, about=about,
-                                     addressed=addressed)
-                self._notify_other_npcs(room, "emote", spoken, _depth,
-                                        about=about, addressed=addressed)
+                                     addressed=addressed, line=remembered)
+                self._notify_other_npcs(room, "emote", remembered, _depth,
+                                        about=about, addressed=addressed,
+                                        line=remembered)
 
         elif tool_name == "set_goal":
             self._set_goal(str(args.get("want", "")).strip(), room)

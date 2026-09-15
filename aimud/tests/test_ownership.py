@@ -463,8 +463,12 @@ class WhatIsRecordedOfIt(EvenniaTest):
             effects.apply(self.char1, self.room1,
                           [{"type": "destroy_object", "name": "sword"}],
                           world_root=self.room1)
-        ended.assert_called_once()
-        _where, subject, predicate = ended.call_args[0]
+        # Its location is closed too, as the world's history -- see
+        # tests/test_episodes.py -- so the one asked about here is ownership's.
+        owned = [call[0] for call in ended.call_args_list
+                 if call[0][2] == "owned_by"]
+        self.assertEqual(len(owned), 1)
+        _where, subject, predicate = owned[0]
         self.assertEqual(subject, f"#{was}")
         self.assertEqual(predicate, "owned_by")
 

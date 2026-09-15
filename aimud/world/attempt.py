@@ -1213,40 +1213,20 @@ def _remember(caller, event, actor_text):
     list begins `i you he she it they` -- so `"I did: ..."` led with a word
     that made the sentence contribute nothing at all. The prefix is gone and
     the names are in.
+
+    **An episode, in the past tense, and nothing else** (phase 6). The same
+    sentence a witness remembers: "Raldor handed Jessica the sword." Neither
+    the actor's own second-person line nor the effect lines go in any more --
+    "you hug her" is not a memory, and "the candle is now lit" is a state,
+    which `effects` writes as a triple where it can stop being true. The
+    metadata is what `memory.rerender` says it again from. `actor_text` is
+    kept in the signature and read by nothing.
     """
-    from world.memory import remember
+    from world.memory import episode_of, remember
 
-    involved = [obj for obj in event.participants() if obj is not caller]
-    names = ", ".join(sorted(str(obj.key) for obj in involved))
-
-    line = f"{caller.key} {'tried to' if event.contested else ''} {event.verb}"
-    line = " ".join(line.split())
-    if names:
-        line += f" {names}"
-    # A failure is a thing that happened to you and worth remembering as one:
-    # an NPC beaten off twice should know it before trying a third time, and
-    # "attacked the guard" on its own reads as a victory.
-    if event.contested:
-        line += (", and succeeded" if event.outcome in checks.GOOD
-                 else ", and failed")
-    if actor_text:
-        line += f" — {actor_text}"
-    if event.effects:
-        line += " " + " ".join(event.effects)
-
-    remember(
-        caller, line, kind="did", importance=0.65,
-        # What no extractor could supply, because we resolved it rather than
-        # guessing: exactly who and what this was about, by name and by id.
-        about=[(str(obj.key), f"#{obj.id}")
-               for obj in event.participants() if getattr(obj, "id", None)],
-        # Unread today. It is what lets a recalled memory be re-rendered with
-        # the names things have now rather than replayed as the sentence it
-        # was written as.
-        metadata={"verb": event.verb, "outcome": event.outcome,
-                  "roles": {role: obj.id for role, obj in event.roles.items()
-                            if getattr(obj, "id", None)}},
-    )
+    line, about, metadata = episode_of(event)
+    remember(caller, line, kind="did", importance=0.65, about=about,
+             metadata=metadata)
 
 
 def _release(caller, on_message, actor_text, event=None):

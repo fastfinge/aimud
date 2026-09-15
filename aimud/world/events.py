@@ -678,18 +678,22 @@ def _tell_the_characters(event, template):
     actor, room = event.actor, event.room
     if actor is None or room is None:
         return
+    from world import memory
+
     spoken = render(template, None, event)
+    # What every witness remembers: the episode, in the past tense, with who
+    # it concerned -- known, because binding resolved it -- and the metadata
+    # it can be said again from. See `memory.episode_of`.
+    line, about, metadata = memory.episode_of(event)
     if event.verb == "get":
         # Whose it was, which the room's prose never says and a witness needs:
         # somebody watching a stranger pick up their own crowbar has seen
         # something the room has not. See `ownership.witnessed_taking`.
         from world import ownership
 
-        spoken = ownership.witnessed_taking(spoken, actor,
-                                            event.roles.get("direct"))
-    # Who it concerned is known, because binding resolved it: every witness's
-    # memory of it carries the participants at full confidence.
-    about = [(str(obj.key), f"#{obj.id}", 1.0)
-             for obj in event.participants() if getattr(obj, "id", None)]
+        taken = event.roles.get("direct")
+        spoken = ownership.witnessed_taking(spoken, actor, taken)
+        line = ownership.witnessed_taking(line, actor, taken)
     notify_npcs(room, "action", name_for(actor, None), spoken,
-                exclude=actor, actor=actor, about=about)
+                exclude=actor, actor=actor, about=about, line=line,
+                metadata=metadata)

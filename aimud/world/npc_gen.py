@@ -1023,12 +1023,19 @@ def _memory_inputs(npc, room, room_title):
 
 
 def _format_history(history):
+    """
+    Working memory as the prompt reads it, each line as it was remembered.
+
+    The line an entry was remembered by, when it has one, so that "Just now"
+    and what recall finds are the same words -- past tense both -- and recall
+    can leave out what is already on show by comparing them.
+    """
     if not history:
         return "(no prior events)"
     from world.memory import describe_event
 
     return "\n".join(
-        describe_event(
+        event.get("line") or describe_event(
             event.get("type", "action"),
             event.get("actor", "?"),
             event.get("text", ""),
@@ -1042,7 +1049,8 @@ def _format_history(history):
 # ---------------------------------------------------------------------------
 
 def notify_npcs(room, event_type, actor_name, text, exclude=None, actor=None,
-                about=None, addressed=None, targets=()):
+                about=None, addressed=None, targets=(), line=None,
+                metadata=None):
     """
     Tell everyone in `room` that something happened. Main thread only.
 
@@ -1058,6 +1066,8 @@ def notify_npcs(room, event_type, actor_name, text, exclude=None, actor=None,
     addressed  : who was spoken to, the same shape
     targets    : whoever the command itself named, such as a whisper's
                  listener
+    line       : the memory already written, when there is an event behind
+                 it -- see `memory.episode_of` -- and `metadata` to go with it
 
     For speech and poses nobody has said who was involved, so the words are
     read for names -- see `world.recognition` -- and every memory of the
@@ -1075,14 +1085,15 @@ def notify_npcs(room, event_type, actor_name, text, exclude=None, actor=None,
     about, addressed = list(about or ()), list(addressed or ())
 
     record_room_event(room, event_type, actor_name, text, actor=actor,
-                      about=about, addressed=addressed)
+                      about=about, addressed=addressed, line=line,
+                      metadata=metadata)
 
     for obj in room.contents:
         if obj is exclude:
             continue
         if obj.db.is_npc:
             obj.witness(event_type, actor_name, text, about=about,
-                        addressed=addressed)
+                        addressed=addressed, line=line, metadata=metadata)
 
 
 # ---------------------------------------------------------------------------
@@ -1357,18 +1368,33 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
         want=_want_line(npc),
     )
 
-    def _fetch():
-        from world.memory import format_memories, recall_for_cues
+    def _recall():
+        # In the thread pool, off the reactor: recall is SQLite and slow.
+        from world.memory import recall_for_cues
 
-        recalled = format_memories(
-            recall_for_cues(bank, cues, top_k=6, already_known=on_show))
+        return recall_for_cues(bank, cues, top_k=6, already_known=on_show,
+                               rows=True)
+
+    def _recalled(rows):
+        # Back on the main thread, because saying a memory again with the
+        # names things have now reads the game's database, which a worker
+        # thread may not touch -- and then out again for the model. One hop
+        # more than when recall and the call shared a thread; see
+        # docs/tokens-and-phrases.md, phase 6.
+        from world.memory import format_recalled
+
+        try:
+            recalled = format_recalled(rows)
+        except Exception as exc:
+            on_error(str(exc))
+            return
         messages = [
             {"role": "system", "content": system},
             {
                 "role": "user",
                 "content": (
-                    f"What you remember about this place and these people:\n"
-                    f"{recalled}\n\n"
+                    f"What you remember about this place and these people, "
+                    f"oldest first:\n{recalled}\n\n"
                     f"Just now:\n{history_text}\n\n"
                     "Nothing has just happened — act of your own accord. "
                     "What do you do right now, naturally and in character? "
@@ -1376,7 +1402,8 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
                 ),
             },
         ]
-        return llm.call(sponsor, model, messages, tools=tools)
+        llm.fetch(lambda: llm.call(sponsor, model, messages, tools=tools),
+                  on_success=_done, on_error=_fail)
 
     def _done(raw):
         try:
@@ -1406,7 +1433,7 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    llm.fetch(_fetch, on_success=_done, on_error=_fail)
+    llm.fetch(_recall, on_success=_recalled, on_error=_fail)
 
 
 def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
@@ -1462,25 +1489,37 @@ def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
         want=_want_line(npc),
     )
 
-    def _fetch():
-        # Recall runs here, inside the thread that was already being deferred
-        # for the network call, so it costs no extra hop and never touches the
-        # reactor.
-        from world.memory import format_memories, recall_for_cues
+    def _recall():
+        # In the thread pool, off the reactor: recall is SQLite and slow.
+        from world.memory import recall_for_cues
 
-        recalled = format_memories(
-            recall_for_cues(bank, cues, top_k=6, already_known=on_show))
+        return recall_for_cues(bank, cues, top_k=6, already_known=on_show,
+                               rows=True)
+
+    def _recalled(rows):
+        # Back on the main thread to say each memory again with the names
+        # things have now, which reads the game's database -- then out again
+        # for the model. See `generate_npc_idle`.
+        from world.memory import format_recalled
+
+        try:
+            recalled = format_recalled(rows)
+        except Exception as exc:
+            on_error(str(exc))
+            return
         messages = [
             {"role": "system", "content": system},
             {
                 "role": "user",
                 "content": (
-                    f"What you remember that bears on this:\n{recalled}\n\n"
+                    f"What you remember that bears on this, oldest first:\n"
+                    f"{recalled}\n\n"
                     f"Just now:\n{history_text}\n\nHow do you respond?"
                 ),
             },
         ]
-        return llm.call(sponsor, model, messages, tools=tools)
+        llm.fetch(lambda: llm.call(sponsor, model, messages, tools=tools),
+                  on_success=_done, on_error=_fail)
 
     def _done(raw):
         try:
@@ -1510,4 +1549,4 @@ def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
     def _fail(failure):
         on_error(failure.getErrorMessage())
 
-    llm.fetch(_fetch, on_success=_done, on_error=_fail)
+    llm.fetch(_recall, on_success=_recalled, on_error=_fail)
