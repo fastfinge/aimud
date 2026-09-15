@@ -988,6 +988,28 @@ become results.
 it found does both within one turn, and a toolless model can no longer be
 chosen.
 
+*As built,* in four commits (3a to 3d):
+
+* **The loop** is `llm.converse` and `world/toolbox.py`, as §3.1 describes.
+  Nothing parses JSON out of a reply's text: a reply with no tool calls while
+  a finish tool waits is told to use it.
+* **A round that only acted ends a turn.** With no finish tool, the loop goes
+  round again only if a lookup ran, since only a lookup's answer is something
+  the model needs before deciding. Acting and then being asked again would
+  only buy more acting.
+* **Toolless models** are refused once their record is known. `llm.call` does
+  not fetch the model list itself, because that would add a request to every
+  call; the list is fetched when the `models` menu opens, and a model nobody
+  has listed is asked as ever, so the service refuses in its own words.
+* **`attempt` answers at once, rather than waiting** for the attempt to
+  finish (a change to §10.6). Some of `attempt`'s early returns never call
+  back, and a turn waiting on one would leave the character thinking for
+  ever, holding `ndb.reacting`. So the tool answers "underway", and what
+  comes of it reaches the next prompt, as it always has.
+* **A turn's `on_success`** is handed how often each tool was used, and
+  releases the guard. The tools themselves have already run, so nothing
+  executes the calls a second time.
+
 ### Phase 4: shared schemas and lookup tools
 
 §4.1's schemas beside their modules, the enum cap, the near-duplicate
@@ -1207,9 +1229,11 @@ From the server log for the same session:
    their enums up to the cap (§4.1). New vocabulary is checked against the
    register and near-duplicates are sent back (§3.3).
 5. **The world pays for `rules judge`**: `sponsor.of_world(root, actor=caller)`.
-6. **A character's turn waits for its `attempt` to finish**, through
-   `on_done`, within the turn's round budget. The character is already holding
-   `ndb.reacting`.
+6. **A character's `attempt` answers at once** that it is underway, and what
+   comes of it reaches the next prompt. The decision was to wait for it
+   through `on_done`; as built it does not, because some of `attempt`'s early
+   returns never call back and a turn waiting on one would never end (Phase 3,
+   *As built*).
 7. **Busy notices go only to players.** Non-player characters are refused as
    waiters and never sent anything (§7.2).
 8. **Tools are required.** Toolless models are left out of the `models` menu,

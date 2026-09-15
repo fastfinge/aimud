@@ -119,7 +119,7 @@ class WhatACharacterIsOffered(_Scene):
             npc_gen.generate_npc_idle(FakeSponsor(), self.npc, self.room1,
                                       on_success=got.append,
                                       on_error=got.append)
-        self.assertEqual(got, [[{"name": "say", "args": {"message": "Morning."}}]] * 2)
+        self.assertEqual(got, [{"say": 1}] * 2)
         system = asked.prompts[0][0]["content"]
         self.assertNotIn("Actions this world already understands", system)
         self.assertIn("How do you respond?", asked.sent(0))
@@ -221,3 +221,89 @@ class ChangingAThing(_Scene):
                         "new_name": "brass key"}],
                       world_root=self.room1)
         self.assertEqual(self.obj1.key, "brass key")
+
+
+_NO_MEMORY = (
+    ("world.npc_gen._memory_inputs", ("(no prior events)", "bank", [], [])),
+    ("world.memory.recall_for_cues", []),
+    ("world.memory.format_recalled", ""),
+)
+
+
+@tag("world")
+class ATurnThatGoesRound(_Scene):
+    """
+    Phase 3: a character's turn is a loop, so what it looks up it can act on
+    at once, and what it is refused comes back as the tool's answer.
+    """
+
+    def turn(self, *replies, idle=False):
+        from contextlib import ExitStack
+
+        got = []
+        with ExitStack() as stack:
+            stack.enter_context(immediately())
+            asked = stack.enter_context(replying(*replies))
+            for target, value in _NO_MEMORY:
+                stack.enter_context(mock.patch(target, return_value=value))
+            begin = (npc_gen.generate_npc_idle if idle
+                     else npc_gen.generate_npc_reaction)
+            begin(FakeSponsor(), self.npc, self.room1,
+                  on_success=got.append, on_error=got.append)
+        return got, asked
+
+    def said(self):
+        return [entry.get("text") for entry in self.npc.db.action_history or []
+                if entry.get("type") == "say"]
+
+    def test_sizing_somebody_up_and_answering_them_is_one_turn(self):
+        who = self.char1.get_display_name(self.npc)
+        got, asked = self.turn(
+            tool_reply(tool_call("check_traits", person=who)),
+            tool_reply(tool_call("say", message="You look well.")))
+        self.assertEqual(asked.count, 2)
+        # Whatever sizing them up finds -- the test characters have nothing
+        # measurable about them -- is what the model is told, straight away.
+        self.assertEqual(asked.tool_results(1)[0]["content"],
+                         self.npc._sized_up(who, self.room1))
+        self.assertEqual(self.said(), ["You look well."])
+        self.assertEqual(got, [{"check_traits": 1, "say": 1}])
+
+    def test_a_turn_that_only_acts_is_one_call(self):
+        _got, asked = self.turn(tool_reply(tool_call("say", message="Morning.")))
+        self.assertEqual(asked.count, 1)
+        self.assertEqual(self.said(), ["Morning."])
+
+    def test_what_a_tool_was_refused_is_its_answer(self):
+        verbs.register_state(self.room1, "tarnished", means="dulled with age")
+        box = npc_gen._toolbox_for(self.npc, self.room1)
+        got = []
+        box.run(tool_call("modify", object_name=self.obj1.key,
+                          new_name="tarnished key"), got.append)
+        self.assertIn("tarnished", got[0])
+        self.assertIsNone(self.npc.ndb.noticing)
+
+    def test_three_things_a_turn_holds_across_rounds(self):
+        box = npc_gen._toolbox_for(self.npc, self.room1)
+        got = []
+        for line in range(4):
+            box.run(tool_call("say", message=f"line {line}"), got.append)
+        self.assertIn("enough for one turn", got[3])
+        self.assertEqual(len(self.said()), 3)
+
+    def test_the_guard_is_released_when_the_turn_is_over(self):
+        from contextlib import ExitStack
+
+        with ExitStack() as stack:
+            stack.enter_context(immediately())
+            stack.enter_context(replying(tool_reply(tool_call("say",
+                                                              message="Hm."))))
+            for target, value in _NO_MEMORY:
+                stack.enter_context(mock.patch(target, return_value=value))
+            stack.enter_context(mock.patch.object(self.npc, "_sponsor",
+                                                  return_value=FakeSponsor()))
+            stack.enter_context(mock.patch("world.activity.npc_may_act",
+                                           return_value=True))
+            self.npc._trigger_reaction()
+        self.assertFalse(self.npc.ndb.reacting)
+        self.assertEqual(self.said(), ["Hm."])

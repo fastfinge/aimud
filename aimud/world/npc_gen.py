@@ -167,8 +167,8 @@ NPC_TOOLS = [
                 "Take stock of somebody -- how strong, how skilled, how well, "
                 "how well thought of. Your own figures you already know and "
                 "they are given to you above; use this for other people in the "
-                "room. What you find comes back to you as something you have "
-                "noticed, so you can act on it on your next turn. Sizing "
+                "room. What you find comes straight back to you, so you can "
+                "act on it in the same turn. Sizing "
                 "somebody up is a thing anyone can do by looking at them, so "
                 "use it when it would matter -- before picking a fight, "
                 "before trusting a stranger with an errand, when someone "
@@ -390,6 +390,10 @@ LOOKING = frozenset(["check_traits"])
 #: many things `get`'s description says where they are and whose they are.
 MOST_VERBS_NAMED = 30
 MOST_THINGS_SAID = 20
+
+#: How many rounds one character's turn may take. See docs §10.3; the soak
+#: sets it from what `rounds dialogue` says turns actually use.
+TURN_ROUNDS = 8
 
 # ---------------------------------------------------------------------------
 # Prompt templates
@@ -1535,10 +1539,10 @@ def dress_npc(sponsor, npc):
               on_success=_done, on_error=lambda _f: None)
 
 
-def generate_npc_idle(sponsor, npc, room, on_success, on_error):
+def generate_npc_idle(sponsor, npc, room, on_success, on_error, depth=0):
     """
     Async. The character does something of its own accord. See `_npc_turn`.
-    Calls on_success(list[{"name", "args"}]) or on_error(msg) in the main thread.
+    Calls on_success({tool: calls}) or on_error(msg) in the main thread.
     """
     _npc_turn(
         sponsor, npc, room, on_success, on_error,
@@ -1547,22 +1551,25 @@ def generate_npc_idle(sponsor, npc, room, on_success, on_error):
         asked=("Nothing has just happened — act of your own accord. "
                "What do you do right now, naturally and in character? "
                "Choose something that fits the moment and the world."),
+        depth=depth,
     )
 
 
-def generate_npc_reaction(sponsor, npc, room, on_success, on_error):
+def generate_npc_reaction(sponsor, npc, room, on_success, on_error, depth=0):
     """
     Async. The character answers what has just happened. See `_npc_turn`.
-    Calls on_success(list[{"name", "args"}]) or on_error(msg) in the main thread.
+    Calls on_success({tool: calls}) or on_error(msg) in the main thread.
     """
     _npc_turn(
         sponsor, npc, room, on_success, on_error,
         remembered="What you remember that bears on this, oldest first:",
         asked="How do you respond?",
+        depth=depth,
     )
 
 
-def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked):
+def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked,
+              depth=0):
     """
     One turn for a character: its prompt, its memories, its tools, and what
     it chose to do.
@@ -1570,6 +1577,12 @@ def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked):
     Idle and reaction were this function twice, down to the parsing of the
     tool calls, and differed only in how their memories were introduced and
     what they were finally asked.
+
+    The turn goes round (Phase 3): each tool runs as the model calls it, and
+    what it found or why it was refused comes back as its result. Sizing
+    somebody up and answering them are one turn now, where the answer used to
+    wait for the next. What `on_success` is handed is how often each tool was
+    used; the tools themselves have already run.
     """
     model = sponsor.model_for("dialogue")
     try:
@@ -1594,7 +1607,7 @@ def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked):
     # needs from further back is recalled rather than replayed.
     history_text, bank, cues, on_show = _memory_inputs(npc, room, room_title)
 
-    tools = _tools_for(npc, room)
+    box = _toolbox_for(npc, room, depth)
 
     system = _NPC_REACT_SYSTEM.format(
         npc_name=npc.key,
@@ -1638,20 +1651,9 @@ def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked):
                             f"Just now:\n{history_text}\n\n{asked}"),
             },
         ]
-        llm.fetch(lambda: llm.call(sponsor, model, messages, tools=tools),
-                  on_success=_done, on_error=_fail)
-
-    def _done(raw):
-        try:
-            parsed = _tool_calls_of(raw)
-        except Exception as exc:
-            on_error(str(exc))
-            return
-        # Outside the guard above on purpose. Doing what the model asked for
-        # is the caller's business and can fail on its own terms; reporting
-        # that as a failed model call sent whoever read the log looking at
-        # the provider for a bug that was in the world.
-        on_success(parsed)
+        llm.converse(sponsor, model, messages, box,
+                     on_done=lambda _said: on_success(dict(box.used)),
+                     on_error=on_error, rounds=TURN_ROUNDS)
 
     def _fail(failure):
         on_error(failure.getErrorMessage())
@@ -1659,20 +1661,55 @@ def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked):
     llm.fetch(_recall, on_success=_recalled, on_error=_fail)
 
 
-def _tool_calls_of(raw):
-    """The tool calls in a reply, as [{"name", "args"}], in the order sent."""
-    message = raw["choices"][0]["message"]
-    parsed = []
-    for tc in message.get("tool_calls") or []:
-        if tc.get("type") != "function":
-            continue
-        fn = tc["function"]
-        try:
-            # Repaired rather than parsed: a tool call whose arguments will
-            # not parse used to arrive empty, and an NPC saying nothing is
-            # worse than a stray comma.
-            call_args = _parse_json(fn.get("arguments") or "{}")
-        except ValueError:
-            call_args = {}
-        parsed.append({"name": fn["name"], "args": call_args})
-    return parsed
+#: What an acting tool tells the model when nothing was said against it.
+_DONE = {
+    "attempt": ("Underway. How it went will be in front of you on your next "
+                "turn."),
+    "move": "You went.",
+    "say": "Said.",
+    "emote": "Done.",
+}
+
+
+def _toolbox_for(npc, room, depth=0):
+    """
+    A character's tools for one turn, each running as the model calls it.
+
+    Lookups answer at once. Anything that acts runs through the character's
+    own handler, and whatever the character was told about it -- the refusal
+    `_note_to_self` would have kept for the next prompt -- is its result
+    now. At most `MOST_ACTS` things act in one turn, across every round.
+
+    `attempt` answers at once rather than waiting for the attempt to finish.
+    Some of its early returns never call back, and a turn waiting on one of
+    those would leave the character thinking for ever; what comes of it
+    reaches the next prompt the way it always has.
+    """
+    from world import toolbox as tb
+
+    acted = {"count": 0}
+
+    def running(name):
+        def handler(ctx, args, answer):
+            if name in LOOKING:
+                return answer(npc._sized_up(str(args.get("person") or "").strip(),
+                                            room))
+            if acted["count"] >= MOST_ACTS:
+                return answer("Not done: that is enough for one turn.")
+            acted["count"] += 1
+            npc.ndb.idle_probability = 0
+            npc.ndb.noticing = []
+            try:
+                npc._execute_one(name, args, room, depth)
+                noticed = list(npc.ndb.noticing or [])
+            finally:
+                npc.ndb.noticing = None
+            answer("; ".join(noticed) if noticed else _DONE.get(name, "Done."))
+        return handler
+
+    tools = [tb.from_schema(schema, running(schema["function"]["name"]),
+                            looks=schema["function"]["name"] in LOOKING)
+             for schema in _tools_for(npc, room)]
+    return tb.Toolbox(tools, tb.ToolContext(
+        world_root=room.db.world_root if room else None, room=room,
+        actor=npc, job="dialogue"))

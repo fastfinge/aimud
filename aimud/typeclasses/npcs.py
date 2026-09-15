@@ -325,7 +325,7 @@ class NPC(ObjectParent, DefaultObject):
             sponsor=sponsor,
             npc=self,
             room=room,
-            on_success=self._execute_tool_calls,
+            on_success=self._turn_over,
             on_error=self._on_react_error,
         )
 
@@ -419,6 +419,11 @@ class NPC(ObjectParent, DefaultObject):
         intentions.  Repeats are dropped so one blocked exit cannot crowd the
         history out.
         """
+        # A tool running inside a turn hands what it noticed back to the
+        # model as its result, as well as keeping it for the next prompt.
+        noticing = self.ndb.noticing
+        if noticing is not None:
+            noticing.append(text)
         history = self.db.action_history or []
         if history:
             last = history[-1]
@@ -446,9 +451,20 @@ class NPC(ObjectParent, DefaultObject):
             sponsor=sponsor,
             npc=self,
             room=room,
-            on_success=lambda calls: self._execute_tool_calls(calls, _depth),
+            on_success=self._turn_over,
             on_error=self._on_react_error,
+            depth=_depth,
         )
+
+    def _turn_over(self, _used=None):
+        """
+        A turn has finished, and its tools ran as the model called them.
+
+        The guard is released only now, for the reason `_execute_tool_calls`
+        gives: released before the last tool had run, a character was free to
+        answer the conversation its own sentence had just started.
+        """
+        self.ndb.reacting = False
 
     def _on_react_error(self, err):
         """
@@ -636,11 +652,14 @@ class NPC(ObjectParent, DefaultObject):
         """
         Size somebody up, and remember what was found.
 
-        A tool here acts; it cannot hand an answer back to the model that
-        called it. So what this finds goes into working memory instead, which
-        is the same route a refusal takes -- the character has noticed
-        something, and it is there in front of them on their next turn.
+        Outside a turn there is nobody to hand the answer to, so what this
+        finds goes into working memory, the route a refusal takes. Inside one
+        the turn asks `_sized_up` itself and hands the answer straight back.
         """
+        self._note_to_self(self._sized_up(who, room))
+
+    def _sized_up(self, who, room):
+        """What sizing somebody up finds, in the words the character keeps."""
         from world import traits
 
         target = self
@@ -649,18 +668,14 @@ class NPC(ObjectParent, DefaultObject):
 
             target, _ = _find_one(self, who, location=room)
             if target is None or not traits.has_traits(target):
-                self._note_to_self(f"there is no {who} here to take stock of")
-                return
+                return f"there is no {who} here to take stock of"
 
         described = traits.describe(target)
         name = "I" if target is self else target.get_display_name(self)
         if not described:
-            self._note_to_self(f"there is nothing measurable about {name}")
-            return
-        self._note_to_self(
-            f"taking stock of {name}: {described}" if target is not self
-            else f"taking stock of myself: {described}"
-        )
+            return f"there is nothing measurable about {name}"
+        return (f"taking stock of {name}: {described}" if target is not self
+                else f"taking stock of myself: {described}")
 
     def _offer_quest(self, args, room):
         """
