@@ -854,6 +854,22 @@ def _p_unbound(subject, value, condition, ctx, mood):
     return met, ""
 
 
+def _on_somebody_here(obj, here):
+    """
+    Whether `obj` is something a person in this room has on them.
+
+    Worn or carried, it is in plain sight: looking at a person already lists
+    it -- "Bram is wearing a canvas vest" -- so it has to be something that can
+    be looked at. Out of reach all the same; seeing a vest is not taking it.
+    """
+    from world.quests import is_person
+
+    holder = getattr(obj, "location", None)
+    return (here is not None and holder is not None
+            and getattr(holder, "location", None) is here
+            and is_person(holder))
+
+
 def _p_visible(subject, value, condition, ctx, mood):
     """
     Whether whoever `value` names could see the subject.
@@ -887,7 +903,8 @@ def _p_visible(subject, value, condition, ctx, mood):
     here = getattr(who.obj, "location", None)
     near = (subject.obj in relations.reachable(who.obj, include_self=True)
             or subject.obj in relations.enclosing(who.obj)
-            or (here is not None and subject.obj.location is here))
+            or (here is not None and subject.obj.location is here)
+            or _on_somebody_here(subject.obj, here))
     if not near:
         if mood == WANT:
             return False, f"get to where you can see {subject.name()}"
