@@ -22,7 +22,17 @@ def at_server_init():
     """
     This is called first as the server is starting up, regardless of how.
     """
-    pass
+    # First of all, so the log works for everything after: rotate it in place
+    # rather than by renaming, which Windows refuses, and bring back a log a
+    # rotation before this point already closed. See server/conf/logrotation.py.
+    from server.conf import logrotation
+
+    logrotation.install()
+    if logrotation.recover():
+        from evennia.utils import logger
+
+        logger.log_info("logs: the server log had been closed by a failed "
+                        "rotation; it was rotated in place and reopened")
 
 
 def at_server_start():
