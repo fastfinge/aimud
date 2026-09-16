@@ -46,6 +46,11 @@ COMMAND_DEFAULT_CLASS = "commands.command.MuxCommand"
 # than a builder making an exit called "door". See server/conf/cmdparser.py.
 COMMAND_PARSER = "server.conf.cmdparser.cmdparser"
 
+# Evennia's own test runner, with the two costs the suite was paying per test
+# taken out: a real password hash for every fixture account, and a full garbage
+# collection that walked the WordNet indices. See server/conf/test_runner.py.
+TEST_RUNNER = "server.conf.test_runner.Runner"
+
 
 ######################################################################
 # Settings given in secret_settings.py override those in this file.
