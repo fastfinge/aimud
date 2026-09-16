@@ -18,8 +18,8 @@ and none of them is hers.
 
 from django.test import tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import bulk, nounphrase, ownership, verbs
 
 
@@ -28,8 +28,10 @@ def _read(phrase):
 
 
 @tag("world")
-class Whose(EvenniaTest):
+class Whose(GameTest):
     """Who a possessive says the thing belongs to."""
+
+    characters = 2
 
     def setUp(self):
         super().setUp()
@@ -100,8 +102,11 @@ class Whose(EvenniaTest):
 
 
 @tag("world")
-class Binding(EvenniaTest):
+class Binding(GameTest):
     """What "her sword" binds to, and what it refuses to bind to."""
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -208,8 +213,11 @@ class Binding(EvenniaTest):
 
 
 @tag("world")
-class TheRefusal(EvenniaTest):
+class TheRefusal(GameTest):
     """It names the owner, in the words the claim was made in."""
+
+    characters = 2
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -245,7 +253,7 @@ class TheRefusal(EvenniaTest):
 
 
 @tag("world")
-class PartsAndPossessions(EvenniaTest):
+class PartsAndPossessions(GameTest):
     """
     Which reading "her X" gets, and why the test for it had to be tightened.
 
@@ -283,8 +291,12 @@ class PartsAndPossessions(EvenniaTest):
 
 
 @tag("world")
-class InBulk(EvenniaTest):
+class InBulk(GameTest):
     """"Get all of her machines" is not "get all the machines"."""
+
+    characters = 2
+    loose_objects = 2
+    second_room = True
 
     def setUp(self):
         super().setUp()

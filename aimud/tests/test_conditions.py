@@ -13,15 +13,17 @@ up as a failure -- it shows up as an NPC standing still.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import all_rules, worlds
 from world import conditions as C
 from world import verbs, zones
 
 
 @tag("world")
-class Predicates(EvenniaTest):
+class Predicates(GameTest):
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -130,13 +132,17 @@ class Predicates(EvenniaTest):
 
 
 @tag("world")
-class WhatIsWithinReach(EvenniaTest):
+class WhatIsWithinReach(GameTest):
     """
     Reach used to look only downwards -- your pockets, the floor, inside an
     open box -- because nothing could act on a place. A rule can, now: aboard
     a ship, `power` means powering the ship, and the ship is not something in
     the room. It is the room.
     """
+
+    characters = 2
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -188,8 +194,10 @@ class WhatIsWithinReach(EvenniaTest):
         self.assertFalse(self.reaches(self.char2))
 
 @tag("world")
-class SubjectsNobodyNamed(EvenniaTest):
+class SubjectsNobodyNamed(GameTest):
     """The half that `launch` needed."""
+
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -242,8 +250,10 @@ class SubjectsNobodyNamed(EvenniaTest):
 
 
 @tag("world")
-class SayingIt(EvenniaTest):
+class SayingIt(GameTest):
     """Two moods, because a want and a refusal are read differently."""
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

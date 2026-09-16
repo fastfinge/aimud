@@ -22,15 +22,16 @@ import ast
 import pathlib
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import events
 
 GAME = pathlib.Path(__file__).resolve().parent.parent
 
 
 @tag("world")
-class WhatAnEventCarries(EvenniaTest):
+class WhatAnEventCarries(GameTest):
+    loose_objects = 2
 
     def setUp(self):
         super().setUp()
@@ -87,7 +88,7 @@ class WhatAnEventCarries(EvenniaTest):
 
 
 @tag("world")
-class Rendering(EvenniaTest):
+class Rendering(GameTest):
 
     def setUp(self):
         super().setUp()

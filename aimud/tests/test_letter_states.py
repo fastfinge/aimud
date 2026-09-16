@@ -18,8 +18,8 @@ refuses a slug too short to be a word at all.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import clothing, effects, goals, model_json, verbs
 
 
@@ -44,7 +44,8 @@ class AListHoweverItWasWritten(SimpleTestCase):
 
 
 @tag("world")
-class WhatAThingIsPutInto(EvenniaTest):
+class WhatAThingIsPutInto(GameTest):
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -90,7 +91,8 @@ class WhatAThingIsPutInto(EvenniaTest):
 
 
 @tag("world")
-class ClearingUpAfterAWorldThatMetIt(EvenniaTest):
+class ClearingUpAfterAWorldThatMetIt(GameTest):
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

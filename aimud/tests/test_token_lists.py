@@ -11,8 +11,8 @@ import pathlib
 import re
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaCommandTest, EvenniaTest
 
+from tests.base import GameCommandTest, GameTest
 from world import token_lists, tokens, verbs
 
 GAME = pathlib.Path(__file__).resolve().parent.parent
@@ -31,7 +31,7 @@ SMELL = {"means": "what a dockside place smells of",
          "entries": ["brine", "tar", "old rope", "fish", "smoke"]}
 
 
-class World(EvenniaTest):
+class World(GameTest):
 
     def setUp(self):
         super().setUp()
@@ -115,6 +115,7 @@ class WhatMayBeKept(World):
 
 @tag("world")
 class TheBall(World):
+    characters = 2
 
     def setUp(self):
         super().setUp()
@@ -149,6 +150,7 @@ class TheBall(World):
 
 @tag("world")
 class Decoration(World):
+    characters = 2
 
     def setUp(self):
         super().setUp()
@@ -195,7 +197,8 @@ class Decoration(World):
 
 
 @tag("world")
-class TheCommand(EvenniaCommandTest):
+class TheCommand(GameCommandTest):
+    accounts = True
 
     def setUp(self):
         super().setUp()

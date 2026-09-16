@@ -21,15 +21,18 @@ the whole reason the test exists.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import FakeSponsor
 from world import gear
 
 
 @tag("world")
-class Wielding(EvenniaTest):
+class Wielding(GameTest):
     """A crowbar nobody ever said anything about, and a world to swing it in."""
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

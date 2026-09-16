@@ -11,8 +11,8 @@ back -- a trait nothing measures, a word list nobody keeps -- is sent back.
 from unittest import mock
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import (FakeSponsor, finishing, immediately, replying,
                            tool_call, tool_reply)
 from world import toolbox as tb
@@ -36,7 +36,7 @@ def _zone(name, types):
             "room_budget": 4}
 
 
-class _World(EvenniaTest):
+class _World(GameTest):
 
     def setUp(self):
         super().setUp()

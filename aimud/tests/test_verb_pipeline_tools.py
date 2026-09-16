@@ -12,8 +12,8 @@ about wants and faults instead of being handed the registers.
 from unittest import mock
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import (FakeSponsor, finishing, immediately, replying,
                            tool_call, tool_reply)
 from world import actions, kinds, planner, rule_gen, suggest, verb_gen, verbs
@@ -33,9 +33,11 @@ def _results(recorder, index):
                      for message in recorder.tool_results(index))
 
 
-class _Datapad(EvenniaTest):
+class _Datapad(GameTest):
 
     #: One rule, filed against the kind rather than this one datapad.
+    loose_objects = 1
+
     RULE = {"phase": "carry_out", "scope": "datapad", "about": "direct",
             "name": "powering a datapad wakes it",
             "effects": [{"type": "set_state", "role": "direct",
@@ -141,6 +143,7 @@ class FilingRules(_Datapad):
 
 @tag("world")
 class WhatTheRuleWriterIsTold(_Datapad):
+    characters = 2
 
     def want(self, **overrides):
         return dict({"who": self.char2, "whose": "goal", "player": False,

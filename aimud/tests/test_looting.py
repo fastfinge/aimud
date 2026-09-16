@@ -16,13 +16,13 @@ nothing had been taken from, and the third attempt was refused outright.
 
 from django.test import tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import FakeSponsor, finishing, immediately, replying
 from world import effects, relations
 
 
-class _Crate(EvenniaTest):
+class _Crate(GameTest):
 
     def setUp(self):
         super().setUp()
@@ -127,7 +127,7 @@ class EmptyingSomethingOut(_Crate):
 
 
 @tag("world")
-class WhenAWorldCannotSayWhatAVerbDoes(EvenniaTest):
+class WhenAWorldCannotSayWhatAVerbDoes(GameTest):
 
     def setUp(self):
         super().setUp()

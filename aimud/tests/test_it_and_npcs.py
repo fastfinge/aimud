@@ -16,8 +16,8 @@ WITHOUT going through either leaves the table untouched. So the next "it" or
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaCommandTest, EvenniaTest
 
+from tests.base import GameCommandTest, GameTest
 from world import referents
 
 
@@ -32,13 +32,15 @@ class Stage:
 
 
 @tag("world")
-class ItAfterGetAndDrop(EvenniaCommandTest, Stage):
+class ItAfterGetAndDrop(GameCommandTest, Stage):
     """
     The bug as it was reported: `get pipe`, `drop it`.
 
     `it` has to mean the pipe afterwards, and the only way it can is if
     picking something up is recorded the way every other verb's binding is.
     """
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -93,7 +95,7 @@ class ItAfterGetAndDrop(EvenniaCommandTest, Stage):
 
 
 @tag("world")
-class DroppingSomethingSaysSo(EvenniaCommandTest, Stage):
+class DroppingSomethingSaysSo(GameCommandTest, Stage):
     """
     The drop that worked and never said a word.
 
@@ -108,6 +110,9 @@ class DroppingSomethingSaysSo(EvenniaCommandTest, Stage):
     floor and the one person who had typed the command was told nothing at
     all -- which, alone in a room, is a command that looks broken.
     """
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -156,7 +161,7 @@ class DroppingSomethingSaysSo(EvenniaCommandTest, Stage):
 
 
 @tag("world")
-class PronounsForSomebodyTalking(EvenniaTest, Stage):
+class PronounsForSomebodyTalking(GameTest, Stage):
     """
     An NPC that says something has referred to itself.
 
@@ -164,6 +169,8 @@ class PronounsForSomebodyTalking(EvenniaTest, Stage):
     because speech and emotes go out through `msg_contents` rather than as
     events. Whatever a player is shown, the table has to know about.
     """
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -222,7 +229,7 @@ class PronounsForSomebodyTalking(EvenniaTest, Stage):
 
 
 @tag("world")
-class PronounsForAPlayerTalking(EvenniaTest, Stage):
+class PronounsForAPlayerTalking(GameTest, Stage):
     """
     The same gap on the player's side of it.
 
@@ -230,6 +237,8 @@ class PronounsForAPlayerTalking(EvenniaTest, Stage):
     NPC is, and by the same argument: neither goes through `events.render`,
     which was the only thing writing the table.
     """
+
+    characters = 2
 
     def setUp(self):
         super().setUp()
@@ -262,7 +271,7 @@ class PronounsForAPlayerTalking(EvenniaTest, Stage):
 
 
 @tag("world")
-class WhatAnNpcDoesReadsPerWatcher(EvenniaTest, Stage):
+class WhatAnNpcDoesReadsPerWatcher(GameTest, Stage):
     """
     The bug as it was reported: an NPC narrating itself by name forever.
 
@@ -287,6 +296,9 @@ class WhatAnNpcDoesReadsPerWatcher(EvenniaTest, Stage):
     are templates now too, which is also what makes "they say" possible for
     a they/them character.
     """
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

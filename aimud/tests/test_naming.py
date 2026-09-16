@@ -16,8 +16,8 @@ is why "look here" conjured a `here`.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
 from world import bulk, relations, standard_rules, verbs
@@ -56,8 +56,10 @@ class CountingWordsAreNotNames(SimpleTestCase):
         self.assertTrue(bulk.wanted("everyone"))
 
 
-class Naming(EvenniaTest):
+class Naming(GameTest):
     """A world, a room, and three wrenches to count through."""
+
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -548,6 +550,8 @@ class NobodyIsEverConjured(Naming):
     are who was meant. Not here and a player, refused outright: a player's own
     name is the one name that must never become furniture.
     """
+
+    accounts = True
 
     def setUp(self):
         super().setUp()

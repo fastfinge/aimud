@@ -14,7 +14,7 @@ from django.test import tag
 from evennia import CmdSet
 from evennia.commands.default.admin import CmdForce
 from evennia.commands.default.building import CmdExamine, CmdOpen
-from evennia.utils.test_resources import EvenniaTest
+from tests.base import GameTest
 
 from server.conf import cmdparser as parser
 
@@ -31,7 +31,7 @@ class Staff(CmdSet):
         self.add(CmdAILook())
 
 
-class Parsing(EvenniaTest):
+class Parsing(GameTest):
 
     def setUp(self):
         super().setUp()
@@ -92,7 +92,7 @@ class TheHint(Parsing):
 
 
 @tag("world")
-class TypedInAWorld(EvenniaTest):
+class TypedInAWorld(GameTest):
     """End to end, through the real command handler and the real settings."""
 
     def setUp(self):

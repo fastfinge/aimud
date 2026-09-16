@@ -19,8 +19,8 @@ is a data question rather than a spelling one.
 
 from django.test import SimpleTestCase, tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import toolbox as tb
 
 
@@ -71,11 +71,13 @@ class WhatIsDroppedOnTheWayOut(SimpleTestCase):
 
 
 @tag("world")
-class EveryToolTheGameOffers(EvenniaTest):
+class EveryToolTheGameOffers(GameTest):
     """
     Built for real, from a world with things and people in it, because the
     enums that matter are the ones filled in from what is standing about.
     """
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -148,7 +150,7 @@ class EveryToolTheGameOffers(EvenniaTest):
 
 
 @tag("world")
-class WhatAModelSendsBack(EvenniaTest):
+class WhatAModelSendsBack(GameTest):
     """
     "Leave it out" is said by leaving it out now, but a model taught by every
     other schema it has read sends "" instead, and a round spent refusing that

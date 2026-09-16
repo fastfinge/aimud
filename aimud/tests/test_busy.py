@@ -10,8 +10,8 @@ from unittest import mock
 
 from django.test import SimpleTestCase, tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaCommandTest, EvenniaTest
 
+from tests.base import GameCommandTest, GameTest
 from commands.account_cmds import CmdBusy
 from tests.support import clock
 from world import busy
@@ -33,7 +33,10 @@ class _Listening:
 
 
 @tag("world")
-class TellingAPlayer(_Listening, EvenniaTest):
+class TellingAPlayer(_Listening, GameTest):
+    # A session, not merely an account: `busy` speaks only to somebody it
+    # thinks is still connected, and `busy._present` asks `who.sessions`.
+    session = True
 
     def setUp(self):
         super().setUp()
@@ -130,11 +133,17 @@ class TellingAPlayer(_Listening, EvenniaTest):
 
 
 @tag("world")
-class NobodyToTell(_Listening, EvenniaTest):
+class NobodyToTell(_Listening, GameTest):
     """
     Only players. A character cannot worry that the game has crashed, and a
     notice in its memory would be one more thing its next prompt read past.
     """
+
+    loose_objects = 1
+    # The claim here is that only players are told, so `char1` has to count
+    # as one -- `busy.account_of` returning None is what makes an NPC
+    # skippable in the first place.
+    accounts = True
 
     def setUp(self):
         super().setUp()
@@ -211,7 +220,11 @@ class NamingEachStage(SimpleTestCase):
 
 
 @tag("world")
-class TheBusyCommand(EvenniaCommandTest):
+class TheBusyCommand(GameCommandTest):
+    # How often to be told is a preference, and a preference is kept on the
+    # account (`busy.ATTR`). With nobody behind the character the command
+    # has nothing to read or write.
+    accounts = True
 
     def test_unset_it_says_the_default(self):
         said = self.call(CmdBusy(), "")
@@ -241,8 +254,12 @@ class TheBusyCommand(EvenniaCommandTest):
 
 
 @tag("world")
-class WaitingOnAVerb(_Listening, EvenniaTest):
+class WaitingOnAVerb(_Listening, GameTest):
     """End to end through the real command handler, as a player types it."""
+
+    # As `TellingAPlayer`: `busy._present` asks `who.sessions`, so a notice
+    # reaches nobody without one.
+    session = True
 
     def setUp(self):
         super().setUp()

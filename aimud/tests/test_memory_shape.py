@@ -20,13 +20,15 @@ a real embedding stack; what is asserted is the shape handed to it.
 from unittest import mock
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import events, memory
 
 
 @tag("world")
-class WhereAMemoryLives(EvenniaTest):
+class WhereAMemoryLives(GameTest):
+    characters = 2
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -91,7 +93,8 @@ class WhereAMemoryLives(EvenniaTest):
 
 
 @tag("world")
-class WhatAMemorySays(EvenniaTest):
+class WhatAMemorySays(GameTest):
+    characters = 2
 
     def setUp(self):
         super().setUp()

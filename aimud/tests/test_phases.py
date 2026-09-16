@@ -13,8 +13,8 @@ is the composition win showing up as deleted code rather than as an argument.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import FakeSponsor, finishing, immediately, replying
 from world import rulebooks as R
 from world import attempt as attempt_mod
@@ -22,7 +22,8 @@ from world import kinds, standard_rules, verb_gen, verbs
 
 
 @tag("world")
-class RunningTheAttempt(EvenniaTest):
+class RunningTheAttempt(GameTest):
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -70,6 +71,7 @@ class RunningTheAttempt(EvenniaTest):
 
 @tag("world")
 class TheGuardThatBecameARule(RunningTheAttempt):
+    loose_objects = 2
 
     def test_the_standard_rules_are_seeded_on_first_use(self):
         self.try_it("read book")
@@ -131,6 +133,9 @@ class TheGuardThatBecameARule(RunningTheAttempt):
 
 @tag("world")
 class ThePhasesInOrder(RunningTheAttempt):
+    # Two, though only one is named: the parent renames `obj1` to Book, so
+    # "order obj" needs `obj2` to still be called Obj.
+    loose_objects = 2
 
     def test_a_precondition_from_the_learned_rule_refuses(self):
         self.learned("read", {"valid": True,

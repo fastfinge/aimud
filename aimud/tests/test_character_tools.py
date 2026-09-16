@@ -10,8 +10,8 @@ a trait nothing measures, a garment nobody can put on.
 
 from django.test import tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import (FakeSponsor, finishing, immediately, replying,
                            tool_call, tool_reply)
 from world import npc_gen, pronouns
@@ -38,7 +38,7 @@ def _results(recorder, index):
                      for message in recorder.tool_results(index))
 
 
-class _World(EvenniaTest):
+class _World(GameTest):
 
     def setUp(self):
         super().setUp()
@@ -116,6 +116,11 @@ class MakingACharacter(_World):
 
 @tag("world")
 class DressingACharacter(_World):
+    second_room = True
+    # What a player wants outranks what an NPC wants, and `goals` decides
+    # which `char1` is by whether an account is behind it -- see the
+    # `player = ...` line in world/goals.py.
+    accounts = True
 
     def setUp(self):
         super().setUp()

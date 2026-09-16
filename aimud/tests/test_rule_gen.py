@@ -13,8 +13,8 @@ allowed to say so.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
 from world import actions, kinds, rule_gen, verbs, zones
@@ -56,7 +56,9 @@ class TheScopeCeiling(SimpleTestCase):
 
 
 @tag("world")
-class TheMenu(EvenniaTest):
+class TheMenu(GameTest):
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -239,7 +241,7 @@ class TheCheckThatCanNeverPass(SimpleTestCase):
 
 
 @tag("world")
-class TheSpaceshipExample(EvenniaTest):
+class TheSpaceshipExample(GameTest):
     """
     The four lines the whole design was argued from, run end to end.
 
@@ -247,6 +249,9 @@ class TheSpaceshipExample(EvenniaTest):
     single rule per world, and `launch` could not name the thing it launches
     because that thing is the room.
     """
+
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -343,13 +348,16 @@ class TheSpaceshipExample(EvenniaTest):
 
 
 @tag("world")
-class WordsARuleCoined(EvenniaTest):
+class WordsARuleCoined(GameTest):
     """
     A rule may set a state the world has never heard of, and the string lands
     on the object whether or not anybody registered it. What would be lost is
     its meaning and its group -- and the group is what makes powering a thing
     on take it out of being off, with no rule saying so.
     """
+
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -407,7 +415,7 @@ class WordsARuleCoined(EvenniaTest):
 
 
 @tag("world")
-class AFreshWorldLearningAVerb(EvenniaTest):
+class AFreshWorldLearningAVerb(GameTest):
     """
     The whole of phase 8 in one road: nobody has written a rule, the player
     types a verb, the world is asked, the answer is filed against a scope, and
@@ -416,6 +424,9 @@ class AFreshWorldLearningAVerb(EvenniaTest):
     `TheSpaceshipExample` writes its rules by hand on purpose -- it is about
     the engine running them. This is about the engine getting them.
     """
+
+    loose_objects = 2
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -508,7 +519,7 @@ class AFreshWorldLearningAVerb(EvenniaTest):
 
 
 @tag("world")
-class TheCarryOutTheWorldAlreadyHeld(EvenniaTest):
+class TheCarryOutTheWorldAlreadyHeld(GameTest):
     """
     The same refusal, when the two rules arrive in two separate calls -- which
     is as often as not, since a verb is asked about again the next time

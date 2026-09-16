@@ -12,8 +12,8 @@ into its narration, so a line containing `{target}` said somebody's name.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import events, lore, ownership, pronouns, referents, tokens
 from world.tokens import Call, Slot, Text
 
@@ -105,8 +105,11 @@ class WhatAPluginMayAdd(SimpleTestCase):
                          "A {strange} $nope(x) day.")
 
 
-class Stage(EvenniaTest):
+class Stage(GameTest):
     """Jessica, a sword, and somebody watching."""
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -132,6 +135,7 @@ class Stage(EvenniaTest):
 
 @tag("world")
 class Spans(Stage):
+    loose_objects = 2
 
     def test_spans_carry_what_they_name(self):
         event = self.drops(room_template="{actor} $pconj(drop) {direct}.")

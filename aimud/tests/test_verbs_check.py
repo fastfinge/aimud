@@ -10,13 +10,14 @@ good for instead.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import verbs
 
 
 @tag("world")
-class RefusingAVerb(EvenniaTest):
+class RefusingAVerb(GameTest):
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

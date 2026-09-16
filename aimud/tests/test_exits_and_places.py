@@ -17,15 +17,18 @@ is not a cheap effect, it is a hole in the planner.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import conditions as C
 from world import coords, effects, verbs
 
 
 @tag("world")
-class TwoRooms(EvenniaTest):
+class TwoRooms(GameTest):
     """A world of two rooms with a way between them."""
+
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -61,6 +64,8 @@ class FindingARoomByName(TwoRooms):
     A dbref means nothing to whoever writes a rule and is wrong the moment a
     world is rebuilt, so a name is the only thing an effect may use.
     """
+
+    loose_objects = 2
 
     def test_a_room_is_found_by_its_title(self):
         self.assertIs(coords.room_named(self.root, "Orbital Dock"), self.room2)

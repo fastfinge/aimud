@@ -11,8 +11,8 @@ second word for a state the world has -- is sent back to be put right.
 from unittest import mock
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import (FakeSponsor, finishing, immediately, replying,
                            tool_call, tool_reply)
 from world import item_gen, token_lists, verbs
@@ -35,7 +35,7 @@ LAMP = {"name": "Brass Lamp", "description": "A squat brass lamp.",
         "kind": "lamp", "takeable": True}
 
 
-class _Room(EvenniaTest):
+class _Room(GameTest):
 
     def setUp(self):
         super().setUp()
@@ -54,6 +54,7 @@ class _Room(EvenniaTest):
 
 @tag("world")
 class Judging(_Room):
+    loose_objects = 1
 
     def test_whether_a_thing_could_be_here(self):
         said = []

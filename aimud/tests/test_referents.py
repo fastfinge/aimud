@@ -8,13 +8,15 @@ strength of a word list.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import bulk, choosing, pronouns, referents, verbs
 
 
 @tag("world")
-class Remembering(EvenniaTest):
+class Remembering(GameTest):
+    characters = 2
+    loose_objects = 2
 
     def setUp(self):
         super().setUp()
@@ -64,7 +66,9 @@ class Remembering(EvenniaTest):
 
 
 @tag("world")
-class ResolvingOne(EvenniaTest):
+class ResolvingOne(GameTest):
+    characters = 2
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -137,11 +141,13 @@ class ResolvingOne(EvenniaTest):
 
 
 @tag("world")
-class WhatTheVerbRulesOut(EvenniaTest):
+class WhatTheVerbRulesOut(GameTest):
     """
     SHRDLU's one transferable idea: resolve to the most recent referent that
     the current verb could apply to, not the most recent full stop.
     """
+
+    loose_objects = 2
 
     def setUp(self):
         super().setUp()
@@ -171,7 +177,9 @@ class WhatTheVerbRulesOut(EvenniaTest):
 
 
 @tag("world")
-class AllOfThem(EvenniaTest):
+class AllOfThem(GameTest):
+    characters = 2
+    loose_objects = 2
 
     def setUp(self):
         super().setUp()
@@ -208,7 +216,7 @@ class AllOfThem(EvenniaTest):
 
 
 @tag("unit")
-class PuttingTheQuestion(EvenniaTest):
+class PuttingTheQuestion(GameTest):
     """
     The seam, not the menu. Three more things on the roadmap want to ask a
     question and get an answer back, and the first one should not be written

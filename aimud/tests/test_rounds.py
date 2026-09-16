@@ -9,8 +9,8 @@ here.
 from unittest import mock
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaCommandTest, EvenniaTest
 
+from tests.base import GameCommandTest, GameTest
 from commands.account_cmds import CmdRounds
 from tests.support import FakeSponsor, immediately, replying, tool_call, tool_reply
 from world import ledger, llm
@@ -37,7 +37,8 @@ class _Paying:
 
 
 @tag("world")
-class AddingUpLoops(_Paying, EvenniaTest):
+class AddingUpLoops(_Paying, GameTest):
+    accounts = True
 
     def setUp(self):
         super().setUp()
@@ -89,7 +90,7 @@ class AddingUpLoops(_Paying, EvenniaTest):
 
 
 @tag("unit")
-class ALoopReportsItself(EvenniaTest):
+class ALoopReportsItself(GameTest):
 
     def test_converse_hands_its_figures_to_the_ledger(self):
         def answer(ctx, args, done):
@@ -110,7 +111,8 @@ class ALoopReportsItself(EvenniaTest):
 
 
 @tag("world")
-class TheRoundsCommand(_Paying, EvenniaCommandTest):
+class TheRoundsCommand(_Paying, GameCommandTest):
+    accounts = True
 
     def setUp(self):
         super().setUp()

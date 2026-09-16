@@ -138,6 +138,14 @@ evennia test --tag=unit .            # the inner loop, seconds
 evennia test --tag=llm .             # deliberate, costs money, needs a key
 ```
 
+> **Since changed, in two ways.** Pass `--settings settings.py`, or the run uses
+> Evennia's defaults and misses this game's test runner
+> (`server/conf/test_runner.py`), which is worth about twenty minutes of wall
+> clock. And tier B tests inherit from `GameTest`/`GameCommandTest` in
+> `tests/base.py` rather than from `EvenniaTest`/`EvenniaCommandTest` directly:
+> the fixture is now opt-in, a room and a character by default. See the module
+> docstring in `tests/base.py`.
+
 Tier C tests additionally `skipUnless` a key is configured, so a checkout with no
 key reports skips rather than failures.
 

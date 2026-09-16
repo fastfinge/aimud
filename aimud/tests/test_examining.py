@@ -22,8 +22,8 @@ is what stops the three of them drifting into three different accounts of what
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaCommandTest, EvenniaTest
 
+from tests.base import GameCommandTest, GameTest
 from commands.world_cmds import CmdEffects
 from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
@@ -168,13 +168,16 @@ class CountingTheFacesThatGoYourWay(SimpleTestCase):
 
 
 @tag("world")
-class ShowingTheRoll(EvenniaTest):
+class ShowingTheRoll(GameTest):
     """
     `checks.describe` said players are never shown this. They are now, and the
     reason is the one this whole file is about: a world has to be examinable by
     the person playing in it, and a verb that always fails looks exactly like a
     verb that is merely hard unless the numbers are on the page.
     """
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -247,7 +250,7 @@ class ShowingTheRoll(EvenniaTest):
 
 
 @tag("world")
-class WhatAVerbWillDo(EvenniaCommandTest):
+class WhatAVerbWillDo(GameCommandTest):
     """The command, against a world with something in it to read."""
 
     def setUp(self):
@@ -336,7 +339,7 @@ class WhatAVerbWillDo(EvenniaCommandTest):
 
 
 @tag("world")
-class HelpOnEveryChangeThereIs(EvenniaTest):
+class HelpOnEveryChangeThereIs(GameTest):
     """
     Built from the register, so an effect added documents itself.
 

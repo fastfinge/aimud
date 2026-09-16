@@ -11,8 +11,8 @@ all. A silent no-op is worse than a refusal, because a refusal can be read.
 from unittest import mock
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import actions
 
 
@@ -187,7 +187,7 @@ class AskingWhat(SimpleTestCase):
 
 
 @tag("world")
-class WhatMustBeInHand(EvenniaTest):
+class WhatMustBeInHand(GameTest):
     """
     Inform's carrying requirements rule, as data.
 
@@ -195,6 +195,8 @@ class WhatMustBeInHand(EvenniaTest):
     a message and there is a phase for it to happen in. Tested now because it
     is what `access` is for, and a slot nothing reads is a slot that rots.
     """
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -231,7 +233,7 @@ class WhatMustBeInHand(EvenniaTest):
 
 
 @tag("world")
-class TheSilentNoOpIsGone(EvenniaTest):
+class TheSilentNoOpIsGone(GameTest):
     """
     The whole point of phase 5, end to end through the attempt pipeline.
 
@@ -239,6 +241,10 @@ class TheSilentNoOpIsGone(EvenniaTest):
     Typed bare afterwards it used to reach a rule whose effects named a role
     nobody had bound, change nothing, and report success.
     """
+
+    # Never named below, but typed: "search obj" has to find something
+    # that is actually called Obj.
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -271,7 +277,7 @@ class TheSilentNoOpIsGone(EvenniaTest):
 
 
 @tag("world")
-class AskingWhatAnActionTakes(EvenniaTest):
+class AskingWhatAnActionTakes(GameTest):
     """
     The first of the two questions a new verb costs, and the cheaper one.
 
@@ -279,6 +285,8 @@ class AskingWhatAnActionTakes(EvenniaTest):
     optional is what lets `power` typed bare reach an `instead` rule rather
     than being told "power what?".
     """
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

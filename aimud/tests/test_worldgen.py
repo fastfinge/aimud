@@ -15,8 +15,8 @@ scripted replies costs nothing and catches every one of them.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import finishing, immediately, replying
 from world import sponsor as sponsor_mod
 
@@ -30,7 +30,8 @@ DESC = ({"description": "A plain hall.", "trait_bonuses": {}})
 
 
 @tag("world")
-class MakingTheFirstRoom(EvenniaTest):
+class MakingTheFirstRoom(GameTest):
+    accounts = True
 
     def setUp(self):
         super().setUp()
@@ -84,7 +85,8 @@ class MakingTheFirstRoom(EvenniaTest):
 
 
 @tag("world")
-class RecordingWhoMadeIt(EvenniaTest):
+class RecordingWhoMadeIt(GameTest):
+    accounts = True
 
     def test_claim_refuses_anything_that_is_not_an_account(self):
         """

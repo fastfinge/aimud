@@ -13,13 +13,16 @@ here needs a key.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import events, pronouns, referents
 
 
-class Stage(EvenniaTest):
+class Stage(GameTest):
     """Jessica, Britney, a sword and somebody watching all three."""
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -101,6 +104,8 @@ class TheCentreCarriesIntoTheSubject(Stage):
 class TheCentreCarriesIntoTheObject(Stage):
     """"Britney examines the sword." then "Jessica hands her the sword.\""""
 
+    second_room = True
+
     def test_the_target_becomes_her(self):
         self.shown(events.Event(
             actor=self.britney, room=self.room1, verb="examine",
@@ -128,6 +133,8 @@ class TheCentreCarriesIntoTheObject(Stage):
 @tag("world")
 class NothingCarriesOver(Stage):
     """"The lamp gutters." then "Jessica hands Britney the sword.\""""
+
+    loose_objects = 2
 
     def test_then_nobody_is_a_pronoun(self):
         """
@@ -229,6 +236,8 @@ class SecondPersonIsFree(Stage):
 
 @tag("world")
 class WhatRenderingWritesDown(Stage):
+    loose_objects = 2
+    second_room = True
 
     def test_the_viewer_is_told_what_they_saw(self):
         self.shown(self.hands())
@@ -290,6 +299,7 @@ class WhatRenderingWritesDown(Stage):
 
 @tag("world")
 class Agreement(Stage):
+    loose_objects = 2
 
     def test_a_plural_thing_takes_a_plural_verb(self):
         coins = self.obj2

@@ -11,13 +11,16 @@ from unittest import mock
 
 from django.test import SimpleTestCase, tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import recognition, referents
 
 
 @tag("world")
-class Hearing(EvenniaTest):
+class Hearing(GameTest):
+    characters = 2
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -119,7 +122,8 @@ class Hearing(EvenniaTest):
 
 
 @tag("world")
-class WhereItGoes(EvenniaTest):
+class WhereItGoes(GameTest):
+    characters = 2
 
     def setUp(self):
         super().setUp()

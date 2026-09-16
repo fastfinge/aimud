@@ -16,8 +16,8 @@ import tempfile
 from unittest import mock
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.test_commonsense import WithSampleCorpus
 from world import commonsense, lexicon, token_lists, tokens
 
@@ -117,7 +117,8 @@ class NoCorpusAtAll(SimpleTestCase):
 
 
 @tag("world")
-class KeptLikeAList(EvenniaTest):
+class KeptLikeAList(GameTest):
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

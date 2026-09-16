@@ -8,13 +8,15 @@ thing it fixed on the way through.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import goals, verbs
 
 
 @tag("world")
-class TestingAGoal(EvenniaTest):
+class TestingAGoal(GameTest):
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -109,7 +111,7 @@ class TestingAGoal(EvenniaTest):
 
 
 @tag("world")
-class SayingAGoal(EvenniaTest):
+class SayingAGoal(GameTest):
 
     def setUp(self):
         super().setUp()
