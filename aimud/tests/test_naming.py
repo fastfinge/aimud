@@ -472,3 +472,143 @@ class TakingSomethingOffSomething(Naming):
             self.char1, "get", verbs.parse("get lamp on table"),
             {"direct": self.lamp, "target": self.table},
             lambda actor, room="": None))
+
+
+@tag("world")
+class ANameWithAHyphenInIt(Naming):
+    """
+    "Ji-woo" is one word, and was being read as two.
+
+    `nounphrase.read` turned every hyphen into a space, so the phrase the
+    parser handed on was "ji woo" -- which Evennia's search matches against
+    nothing, since the key is spelled with the hyphen. Nothing answered, and
+    this game's answer to nothing answering is to invent it: `look Ji-woo`
+    conjured an object called "ji woo" and stood it next to Ji-woo.
+
+    `world.npc_gen` had already reached the opposite conclusion for the same
+    reason -- it keeps hyphens inside a name so that Min-ji and Min-seo are
+    two people -- and the reader is now the same way round.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from evennia import create_object
+
+        self.person = create_object("typeclasses.npcs.NPC", key="Ji-woo",
+                                    location=self.room2)
+        self.person.db.is_npc = True
+
+    def test_the_reader_keeps_the_word_whole(self):
+        from world import nounphrase
+
+        self.assertEqual(nounphrase.read("Ji-woo").plain, "ji-woo")
+        self.assertEqual(nounphrase.read("Ji-woo").head, "ji-woo")
+
+    def test_and_so_does_the_parser(self):
+        self.assertEqual(verbs.parse("look Ji-woo")["roles"]["direct"],
+                         "ji-woo")
+
+    def test_so_the_search_finds_her(self):
+        self.assertIs(verbs.bind(self.char1, "Ji-woo"), self.person)
+
+    def test_and_looking_conjures_nobody(self):
+        before = len(self.room2.contents)
+        self.typed("look Ji-woo")
+        self.assertEqual(len(self.room2.contents), before,
+                         "looking at Ji-woo should have made nothing")
+
+    def test_a_hyphen_between_two_words_still_reads_as_both(self):
+        """
+        Only the spelling is kept; nothing that matches names is changed.
+        `verbs.similarity` and `naming.resemblance` both split on anything
+        that is not a letter or a digit, so the wrench is still found.
+        """
+        from world import naming
+
+        wrench = self.thing("Second Best Wrench")
+        self.assertIs(verbs.bind(self.char1, "second-best wrench"), wrench)
+        self.assertEqual(naming.resemblance("second-best wrench",
+                                            "Second Best Wrench"), 1.0)
+
+
+@tag("world")
+class NobodyIsEverConjured(Naming):
+    """
+    A player came back to find `samuel north(#7363)` lying on the floor.
+
+    Everything `naming` compares a phrase against is a *thing*:
+    `relations.reachable` deliberately holds no people, because the question
+    it was written for is "Samuel's shoulder", which is about Samuel and not
+    about any object. So a bare name scored nothing, matched nothing, and fell
+    through to the part of this game that invents what it is asked for -- and
+    the existence check honestly agreed that a man called Samuel North could
+    plausibly be in a tavern, because he could, and had been a minute ago.
+
+    Two answers, because a person is either here or they are not. Here, they
+    are who was meant. Not here and a player, refused outright: a player's own
+    name is the one name that must never become furniture.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from evennia import create_object
+
+        self.char1.key = "Samuel North"
+        self.account.characters.add(self.char1)
+        self.npc = create_object("typeclasses.npcs.NPC", key="Barnaby",
+                                 location=self.room2)
+        self.npc.db.is_npc = True
+
+    def conjured(self, raw):
+        """(what was said, the phrases conjuring was asked for)."""
+        from unittest import mock
+        from world import item_gen
+
+        said, asked = [], []
+
+        def conjure(caller, room, sponsor, phrase, on_ready, on_refused,
+                    fuzzy=False):
+            asked.append(phrase)
+            on_refused("(nothing was made)")
+
+        with mock.patch.object(item_gen, "conjure", conjure), immediately():
+            attempt_mod.attempt(
+                self.npc, raw, FakeSponsor(), fuzzy=True,
+                on_message=lambda actor_text, room_text=None:
+                    said.append(actor_text or ""))
+        return "\n".join(s for s in said if s), asked
+
+    def test_somebody_absent_is_refused_rather_than_built(self):
+        self.char1.move_to(self.room1, quiet=True)
+        said, asked = self.conjured("wave at samuel north")
+        self.assertEqual(asked, [], "nobody should have been conjured")
+        self.assertIn("samuel north", said.lower())
+
+    def test_somebody_here_is_simply_who_was_meant(self):
+        _said, asked = self.conjured("wave at samuel north")
+        self.assertEqual(asked, [], "Samuel is standing right there")
+
+    def test_part_of_a_name_still_finds_them(self):
+        from world import naming
+
+        found, complaint = naming.instead_of_creating(self.npc, "samuel")
+        self.assertIs(found, self.char1)
+        self.assertIsNone(complaint)
+
+    def test_an_ordinary_noun_is_still_conjured(self):
+        _said, asked = self.conjured("wave at brass lantern")
+        self.assertEqual(asked, ["brass lantern"])
+
+    def test_a_word_inside_a_players_name_is_not_their_name(self):
+        """
+        A world with a player called Rose Turner may still be asked for a
+        rose. The refusal wants the whole of the name and nothing else, so it
+        is tested both ways round.
+        """
+        from world import naming
+
+        self.char1.key = "Rose Turner"
+        self.char1.move_to(self.room1, quiet=True)
+        found, complaint = naming.instead_of_creating(self.npc, "rose")
+        self.assertIsNone(found)
+        self.assertIsNone(complaint, "a rose is still a rose")

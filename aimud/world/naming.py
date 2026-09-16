@@ -33,11 +33,19 @@ plausible one is offered back to the player rather than guessed at, because
 looking at the wrong thing is a small annoyance and silently littering a world
 with near-duplicates is not.
 
-A third kind of mistake is not about spelling at all and is handled in
-`world.anatomy`: a phrase like "Samuel's shoulder" is spelled perfectly and
-still names no object, because a shoulder belongs to somebody rather than
-lying about. That question is asked first, since nothing here can answer it
--- people are deliberately not among the things a name is compared against.
+A third kind of mistake is not about spelling at all: a phrase may be spelled
+perfectly and still name no object, because it names a *person*. "Samuel's
+shoulder" is a shoulder that belongs to somebody rather than lying about, and
+`world.anatomy` answers that one; "Samuel North" is somebody outright, and
+`somebody` below answers that. Both are asked before anything is compared
+against a thing, because `relations.reachable` holds no people and so no
+amount of spelling here could ever have reached either answer.
+
+The second of them arrived late and cost a player a `samuel north(#7363)` on
+the floor of a tavern, built by an NPC while they were in the next room. A
+name that is nobody here and is a player somewhere is refused rather than
+made: every other kind of name this module is unsure about is worth a
+question, and that one is worth a flat no.
 """
 
 import re
@@ -289,6 +297,97 @@ def best_match(caller, phrase, candidates=None):
     return (best, best_score) if best_score else (None, 0.0)
 
 
+def somebody(caller, phrase):
+    """
+    What to do about a phrase that names a person rather than a thing.
+
+    The same three answers `instead_of_creating` gives, and asked in the same
+    breath and for the same reason: everything below compares the phrase
+    against *things*, and `relations.reachable` deliberately holds no people.
+    So a bare name matched nothing, scored nothing, and fell through to the
+    part of this game that invents whatever it is asked for -- which is how a
+    player came back to find `samuel north(#7363)` lying on the floor of a
+    tavern, made while they were in the next room.
+
+    Two questions, because a person is either here or they are not:
+
+    * **Here**: they are who was meant. Answered as a match, so the verb runs
+      against them -- an NPC that waves at somebody standing in front of it
+      waves at them, and `look ji-woo` looks at Ji-woo.
+    * **Not here, but a player on this server**: refused outright. A player's
+      name must never become a thing, whatever room they are standing in and
+      whatever a validator would say about the plausibility of a man called
+      Samuel North being in a tavern -- which is exactly what it does say,
+      because it is true and is not an answer to the question being asked.
+
+    An NPC who has wandered off is not refused here. Their name is a name the
+    world invented and may legitimately be reused, and the world is free to
+    make something of it; what is not free is a player's own name.
+    """
+    from world import anatomy
+
+    if caller is None or not phrase:
+        return None, None
+
+    wanted = _words(phrase)
+    if not wanted:
+        return None, None
+
+    # Somebody standing here, by name or by part of one: "samuel" is Samuel
+    # North, exactly as Evennia's own search would have it.
+    best, best_score = None, 0.0
+    for person in anatomy.people_near(caller):
+        if person is caller:
+            continue
+        names = [person.key] + [str(alias) for alias in person.aliases.all()]
+        score = max(resemblance(phrase, name) for name in names)
+        if score > best_score:
+            best, best_score = person, score
+    if best is not None and best_score >= CONFIDENT:
+        return best, None
+
+    # Absent, and a player. The name has to account for the whole of theirs
+    # and theirs for the whole of it, so that a world with a player called
+    # Rose Turner can still be asked for a rose.
+    for name in player_names():
+        if (resemblance(phrase, name) >= CONFIDENT
+                and resemblance(name, phrase) >= CONFIDENT):
+            return None, f"You see no {phrase} here."
+    return None, None
+
+
+def player_names():
+    """
+    Every name a player character on this server answers to.
+
+    Read from the accounts rather than from the objects, which is the same
+    route `world.sponsor` takes to the same question: a character belongs to
+    an account and nothing else in the database says which of the thousands
+    of objects in a dozen worlds is somebody's.
+    """
+    from evennia.accounts.models import AccountDB
+
+    found = []
+    for account in AccountDB.objects.all():
+        # `.characters` is the handler around the attribute; the attribute
+        # itself is read as well, because a row that has not been typeclassed
+        # has no handler and an empty answer here would quietly turn the
+        # whole check off.
+        try:
+            playable = list(account.characters.all())
+        except Exception:
+            playable = list(account.db._playable_characters or [])
+        for character in playable:
+            if character is None:
+                continue
+            found.append(character.key)
+            try:
+                found += [str(alias) for alias in character.aliases.all()]
+            except Exception:
+                pass
+    return [name for name in found if str(name or "").strip()]
+
+
 def instead_of_creating(caller, phrase, fuzzy=False):
     """
     What to do about a name nothing here answers to.
@@ -316,6 +415,12 @@ def instead_of_creating(caller, phrase, fuzzy=False):
     # "Samuel's shoulder" names no thing at all -- it names Samuel, who is
     # not in the search at all, people being excluded from what is reachable.
     person, complaint = anatomy.instead_of_a_part(caller, phrase)
+    if person is not None or complaint:
+        return person, complaint
+
+    # And asked second for the same reason: a bare name is no more a thing
+    # than a shoulder is, and people are not in the search below either.
+    person, complaint = somebody(caller, phrase)
     if person is not None or complaint:
         return person, complaint
 

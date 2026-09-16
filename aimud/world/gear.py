@@ -65,6 +65,21 @@ WIELD_LIMIT = 2
 #: as the social verb it is.
 VERBS = ("wield", "unwield", "hold")
 
+#: The ones that can only mean this. "wield" is not English for anything else,
+#: and `VERB_SYNONYMS` folds "brandish" and "equip" onto it precisely because
+#: they are not either -- the table's own comment says so, and leaves "sheathe"
+#: and "draw" alone for being genuinely ambiguous.
+#:
+#: Which matters because the noun test below is a test of what a world has
+#: happened to say. A thing is wieldable if its kind's affordance map holds
+#: `wield`, and most kinds say nothing at all: a lantern, a crowbar, a torch
+#: and a broom all come out of the generators with an empty map, because the
+#: taxonomy floor only speaks for weapons. Applying the test to "wield" meant
+#: `wield the crowbar` declined the mechanic and bought a model call to invent
+#: a meaning for a word the game already answers. Only "hold" needs asking
+#: about, and only "hold" is asked.
+UNAMBIGUOUS = ("wield", "unwield")
+
 
 def prompt_block(world_root):
     """
@@ -290,9 +305,13 @@ def handle(caller, verb, bound, on_message):
     Deal with a wielding verb, or decline it. True when it was handled.
 
     Declining is half the job, and the reason this is not simply a pair of
-    commands. "draw the curtain" and "ready the horses" are ordinary verbs
-    that a world is entitled to work out for itself; only an attempt whose
-    noun really is something to wield is taken over here.
+    commands. "hold the door" and "hold her hand" are ordinary verbs that a
+    world is entitled to work out for itself, so an attempt on a noun this
+    world does not think of as something to take in hand goes on through.
+
+    Only the ambiguous verb is asked that question. "Wield" means one thing in
+    English and the noun test was refusing it for lanterns and crowbars, whose
+    kinds simply never said. See `UNAMBIGUOUS`.
     """
     if verb not in VERBS:
         return False
@@ -308,9 +327,11 @@ def handle(caller, verb, bound, on_message):
         _deliver(on_message, unwield(caller, obj))
         return True
 
-    if not wieldable(obj) and not bonuses(obj):
-        # Not a thing this world thinks of as wieldable. Let the model decide
-        # what drawing it means.
+    if (verb not in UNAMBIGUOUS
+            and not wieldable(obj) and not bonuses(obj)):
+        # "Hold" said of something this world does not think of as a thing to
+        # take in hand -- somebody's hand, a door, a note -- means the other
+        # thing it means. Let the model decide what.
         return False
     _deliver(on_message, wield(caller, obj))
     return True

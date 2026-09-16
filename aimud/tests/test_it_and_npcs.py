@@ -93,6 +93,69 @@ class ItAfterGetAndDrop(EvenniaCommandTest, Stage):
 
 
 @tag("world")
+class DroppingSomethingSaysSo(EvenniaCommandTest, Stage):
+    """
+    The drop that worked and never said a word.
+
+    Resolving the noun here rather than in Evennia's command is what made
+    "drop it" possible, and it quietly took over the ordinary case as well:
+    `bind_or_pronoun` answers for a plain name just as it does for a pronoun,
+    so almost every drop goes down the path written for the pronoun.
+
+    That path built an event with a `room_template` and no `actor_text`, and
+    `events.deliver` sends `actor_text` to whoever acted and renders the
+    template for everybody else. So the room was told and the pipe was on the
+    floor and the one person who had typed the command was told nothing at
+    all -- which, alone in a room, is a command that looks broken.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.rooted()
+        self.pipe = self.obj1
+        self.pipe.key = "pipe"
+        self.pipe.location = self.char1
+
+    def test_by_name(self):
+        from commands.drop_cmds import CmdAIDrop
+
+        said = self.call(CmdAIDrop(), "pipe")
+        self.assertIn("drop", said.lower())
+        self.assertIn("pipe", said.lower())
+        self.assertIs(self.pipe.location, self.room1)
+
+    def test_by_pronoun(self):
+        from commands.drop_cmds import CmdAIDrop
+        from commands.look_take_cmds import CmdAIGet
+
+        self.pipe.location = self.room1
+        self.call(CmdAIGet(), "pipe")
+        said = self.call(CmdAIDrop(), "it")
+        self.assertIn("drop", said.lower())
+        self.assertIs(self.pipe.location, self.room1)
+
+    def test_by_count(self):
+        from commands.drop_cmds import CmdAIDrop
+        from evennia import create_object
+
+        second = create_object("typeclasses.objects.Object", key="pipe",
+                               location=self.char1)
+        said = self.call(CmdAIDrop(), "second pipe")
+        self.assertIn("drop", said.lower())
+        self.assertIs(second.location, self.room1)
+
+    def test_and_the_room_is_told_as_well(self):
+        from commands.drop_cmds import CmdAIDrop
+
+        watched = []
+        self.char2.msg = lambda text="", **kwargs: watched.append(str(text))
+        self.char2.location = self.room1
+        self.call(CmdAIDrop(), "pipe")
+        self.assertTrue(any("pipe" in line.lower() for line in watched),
+                        f"the room heard {watched!r}")
+
+
+@tag("world")
 class PronounsForSomebodyTalking(EvenniaTest, Stage):
     """
     An NPC that says something has referred to itself.

@@ -242,7 +242,9 @@ def split_owner(phrase):
     if read.stated_possessor:
         return read.possessor, read.thing, True
 
-    text = " ".join((phrase or "").lower().replace("-", " ").split())
+    # Hyphens stay inside a word here as they do in the reader above: "ji-woos
+    # hand" is Ji-woo's, and an owner spelled "ji woos" finds nobody.
+    text = " ".join((phrase or "").lower().split())
     if not text:
         return None, phrase, False
 

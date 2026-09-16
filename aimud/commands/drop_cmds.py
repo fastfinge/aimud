@@ -104,6 +104,13 @@ class CmdAIDrop(_DefaultDrop):
         The same hooks and the same sentence Evennia's own command uses, which
         is the point of writing it out rather than delegating: a counted drop
         has to look exactly like an ordinary one to everything downstream.
+
+        Which includes the line the player reads. `deliver` sends `actor_text`
+        to whoever acted and renders the template for everybody else, so an
+        event carrying only a template tells the room and says nothing at all
+        to the one person who typed the command -- and almost every drop comes
+        through here, since `bind_or_pronoun` answers for a plain name as well
+        as for "it".
         """
         caller = self.caller
         if obj.location is not caller:
@@ -118,8 +125,10 @@ class CmdAIDrop(_DefaultDrop):
         from world import events, verbs as _verbs
 
         _verbs.note_one(caller, obj)
+        name = clothing.item_name(obj, caller)
         events.deliver(events.Event(
             actor=caller, verb="drop", roles={"direct": obj},
+            actor_text=f"You drop {name}.",
             room_template="{actor} $pconj(drop) {direct}."))
 
     def _drop_everything(self, sort=""):

@@ -287,8 +287,22 @@ class NounPhrase:
 
 
 def words_of(text):
-    """The words of a phrase, hyphens counting as spaces, lowercased."""
-    return re.findall(r"[a-z0-9']+", (text or "").lower().replace("-", " "))
+    """
+    The words of a phrase, lowercased, a hyphenated word counting as one.
+
+    A hyphen inside a word is part of it and not a space. "Ji-woo" and
+    "Min-seo" are single given names, and splitting them left `.plain` saying
+    "ji woo" -- which no search matches, so looking at Ji-woo found nobody and
+    this game's answer to finding nobody is to invent one. `world.npc_gen`
+    already keeps hyphens together when it tells one person's name from
+    another's, for the same reason and in the same words.
+
+    Nothing that matches a phrase against a name is harmed by keeping it:
+    `verbs.similarity` and `naming.resemblance` both split on anything that is
+    not a letter or a digit, so "second-best wrench" still resembles a Second
+    Best Wrench exactly as much as it did.
+    """
+    return re.findall(r"[a-z0-9']+(?:-[a-z0-9']+)*", (text or "").lower())
 
 
 def read(phrase, world_root=None):
@@ -304,7 +318,7 @@ def read(phrase, world_root=None):
     """
     words_that = tables(world_root)
     raw = str(phrase or "").strip()
-    text = " ".join(raw.lower().replace("-", " ").split())
+    text = " ".join(raw.lower().split())
     if not text:
         return NounPhrase()
 
