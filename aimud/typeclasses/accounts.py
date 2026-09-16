@@ -195,8 +195,22 @@ class Account(DefaultAccount):
         from world.model_params import ModelChoice
 
         primary = functions[0] if functions else "default"
-        return ModelChoice(chosen or self.DEFAULT_MODEL,
-                           self.get_params_for(primary), job=primary)
+        chosen = chosen or self.DEFAULT_MODEL
+        params = self.get_params_for(primary)
+        # Asked instead when the chosen model answers with an error. With the
+        # job's own settings, because they belong to the job, as above.
+        spare = self.get_fallback_for(primary)
+        fallback = (ModelChoice(spare, params, job=primary)
+                    if spare and spare != chosen else None)
+        return ModelChoice(chosen, params, job=primary, fallback=fallback)
+
+    def get_fallback_for(self, function):
+        """
+        The model to ask when a job's model errors: the job's own fallback, or
+        failing that the one set for 'default'. None when neither is set.
+        """
+        cfg = self.db.ai_fallbacks or {}
+        return cfg.get(function) or cfg.get("default") or None
 
 
 class Guest(DefaultGuest):

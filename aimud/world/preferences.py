@@ -14,8 +14,9 @@ sense: "You in this world" inside a world, "This world" to its creator.
 
 **Nothing is migrated.** Every setting reads and writes the attribute the old
 command did -- `busy_interval`, `openrouter_api_key`, `ai_models` -- so an
-account set up before this reads back exactly as it was. The one new store is
-`confirmations`, which the menu engine already reads.
+account set up before this reads back exactly as it was. The new stores are
+`confirmations`, which the menu engine reads, and `ai_fallbacks`, the model
+each job falls back to when its own fails, which `Account.model_for` reads.
 
 **The API URL lives beside the key.** A key only works with the provider that
 issued it, so a world choosing its own URL would send its creator's key
@@ -523,6 +524,44 @@ MODEL = m.Field(
 )
 
 
+def _fallback_set(ctx, value):
+    account, job = ctx.account, ctx.job
+    cfg = dict(account.attributes.get("ai_fallbacks") or {})
+    if value is None:
+        cfg.pop(job, None)
+        said = f"{job} has no fallback of its own now."
+    else:
+        cfg[job] = value
+        said = f"When {job}'s model fails, {value} is asked instead."
+    if cfg:
+        account.attributes.add("ai_fallbacks", cfg)
+    else:
+        account.attributes.remove("ai_fallbacks")
+    return said
+
+
+def _fallback_show(ctx, value):
+    if value:
+        return value
+    inherited = (ctx.account.attributes.get("ai_fallbacks") or {}).get("default")
+    if ctx.job != "default" and inherited:
+        return f"{inherited}, the same as default"
+    return "none"
+
+
+FALLBACK = m.Field(
+    "fallback", "Fallback model", kind=m.CHOICE, choices=_model_choices,
+    get=lambda ctx: (ctx.account.attributes.get("ai_fallbacks") or {}).get(ctx.job),
+    set=_fallback_set, show=_fallback_show,
+    help=("Asked instead when this job's model fails: the provider refuses, "
+          "errors or times out. The same request goes to the fallback before "
+          "anybody is told, and it does not use up one of the job's rounds. "
+          "A fast, cheap model that sometimes refuses, with a steadier one "
+          "behind it, is what this is for. Set on default, it covers every "
+          "job without one of its own."),
+)
+
+
 def _param_field(param):
     from world import model_params
 
@@ -599,7 +638,7 @@ def _job_items(ctx):
     account, job = ctx.account, ctx.job
     model_id, _ = _chosen_model(account, job)
     params, unsupported = _params_in_force(account, job, model_id)
-    items = [MODEL] + [_param_field(param) for param in params]
+    items = [MODEL, FALLBACK] + [_param_field(param) for param in params]
     mine = _stored_params(account, job)
     if any(param.key in mine for param in unsupported):
         items.append(m.Action("drop", "Clear the settings this model does not "

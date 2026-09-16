@@ -350,6 +350,20 @@ deciding whether to change it. Only settings you changed yourself are sent.
 **Setting `default` alone is enough to start.** Everything else falls back to
 it. Tune individual jobs once you know what you want more of.
 
+**Each job can have a fallback model**, asked with the same request when its
+own model fails: the provider refuses, errors or times out. It costs the job
+none of its rounds, and the log says `llm: fallback` each time it happens. That
+lets a very fast, very cheap model do most of the work while a steadier one
+catches the turns it refuses: `settings models dialogue fallback
+meta-llama/llama-3.3-70b-instruct`. A fallback set on `default` covers every job
+without one of its own.
+
+**Not sure which model to use for dialogue?** `tests/test_model_bench.py` plays
+the same NPC turns -- a bargain, grief, a threat, a crime, a brawl, flirting --
+through each candidate model with your admin account's key, and reports how
+long each took and how often it acted, said nothing, refused or failed. It costs
+a few cents a run, so it only runs when asked; how is at the top of that file.
+
 A reasonable starting split — cheap where it is called constantly, capable
 where it is called rarely:
 
