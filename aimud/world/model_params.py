@@ -192,14 +192,20 @@ class ModelChoice(str):
     wants to say what a call was for, and "commands" or "dialogue" is known
     only here. Without it every recorded call would say it was for a model,
     which nobody needs telling.
+
+    `fallback` is the model to ask instead when this one answers with an
+    error -- itself a `ModelChoice` for the same job, or None. It rides along
+    for the same reason: `world.llm.call` is where an error is met, and the
+    job's settings are only known here. See `llm.call`.
     """
 
-    __slots__ = ("params", "job")
+    __slots__ = ("params", "job", "fallback")
 
-    def __new__(cls, model_id, params=None, job=""):
+    def __new__(cls, model_id, params=None, job="", fallback=None):
         choice = super().__new__(cls, model_id or "")
         choice.params = dict(params or {})
         choice.job = str(job or "")
+        choice.fallback = fallback or None
         return choice
 
 

@@ -38,6 +38,11 @@ free one would use `FakeSponsor`. Tag the test class `llm`, and remember that
 naming a test module on the command line without `--exclude-tag=llm` runs its
 live tests too.
 
+`tests/test_model_bench.py` compares dialogue models on real NPC turns and is
+tagged `bench` as well as `llm`. It skips itself unless `AIMUD_BENCH=1` is set,
+so running the live tests never runs it by accident; its docstring says how to
+choose the models and how many times each scene is played.
+
 `--settings settings.py` is not optional. Without it the run uses Evennia's
 default settings and so skips this game's test runner
 (`server/conf/test_runner.py`), which stops the suite hashing a real password

@@ -155,10 +155,64 @@ def _request(url, api_key, payload=None, timeout=TIMEOUT):
                                f"({err.code})") from err
 
 
+#: What counts as a model failing, rather than the game's own code: the service
+#: saying no (`LLMError`), the network or a timeout (`OSError`, which covers
+#: `URLError` and `socket.timeout`), and a body that is not JSON (`ValueError`).
+MODEL_ERRORS = (LLMError, OSError, ValueError)
+
+
 def call(sponsor, model, messages, tools=None, timeout=TIMEOUT,
          tool_choice=None):
     """
-    Ask a model, and answer with the whole reply.
+    Ask a model, and answer with the whole reply -- or its fallback's.
+
+    When the model fails -- the provider refuses, errors, times out or sends
+    back something that is not an answer -- and the job has a fallback model,
+    the same request goes to the fallback before anybody is told. Both
+    attempts are one call as far as a conversation is concerned: `converse`
+    counts rounds by the calls it makes, and this is still one, so a model's
+    error never spends a round of the job's budget. Only when the fallback
+    fails too is the error raised, naming both.
+
+    One fallback, not a chain. A second spare is a third wait for a player
+    already waiting on two failures.
+    """
+    try:
+        return _call_once(sponsor, model, messages, tools, timeout,
+                          tool_choice)
+    except MODEL_ERRORS as first:
+        spare = getattr(model, "fallback", None)
+        if not spare:
+            raise
+        _fell_back(model, spare, first)
+        try:
+            return _call_once(sponsor, spare, messages, tools, timeout,
+                              tool_choice)
+        except MODEL_ERRORS as second:
+            raise LLMError(f"{model} failed ({_short(first)}), and so did its "
+                           f"fallback {spare} ({_short(second)})") from second
+
+
+def _short(error):
+    return str(error or type(error).__name__)[:MAX_COMPLAINT]
+
+
+def _fell_back(model, spare, error):
+    """One line for every fallback, so how often a model fails is on record."""
+    try:
+        from evennia.utils import logger
+
+        job = str(getattr(model, "job", "") or "unknown")
+        logger.log_info(f"llm: fallback job={job} from={model} to={spare} "
+                        f"why={_short(error)!r}")
+    except Exception:
+        pass
+
+
+def _call_once(sponsor, model, messages, tools=None, timeout=TIMEOUT,
+               tool_choice=None):
+    """
+    Ask one model, and answer with the whole reply.
 
     For the callers that need more than the text: a reply carrying tool calls
     has nothing in its `content` at all, and the calls are the answer.
@@ -193,8 +247,8 @@ def call(sponsor, model, messages, tools=None, timeout=TIMEOUT,
         if record is not None and not supports_tools(record):
             job = getattr(model, "job", "") or "this job"
             raise LLMError(f"{model} cannot use tools, and {job} needs them. "
-                           f"Choose another model for {job} with the models "
-                           f"command.")
+                           f"Choose another model for {job} with settings "
+                           f"models.")
         payload["tools"] = tools
         payload["tool_choice"] = tool_choice or "auto"
     # Timed here, around the request and nothing else, because how long a
