@@ -4,7 +4,7 @@ The tokens command: the word lists a world keeps, and trying them out.
 A sibling of `pronouns`. Anyone may read a world's lists -- the open sandbox
 means a player can see what a description is choosing between -- and try a
 piece of text to see what it comes to. Whoever made the world may add and
-remove lists, which is the same line `worldedit` draws: only the worlds your
+remove lists, which is the same line `edit world` draws: only the worlds your
 own account made.
 """
 

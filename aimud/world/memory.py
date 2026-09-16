@@ -1143,7 +1143,7 @@ def forget_world(world_root, on_done=None):
     """
     Delete a world's memories, because the world is gone.
 
-    Called from `worldreset` and `worldremove`. This is the whole practical
+    Called from `reset world` and `delete world`. This is the whole practical
     argument for one bank per world: it used to be impossible -- a world's
     memories were scattered across one file per character, named for dbrefs
     that told you nothing about which world they had been in, and the only way
@@ -1192,7 +1192,7 @@ def living_places():
 # a character, so deleting a world left one file behind per person who had
 # been standing in it, and something had to come along afterwards and notice.
 #
-# A bank is a world now, and `worldreset` and `worldremove` delete it outright
+# A bank is a world now, and `reset world` and `delete world` delete it outright
 # -- so the sweep finds nothing in the ordinary case and exists for the two it
 # cannot cover: a world removed by a route that did not know to say so, and
 # every bank left over from the old per-character naming.

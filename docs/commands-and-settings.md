@@ -1,7 +1,7 @@
 # Development plan: commands, menus and settings
 
-Status: phases 1 (the menu engine) and 2 (settings) are built. Phases 3 to 6
-are not started.
+Status: phases 1 (the menu engine), 2 (settings) and 3 (verbs, subjects and
+worlds) are built. Phases 4 to 6 are not started.
 The open questions are settled; see §11.
 
 This covers the first two items in `future-plans.md`: sorting out the command
@@ -770,6 +770,31 @@ with the world and start room subjects; NPC followers stop at a world's edge.
 does not, `delete world` for a world you did not make is neither offered nor
 allowed, `enter limbo` gets a player out of any world, and an NPC following
 you stays in its own world when you leave it.
+
+*Built.* `commands/verbs.py`, `commands/subjects.py`,
+`commands/world_subject.py`, and tests in `tests/test_verbs.py`. `worldgen`,
+`worldedit`, `worldremove`, `worldreset` and `worlds` are gone, and typing one
+says what replaced it. Where it differs from the plan:
+
+* **Worlds keep their numbers.** §4.2 said the world you are standing in comes
+  first. It is marked "(you are here)" instead, and the list stays in the order
+  the worlds were made. Otherwise `delete world 2` would mean a different world
+  depending on where it was typed.
+* **Deleting the world you are standing in is refused before anything is
+  asked.** It is still listed, so the numbers hold, but it never gets as far
+  as a yes/no.
+* **`enter` alone lists the start room first, then your worlds, all in one
+  list.** `enter world` alone lists only the worlds.
+* **The start room's subject word is `start`, and also the room's own name**
+  (`limbo`), read from whatever room `START_LOCATION` points at.
+* **NPC followers are told they cannot follow and stay where they are.** A
+  player character still follows anywhere.
+* **A typo check was saying "Did you mean reset?" to `reset the trap`.** The
+  near-miss check in `unknown_cmd.py` treated a command matching the word
+  exactly as a typo. It now skips an exact match, because the parser set that
+  command aside on purpose. The same fault already affected `force the lock`.
+* **`verbs.reserves_word`** is the flag. A command without one falls back to
+  "General" help category, as before, and the verb commands set it to False.
 
 **Phase 4: every other subject.** Rules, suggestions, effects, zones, faults,
 tokens, npc, pronouns, commonsense, memory and rounds, each with its

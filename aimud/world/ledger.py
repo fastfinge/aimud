@@ -24,7 +24,7 @@ useless in aggregate. Keeping only the totals would make a surprise
 un-investigable; keeping only the log would make the total a scan.
 
 **Written on the account that pays**, not the world, because the account is
-what survives a `worldreset` and is what a bill arrives for. The world is
+what survives a `reset world` and is what a bill arrives for. The world is
 recorded on each entry instead, so a per-world figure is still there for
 anybody who wants one.
 
@@ -196,7 +196,7 @@ def forget_world(account, world_id):
     """
     Drop a world's figures, because the world is gone.
 
-    Called from `worldremove`. The totals keep the account's lifetime spend
+    Called from `delete world`. The totals keep the account's lifetime spend
     intact -- money spent is spent, and a figure that goes down when a world is
     deleted is a figure nobody can reconcile -- so only the per-world breakdown
     and the entries naming it are removed.

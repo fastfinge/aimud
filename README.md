@@ -362,10 +362,10 @@ where it is called rarely:
 ### 3. Make a world
 
 ```
-worldgen
+create world
 ```
 
-This opens a wizard:
+This opens a wizard (`create world <description>` fills the description in):
 
 - **Title** — a short name for your world list.
 - **Description** — as long as you like. Everything in the world is generated
@@ -388,12 +388,13 @@ This opens a wizard:
   to it. Anything concerning one task alone goes in that task's guidance, where
   it can be as detailed as you like without crowding anything else out.
 
-Then `g` to generate. The first room takes a few seconds, and you are moved
-into it when it is ready.
+Then `generate`. The first room takes a few seconds, and you are moved into it
+when it is ready.
 
-Use `worldedit` afterwards to change any of this without throwing the world
+Use `edit world` afterwards to change any of this without throwing the world
 away — edits govern whatever is generated from then on, and what already exists
-keeps the text it was written with. `worldreset` rebuilds from scratch.
+keeps the text it was written with. `reset world` rebuilds from scratch.
+`enter start` takes you back out to Limbo, and `enter world` back in.
 
 ---
 
@@ -449,11 +450,18 @@ Beyond that:
 
 | Command | What it does |
 |---|---|
-| `worldgen [<description>]` | The wizard: make a new world. |
-| `worlds` / `worlds <n>` | List your worlds, or enter one. |
-| `worldedit [<n>]` | Change a world's text without rebuilding it. |
-| `worldreset [<n>] confirm` | Wipe and regenerate from the same setup. |
-| `worldremove <n> confirm` | Delete a world permanently. |
+| `create world [<description>]` | The wizard: make a new world. |
+| `view worlds` | List your worlds, numbered as they were made. |
+| `enter world [<n or title>]` | Go into one of your worlds, back where you last were. |
+| `enter start` | Back to Limbo, the room everybody starts in. `enter limbo` works too. |
+| `edit world [<n or title>]` | Change a world's text without rebuilding it. |
+| `reset world [<n or title>] [yes]` | Wipe and regenerate from the same setup. Asks first unless you add `yes`. |
+| `delete world [<n or title>] [yes]` | Delete a world permanently. Asks first unless you add `yes`. |
+
+`create`, `edit`, `delete`, `reset`, `view` and `enter` typed on their own open
+a menu of what they can act on. Inside a world they are only these commands when
+the next word is one of their subjects: `reset world` resets the world, while
+`reset the trap` is something you do in it.
 | `worldmode [normal \| always]` | Whether this world thinks only while watched, or all the time. On its own, says which. |
 | `worldopen` | Open a way on, in a world that has built itself into a corner and has nowhere unexplored left. |
 | `zones` | The areas of this world, how full each is, what may exist only once in each, and where you are. |
@@ -504,7 +512,7 @@ you are told the prefixed spelling.
 
 Outside a world — Limbo, or anywhere built by hand — they work exactly as
 Evennia documents them, prefix or not. The game's own commands, such as `look`,
-`worldedit` and `tokens`, never need one.
+`settings` and `tokens`, never need one.
 
 ---
 
@@ -574,7 +582,7 @@ your `default` to try everything at no cost, and expect rougher prose.
 - Cheap `naming` and `dialogue`; capable `commands` and `quests`.
 - Leave `worldmode` at `normal` unless you are deliberately watching a world
   run. It is the one setting that spends money with nobody reading the output.
-- `worldreset` regenerates an entire world and costs an entire world's worth.
+- `reset world` regenerates an entire world and costs an entire world's worth.
 
 ---
 

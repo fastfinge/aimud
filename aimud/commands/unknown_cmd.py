@@ -49,6 +49,11 @@ RETIRED = {
     "apikey": "settings apikey",
     "busy": "settings busy",
     "models": "settings models",
+    "worldgen": "create world",
+    "worldedit": "edit world",
+    "worldremove": "delete world",
+    "worldreset": "reset world",
+    "worlds": "view worlds, or enter world <number>",
 }
 
 
@@ -58,6 +63,7 @@ def retired_spelling(raw_string):
     if not words:
         return ""
     return RETIRED.get(words[0].lower().lstrip("@+&/"), "")
+
 
 #: Short words are not checked at all. Among three and four letter words a
 #: coincidence is likelier than a typo -- "tie" scores 0.86 against "time" --
@@ -88,6 +94,11 @@ def _closest_command(cmd, word):
             # Builder commands are staff-facing and mostly duplicates of a
             # plain-named one, so "@time" is never a useful suggestion.
             if not name or name.startswith("__") or name.startswith("@"):
+                continue
+            # A command answering to this very word was set aside by the
+            # parser on purpose -- `reset the trap`, `force the lock` -- so the
+            # word is the world's, not a typo for the command.
+            if name.lower() == word:
                 continue
             score = similarity(word, name)
             if score > best_score:

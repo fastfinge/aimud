@@ -34,7 +34,7 @@ class CmdRounds(Command):
     an answer was sent back to be put right.
 
     |wrounds world <number>|n counts only one of your worlds, numbered as
-    |wworlds|n numbers them.
+    |wview worlds|n numbers them.
 
     |wrounds clear|n starts counting again, after a change worth measuring.
     What has been spent is kept.
@@ -89,13 +89,13 @@ class CmdRounds(Command):
         self.caller.msg("\n".join(self._line(job, row) for job, row in ordered))
 
     def _world(self, account, number):
-        from commands.world_cmds import _resolve_worlds
+        from commands.world_subject import resolve_worlds as _resolve_worlds
 
         worlds = _resolve_worlds(account)
         try:
             root = worlds[int(number) - 1][0]
         except (ValueError, IndexError):
-            self.caller.msg("Give a world's number, as |wworlds|n lists them: "
+            self.caller.msg("Give a world's number, as |wview worlds|n lists them: "
                             "|wrounds world 1|n.")
             return None
         return root

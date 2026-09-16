@@ -456,18 +456,21 @@ class Submenu(Item):
     """
 
     def __init__(self, key, label, form, data=None, fresh_draft=False,
-                 prepare=None, **kwargs):
+                 prepare=None, draft=None, **kwargs):
         super().__init__(key, label, **kwargs)
         self.form = form
         self.data = data
-        self.fresh_draft = fresh_draft
+        self.fresh_draft = fresh_draft or draft is not None
         self.prepare = prepare
+        # `draft(ctx)` fills the fresh draft in: editing a world starts from
+        # what the world was set up with.
+        self.draft = draft
 
     def context(self, ctx):
         data = _call(self.data, ctx, {}) or {}
         child = ctx.child(**data)
         if self.fresh_draft:
-            child.draft = {}
+            child.draft = dict(self.draft(child) if self.draft else {})
             child.dirty = False
         return child
 

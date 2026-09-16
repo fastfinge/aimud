@@ -126,7 +126,7 @@ class AIExit(ObjectParent, DefaultExit):
 
         source_room = self.location
         # Read from the world root rather than the room's own copy, so that a
-        # description changed with `worldedit` governs every room built after
+        # description changed with `edit world` governs every room built after
         # it. The room's copy is the fallback for anything built before worlds
         # kept their text in one place.
         from world import lore

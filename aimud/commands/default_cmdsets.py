@@ -44,15 +44,11 @@ from commands.world_cmds import (
     CmdEffects,
     CmdRules,
     CmdWorldCheck,
-    CmdWorldEdit,
     CmdWorldMode,
     CmdWorldOpen,
-    CmdWorldRemove,
-    CmdWorldReset,
-    CmdWorlds,
     CmdZones,
 )
-from commands.worldgen_cmd import CmdWorldgen
+from commands.verbs import VERB_COMMANDS
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -88,11 +84,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdTokens())
         self.add(CmdQuests())
         self.add(CmdGoal())
-        self.add(CmdWorldgen())
-        self.add(CmdWorlds())
-        self.add(CmdWorldRemove())
-        self.add(CmdWorldReset())
-        self.add(CmdWorldEdit())
+        for verb in VERB_COMMANDS:
+            self.add(verb())
         self.add(CmdMemoryMaintenance())
         self.add(CmdWorldMode())
         self.add(CmdWorldOpen())

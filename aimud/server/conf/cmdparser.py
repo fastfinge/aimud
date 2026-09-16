@@ -22,10 +22,15 @@ unquell, and forgetting it is exactly how an exit called "door" gets made. And
 deciding per word, by whether this world has a rule for `open`, would make a
 command change meaning as a world learns.
 
+**The verb commands follow a rule of their own.** `create`, `reset`, `view`
+and the rest take input in a world only when it names one of their subjects,
+or nothing: `reset world` is the command and `reset the trap` is the world's.
+See `claims`.
+
 **Which commands.** Those defined in Evennia's building, admin and system
 modules, whatever their key is spelled with: `force`, `emit` and `wall` have
 no "@", and typing `@force` reaches them all the same, because the prefix is
-stripped in matching. The game's own commands -- `look`, `worldedit`,
+stripped in matching. The game's own commands -- `look`, `settings`,
 `tokens` -- and Evennia's general, account and communication commands are not
 staff tools and never need a prefix. The batch processor's interactive
 commands are left alone too: they exist only while a batch is running.
@@ -58,9 +63,31 @@ def cmdparser(raw_string, cmdset, caller, match_index=None, session=None,
     matches = evennia_cmdparser(raw_string, cmdset, caller,
                                 match_index=match_index, session=session,
                                 **kwargs)
-    if not matches or _prefixed(raw_string) or not in_generated_world(caller):
+    if not matches or not in_generated_world(caller):
+        return matches
+    matches = [match for match in matches if claims(match)]
+    if _prefixed(raw_string):
         return matches
     return [match for match in matches if not is_staff(match[2])]
+
+
+def claims(match):
+    """
+    Whether a verb command takes this input, inside a world.
+
+    `create`, `reset`, `view` and the rest are commands only when they are
+    typed alone or followed by one of their subjects -- `reset world` -- and
+    anything else is left for the world: `reset the trap`, `view the mural`.
+    The subjects come from `commands.subjects`, which a world cannot add to,
+    so what a command claims never changes as a world learns. Every other
+    command claims whatever it matched. docs/commands-and-settings.md §2.
+    """
+    verb = getattr(match[2], "verb", "")
+    if not verb:
+        return True
+    from commands import subjects
+
+    return subjects.claims(verb, match[1])
 
 
 def is_staff(command):
