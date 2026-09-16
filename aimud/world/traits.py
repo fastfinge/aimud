@@ -541,6 +541,26 @@ def lights(world_root):
     return LIGHT in vocabulary(world_root)
 
 
+def offerable(world_root):
+    """
+    The traits a generator may name: the register, and always `light`.
+
+    `light` is deliberately absent from the register until something grants it
+    -- that absence is what makes a world daylit until it says otherwise -- so
+    a schema built from the register alone told every generator that light was
+    not a trait this world had. Nothing could then be described as lit, which
+    left the inverted default with nothing to invert: the first thing to
+    register `light` by another road turned every room in the world pitch
+    dark, the way in included.
+
+    So the one trait the engine reads by name is always on offer. Naming it is
+    what registers it, which is the same opt-in as before, reached by the road
+    the prompts already point down. See `lights` and world/conditions.py
+    `_p_visible`.
+    """
+    return sorted(set(vocabulary(world_root)) | {LIGHT})
+
+
 # ---------------------------------------------------------------------------
 # Lookups (docs/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
@@ -550,15 +570,28 @@ def lookup_tools():
     from world import toolbox as tb
 
     def listing(ctx, args):
-        return tb.paged(
-            [f"{slug} ({entry.get('trait_type', DEFAULT_TRAIT_TYPE)}): "
-             f"{entry.get('means') or entry.get('name') or ''}"
-             for slug, entry in sorted(vocabulary(ctx.world_root).items())],
-            args, "traits")
+        lines = [f"{slug} ({entry.get('trait_type', DEFAULT_TRAIT_TYPE)}): "
+                 f"{entry.get('means') or entry.get('name') or ''}"
+                 for slug, entry in sorted(vocabulary(ctx.world_root).items())]
+        # The register is not the whole of what may be named: a room or a lamp
+        # can grant light in a world that has never mentioned it, and saying so
+        # here is the difference between a lit world and a world that cannot
+        # say it is lit. See `offerable`.
+        if not lights(ctx.world_root):
+            lines.append(f"{LIGHT} (counter): how well lit it is here — "
+                         f"nothing in this world grants any yet, and a lit "
+                         f"room or a burning lamp is what would")
+        return tb.paged(sorted(lines), args, "traits")
 
     def showing(ctx, args):
         asked = _slug(args.get("slug"))
         entry = known(ctx.world_root, asked)
+        if entry is None and asked == LIGHT:
+            return (f"{LIGHT}: how well lit it is here\n"
+                    f"type: counter\n"
+                    f"Nothing in this world grants any yet, so nowhere in it "
+                    f"is dark. A room lit by daylight or a fire grants it, and "
+                    f"so does a lamp while it burns.")
         if entry is None:
             near = _matching(ctx.world_root, asked)
             return (f"This world keeps no trait called {asked}."

@@ -571,6 +571,84 @@ class WhatGenerationCanNowSay(EvenniaTest):
 
 
 @tag("world")
+class TheOneTraitThatIsAlwaysOnOffer(EvenniaTest):
+    """
+    The deadlock the inverted default walked into.
+
+    `light` is kept out of the register until something grants it, which is
+    what makes a world daylit until it says otherwise. But every generation
+    schema was built from the register, so every schema told every model that
+    this world did not measure light -- and nothing could ever be described as
+    lit. The first thing to register `light` by another road (a world writing
+    its own rules) then turned every room in the world pitch dark at once,
+    starting with the one the player was standing in.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.world_root = self.root
+        self.root.db.is_world_root = True
+
+    def test_a_world_that_measures_no_light_still_offers_it(self):
+        self.assertFalse(traits.lights(self.root))
+        self.assertIn(traits.LIGHT, traits.offerable(self.root))
+
+    def test_the_room_schema_names_it(self):
+        from world import toolbox as tb
+        from world import worldgen
+
+        said = worldgen.description_tool().parameters(
+            tb.ToolContext(world_root=self.root))[
+                "properties"]["trait_bonuses"]["description"]
+        self.assertIn(traits.LIGHT, said)
+
+    def test_and_the_first_room_of_all_is_asked_the_same_question(self):
+        """The room described before there is a world to ask -- the way in."""
+        from world import toolbox as tb
+        from world import worldgen
+
+        said = worldgen.description_tool().parameters(
+            tb.ToolContext(world_root=None))[
+                "properties"]["trait_bonuses"]["description"]
+        self.assertIn(traits.LIGHT, said)
+
+    def test_a_lit_room_is_not_sent_back(self):
+        from world import worldgen
+
+        self.assertEqual(
+            worldgen.description_complaints(
+                {"description": "Sun through a high window.",
+                 "trait_bonuses": {traits.LIGHT: 2}}, self.root), [])
+
+    def test_a_trait_nothing_measures_still_is(self):
+        from world import worldgen
+
+        said = worldgen.description_complaints(
+            {"description": "Hot pipes.", "trait_bonuses": {"zorbitude": 2}},
+            self.root)
+        self.assertTrue(any("zorbitude" in line for line in said), said)
+
+    def test_the_item_schema_names_it_too(self):
+        """A lantern is the other half of what can grant light."""
+        from world import clothing
+        from world import toolbox as tb
+
+        said = clothing.spec_schema(tb.ToolContext(world_root=self.root))[
+            "properties"]["trait_bonuses"]["description"]
+        self.assertIn(traits.LIGHT, said)
+
+    def test_and_a_lamp_given_light_is_not_sent_back(self):
+        from world import item_gen
+
+        said = item_gen.item_complaints(
+            {"name": "Brass Lantern", "description": "Brass.", "kind": "lantern",
+             "trait_bonuses": {traits.LIGHT: 1}, "bonus_while": "lit"},
+            self.root)
+        self.assertFalse([line for line in said if traits.LIGHT in line], said)
+
+
+@tag("world")
 class WhatFollowsFromLooking(Looking):
     """
     The planner reaches looking through its consequence, never through its

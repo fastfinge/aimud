@@ -1879,7 +1879,12 @@ def description_tool():
     def parameters(ctx):
         from world import token_lists, traits
 
-        known = sorted(traits.vocabulary(ctx.world_root))
+        # `offerable` rather than the register, because `light` is never in
+        # the register until something grants it and a room is one of the two
+        # things that can. Listing the register alone said, in the schema, that
+        # this world did not measure light -- against the prompt above, which
+        # asks for it by name -- and the prompt lost.
+        known = traits.offerable(ctx.world_root)
         return tb.params({
             "description": {"type": "string",
                             "description": "2-4 sentences on the room's "
@@ -1927,10 +1932,9 @@ def description_complaints(args, world_root):
     if bonuses is not None and not isinstance(bonuses, dict):
         said.append("trait_bonuses has to be an object of {trait: amount}")
     elif bonuses:
-        known = traits.vocabulary(world_root)
+        known = traits.offerable(world_root)
         strange = sorted(slug for slug in bonuses
-                         if traits._slug(slug) not in known
-                         and traits._slug(slug) != "light")
+                         if traits._slug(slug) not in known)
         if strange:
             said.append("trait_bonuses names " + ", ".join(strange)
                         + ", which this world does not measure; list_traits "

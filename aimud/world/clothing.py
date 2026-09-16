@@ -640,7 +640,10 @@ def spec_schema(ctx=None, worn=False):
     if world_root is not None:
         from world import traits
 
-        known_traits = sorted(traits.vocabulary(world_root))
+        # `offerable`, so that a lantern can be given the one trait the engine
+        # reads by name. It is never in the register until something grants it,
+        # and a thing that burns is the other half of what can.
+        known_traits = traits.offerable(world_root)
     garments = list(GARMENT_TYPES)
     return {
         "type": "object",

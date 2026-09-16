@@ -125,7 +125,11 @@ def prompt_block(world_root):
         "a condition that could be turned off — otherwise a lamp in a pack\n"
         "shines as brightly as one alight.\n\n"
         "list_traits shows the traits this world measures; a bonus names "
-        "one of those.\n\n"
+        "one of those, or light.\n\n"
+        "light is the one the game reads by name. A lamp, a torch, a candle\n"
+        "or a burning brazier gives {\"light\": 1} — with bonus_while \"lit\",\n"
+        "so that it shines only while it burns. Nothing else need say anything\n"
+        "about light: darkness is what is left where none is given.\n\n"
     )
 
 

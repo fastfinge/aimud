@@ -539,7 +539,7 @@ def item_complaints(args, world_root):
         from world import traits
 
         strange = sorted(slug for slug in bonuses
-                         if traits._slug(slug) not in traits.vocabulary(world_root))
+                         if traits._slug(slug) not in traits.offerable(world_root))
         if strange:
             said.append("trait_bonuses names " + ", ".join(strange) + ", which "
                         "this world does not measure; list_traits shows what "
