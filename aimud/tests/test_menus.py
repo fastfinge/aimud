@@ -650,3 +650,41 @@ class SayingItClosed(Driving):
         said = self.type("no")
         self.assertIn("Nothing changed", said)
         self.assertNotIn(menus.CLOSED, said)
+
+
+@tag("world")
+class ChoicesPerPage(Driving):
+    """Every menu pages by the player's own `pagesize`."""
+
+    def test_a_smaller_page(self):
+        with mock.patch.object(menus, "page_size", return_value=5):
+            self.open(a_long_list())
+            self.assertIn("5. model-04", self.last)
+            self.assertNotIn("6. model-05", self.last)
+            self.assertIn("Page 1 of 5", self.last)
+            self.assertIn("6. model-05", self.type("n"))
+
+    def test_nought_is_every_choice_on_one_page(self):
+        with mock.patch.object(menus, "page_size", return_value=0):
+            self.open(a_long_list())
+            self.assertIn("25. model-24", self.last)
+            self.assertNotIn("Page", self.last)
+            self.assertNotIn("turn the page", self.last)
+
+    def test_a_long_list_still_filters_when_it_is_all_on_one_page(self):
+        with mock.patch.object(menus, "page_size", return_value=0):
+            self.open(a_long_list())
+            said = self.type("model-2")
+            self.assertIn("5 matches", said)
+
+    def test_n_is_not_a_page_turn_when_there_is_one_page(self):
+        with mock.patch.object(menus, "page_size", return_value=0):
+            self.open(a_long_list())
+            self.assertIn("matches", self.type("n"))
+
+    def test_the_preference_is_kept_on_the_account(self):
+        account = mock.Mock()
+        account.attributes.get.return_value = 0
+        with mock.patch.object(menus, "account_of", return_value=account):
+            self.assertEqual(menus.page_size(self.char1), 0)
+        self.assertEqual(menus.page_size(self.char1), menus.PAGE_SIZE)

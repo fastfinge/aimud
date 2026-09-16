@@ -72,9 +72,13 @@ CLOSE_VIEW = "close"
 STAY_OPEN = "stay"
 VIEW_MODES = (WALK_AWAY, CLOSE_VIEW, STAY_OPEN)
 
-#: How many entries a list shows at once. A list longer than this can also be
-#: filtered by typing, which is how the models menu has always worked.
+#: How many entries a list shows at once, until the player says otherwise
+#: with the `pagesize` setting. 0 there means every entry on one page.
 PAGE_SIZE = 10
+
+#: A list longer than this can be narrowed by typing, however it is paged --
+#: a list of three hundred models is worth filtering even shown whole.
+FILTER_FROM = 10
 
 #: Put in front of input to have it read as text rather than as a key.
 ESCAPE = "/"
@@ -110,6 +114,7 @@ RESERVED = frozenset(QUIT_WORDS + BACK_WORDS + LOOK_WORDS + HELP_WORDS
 #: depend on it; the registry points at the same attributes.
 VIEW_MODE_ATTR = "menu_view_mode"
 SHOW_COMMAND_ATTR = "menu_show_command"
+PAGE_SIZE_ATTR = "menu_page_size"
 CONFIRMATIONS_ATTR = "confirmations"
 
 
@@ -183,6 +188,14 @@ def view_mode(who):
     """How `who` wants view menus to behave. §3.9."""
     mode = _preference(who, VIEW_MODE_ATTR, WALK_AWAY)
     return mode if mode in VIEW_MODES else WALK_AWAY
+
+
+def page_size(who):
+    """How many entries `who` wants on a page: 0 for all of them at once."""
+    try:
+        return max(0, int(_preference(who, PAGE_SIZE_ATTR, PAGE_SIZE)))
+    except (TypeError, ValueError):
+        return PAGE_SIZE
 
 
 def shows_commands(who):
@@ -506,7 +519,7 @@ class Form:
     def __init__(self, key, title, items=(), intro="", kind=EDIT,
                  guided=False, command=None, on_close=None,
                  discard="Throw away what you have entered?",
-                 choices_line="For one of them:", page_size=PAGE_SIZE,
+                 choices_line="For one of them:",
                  sponsor=None, context=None):
         self.key = key
         # `sponsor(ctx)` is who pays when `~` asks a model to fill a field in;
@@ -523,7 +536,6 @@ class Form:
         self.on_close = on_close
         self.discard = discard
         self.choices_line = choices_line
-        self.page_size = page_size
 
     def items_for(self, ctx):
         found = _call(self.items, ctx, []) or []
@@ -680,26 +692,30 @@ class GameMenu(EvMenu):
             entries.append(_Entry(choice, label, names))
         return entries
 
-    @staticmethod
-    def _size(frame):
+    def _size(self, frame=None):
         """
-        How many entries this list shows at once.
+        How many entries a list shows at once: the player's `pagesize`, the
+        same in every menu. 0 is every entry on one page.
+        """
+        return page_size(self.caller)
 
-        A form says for itself, because a settings group of fourteen is read
-        more easily whole than in pages. A choice list, which can be hundreds
-        of models long, always pages at `PAGE_SIZE`.
-        """
-        if frame.kind == "form":
-            return frame.form.page_size
-        return PAGE_SIZE
+    def _paged(self, count):
+        """Whether a list of `count` entries runs to more than one page."""
+        size = self._size()
+        return bool(size) and count > size
 
     def _page(self, frame, entries):
         """(shown, numbered from, footer lines) for one page of a list."""
         visible = _filtered(entries, frame.filter)
-        pages = max(1, -(-len(visible) // self._size(frame)))
-        frame.page = max(0, min(frame.page, pages - 1))
-        start = frame.page * self._size(frame)
-        shown = visible[start:start + self._size(frame)]
+        size = self._size()
+        if not size:
+            frame.page = 0
+            pages, start, shown = 1, 0, visible
+        else:
+            pages = max(1, -(-len(visible) // size))
+            frame.page = max(0, min(frame.page, pages - 1))
+            start = frame.page * size
+            shown = visible[start:start + size]
         notes = []
         if frame.filter:
             matched = len(visible)
@@ -734,7 +750,7 @@ class GameMenu(EvMenu):
         if intro:
             lines += [intro]
         entries = self._form_entries(frame)
-        filterable = len(entries) > self._size(frame)
+        filterable = len(entries) > FILTER_FROM
         visible, shown, start, notes = self._page(frame, entries)
         lines.append("")
         if not shown:
@@ -742,7 +758,7 @@ class GameMenu(EvMenu):
         for number, entry in enumerate(shown, start + 1):
             lines.append(f"{number}. {self._item_line(ctx, entry)}")
         lines += [""] + notes if notes else [""]
-        lines.append(self._keys_line(frame, len(visible) > self._size(frame),
+        lines.append(self._keys_line(frame, self._paged(len(visible)),
                                      filterable))
         return "\n".join(lines)
 
@@ -778,7 +794,7 @@ class GameMenu(EvMenu):
         listed = ", ".join(f"{number} {strip_ansi(entry.label)}"
                            for number, entry in enumerate(shown, start + 1))
         line = f"{frame.form.choices_line} {listed}."
-        if len(visible) > self._size(frame):
+        if self._paged(len(visible)):
             line += " Type next or prev for more."
         return line
 
@@ -800,12 +816,12 @@ class GameMenu(EvMenu):
             if asked:
                 lines.insert(1, asked)
             entries = self._choice_entries(frame)
-            filterable = len(entries) > self._size(frame)
+            filterable = len(entries) > FILTER_FROM
             visible, shown, start, notes = self._page(frame, entries)
             for number, entry in enumerate(shown, start + 1):
                 lines.append(f"{number}. {entry.label}")
             lines += [""] + notes if notes else [""]
-            keys = self._keys_line(frame, len(visible) > self._size(frame), filterable)
+            keys = self._keys_line(frame, self._paged(len(visible)), filterable)
             if not field.required and field.is_set(ctx):
                 keys += " clear removes it."
             lines.append(keys)
@@ -1075,7 +1091,7 @@ class GameMenu(EvMenu):
 
     def _turn_page(self, frame, text, entries):
         word = text.lower()
-        if len(_filtered(entries, frame.filter)) <= self._size(frame):
+        if not self._paged(len(_filtered(entries, frame.filter))):
             return False
         if word in NEXT_WORDS:
             frame.page += 1
@@ -1088,7 +1104,7 @@ class GameMenu(EvMenu):
 
     def _form_input(self, frame, text):
         entries = self._form_entries(frame)
-        filterable = len(entries) > self._size(frame)
+        filterable = len(entries) > FILTER_FROM
         if text.startswith(ESCAPE) and len(text) > 1:
             if filterable:
                 return self._set_filter(frame, text[1:])
@@ -1166,7 +1182,7 @@ class GameMenu(EvMenu):
                 if (self._navigate(frame, text)
                         or self._turn_page(frame, text, entries)):
                     return None
-            if len(entries) > self._size(frame):
+            if len(entries) > FILTER_FROM:
                 return self._set_filter(frame, literal)
             return self._refuse()
 

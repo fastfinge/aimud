@@ -354,3 +354,27 @@ class SettingsAsASubject(_Settings):
             keys = [item.key for item in
                     subjects.verb_form(verb).items_for(ctx)]
             self.assertIn("settings", keys, verb)
+
+
+@tag("world")
+class ChoicesPerPageSetting(_Settings):
+
+    def test_a_number(self):
+        self.assertIn("25 choices at a time", self.settings("pagesize 25"))
+        self.assertEqual(menus.page_size(self.account), 25)
+
+    def test_nought_is_all_at_once(self):
+        self.assertIn("every choice at once", self.settings("pagesize 0"))
+        self.assertEqual(menus.page_size(self.account), 0)
+        self.assertIn("Choices per page: all at once", self.settings("list"))
+
+    def test_back_to_the_default(self):
+        self.settings("pagesize 0")
+        self.settings("pagesize default")
+        self.assertEqual(menus.page_size(self.account), menus.PAGE_SIZE)
+        self.assertIn("Choices per page: 10 at a time (the default)",
+                      self.settings("list"))
+
+    def test_not_a_number(self):
+        self.assertIn("0 for all of them", self.settings("pagesize lots"))
+        self.assertIn("0 or more", self.settings("pagesize -3"))

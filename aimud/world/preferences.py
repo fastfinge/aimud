@@ -221,6 +221,52 @@ VIEW_MENUS = _attribute_setting(
        m.STAY_OPEN: "stay open until you quit."}[value or m.WALK_AWAY],
 )
 
+def _page_size_parse(ctx, text):
+    said = text.strip().lower()
+    if said in ("default", "clear", "reset"):
+        return None, ""
+    if said in ("all", "unlimited", "none", "off"):
+        return 0, ""
+    try:
+        size = int(said)
+    except ValueError:
+        return None, "Give a number of choices, or 0 for all of them at once."
+    if size < 0:
+        return None, "That has to be 0 or more."
+    return size, ""
+
+
+def _page_size_set(ctx, size):
+    if size is None or size == m.PAGE_SIZE:
+        ctx.account.attributes.remove(m.PAGE_SIZE_ATTR)
+    else:
+        ctx.account.attributes.add(m.PAGE_SIZE_ATTR, size)
+    if size == 0:
+        return "Menus will show every choice at once."
+    return (f"Menus will show {size if size is not None else m.PAGE_SIZE} "
+            f"choices at a time.")
+
+
+def _page_size_show(ctx, stored):
+    size = m.PAGE_SIZE if stored is None else stored
+    shown = "all at once" if size == 0 else f"{size} at a time"
+    return shown + _default_mark(stored)
+
+
+PAGE_SIZE = m.Field(
+    "pagesize", "Choices per page",
+    get=lambda ctx: ctx.account.attributes.get(m.PAGE_SIZE_ATTR),
+    set=_page_size_set, parse=_page_size_parse, show=_page_size_show,
+    prompt="Type how many choices to show at a time, 0 for all of them, or "
+           "default",
+    help=("How many choices every menu shows before the rest go on another "
+          "page, which n and p turn. 0 shows every choice at once, however "
+          "long the list, which suits reading with a screen reader or a "
+          "client that scrolls back. A long list can be narrowed by typing "
+          "either way."),
+)
+
+
 SHOW_COMMANDS = _attribute_setting(
     "showcommands", "Say what to type next time", m.SHOW_COMMAND_ATTR, True,
     kind=m.BOOLEAN,
@@ -233,7 +279,7 @@ SHOW_COMMANDS = _attribute_setting(
 
 GENERAL = m.Form(
     key="general", title="General",
-    items=[BUSY, VIEW_MENUS, SHOW_COMMANDS],
+    items=[BUSY, VIEW_MENUS, PAGE_SIZE, SHOW_COMMANDS],
 )
 
 
@@ -277,7 +323,7 @@ def _all_confirmations(on):
 
 
 CONFIRMATIONS_FORM = m.Form(
-    key="confirmations", title="Confirmations", page_size=20,
+    key="confirmations", title="Confirmations",
     intro="Whether you are asked yes or no before each of these. All are on "
           "until you turn them off.",
     items=[
@@ -687,7 +733,7 @@ def _refresh_models(ctx):
 
 
 MODELS = m.Form(
-    key="models", title="Models", page_size=20,
+    key="models", title="Models",
     intro=("Which model answers for each job the game asks a model to do, and "
            "how it is asked. Dialogue is usually better loose and surprising; "
            "the rules that decide what an action does want to be steady."),

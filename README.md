@@ -553,7 +553,7 @@ same keys.
 | `l` | List the choices again, after something else has scrolled them away. |
 | `?` / `?3` / `? title` | Say what a choice is for, then show the choices again. On its own, asks which. |
 | `~` / `~3` / `~ all` | Have a model write a first draft of a field, or of every empty one, for you to keep or not. Only where a field can be filled in, and it costs a model call. |
-| `n` / `p` | Next and previous page, on a long list. |
+| `n` / `p` | Next and previous page, on a long list. `settings pagesize` sets how many choices a page holds, 10 unless you change it, or 0 for every choice at once. |
 | anything else | On a long list, narrow it to what matches. An empty line shows everything again. |
 | `/` in front | Type any of the above as plain text: `/b` sets a field to "b". |
 
