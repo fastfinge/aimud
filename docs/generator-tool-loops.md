@@ -1,10 +1,6 @@
 # Development plan: generator tool loops and busy notices
 
-Status: **planned, nothing built.** Scoped from two `future-plans.md` items:
-"generators get a full tool call loop" and "show when busy". It also covers
-most of "tools for the models", for the lexicons in particular. §9 lists the
-phases in build order, §10 the decisions taken and the questions still open,
-and §11 the risks.
+Status: built, working, and tested.
 
 Companion to `development-plan.md`, `tokens-and-phrases.md` and
 `pronouns-and-ownership.md`. The ground rules in §2 of `development-plan.md`
