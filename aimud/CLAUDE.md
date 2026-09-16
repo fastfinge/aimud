@@ -96,8 +96,32 @@ All in-game entities are Python classes that inherit from Evennia defaults. The 
 
 - `command.py` — base `Command` class; all game commands subclass this
 - `default_cmdsets.py` — four cmdset classes (`CharacterCmdSet`, `AccountCmdSet`, `UnloggedinCmdSet`, `SessionCmdSet`) that wrap Evennia defaults; add/override commands in `at_cmdset_creation()`
+- `verbs.py` — the eight verb commands: `create`, `edit`, `delete`, `reset`, `view`, `import`, `export`, `enter`. Each only finds a subject and hands over the rest of the line.
+- `subjects.py` — the subject registry, and helpers every subject shares (`require_world`, `require_owner`, `answered`, `asking`). `SUBJECT_MODULES` lists the modules that define subjects: `world_subject.py`, `rules_subject.py`, `contents_subject.py`, `upkeep_subject.py`.
+- `settings_cmds.py` — `settings`, over the register in `world/preferences.py`.
 
-To add a command: create it in `commands/command.py` (or a new file), then add it to the appropriate cmdset in `default_cmdsets.py`.
+**Adding something a player makes, changes or reads belongs in a subject, not a
+new command.** Add a `Subject` with a `Use` per verb to a subject module (or a
+new module listed in `SUBJECT_MODULES`): `run(cmd, ctx, words)` for the command
+line, `items(ctx)` for the verb's menu, `offered(ctx)` for who sees it. Inside
+a generated world the parser only gives a verb command the input when the next
+word is one of its subject words (`server/conf/cmdparser.py`), so `reset world`
+is ours and `reset the trap` is still the world's. A command whose word a world
+must never use as a verb sets `reserves_word = True`.
+
+**Anything that asks the player to choose uses `world/menus.py`.** Describe the
+menu as a `Form` of `Field`s, `Action`s and `Submenu`s and call
+`menus.open_menu`. Never build an `EvMenu` by hand, never print usage when a
+menu would do, and never ask a question another way. A form gets the shared
+keys, screen-reader layout, confirmations (`Action(confirm=...)`, with a
+matching entry in `preferences.CONFIRMATIONS`), `?` help, `~` fill-in for
+`suggestible` fields, presenter hooks for sounds and MXP, and a text fallback
+for callers with no session. Every point in a menu must also be reachable by
+typing a command.
+
+**A player's preference is a setting.** Add a `Field` to a group in
+`world/preferences.py`, stored in an attribute. Do not add a single-purpose
+command for it.
 
 ### World content (`world/`)
 

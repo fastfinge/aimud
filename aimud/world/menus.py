@@ -327,9 +327,13 @@ class Field(Item):
     def __init__(self, key, label, kind=TEXT, help="", get=None, set=None,
                  parse=None, choices=None, show=None, prompt=None,
                  required=False, minimum=None, maximum=None,
-                 suggestible=False, empty="not set", confirm=None, **kwargs):
+                 suggestible=False, empty="not set", confirm=None,
+                 after=STAY, **kwargs):
         super().__init__(key, label, help=help, **kwargs)
         self.kind = kind
+        # What setting it does to the menu. `CLOSE` is for a field that is the
+        # whole point of its form: what you want to remember, a new goal.
+        self.after = after
         # `confirm(ctx, value)` returns (key, question) when that value needs
         # asking about first -- putting a world into `always`, clearing a key.
         self.confirm = confirm
@@ -743,7 +747,11 @@ class GameMenu(EvMenu):
         item = entry.target
         line = entry.label
         if isinstance(item, Field):
-            line += f": {item.shown(ctx)}"
+            # A field with nothing to show -- a question, not a setting -- is
+            # just its label, not a label and a colon read out before nothing.
+            shown = item.shown(ctx)
+            if shown:
+                line += f": {shown}"
         if item.default:
             line += " (the default)"
         return line
@@ -1194,6 +1202,8 @@ class GameMenu(EvMenu):
             return self.refresh()
         PRESENTER.chose(self, field)
         self.say(field.store(ctx, value))
+        if field.after == CLOSE:
+            return self.close_menu(why="finished")
         self.stack.pop()
         base = self.top
         if base.kind == "form" and base.form.guided:

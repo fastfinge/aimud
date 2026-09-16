@@ -40,7 +40,8 @@ class CmdPronouns(Command):
       pronouns <set>
 
     Each world keeps its own sets, and each world remembers you separately.
-    |wpronouns|n on its own lists what this world has and says which is yours.
+    |wpronouns|n on its own lists what this world has, marks which is yours,
+    and lets you choose one.
 
     |wcreate pronouns|n walks through adding a set this world does not have yet.
     It asks for five forms and whether the verb after it is singular or
@@ -65,7 +66,10 @@ class CmdPronouns(Command):
         wanted = self.args.strip().lower()
 
         if not wanted:
-            self._listing(caller, world_root)
+            from commands.name_cmds import open_setting
+
+            if not open_setting(self, "pronouns"):
+                self._listing(caller, world_root)
             return
 
         if wanted in ("new", "add", "another"):

@@ -30,7 +30,8 @@ class CmdName(Command):
     you meet will call you by the name you set here; with none set, they use
     your account name.
 
-    |wname clear|n gives up the name and goes back to your account name.
+    |wname clear|n gives up the name and goes back to your account name. On
+    its own, |wname|n says what you are called here and lets you change it.
     """
 
     key = "name"
@@ -52,6 +53,8 @@ class CmdName(Command):
         wanted = self.args.strip()
         current = caller.world_name(world_root)
 
+        if not wanted and open_setting(self, "name"):
+            return
         if not wanted:
             if current:
                 caller.msg(
@@ -121,3 +124,23 @@ def announce(caller, previous, now):
 
     notify_npcs(room, "action", now, f"is now known as {now}",
                 exclude=caller, actor=caller)
+
+
+def open_setting(cmd, key):
+    """
+    Open one "You in this world" setting, for a command typed on its own.
+
+    `name` and `pronouns` are commands because changing them is something a
+    character does in front of others, but the value is a setting and lives
+    in the settings register, so on their own they open it there. With nobody
+    connected to show a menu to, returns False and the command says it in
+    words instead.
+    """
+    from world import menus, preferences
+
+    runner = menus.account_of(cmd.caller) or cmd.caller
+    if not menus.interactive(runner):
+        return False
+    menus.open_menu(cmd.caller, preferences.SETTINGS, session=cmd.session,
+                    path=["you", key])
+    return True

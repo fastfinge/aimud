@@ -26,6 +26,7 @@ you can reach through [OpenRouter](https://openrouter.ai/).
 - [Your first world](#your-first-world)
 - [Playing](#playing)
 - [Command reference](#command-reference)
+- [Menus](#menus)
 - [What it costs](#what-it-costs)
 - [Before you host this anywhere](#before-you-host-this-anywhere)
 - [How it fits together](#how-it-fits-together)
@@ -484,15 +485,16 @@ the next word is one of their subjects: `reset world` resets the world, while
 | `get <thing>` | Pick something up. |
 | `drop <thing>` / `drop all` | Put something down. `all` empties you out, worn clothes included. |
 | `help [<topic>]` | Commands, topics, and every word this world has invented for itself. |
-| `name [<what you are called here>]` / `name clear` | Rename yourself in this world, per world. |
+| `name [<what you are called here>]` / `name clear` | Rename yourself in this world, per world. On its own, shows your name here and lets you change it. |
+| `pronouns [<set>]` | Choose the pronouns people here use about you. On its own, lists this world's sets to choose from. `create pronouns` adds one. |
 | `follow <person>` / `follow` | Travel with somebody, or stop. |
 | `pose <action>` / `emote` | Emote. |
-| `remember <question>` / `recall` | Ask your own memory something. |
-| `score [trait]` / `traits` / `sheet` | Your traits, what they stand at, and what is lending you the difference. |
+| `remember <question>` / `recall` | Ask your own memory something. On its own, asks what you want to remember. |
+| `score [trait]` / `traits` / `sheet` | Your traits, what they stand at, and what is lending you the difference. On its own, offers each trait by number. |
 | `wear` / `remove` / `cover <worn> with <item>` / `uncover` / `inventory` | Clothing. `don` and `doff` also work. |
 | `wield <thing>` / `unwield <thing>` | Take something in hand, or lower it. Two hands, so a sword and a shield. |
-| `quests` / `quests hint` / `quests accept \| decline \| abandon` | Errands. `quest` also works. Abandoning asks first. |
-| `goal <what you want>` / `goal` | Set or drop a goal, with nudges. |
+| `quests` / `quests hint` / `quests accept \| decline \| abandon` | Errands. `quest` also works. On its own, shows the list and offers whichever of the others apply. Abandoning asks first. |
+| `goal <what you want>` / `goal next` / `goal clear` | Set a goal, with a nudge after every command; hear the next step again; or drop it. On its own, offers all three. |
 
 ### Upkeep
 
@@ -520,6 +522,41 @@ you are told the prefixed spelling.
 Outside a world — Limbo, or anywhere built by hand — they work exactly as
 Evennia documents them, prefix or not. The game's own commands, such as `look`,
 `settings` and `score`, never need one.
+
+---
+
+## Menus
+
+A command that needs something you did not type opens a menu instead of
+printing its usage: `create`, `settings`, `goal`, `score`. Every menu has the
+same keys.
+
+| Key | What it does |
+|---|---|
+| a number, or a choice's name | Choose it. Numbers stay the same on every page. |
+| `b` | Back one level. From the top, close the menu. |
+| `q` | Close the menu, however deep you are. |
+| `l` | List the choices again, after something else has scrolled them away. |
+| `?` / `?3` / `? title` | Say what a choice is for. On its own, asks which. |
+| `~` / `~3` / `~ all` | Have a model write a first draft of a field, or of every empty one, for you to keep or not. Only where a field can be filled in, and it costs a model call. |
+| `n` / `p` | Next and previous page, on a long list. |
+| anything else | On a long list, narrow it to what matches. An empty line shows everything again. |
+| `/` in front | Type any of the above as plain text: `/b` sets a field to "b". |
+
+**Menus that only show you something** -- `score`, `quests`, `view rules`,
+`view worlds` -- show it at once and put their choices on one line. By default
+anything you type that is not one of their choices closes the menu and simply
+happens, so `score` then `north` walks north. `settings viewmenus` changes that:
+to never opening a menu at all, or to staying open until `q`.
+
+**Anything that cannot be undone, costs money or throws work away asks yes or
+no first**, with No as option 1. Adding `yes` to the end of the command answers
+in advance -- `delete world 2 yes` -- and each confirmation can be turned off
+under `settings confirmations`.
+
+**Everything a menu does can be typed in one line.** When you finish something
+through a menu you are told the command that would have done it, so the menu
+teaches its own shortcuts. `settings showcommands off` stops that.
 
 ---
 

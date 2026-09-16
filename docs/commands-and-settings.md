@@ -1,7 +1,7 @@
 # Development plan: commands, menus and settings
 
-Status: phases 1 to 5 are built: the menu engine, settings, verbs and
-worlds, every other subject, and help and `~`. Phase 6 is not started.
+Status: built. All six phases are done: the menu engine, settings, verbs and
+worlds, every other subject, help and `~`, and the in-character commands.
 The open questions are settled; see §11.
 
 This covers the first two items in `future-plans.md`: sorting out the command
@@ -868,6 +868,31 @@ guidance through `~`.
 `README.md` and the commands section of `aimud/CLAUDE.md` rewritten, and the
 first two items removed from `future-plans.md`, together with its stale
 "show when busy" item, which was built in `generator-tool-loops.md`.
+
+*Built.* Tests are in `tests/test_in_character_menus.py`. Where it differs from
+the plan:
+
+* **`goal` gained two typed forms.** A bare `goal` used to drop the goal, and
+  now it opens a menu, so dropping it is `goal clear` and hearing the next step
+  again is `goal next`. In the menu, giving up comes first.
+* **`remember` on its own goes straight to the question**, and asks it the
+  moment it is typed. With one field there is no form to show first.
+* **`score` reads "composure: 12", not "composure . . . . 12".** Section 3.6
+  took the dotted leaders out of the world wizard for being read aloud dot by
+  dot, and `score` had the same leaders.
+* **`name` and `pronouns` on their own open their settings** in "You in this
+  world": the name to type, or the world's pronoun sets to choose from. Typed
+  in full, both are unchanged and still announced to the room.
+* **`choosing.ask` opens a menu only when it is given `on_chosen`.** Its two
+  callers today, in `ownership.py` and `verbs.py`, still only say "Which her?"
+  and have the player type the command again. Turning them into menus is the
+  disambiguation item left in `future-plans.md`, which now says so.
+* **`view settings` from §5.2 was not made.** `settings list` does that job,
+  as phase 2 recorded.
+* **Every retired name was checked** against the commands that exist, and
+  each says what replaced it.
+
+This plan is finished. Moving it to `docs/archived/` is your call.
 
 ---
 
