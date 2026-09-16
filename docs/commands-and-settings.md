@@ -1,6 +1,7 @@
 # Development plan: commands, menus and settings
 
-Status: planned. Nothing built yet. The open questions are settled; see §11.
+Status: phase 1 (the menu engine) is built. Phases 2 to 6 are not started.
+The open questions are settled; see §11.
 
 This covers the first two items in `future-plans.md`: sorting out the command
 system, and a settings command. Both depend on a third thing neither item
@@ -226,6 +227,9 @@ set of keys an edit menu uses. A view menu claims fewer of them (§3.9).
 5. **Filter text**, only on filterable lists: any other input narrows the
    list. An empty line clears the filter, as the models menu does today. To
    filter for something that is also a reserved key, start it with `/` (`/b`).
+   The same `/` works when typing into a field: `/b` sets a field to "b". In a
+   field that is not required, `clear` removes its value, and `/clear` types
+   the word.
 6. Anything else: "That is not one of the options. `l` lists them, `?` explains
    them."
 
@@ -237,7 +241,7 @@ than quit. The models menu uses `r` for reset, `c` for clear, `x` for drop and
 ### 3.4 Defaults come first
 
 Where a command assumes something today, that assumption becomes option 1 and
-is marked `(what happens if you do not choose)`:
+is marked `(the default)`:
 
 | command | assumes today | option 1 |
 |---|---|---|
@@ -704,6 +708,22 @@ help text.
 *Done when:* the pronouns wizard behaves as before with the new keys, each
 reserved key and hook has a test, and a view menu hands `north`, `say` and
 `look` to the game while keeping `quit` from disconnecting anyone.
+
+*Built.* Tests are in `tests/test_menus.py`, including two that go through a
+real session and an account. Where it differs from the plan:
+
+* `pronouns new` still asks the six questions in order, and then shows the
+  whole set with "Keep this set". Previously the set was kept the moment the
+  last question was answered, and a typo could not be fixed.
+* Quitting partway through asks "Throw away this pronoun set?" first. That is
+  the `discard` confirmation from §8, and it can be turned off.
+* `~` is a key in every menu, but until phase 5 it says nothing can be filled
+  in yet.
+* The engine has its own filtering and paging. The models menu still uses the
+  old code until it is ported in phase 2.
+* Menu preferences are read straight from the account attributes
+  `menu_view_mode`, `menu_show_command` and `confirmations`. The phase 2
+  registry points at the same attributes.
 
 **Phase 2: settings.** `world/preferences.py`, the `settings` command,
 `busy` and `apikey` as settings, the confirmations group, and help topics

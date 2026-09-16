@@ -15,6 +15,7 @@ other.
 """
 
 from commands.command import Command
+from world import menus
 from world import pronouns as pronoun_mod
 
 #: The order the wizard asks in, and what to call each form for somebody who
@@ -101,50 +102,37 @@ class CmdPronouns(Command):
         """
         Walk through a new set, one form at a time.
 
-        Through Evennia's own menu rather than a hand-rolled prompt loop: this
-        is the same "ask a question and wait" the roadmap wants for
-        disambiguation and for a rule that offers a choice, and there is no
-        reason for this command to invent a second way of doing it.
+        Through the game's menu engine, as a guided form: each form is asked
+        in turn, and once all six are in, the whole set is shown to be kept or
+        corrected. See world.menus.
         """
-        from evennia.utils.evmenu import EvMenu
+        from world import menus
 
-        EvMenu(caller, "commands.pronoun_cmds",
-               startnode="_form", cmd_on_exit=None,
-               world_root=world_root, gathered={}, step=0)
+        menus.open_menu(caller, NEW_SET, session=self.session,
+                        world_root=world_root)
 
 
 # ---------------------------------------------------------------------------
-# The wizard, as EvMenu nodes
+# The wizard, as a form
 # ---------------------------------------------------------------------------
 
-def _form(caller, raw_string, **kwargs):
-    """Ask for one form, or finish when every form has been given."""
-    menu = caller.ndb._evmenu
-    step = menu.step
-    if step >= len(ASKED):
-        return _number(caller, raw_string, **kwargs)
-
-    field, example, like = ASKED[step]
-    text = (f"|wA new pronoun set|n ({step + 1} of {len(ASKED) + 1})\n\n"
-            f"Fill in the blank: |w{example}|n\n"
-            f"For she/her that word is |w{like}|n.\n\n"
-            f"Type the word, or |wq|n to give up.")
-    return text, ({"key": "_default", "goto": _took},)
-
-
-def _took(caller, raw_string, **kwargs):
-    """Keep what was typed and move on."""
-    menu = caller.ndb._evmenu
-    word = "".join(ch for ch in raw_string.strip().lower() if ch.isalpha())
+def _word(ctx, text):
+    """One pronoun form: letters only, as the register stores it."""
+    word = "".join(ch for ch in text.strip().lower() if ch.isalpha())
     if not word:
-        caller.msg("That is not a word. Try again.")
-        return "_form"
-    menu.gathered[ASKED[menu.step][0]] = word
-    menu.step += 1
-    return "_form"
+        return None, "That is not a word. Try again."
+    return word, ""
 
 
-def _number(caller, raw_string, **kwargs):
+def _form_field(field, example, like):
+    return menus.Field(
+        field, example, prompt="Type the word that fills in the blank",
+        help=f"For she/her that word is {like}.",
+        parse=_word, required=True,
+    )
+
+
+def _number_choices(ctx):
     """
     The sixth question, and the one nobody thinks to ask.
 
@@ -152,40 +140,48 @@ def _number(caller, raw_string, **kwargs):
     sword". Asked in words rather than as "singular or plural", because the
     grammatical term is exactly what somebody answering this will not know.
     """
-    menu = caller.ndb._evmenu
-    subject = menu.gathered.get("subject", "they")
-    return (
-        f"|wOne last thing|n ({len(ASKED) + 1} of {len(ASKED) + 1})\n\n"
-        f"Which of these is right?\n\n"
-        f"  1. {subject} |wpicks|n up the sword\n"
-        f"  2. {subject} |wpick|n up the sword\n",
-        (
-            {"key": ("1", "picks", "singular"), "goto": (_finish,
-                                                         {"plural": False})},
-            {"key": ("2", "pick", "plural"), "goto": (_finish,
-                                                      {"plural": True})},
-        ),
-    )
+    subject = ctx.draft.get("subject") or "they"
+    return [
+        menus.Choice(False, f"{subject} picks up the sword",
+                     keys=("picks", "singular")),
+        menus.Choice(True, f"{subject} pick up the sword",
+                     keys=("pick", "plural")),
+    ]
 
 
-def _finish(caller, raw_string, **kwargs):
+def _keep(ctx):
     """Register the set and give it to whoever asked for it."""
-    menu = caller.ndb._evmenu
-    world_root = menu.world_root
-    declared = dict(menu.gathered)
-    declared["plural"] = bool(kwargs.get("plural"))
+    world_root = ctx.world_root
+    declared = {field: ctx.draft.get(field) for field, _example, _like in ASKED}
+    declared["plural"] = bool(ctx.draft.get("plural"))
     declared["means"] = (f"for somebody who goes by {declared.get('subject')} "
                          f"and {declared.get('object')}")
 
     slug = pronoun_mod.register(world_root, declared)
     if not slug:
-        caller.msg("That set was not complete enough to keep. Nothing changed.")
-        return None
+        return "That set was not complete enough to keep. Nothing changed."
 
-    pronoun_mod.give(caller, slug, world_root)
+    pronoun_mod.give(ctx.character, slug, world_root)
     entry = pronoun_mod.get(world_root, slug)
-    caller.msg(
-        f"This world now keeps |w{pronoun_mod.spelled(entry)}|n, and you go "
-        f"by it. Anybody here can use it, characters included."
-    )
-    return None
+    return (f"This world now keeps |w{pronoun_mod.spelled(entry)}|n, and you "
+            f"go by it. Anybody here can use it, characters included.")
+
+
+NEW_SET = menus.Form(
+    key="pronouns",
+    title="A new pronoun set",
+    intro="Change any form by its number, or keep the set.",
+    guided=True,
+    discard="Throw away this pronoun set?",
+    items=[
+        *(_form_field(field, example, like) for field, example, like in ASKED),
+        menus.Field("plural", "The verb after it", kind=menus.CHOICE,
+                    prompt="Which of these is right?",
+                    choices=_number_choices, required=True,
+                    show=lambda ctx, value: "not answered yet" if value is None
+                    else _number_choices(ctx)[1 if value else 0].label),
+        menus.Action("keep", "Keep this set", run=_keep, after=menus.CLOSE),
+    ],
+)
+
+
