@@ -31,7 +31,7 @@ from twisted.internet import reactor
 #: How often a player is told, in seconds, when they have not said.
 DEFAULT_INTERVAL = 10
 
-#: What `busy <seconds>` accepts. Below five the notices would talk over the
+#: What the `busy` setting accepts. Below five the notices would talk over the
 #: answer; above two minutes nobody would believe the game was still there.
 LEAST = 5
 MOST = 120

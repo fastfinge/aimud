@@ -85,8 +85,8 @@ class CmdWorldgen(Command):
     Giving a description on the command line fills that field in and opens
     the wizard on it. Use |wworldedit|n to change any of this afterwards.
 
-    Requires an OpenRouter API key (see |wapikey|n) and a model (see
-    |wmodels|n).
+    Requires an API key and a model (see |wsettings apikey|n and
+    |wsettings models|n).
     """
 
     key = "worldgen"

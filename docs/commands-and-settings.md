@@ -1,6 +1,7 @@
 # Development plan: commands, menus and settings
 
-Status: phase 1 (the menu engine) is built. Phases 2 to 6 are not started.
+Status: phases 1 (the menu engine) and 2 (settings) are built. Phases 3 to 6
+are not started.
 The open questions are settled; see §11.
 
 This covers the first two items in `future-plans.md`: sorting out the command
@@ -732,6 +733,32 @@ existing `test_model_menu` tests move with it). Delete `busy`, `apikey` and
 `models`, and add the retired-name table.
 *Done when:* every stored preference is readable and settable through
 `settings`, and nothing is migrated.
+
+*Built.* `world/preferences.py`, `commands/settings_cmds.py`, and tests in
+`tests/test_settings.py`. Where it differs from the plan:
+
+* **`settings list`** prints every setting with its value and the name to
+  type. A bare `settings` opens a menu of groups, and each group lists its
+  settings with their values. Listing all of them first, as §5.2 said, came
+  to more than thirty lines before any menu.
+* **`settings <name>` opens that setting in the menu**, so the rule "no value
+  given, show a menu" holds. With nobody connected it prints the setting and
+  its help instead.
+* **Settings are found by their own name** (`settings busy`) or through their
+  group (`settings general busy`). A job's model settings are only reached
+  through their group: `settings models dialogue temperature 0.9`.
+* **"You in this world" and "This world" are in already**: name, looks,
+  pronouns and world mode. The `name`, `pronouns` and `worldmode` commands
+  still exist. `name` and the name setting share one check and one
+  announcement. `worldmode` goes in phase 4.
+* **The engine gained** choice fields that can be cleared, submenus that
+  fetch something before opening (the model list), submenus with a draft of
+  their own (adding a pronoun set from settings), confirmations that depend
+  on the value chosen (`always`, clearing the key), and a page size per form.
+  The confirmations and models groups show twenty entries before paging, not
+  ten.
+* **The retired-name table** answers `apikey`, `busy` and `models` anywhere a
+  character types them: "That is `settings busy` now."
 
 **Phase 3: verbs, subjects, the parser rule.** `commands/verbs.py`,
 `commands/subjects.py`, the subject rule in `cmdparser.py`, the permission

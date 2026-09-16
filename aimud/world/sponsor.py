@@ -108,7 +108,7 @@ class Sponsor:
 
         The wording distinguishes the two cases on purpose. A player with no
         key of their own is told to set one; a player standing in somebody
-        else's unfunded world is told that, because "use the apikey command"
+        else's unfunded world is told that, because "use settings apikey"
         is advice they cannot act on.
         """
         if self.account is None:
@@ -163,7 +163,7 @@ def _no_key(account, actor):
     if mine:
         raise ValueError(
             f"Account '{owner}' has no OpenRouter API key set. "
-            "Use the |wapikey set <key>|n command to add one."
+            "Use |wsettings apikey <key>|n to add one."
         )
     raise ValueError(
         f"This world belongs to {owner}, who has no API key set, so "

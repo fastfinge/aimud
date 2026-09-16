@@ -112,7 +112,7 @@ class FindingWhoPays(GameTest):
 
     def test_and_tells_a_visitor_whose_key_is_missing(self):
         """
-        A visitor cannot act on "use the apikey command", so they are not told
+        A visitor cannot act on "use settings apikey", so they are not told
         to. The distinction is the reason `key` takes the actor at all.
         """
         self.account.db.openrouter_api_key = ""
@@ -120,14 +120,14 @@ class FindingWhoPays(GameTest):
         self.char2.account = None
         with self.assertRaises(ValueError) as caught:
             sponsor.of(self.char2).key()
-        self.assertNotIn("apikey set", str(caught.exception))
+        self.assertNotIn("settings apikey", str(caught.exception))
 
     def test_while_the_owner_is_told_how_to_fix_it(self):
         self.account.db.openrouter_api_key = ""
         sponsor.claim(self.root, self.account)
         with self.assertRaises(ValueError) as caught:
             sponsor.of(self.char1).key()
-        self.assertIn("apikey set", str(caught.exception))
+        self.assertIn("settings apikey", str(caught.exception))
 
     def test_somewhere_that_is_not_a_world_has_no_payer(self):
         """

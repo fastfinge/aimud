@@ -16,7 +16,7 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 from evennia import default_cmds
 
-from commands.account_cmds import CmdApiKey, CmdBusy, CmdModels, CmdRounds
+from commands.account_cmds import CmdRounds
 from commands.look_take_cmds import CmdAIGet, CmdAILook
 # The contrib's inventory is kept as it stands: it is the one clothing command
 # with nothing for this game to decide, and it already separates what is worn
@@ -34,6 +34,7 @@ from commands.name_cmds import CmdName
 from commands.pronoun_cmds import CmdPronouns
 from commands.token_cmds import CmdTokens
 from commands.quest_cmds import CmdQuests
+from commands.settings_cmds import CmdSettings
 from commands.social_cmds import CmdAIEmote
 from commands.trait_cmds import CmdScore
 from commands.unknown_cmd import CmdAIUnknown
@@ -119,9 +120,7 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         Populates the cmdset
         """
         super().at_cmdset_creation()
-        self.add(CmdApiKey())
-        self.add(CmdBusy())
-        self.add(CmdModels())
+        self.add(CmdSettings())
         self.add(CmdRounds())
 
 

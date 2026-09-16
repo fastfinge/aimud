@@ -184,7 +184,7 @@ def call(sponsor, model, messages, tools=None, timeout=TIMEOUT,
         # Refused before anything is sent, when the model is known not to
         # take tools: a job that needs them cannot be done by it, and asking
         # anyway only buys the provider's refusal. Known means the model list
-        # was fetched this session -- the `models` menu fetches it -- and a
+        # was fetched this session -- `settings models` fetches it -- and a
         # model nobody has listed is asked as ever, so the service can say so
         # in its own words.
         from world.model_params import supports_tools
@@ -261,7 +261,7 @@ _RECORDS = {}
 
 
 def models(sponsor, timeout=LIST_TIMEOUT):
-    """Every model this key can reach, ordered by id. For the `models` menu."""
+    """Every model this key can reach, ordered by id. For `settings models`."""
     url = _models_url(sponsor.base_url)
     listed = _request(url, sponsor.key(), timeout=timeout)
     try:

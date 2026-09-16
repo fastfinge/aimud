@@ -142,7 +142,7 @@ class Account(DefaultAccount):
         if not key:
             raise ValueError(
                 f"Account '{self.key}' has no OpenRouter API key set. "
-                "Use the |wapikey set <key>|n command to add one."
+                "Use |wsettings apikey <key>|n to add one."
             )
         return key
 

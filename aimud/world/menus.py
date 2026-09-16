@@ -93,6 +93,8 @@ NEXT_WORDS = ("n", "next")
 PREV_WORDS = ("p", "prev", "previous")
 YES_WORDS = ("yes", "y")
 NO_WORDS = ("no", "n")
+BOOLEAN_YES = ("yes", "y", "on", "true")
+BOOLEAN_NO = ("no", "off", "false")
 CLEAR_WORDS = ("clear",)
 
 #: Every word a form may not use as a choice's name, because it already means
@@ -316,9 +318,12 @@ class Field(Item):
     def __init__(self, key, label, kind=TEXT, help="", get=None, set=None,
                  parse=None, choices=None, show=None, prompt=None,
                  required=False, minimum=None, maximum=None,
-                 suggestible=False, empty="not set", **kwargs):
+                 suggestible=False, empty="not set", confirm=None, **kwargs):
         super().__init__(key, label, help=help, **kwargs)
         self.kind = kind
+        # `confirm(ctx, value)` returns (key, question) when that value needs
+        # asking about first -- putting a world into `always`, clearing a key.
+        self.confirm = confirm
         self.get = get
         self.set = set
         self.parse = parse
@@ -342,19 +347,42 @@ class Field(Item):
         return value is not None and value != ""
 
     def store(self, ctx, value):
+        """
+        Keep a value. Returns whatever `set` said about it, to be shown.
+
+        Only a draft marks the form as changed: a live setting is already
+        written, so there is nothing to throw away by quitting.
+        """
         if self.set is not None:
-            self.set(ctx, value)
-        elif value is None:
+            return self.set(ctx, value)
+        if value is None:
             ctx.draft.pop(self.key, None)
         else:
             ctx.draft[self.key] = value
         ctx.dirty = True
+        return None
+
+    def confirmation(self, ctx, value):
+        """(key, question) when setting `value` has to be asked about first."""
+        if self.confirm is None:
+            return None
+        return self.confirm(ctx, value)
 
     def choices_for(self, ctx):
         if self.kind == BOOLEAN:
-            return [Choice(True, "Yes", keys=YES_WORDS),
-                    Choice(False, "No", keys=("no",))]
+            return [Choice(True, "Yes", keys=BOOLEAN_YES),
+                    Choice(False, "No", keys=BOOLEAN_NO)]
         return list(_call(self.choices, ctx, []) or [])
+
+    def choose_value(self, ctx, text):
+        """(value, complaint) for a choice named by what somebody typed."""
+        said = text.strip().lower()
+        for choice in self.choices_for(ctx):
+            label = strip_ansi(str(_call(choice.label, ctx, ""))).lower()
+            if said in choice.keys or said == label \
+                    or said == str(choice.value).lower():
+                return choice.value, ""
+        return None, f"{text.strip()} is not one of the choices."
 
     def shown(self, ctx):
         """The value as one line, for a summary."""
@@ -380,6 +408,8 @@ class Field(Item):
         """(value, complaint) for what somebody typed into this field."""
         if self.parse is not None:
             return self.parse(ctx, text)
+        if self.kind in (CHOICE, BOOLEAN):
+            return self.choose_value(ctx, text)
         if self.kind == NUMBER:
             try:
                 number = float(text) if "." in text else int(text)
@@ -415,12 +445,31 @@ class Action(Item):
 
 
 class Submenu(Item):
-    """Another form, opened from this one, with more context passed down."""
+    """
+    Another form, opened from this one, with more context passed down.
 
-    def __init__(self, key, label, form, data=None, **kwargs):
+    `fresh_draft` gives the submenu a draft of its own, for a wizard opened
+    from inside another form. `prepare(ctx, proceed, fail)` runs first, for a
+    submenu that needs something fetched before it can be drawn -- the list
+    of models -- and calls `proceed()` when it has it or `fail(text)` when it
+    cannot. It may call either later, from a callback.
+    """
+
+    def __init__(self, key, label, form, data=None, fresh_draft=False,
+                 prepare=None, **kwargs):
         super().__init__(key, label, **kwargs)
         self.form = form
         self.data = data
+        self.fresh_draft = fresh_draft
+        self.prepare = prepare
+
+    def context(self, ctx):
+        data = _call(self.data, ctx, {}) or {}
+        child = ctx.child(**data)
+        if self.fresh_draft:
+            child.draft = {}
+            child.dirty = False
+        return child
 
 
 class Form:
@@ -438,7 +487,7 @@ class Form:
     def __init__(self, key, title, items=(), intro="", kind=EDIT,
                  guided=False, command=None, on_close=None,
                  discard="Throw away what you have entered?",
-                 choices_line="For one of them:"):
+                 choices_line="For one of them:", page_size=PAGE_SIZE):
         self.key = key
         self.title = title
         self.items = items
@@ -449,6 +498,7 @@ class Form:
         self.on_close = on_close
         self.discard = discard
         self.choices_line = choices_line
+        self.page_size = page_size
 
     def items_for(self, ctx):
         found = _call(self.items, ctx, []) or []
@@ -601,13 +651,26 @@ class GameMenu(EvMenu):
             entries.append(_Entry(choice, label, names))
         return entries
 
+    @staticmethod
+    def _size(frame):
+        """
+        How many entries this list shows at once.
+
+        A form says for itself, because a settings group of fourteen is read
+        more easily whole than in pages. A choice list, which can be hundreds
+        of models long, always pages at `PAGE_SIZE`.
+        """
+        if frame.kind == "form":
+            return frame.form.page_size
+        return PAGE_SIZE
+
     def _page(self, frame, entries):
         """(shown, numbered from, footer lines) for one page of a list."""
         visible = _filtered(entries, frame.filter)
-        pages = max(1, -(-len(visible) // PAGE_SIZE))
+        pages = max(1, -(-len(visible) // self._size(frame)))
         frame.page = max(0, min(frame.page, pages - 1))
-        start = frame.page * PAGE_SIZE
-        shown = visible[start:start + PAGE_SIZE]
+        start = frame.page * self._size(frame)
+        shown = visible[start:start + self._size(frame)]
         notes = []
         if frame.filter:
             matched = len(visible)
@@ -641,7 +704,7 @@ class GameMenu(EvMenu):
         if intro:
             lines += [intro]
         entries = self._form_entries(frame)
-        filterable = len(entries) > PAGE_SIZE
+        filterable = len(entries) > self._size(frame)
         visible, shown, start, notes = self._page(frame, entries)
         lines.append("")
         if not shown:
@@ -649,7 +712,7 @@ class GameMenu(EvMenu):
         for number, entry in enumerate(shown, start + 1):
             lines.append(f"{number}. {self._item_line(ctx, entry)}")
         lines += [""] + notes if notes else [""]
-        lines.append(self._keys_line(frame, len(visible) > PAGE_SIZE,
+        lines.append(self._keys_line(frame, len(visible) > self._size(frame),
                                      filterable))
         return "\n".join(lines)
 
@@ -681,7 +744,7 @@ class GameMenu(EvMenu):
         listed = ", ".join(f"{number} {strip_ansi(entry.label)}"
                            for number, entry in enumerate(shown, start + 1))
         line = f"{frame.form.choices_line} {listed}."
-        if len(visible) > PAGE_SIZE:
+        if len(visible) > self._size(frame):
             line += " Type next or prev for more."
         return line
 
@@ -703,13 +766,15 @@ class GameMenu(EvMenu):
             if asked:
                 lines.insert(1, asked)
             entries = self._choice_entries(frame)
-            filterable = len(entries) > PAGE_SIZE
+            filterable = len(entries) > self._size(frame)
             visible, shown, start, notes = self._page(frame, entries)
             for number, entry in enumerate(shown, start + 1):
                 lines.append(f"{number}. {entry.label}")
             lines += [""] + notes if notes else [""]
-            lines.append(self._keys_line(frame, len(visible) > PAGE_SIZE,
-                                         filterable))
+            keys = self._keys_line(frame, len(visible) > self._size(frame), filterable)
+            if not field.required and field.is_set(ctx):
+                keys += " clear removes it."
+            lines.append(keys)
             return "\n".join(lines)
 
         typed = _call(field.prompt, ctx, "")
@@ -809,7 +874,7 @@ class GameMenu(EvMenu):
 
     def _turn_page(self, frame, text, entries):
         word = text.lower()
-        if len(_filtered(entries, frame.filter)) <= PAGE_SIZE:
+        if len(_filtered(entries, frame.filter)) <= self._size(frame):
             return False
         if word in NEXT_WORDS:
             frame.page += 1
@@ -822,7 +887,7 @@ class GameMenu(EvMenu):
 
     def _form_input(self, frame, text):
         entries = self._form_entries(frame)
-        filterable = len(entries) > PAGE_SIZE
+        filterable = len(entries) > self._size(frame)
         if text.startswith(ESCAPE) and len(text) > 1:
             if filterable:
                 return self._set_filter(frame, text[1:])
@@ -894,10 +959,13 @@ class GameMenu(EvMenu):
                 chosen = _pick(_filtered(entries, frame.filter), text)
                 if chosen is not None:
                     return self._set_field(frame, chosen.target.value)
+                if (text.lower() in CLEAR_WORDS and not field.required
+                        and field.is_set(ctx)):
+                    return self._set_field(frame, None)
                 if (self._navigate(frame, text)
                         or self._turn_page(frame, text, entries)):
                     return None
-            if len(entries) > PAGE_SIZE:
+            if len(entries) > self._size(frame):
                 return self._set_filter(frame, literal)
             return self._refuse()
 
@@ -913,10 +981,29 @@ class GameMenu(EvMenu):
             return self._refuse(complaint)
         return self._set_field(frame, value)
 
-    def _set_field(self, frame, value):
+    def _enter(self, form, ctx):
+        """Push a form, and its first question if it is a wizard."""
+        base = _Frame("form", form, ctx)
+        self.stack.append(base)
+        if form.guided:
+            first = form.unset_required(ctx)
+            if first is not None:
+                self.stack.append(self._field_frame(base, first))
+        self.refresh()
+
+    def _set_field(self, frame, value, confirmed=False):
         field, ctx = frame.item, frame.ctx
+        asking = None if confirmed else field.confirmation(ctx, value)
+        if asking and confirmation_wanted(self.caller, asking[0]):
+            question = _Frame("confirm", frame.form, ctx)
+            question.question = asking[1]
+            question.pending = _Named(asking[0])
+            question.pending_run = lambda: self._set_field(frame, value,
+                                                           confirmed=True)
+            self.stack.append(question)
+            return self.refresh()
         PRESENTER.chose(self, field)
-        field.store(ctx, value)
+        self.say(field.store(ctx, value))
         self.stack.pop()
         base = self.top
         if base.kind == "form" and base.form.guided:
@@ -1014,9 +1101,17 @@ class GameMenu(EvMenu):
             self.stack.append(self._field_frame(frame, item))
             return self.refresh()
         if isinstance(item, Submenu):
-            data = _call(item.data, frame.ctx, {}) or {}
-            self.stack.append(_Frame("form", item.form, frame.ctx.child(**data)))
-            return self.refresh()
+            child = item.context(frame.ctx)
+            if item.prepare is None:
+                return self._enter(item.form, child)
+
+            def proceed():
+                # The fetch may finish after the player has left the menu, or
+                # moved elsewhere in it. Only enter if they are still here.
+                if self.caller.ndb._evmenu is self and self.top is frame:
+                    self._enter(item.form, child)
+
+            return item.prepare(child, proceed, self._refuse)
         if isinstance(item, Action):
             if item.confirm is not None and confirmation_wanted(
                     self.caller, item.confirm):
@@ -1124,6 +1219,13 @@ class GameMenu(EvMenu):
             root.form.on_close(root.ctx, why)
 
 
+class _Named:
+    """Stands in for an action when a confirmation guards a value instead."""
+
+    def __init__(self, confirm):
+        self.confirm = confirm
+
+
 def _confirm_key(frame):
     pending = frame.pending
     return getattr(pending, "confirm", None) if pending else "discard"
@@ -1177,8 +1279,9 @@ def open_menu(caller, form, session=None, draft=None, path=(),
             break
         item = chosen.target
         if isinstance(item, Submenu):
-            more = _call(item.data, frame.ctx, {}) or {}
-            stack.append(_Frame("form", item.form, frame.ctx.child(**more)))
+            # Anything a submenu has to fetch first is the opener's to have
+            # fetched; a path is followed in one go.
+            stack.append(_Frame("form", item.form, item.context(frame.ctx)))
         elif isinstance(item, Field) and item.kind != LONG_TEXT:
             stack.append(_Frame("field", frame.form, frame.ctx, item=item))
         else:

@@ -40,6 +40,25 @@ def _in_ai_world(room):
 #: you tried to read something would be worse than the typo.
 NEAR_MISS = 0.85
 
+#: Commands that have moved, and what to type instead. Answered here because
+#: a retired name typed in a world would otherwise reach a model as a verb
+#: nobody has seen, and cost a call to say something useless. Nothing here is
+#: permanent: once nobody types these, the table goes.
+#: See docs/commands-and-settings.md §2.
+RETIRED = {
+    "apikey": "settings apikey",
+    "busy": "settings busy",
+    "models": "settings models",
+}
+
+
+def retired_spelling(raw_string):
+    """What to type now instead of a retired command, or ""."""
+    words = str(raw_string or "").strip().split()
+    if not words:
+        return ""
+    return RETIRED.get(words[0].lower().lstrip("@+&/"), "")
+
 #: Short words are not checked at all. Among three and four letter words a
 #: coincidence is likelier than a typo -- "tie" scores 0.86 against "time" --
 #: and short verbs are exactly the ones players use most.
@@ -113,6 +132,14 @@ class CmdAIUnknown(SystemNoMatch):
     def func(self):
         caller = self.caller
         room = caller.location
+
+        # Before anything else, and in or out of a world: a command that has
+        # moved should say where to, not be tried as a verb at a model's
+        # expense.
+        moved = retired_spelling(self.raw_string)
+        if moved:
+            caller.msg(f"That is |w{moved}|n now.")
+            return
 
         if not _in_ai_world(room):
             super().func()

@@ -210,7 +210,7 @@ Every part of the game — naming rooms, writing dialogue, deciding what a verb
 means — is a separate job with its own model and its own sampling settings.
 Dialogue is usually better loose and surprising; the rules that decide what an
 action does want to be dull and repeatable. Both the model and its temperature,
-top-p, penalties and the rest are set per job in the `models` menu.
+top-p, penalties and the rest are set per job under `settings models`.
 
 ---
 
@@ -304,13 +304,18 @@ Three steps, in this order. Nothing will generate until all three are done.
 Get one from <https://openrouter.ai/keys>, then in-game:
 
 ```
-apikey set sk-or-v1-...
+settings apikey sk-or-v1-...
 ```
 
 The key is stored on **your account, in your own database**. It is not in any
 file in this repository, not in the settings, and not visible to other
-accounts. `apikey` on its own tells you whether one is set (never the key
-itself), and `apikey delete` removes it.
+accounts. `settings apikey` on its own shows whether one is set (only its first
+and last four characters), and `settings apikey clear` removes it.
+
+Using a provider other than OpenRouter that speaks the same protocol? Set its
+address next to the key: `settings apiurl https://nano-gpt.com/api/v1`. The
+address lives on your account beside the key, because a key only works with
+the provider that issued it.
 
 Put some credit on the OpenRouter account, or pick free models — see
 [What it costs](#what-it-costs).
@@ -318,22 +323,24 @@ Put some credit on the OpenRouter account, or pick free models — see
 ### 2. Choose your models
 
 ```
-models
+settings models
 ```
 
 This opens a menu with a screen for each job the game does. Each screen sets
 which model answers, and how it is asked:
 
 ```
-Configure: dialogue   NPC dialogue generation
+Models: dialogue
+NPC dialogue generation
 
-  Model  z-ai/glm-5.3-flash  (set for this function)
-
-Settings — what is sent with every request for this function:
-   1. Temperature          1.2        (yours)
-   2. Top P                0.95       (model default)
-   3. Top K                0          (OpenRouter default)
+1. Model: z-ai/glm-5.3-flash
+2. Temperature: 1.2 (yours)
+3. Top P: 0.95 (model default)
+4. Top K: 0 (provider default)
 ```
+
+Anything in the menu can also be typed in one line:
+`settings models dialogue temperature 1.2`.
 
 Every setting shows what it currently stands at even if you have never touched
 it, and where that figure came from — so you can see how it is set before
@@ -434,8 +441,9 @@ Beyond that:
 
 | Command | What it does |
 |---|---|
-| `apikey` / `apikey set <key>` / `apikey delete` | Your OpenRouter key. Per account. On its own it says whether one is set, never what it is. |
-| `models` / `models refresh` | Model and sampling settings for each job. `refresh` re-fetches the model list from OpenRouter. |
+| `settings` | Every preference in one menu: still-working notices, confirmations, your API key and address, models, and inside a world your name, looks and pronouns there, and (for its creator) how the world runs. |
+| `settings list` | Every setting at once, with what it is set to and the name to type. |
+| `settings <name> [<value> \| default]` | One setting: `settings busy 30`, `settings apikey <key>`, `settings models dialogue temperature 0.9`. `help <name>` explains any of them. |
 
 ### World
 

@@ -564,6 +564,12 @@ class CmdAIHelp(default_cmds.CmdHelp):
         found = dict(world_topics(caller))
         for key, _label, entry in effect_topics():
             _place(found, key, "effect", entry)
+        # Every setting documents itself from the register, the same way
+        # effects do, and for the same reason: it reads the same anywhere.
+        from world import preferences
+
+        for key, entry in preferences.help_entries():
+            _place(found, key, "setting", entry)
         for key, entry in found.items():
             if permitted(entry, caller):
                 merged.setdefault(key, entry)
