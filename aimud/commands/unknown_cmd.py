@@ -40,6 +40,44 @@ def _in_ai_world(room):
 #: you tried to read something would be worse than the typo.
 NEAR_MISS = 0.85
 
+#: Commands that have moved, and what to type instead. Answered here because
+#: a retired name typed in a world would otherwise reach a model as a verb
+#: nobody has seen, and cost a call to say something useless. Nothing here is
+#: permanent: once nobody types these, the table goes.
+#: See docs/commands-and-settings.md §2.
+RETIRED = {
+    "apikey": "settings apikey",
+    "busy": "settings busy",
+    "models": "settings models",
+    "worldgen": "create world",
+    "worldedit": "edit world",
+    "worldremove": "delete world",
+    "worldreset": "reset world",
+    "worlds": "view worlds, or enter world <number>",
+    "worldmode": "settings mode",
+    "worldopen": "edit world, then Open a way on",
+    "worldcheck": "view faults",
+    "zones": "view zones",
+    "rules": "view rules or edit rules",
+    "effects": "view effects",
+    "affects": "view effects",
+    "npcgen": "create npc",
+    "tokens": "view tokens, create tokens or delete tokens",
+    "wordlists": "view tokens, create tokens or delete tokens",
+    "commonsense": "view commonsense or import commonsense",
+    "memcheck": "view memory or edit memory",
+    "rounds": "view rounds or reset rounds",
+}
+
+
+def retired_spelling(raw_string):
+    """What to type now instead of a retired command, or ""."""
+    words = str(raw_string or "").strip().split()
+    if not words:
+        return ""
+    return RETIRED.get(words[0].lower().lstrip("@+&/"), "")
+
+
 #: Short words are not checked at all. Among three and four letter words a
 #: coincidence is likelier than a typo -- "tie" scores 0.86 against "time" --
 #: and short verbs are exactly the ones players use most.
@@ -69,6 +107,11 @@ def _closest_command(cmd, word):
             # Builder commands are staff-facing and mostly duplicates of a
             # plain-named one, so "@time" is never a useful suggestion.
             if not name or name.startswith("__") or name.startswith("@"):
+                continue
+            # A command answering to this very word was set aside by the
+            # parser on purpose -- `reset the trap`, `force the lock` -- so the
+            # word is the world's, not a typo for the command.
+            if name.lower() == word:
                 continue
             score = similarity(word, name)
             if score > best_score:
@@ -113,6 +156,14 @@ class CmdAIUnknown(SystemNoMatch):
     def func(self):
         caller = self.caller
         room = caller.location
+
+        # Before anything else, and in or out of a world: a command that has
+        # moved should say where to, not be tried as a verb at a model's
+        # expense.
+        moved = retired_spelling(self.raw_string)
+        if moved:
+            caller.msg(f"That is |w{moved}|n now.")
+            return
 
         if not _in_ai_world(room):
             super().func()

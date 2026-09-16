@@ -30,7 +30,8 @@ class CmdName(Command):
     you meet will call you by the name you set here; with none set, they use
     your account name.
 
-    |wname clear|n gives up the name and goes back to your account name.
+    |wname clear|n gives up the name and goes back to your account name. On
+    its own, |wname|n says what you are called here and lets you change it.
     """
 
     key = "name"
@@ -52,6 +53,8 @@ class CmdName(Command):
         wanted = self.args.strip()
         current = caller.world_name(world_root)
 
+        if not wanted and open_setting(self, "name"):
+            return
         if not wanted:
             if current:
                 caller.msg(
@@ -72,49 +75,72 @@ class CmdName(Command):
                 return
             caller.set_world_name(world_root, None)
             caller.msg(f"You go back to being |w{caller.key}|n here.")
-            self._announce(room, current, caller.key)
+            announce(caller, current, caller.key)
             return
 
-        problem = self._problem(caller, wanted)
-        if problem:
-            caller.msg(problem)
+        said = problem(caller, wanted)
+        if said:
+            caller.msg(said)
             return
 
         previous = current or caller.key
         caller.set_world_name(world_root, wanted)
         caller.msg(f"In |w{world_desc}|n you are now |w{wanted}|n.")
-        self._announce(room, previous, wanted)
+        announce(caller, previous, wanted)
 
-    def _problem(self, caller, wanted):
-        """Why this name will not do, or None."""
-        if len(wanted) < MIN_LENGTH:
-            return f"A name needs at least {MIN_LENGTH} characters."
-        if len(wanted) > MAX_LENGTH:
-            return f"That is longer than {MAX_LENGTH} characters."
-        if not _ALLOWED.match(wanted):
-            return ("Names start with a letter and use letters, spaces, "
-                    "apostrophes, hyphens and full stops only.")
-        if wanted.lower() in ("clear", "me", "here", "self"):
-            return "That word means something else to the game. Pick another."
 
-        # Someone else in the room already answering to it would make both of
-        # them unaddressable.
-        room = caller.location
-        for obj in (room.contents if room else []):
-            if obj is caller:
-                continue
-            names = [obj.key.lower(), *(a.lower() for a in obj.aliases.all())]
-            if wanted.lower() in names:
-                return f"Something here is already called {obj.key}."
-        return None
+def problem(caller, wanted):
+    """Why this name will not do, or None."""
+    if len(wanted) < MIN_LENGTH:
+        return f"A name needs at least {MIN_LENGTH} characters."
+    if len(wanted) > MAX_LENGTH:
+        return f"That is longer than {MAX_LENGTH} characters."
+    if not _ALLOWED.match(wanted):
+        return ("Names start with a letter and use letters, spaces, "
+                "apostrophes, hyphens and full stops only.")
+    if wanted.lower() in ("clear", "me", "here", "self"):
+        return "That word means something else to the game. Pick another."
 
-    def _announce(self, room, previous, now):
-        """Let the room know, so NPCs learn the name rather than guess it."""
-        if room is None or previous == now:
-            return
-        text = f"{previous} is now known as {now}."
-        room.msg_contents(text, exclude=[self.caller])
-        from world.npc_gen import notify_npcs
+    # Someone else in the room already answering to it would make both of
+    # them unaddressable.
+    room = caller.location
+    for obj in (room.contents if room else []):
+        if obj is caller:
+            continue
+        names = [obj.key.lower(), *(a.lower() for a in obj.aliases.all())]
+        if wanted.lower() in names:
+            return f"Something here is already called {obj.key}."
+    return None
 
-        notify_npcs(room, "action", now, f"is now known as {now}",
-                    exclude=self.caller, actor=self.caller)
+
+def announce(caller, previous, now):
+    """Let the room know, so NPCs learn the name rather than guess it."""
+    room = caller.location
+    if room is None or previous == now:
+        return
+    text = f"{previous} is now known as {now}."
+    room.msg_contents(text, exclude=[caller])
+    from world.npc_gen import notify_npcs
+
+    notify_npcs(room, "action", now, f"is now known as {now}",
+                exclude=caller, actor=caller)
+
+
+def open_setting(cmd, key):
+    """
+    Open one "You in this world" setting, for a command typed on its own.
+
+    `name` and `pronouns` are commands because changing them is something a
+    character does in front of others, but the value is a setting and lives
+    in the settings register, so on their own they open it there. With nobody
+    connected to show a menu to, returns False and the command says it in
+    words instead.
+    """
+    from world import menus, preferences
+
+    runner = menus.account_of(cmd.caller) or cmd.caller
+    if not menus.interactive(runner):
+        return False
+    menus.open_menu(cmd.caller, preferences.SETTINGS, session=cmd.session,
+                    path=["you", key])
+    return True

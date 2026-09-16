@@ -207,21 +207,22 @@ class TheCommand(GameCommandTest):
         self.room1.db.world_creator = self.account
 
     def test_add_show_try_and_remove(self):
-        from commands.token_cmds import CmdTokens
+        from commands.verbs import CmdCreate, CmdDelete, CmdView
 
-        self.call(CmdTokens(), "add smell: what docks smell of = brine | tar",
+        self.call(CmdCreate(), "tokens smell: what docks smell of = brine | tar",
                   "This world now keeps")
-        self.call(CmdTokens(), "", "Word lists this world keeps")
-        self.call(CmdTokens(), "smell", "{smell}")
-        self.call(CmdTokens(), "try It smells of {smell}.", "That comes to:")
-        self.call(CmdTokens(), "remove smell", "smell is gone")
+        self.call(CmdView(), "tokens", "Word lists")
+        self.call(CmdView(), "tokens smell", "{smell}")
+        self.call(CmdView(), "tokens try It smells of {smell}.",
+                  "That comes to:")
+        self.call(CmdDelete(), "tokens smell yes", "smell is gone")
 
     def test_only_the_maker_may_change_them(self):
-        from commands.token_cmds import CmdTokens
+        from commands.verbs import CmdCreate
 
         self.room1.db.world_creator = None
         self.account.is_superuser = False
-        self.call(CmdTokens(), "add smell = tar",
+        self.call(CmdCreate(), "tokens smell = tar",
                   "Only whoever made this world")
 
 

@@ -206,7 +206,7 @@ def store(root, spec):
 
     A field the spec does not mention is left alone, so a partial spec -- the
     bare description older callers pass -- changes only what it names. A field
-    it does mention may be emptied, which is how `worldedit` takes a title or
+    it does mention may be emptied, which is how `edit world` takes a title or
     a piece of guidance away again. The description is the exception: it is
     what the whole world is generated from, and there is no world without it.
     """
@@ -224,7 +224,7 @@ def spec_of(root, character=None):
     """
     Everything a world was set up with, in the shape the wizard uses.
 
-    This is what `worldedit` opens and what `worldreset` rebuilds from: a
+    This is what `edit world` opens and what `reset world` rebuilds from: a
     reset that forgot the guidance would quietly undo half the wizard.
     """
     if root is None:

@@ -923,6 +923,24 @@ _COMMAND_VERBS = set()
 PIPELINE_VERBS = frozenset(["look", "give"])
 
 
+def reserves_word(command):
+    """
+    Whether a command's name is a verb the engine owns.
+
+    Read off the command's own `reserves_word` flag. A command that does not
+    say -- every one of Evennia's -- falls back to its help category, where
+    "General" is the playing commands (look, get, say) and everything else is
+    building or bookkeeping. The flag exists for the commands that category
+    got wrong: the verb commands are filed under World, and must not reserve
+    "reset" or "view" however they are filed, because a world may still write
+    rules for them. docs/commands-and-settings.md §2.
+    """
+    flagged = getattr(command, "reserves_word", None)
+    if flagged is not None:
+        return bool(flagged)
+    return (getattr(command, "help_category", "") or "").lower() == "general"
+
+
 def command_verbs():
     """The verbs the command set itself answers, by a name it will recognise."""
     engine_verbs()
@@ -944,7 +962,8 @@ def engine_verbs():
     saying otherwise starts teaching a model something false, and nothing
     fails loudly enough for anyone to notice.
 
-    Only the "general" category is offered. Building, admin and system
+    Only commands that reserve their word are offered (`reserves_word`), which
+    for Evennia's own means the "general" category. Building, admin and system
     commands are staff tools no verb rule could be mistaken for, and putting
     @teleport in front of a model deciding what "kiss" means is only noise.
     """
@@ -972,7 +991,7 @@ def engine_verbs():
         return _ENGINE_VERBS
 
     for command in cmdset.commands:
-        if (getattr(command, "help_category", "") or "").lower() != "general":
+        if not reserves_word(command):
             continue
         for name in [command.key] + list(command.aliases or []):
             spelled = str(name or "")

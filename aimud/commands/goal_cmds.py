@@ -8,7 +8,7 @@ already in memory, so the reminder under each command costs nothing.
 """
 
 from commands.command import Command
-from world import hints
+from world import hints, menus
 
 
 class CmdGoal(Command):
@@ -17,6 +17,8 @@ class CmdGoal(Command):
 
     Usage:
       goal <what you want>
+      goal next
+      goal clear
       goal
 
     Examples:
@@ -28,8 +30,9 @@ class CmdGoal(Command):
     every command you type, a quiet line underneath says what would take you a
     step closer -- usually a direction to walk, or a command to try.
 
-    With nothing after it, you drop the goal and the reminders stop. They also
-    stop by themselves the moment you have done it.
+    |wgoal next|n says that step again. |wgoal clear|n drops the goal and the
+    reminders stop; they also stop by themselves the moment you have done it.
+    On its own, |wgoal|n offers all three.
 
     It is a reminder and nothing more. Nothing moves you, nothing acts for
     you, and ignoring the suggestion costs you nothing -- wander off, take the
@@ -48,51 +51,76 @@ class CmdGoal(Command):
     def func(self):
         caller = self.caller
         want = self.args.strip()
+        word = want.lower()
 
-        if not want:
-            self._clear()
+        if word in ("clear", "drop", "stop"):
+            said = give_up(caller)
+            if said:
+                caller.msg(said)
             return
-
-        room = caller.location
-        if room is None or not room.db.is_ai_room:
-            caller.msg("You can only set a goal inside a world.")
+        if word in ("next", "hint"):
+            caller.msg(next_step(caller))
             return
-
-        from world import sponsor as sponsor_mod
-
-        sponsor = sponsor_mod.of(caller)
-        try:
-            sponsor.key()
-        except ValueError as e:
-            caller.msg(str(e))
+        if want:
+            set_goal(caller, want)
             return
-
-        if caller.ndb.setting_goal:
-            caller.msg("You are still making up your mind about the last one.")
+        if menus.interactive(menus.account_of(caller) or caller):
+            menus.open_menu(caller, GOAL, session=self.session)
             return
-        caller.ndb.setting_goal = True
-        caller.msg(f"Working out how you would {want}...")
+        caller.msg(next_step(caller))
 
-        from world import busy
-        from world.quest_gen import formalise_goal
 
-        wait = busy.start(caller, f"working out how you would {want}")
-        formalise_goal(sponsor, caller, want,
-                       on_success=busy.closing(wait, self._ready),
-                       on_error=busy.closing(wait, self._failed))
+def give_up(caller):
+    """Drop the goal. Returns what to say, when `hints.clear` has not said it."""
+    if hints.clear(caller):
+        return None
+    return ("You have no goal set. |wgoal <what you want>|n gives you one, and "
+            "a reminder of the next step towards it.")
 
-    def _clear(self):
-        caller = self.caller
-        had = hints.clear(caller)
-        if not had:
-            caller.msg(
-                "You have no goal set. |wgoal <what you want>|n gives you one, "
-                "and a reminder of the next step towards it."
-            )
 
-    def _ready(self, conditions):
+def next_step(caller):
+    """The next step towards the goal, or that there is no goal."""
+    from world import goals
+
+    goal = caller.db.goal
+    if not goal:
+        return ("You have no goal set. |wgoal <what you want>|n gives you one, "
+                "and a reminder of the next step towards it.")
+    world_root = caller.location.db.world_root if caller.location else None
+    action, note = hints.suggestion(caller, goal)
+    said = f"You are trying to {goals.describe(goal, caller, world_root)}."
+    return f"{said}\nNext: |w{action}|n" if action else f"{said}\n|x{note}|n"
+
+
+def set_goal(caller, want):
+    """
+    Turn what somebody said they want into a goal, and show the first step.
+
+    Asynchronous: the model's answer arrives later, and everything is said to
+    the caller as it happens.
+    """
+    room = caller.location
+    if room is None or not room.db.is_ai_room:
+        caller.msg("You can only set a goal inside a world.")
+        return
+
+    from world import sponsor as sponsor_mod
+
+    sponsor = sponsor_mod.of(caller)
+    try:
+        sponsor.key()
+    except ValueError as e:
+        caller.msg(str(e))
+        return
+
+    if caller.ndb.setting_goal:
+        caller.msg("You are still making up your mind about the last one.")
+        return
+    caller.ndb.setting_goal = True
+    caller.msg(f"Working out how you would {want}...")
+
+    def ready(conditions):
         """The model has turned what was said into testable conditions."""
-        caller = self.caller
         caller.ndb.setting_goal = None
 
         from world import goals
@@ -120,6 +148,67 @@ class CmdGoal(Command):
         else:
             caller.msg(f"|x{note}|n")
 
-    def _failed(self, err):
-        self.caller.ndb.setting_goal = None
-        self.caller.msg(f"|rCould not work that out: {err}|n")
+    def failed(err):
+        caller.ndb.setting_goal = None
+        caller.msg(f"|rCould not work that out: {err}|n")
+
+    from world import busy
+    from world.quest_gen import formalise_goal
+
+    wait = busy.start(caller, f"working out how you would {want}")
+    formalise_goal(sponsor, caller, want,
+                   on_success=busy.closing(wait, ready),
+                   on_error=busy.closing(wait, failed))
+
+
+def _caller(ctx):
+    return ctx.character or ctx.caller
+
+
+def _goal_items(ctx):
+    """
+    What `goal` on its own offers.
+
+    Giving up comes first when there is a goal, because giving up is what a
+    bare `goal` used to do.
+    """
+    caller = _caller(ctx)
+    items = []
+    if caller.db.goal:
+        items += [
+            menus.Action("clear", "Give up your goal", default=True,
+                         run=lambda ctx: give_up(_caller(ctx)),
+                         after=menus.CLOSE, command=lambda ctx: "goal clear"),
+            # Keyed "step": "next" turns the page in every menu.
+            menus.Action("step", "Show the next step",
+                         run=lambda ctx: next_step(_caller(ctx)),
+                         after=menus.CLOSE,
+                         command=lambda ctx: "goal next"),
+        ]
+    items.append(menus.Field(
+        "want", "Set a new goal" if caller.db.goal else "Set a goal",
+        get=lambda ctx: None,
+        set=lambda ctx, value: set_goal(_caller(ctx), value),
+        after=menus.CLOSE,
+        prompt="Type what you want, like go to the library",
+        help="Being somewhere, carrying something, wearing something, or a "
+             "thing being in some state. Working that out costs one model "
+             "call; the reminders after that cost nothing.",
+        empty="",
+        command=lambda ctx: "goal <what you want>"))
+    return items
+
+
+def _goal_intro(ctx):
+    from world import goals
+
+    caller = _caller(ctx)
+    goal = caller.db.goal
+    if not goal:
+        return "You have no goal set."
+    world_root = caller.location.db.world_root if caller.location else None
+    return f"You are trying to {goals.describe(goal, caller, world_root)}."
+
+
+GOAL = menus.Form(key="goal", title="Your goal", intro=_goal_intro,
+                  items=_goal_items)

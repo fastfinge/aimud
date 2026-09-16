@@ -13,13 +13,17 @@ Plain prose, one rule to a line, no columns or box-drawing -- the same reason
 from django.test import tag
 
 from tests.base import GameCommandTest
-from commands.world_cmds import CmdRules
+from commands.verbs import CmdEdit, CmdReset, CmdView
+from world import sponsor
 from world import actions
 from world import rulebooks as R
 
 
 @tag("world")
 class ListingRules(GameCommandTest):
+    # Changing a world's rules is for whoever made it, so there is an account
+    # and the world is claimed by it. Reading needs neither.
+    accounts = True
 
     def setUp(self):
         super().setUp()
@@ -27,9 +31,16 @@ class ListingRules(GameCommandTest):
         self.root.db.is_world_root = True
         self.room1.db.world_root = self.root
         self.room1.db.is_ai_room = True
+        sponsor.claim(self.root, self.account)
 
     def said(self, args=""):
-        return self.call(CmdRules(), args)
+        return self.call(CmdView(), f"rules {args}".strip())
+
+    def edited(self, args=""):
+        return self.call(CmdEdit(), f"rules {args}".strip())
+
+    def unsaid(self, args=""):
+        return self.call(CmdReset(), f"verb {args}".strip())
 
     def test_outside_a_world_it_says_so(self):
         self.room1.db.is_world_root = False
@@ -119,7 +130,7 @@ class ListingRules(GameCommandTest):
 @tag("world")
 class UnsayingWhatAVerbTakes(ListingRules):
     """
-    `rules redeclare`, which is the deliberate exception to "first answer
+    `reset verb`, which is the deliberate exception to "first answer
     stands".
 
     An arity is settled once because every rule about the action was written
@@ -134,7 +145,7 @@ class UnsayingWhatAVerbTakes(ListingRules):
 
     def test_what_a_verb_takes_can_be_unsaid(self):
         actions.declare(self.root, "respawn", [{"role": "direct"}])
-        said = self.said("redeclare respawn")
+        said = self.unsaid("respawn yes")
         self.assertIn("undeclared", said)
         self.assertIsNone(actions.spec(self.root, "respawn"))
 
@@ -142,15 +153,15 @@ class UnsayingWhatAVerbTakes(ListingRules):
         actions.declare(self.root, "respawn", [{"role": "direct"}])
         R.add(self.root, R.blank(action="respawn", phase=R.CARRY_OUT,
                                  name="respawning brings you back"))
-        self.said("redeclare respawn")
+        self.unsaid("respawn yes")
         self.assertIn("respawning brings you back", self.said("respawn"))
 
     def test_a_verb_nobody_declared_says_so(self):
         self.assertIn("Nothing has been declared",
-                      self.said("redeclare respawn"))
+                      self.unsaid("respawn yes"))
 
     def test_it_wants_a_verb(self):
-        self.assertIn("Which verb", self.said("redeclare"))
+        self.assertIn("Which verb", self.unsaid(""))
 
     def test_a_waiver_is_printed_where_it_is_set(self):
         """
@@ -194,20 +205,20 @@ class TakingARuleOutOfTheBook(ListingRules):
 
     def test_one_rule_can_be_suspended_and_restored(self):
         rule = self.oiling()
-        self.assertIn("suspended", self.said(f"suspend {rule['id']}"))
+        self.assertIn("suspended", self.edited(f"{rule['id']} suspend"))
         self.assertFalse(R.get(self.root, rule["id"])["listed"])
-        self.assertIn("back in force", self.said(f"restore {rule['id']}"))
+        self.assertIn("back in force", self.edited(f"{rule['id']} restore"))
         self.assertTrue(R.get(self.root, rule["id"])["listed"])
 
     def test_a_rule_that_is_not_there(self):
-        self.assertIn("no rule", self.said("suspend r99"))
+        self.assertIn("no rule", self.edited("r99 suspend"))
 
     def test_it_wants_an_id(self):
-        self.assertIn("Which rule", self.said("suspend"))
+        self.assertIn("Which rule", self.edited(""))
 
     def test_every_dead_rule_at_once(self):
         rule = self.oiling()
-        said = self.said("suspend dead")
+        said = self.edited("dead yes")
         self.assertIn("oil", said)
         self.assertFalse(R.get(self.root, rule["id"])["listed"])
 
@@ -223,8 +234,8 @@ class TakingARuleOutOfTheBook(ListingRules):
             action="close", phase=R.CARRY_OUT, scope={"world": True},
             effects=[{"type": "set_state", "role": "direct",
                       "add": ["closed"]}]))
-        self.said("suspend dead")
+        self.edited("dead yes")
         self.assertTrue(R.get(self.root, rule["id"])["listed"])
 
     def test_a_clean_world_says_so(self):
-        self.assertIn("provably dead", self.said("suspend dead"))
+        self.assertIn("provably dead", self.edited("dead yes"))

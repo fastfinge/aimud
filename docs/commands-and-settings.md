@@ -1,6 +1,8 @@
 # Development plan: commands, menus and settings
 
-Status: planned. Nothing built yet. The open questions are settled; see §11.
+Status: built. All six phases are done: the menu engine, settings, verbs and
+worlds, every other subject, help and `~`, and the in-character commands.
+The open questions are settled; see §11.
 
 This covers the first two items in `future-plans.md`: sorting out the command
 system, and a settings command. Both depend on a third thing neither item
@@ -226,6 +228,9 @@ set of keys an edit menu uses. A view menu claims fewer of them (§3.9).
 5. **Filter text**, only on filterable lists: any other input narrows the
    list. An empty line clears the filter, as the models menu does today. To
    filter for something that is also a reserved key, start it with `/` (`/b`).
+   The same `/` works when typing into a field: `/b` sets a field to "b". In a
+   field that is not required, `clear` removes its value, and `/clear` types
+   the word.
 6. Anything else: "That is not one of the options. `l` lists them, `?` explains
    them."
 
@@ -237,7 +242,7 @@ than quit. The models menu uses `r` for reset, `c` for clear, `x` for drop and
 ### 3.4 Defaults come first
 
 Where a command assumes something today, that assumption becomes option 1 and
-is marked `(what happens if you do not choose)`:
+is marked `(the default)`:
 
 | command | assumes today | option 1 |
 |---|---|---|
@@ -705,6 +710,22 @@ help text.
 reserved key and hook has a test, and a view menu hands `north`, `say` and
 `look` to the game while keeping `quit` from disconnecting anyone.
 
+*Built.* Tests are in `tests/test_menus.py`, including two that go through a
+real session and an account. Where it differs from the plan:
+
+* `pronouns new` still asks the six questions in order, and then shows the
+  whole set with "Keep this set". Previously the set was kept the moment the
+  last question was answered, and a typo could not be fixed.
+* Quitting partway through asks "Throw away this pronoun set?" first. That is
+  the `discard` confirmation from §8, and it can be turned off.
+* `~` is a key in every menu, but until phase 5 it says nothing can be filled
+  in yet.
+* The engine has its own filtering and paging. The models menu still uses the
+  old code until it is ported in phase 2.
+* Menu preferences are read straight from the account attributes
+  `menu_view_mode`, `menu_show_command` and `confirmations`. The phase 2
+  registry points at the same attributes.
+
 **Phase 2: settings.** `world/preferences.py`, the `settings` command,
 `busy` and `apikey` as settings, the confirmations group, and help topics
 generated from the registry. Port the models menu to a settings group (the
@@ -712,6 +733,32 @@ existing `test_model_menu` tests move with it). Delete `busy`, `apikey` and
 `models`, and add the retired-name table.
 *Done when:* every stored preference is readable and settable through
 `settings`, and nothing is migrated.
+
+*Built.* `world/preferences.py`, `commands/settings_cmds.py`, and tests in
+`tests/test_settings.py`. Where it differs from the plan:
+
+* **`settings list`** prints every setting with its value and the name to
+  type. A bare `settings` opens a menu of groups, and each group lists its
+  settings with their values. Listing all of them first, as §5.2 said, came
+  to more than thirty lines before any menu.
+* **`settings <name>` opens that setting in the menu**, so the rule "no value
+  given, show a menu" holds. With nobody connected it prints the setting and
+  its help instead.
+* **Settings are found by their own name** (`settings busy`) or through their
+  group (`settings general busy`). A job's model settings are only reached
+  through their group: `settings models dialogue temperature 0.9`.
+* **"You in this world" and "This world" are in already**: name, looks,
+  pronouns and world mode. The `name`, `pronouns` and `worldmode` commands
+  still exist. `name` and the name setting share one check and one
+  announcement. `worldmode` goes in phase 4.
+* **The engine gained** choice fields that can be cleared, submenus that
+  fetch something before opening (the model list), submenus with a draft of
+  their own (adding a pronoun set from settings), confirmations that depend
+  on the value chosen (`always`, clearing the key), and a page size per form.
+  The confirmations and models groups show twenty entries before paging, not
+  ten.
+* **The retired-name table** answers `apikey`, `busy` and `models` anywhere a
+  character types them: "That is `settings busy` now."
 
 **Phase 3: verbs, subjects, the parser rule.** `commands/verbs.py`,
 `commands/subjects.py`, the subject rule in `cmdparser.py`, the permission
@@ -724,11 +771,63 @@ does not, `delete world` for a world you did not make is neither offered nor
 allowed, `enter limbo` gets a player out of any world, and an NPC following
 you stays in its own world when you leave it.
 
+*Built.* `commands/verbs.py`, `commands/subjects.py`,
+`commands/world_subject.py`, and tests in `tests/test_verbs.py`. `worldgen`,
+`worldedit`, `worldremove`, `worldreset` and `worlds` are gone, and typing one
+says what replaced it. Where it differs from the plan:
+
+* **Worlds keep their numbers.** §4.2 said the world you are standing in comes
+  first. It is marked "(you are here)" instead, and the list stays in the order
+  the worlds were made. Otherwise `delete world 2` would mean a different world
+  depending on where it was typed.
+* **Deleting the world you are standing in is refused before anything is
+  asked.** It is still listed, so the numbers hold, but it never gets as far
+  as a yes/no.
+* **`enter` alone lists the start room first, then your worlds, all in one
+  list.** `enter world` alone lists only the worlds.
+* **The start room's subject word is `start`, and also the room's own name**
+  (`limbo`), read from whatever room `START_LOCATION` points at.
+* **NPC followers are told they cannot follow and stay where they are.** A
+  player character still follows anywhere.
+* **A typo check was saying "Did you mean reset?" to `reset the trap`.** The
+  near-miss check in `unknown_cmd.py` treated a command matching the word
+  exactly as a typo. It now skips an exact match, because the parser set that
+  command aside on purpose. The same fault already affected `force the lock`.
+* **`verbs.reserves_word`** is the flag. A command without one falls back to
+  "General" help category, as before, and the verb commands set it to False.
+
 **Phase 4: every other subject.** Rules, suggestions, effects, zones, faults,
 tokens, npc, pronouns, commonsense, memory and rounds, each with its
 confirmations. Delete the old commands. `test_rules_command` and
 `test_paying_commands` move to the new spellings.
 *Done when:* nothing listed in the "today" column of §7.1 still exists.
+
+*Built.* `commands/rules_subject.py` (rules, suggestions, effects, faults,
+verb), `commands/contents_subject.py` (zones, npc, tokens, pronouns) and
+`commands/upkeep_subject.py` (commonsense, memory, rounds), with tests in
+`tests/test_subjects.py`. `world_cmds.py`, `token_cmds.py` and
+`account_cmds.py` are gone, and so is `memcheck` from `memory_cmds.py`. Every
+retired name says what replaced it. Where it differs from the plan:
+
+* **`worldmode` is only `settings mode`.** The world wizard does not have a
+  mode field as well, because a second place to set it would be a second
+  place to look.
+* **`edit rules <id>`** opens that rule's own menu, with suspend or restore.
+  The one-line forms are `edit rules <id> suspend` and `edit rules <id>
+  restore`. Suspending every dead rule is `edit rules dead`.
+* **`create npc` is now for whoever made the world.** `npcgen` let anybody do
+  it, although the world pays for its people. `create pronouns` stays open to
+  anybody standing in a world, as `pronouns new` was.
+* **`pronouns new` says "That is `create pronouns` now."** `pronouns` and
+  `pronouns <set>` are unchanged.
+* **`quests abandon` asks first**, as §8 planned. It was listed there and fell
+  into this phase because every other confirmation did.
+* **`help effects` is a list of topics now.** With no command called
+  `effects`, it lists every effect filed in that category, as `help kinds`
+  does.
+* **The verb commands are only available to a character, not out of
+  character.** `rounds` used to work out of character, and `view rounds` does
+  not. `settings` still works both ways.
 
 **Phase 5: help and `~`.** `help_cmds.topic_text`, `?` falling back to help
 topics, the `menus` job, the `~` tool loop, "all empty fields", and the
@@ -736,11 +835,64 @@ proposal node. The live `llm`-tagged tests cover one field of each kind.
 *Done when:* `create world` with only a description can fill in its title and
 guidance through `~`.
 
+*Built.* `world/suggesting.py` asks, `world/menus.py` offers the proposal, and
+`help_cmds.topic_text` is the one help lookup. Tests are in
+`tests/test_suggesting.py`. Where it differs from the plan:
+
+* **One finish tool, not one per field.** `llm.converse` ends on the first
+  answer a finish tool accepts, so "all empty fields" is a single `fill` tool
+  with a parameter for each field. Every value still passes that field's own
+  `read`, and whatever is refused goes back together with the reasons.
+* **A proposal is offered the moment it arrives**, on top of wherever the
+  player is in the menu. It is not held until they return to the field. It is
+  one screen, so no is always a single keypress away.
+* **Which fields `~` can fill:** every field of the world wizard; a word
+  list's name, purpose and entries; and how you look in "You in this world".
+  Name, API key, busy interval, confirmations, model choices and pronoun forms
+  cannot be filled.
+* **Who pays:** the wizard is paid by the account that will own the world, as
+  generating it is. A word list and your looks are paid by the world you are
+  standing in.
+* **`?` reads a help topic when an entry has no help of its own.** The verbs
+  in `view rules` and `view effects` read `help <verb>`, and a word list reads
+  `help <list>`.
+* **Live tests pay with the local admin's own key.** `tests/live.py` reads
+  the API key, address and model choices of the admin account from the local
+  game database, read-only, so the tests run anywhere somebody has set the mud
+  up. They skip themselves where nobody has. `tests/test_live_models.py` fills
+  in one field of every kind with a real model. Every reply in
+  `test_suggesting.py` stays scripted and free.
+
 **Phase 6: in-character commands, and tidying up.** The bare forms in §7.2,
 `choosing.ask` running on the engine, the retired-name table checked,
 `README.md` and the commands section of `aimud/CLAUDE.md` rewritten, and the
 first two items removed from `future-plans.md`, together with its stale
 "show when busy" item, which was built in `generator-tool-loops.md`.
+
+*Built.* Tests are in `tests/test_in_character_menus.py`. Where it differs from
+the plan:
+
+* **`goal` gained two typed forms.** A bare `goal` used to drop the goal, and
+  now it opens a menu, so dropping it is `goal clear` and hearing the next step
+  again is `goal next`. In the menu, giving up comes first.
+* **`remember` on its own goes straight to the question**, and asks it the
+  moment it is typed. With one field there is no form to show first.
+* **`score` reads "composure: 12", not "composure . . . . 12".** Section 3.6
+  took the dotted leaders out of the world wizard for being read aloud dot by
+  dot, and `score` had the same leaders.
+* **`name` and `pronouns` on their own open their settings** in "You in this
+  world": the name to type, or the world's pronoun sets to choose from. Typed
+  in full, both are unchanged and still announced to the room.
+* **`choosing.ask` opens a menu only when it is given `on_chosen`.** Its two
+  callers today, in `ownership.py` and `verbs.py`, still only say "Which her?"
+  and have the player type the command again. Turning them into menus is the
+  disambiguation item left in `future-plans.md`, which now says so.
+* **`view settings` from §5.2 was not made.** `settings list` does that job,
+  as phase 2 recorded.
+* **Every retired name was checked** against the commands that exist, and
+  each says what replaced it.
+
+This plan is finished. Moving it to `docs/archived/` is your call.
 
 ---
 

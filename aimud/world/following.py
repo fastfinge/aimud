@@ -96,6 +96,24 @@ def followers_in(room, target):
     return [obj for obj in room.contents if following(obj) is target]
 
 
+def _world_of(room):
+    """The world a room belongs to, as an id, or None for anywhere else."""
+    root = getattr(getattr(room, "db", None), "world_root", None)
+    return getattr(root, "id", None)
+
+
+def _belongs_to_a_world(character):
+    """
+    Whether a character lives in one world and cannot leave it.
+
+    An NPC. Its world is its sponsor, its rules and its memory bank, and
+    deleting the world is what deletes it; walked into another world, or into
+    Limbo, it keeps none of that and is found by nothing. A player character
+    belongs to no world and follows anywhere.
+    """
+    return bool(getattr(character.db, "is_npc", False))
+
+
 def move_followers(target, source_location, _depth=0):
     """
     Bring anyone who was following `target` along to where they went.
@@ -103,6 +121,10 @@ def move_followers(target, source_location, _depth=0):
     Called after the target has already arrived. A follower moving pulls its
     own followers in turn, so a line of people travels together, up to
     MAX_CHAIN links.
+
+    No NPC crosses from one world into another, or out of a world altogether: they stop following at the edge and are told so. That
+    covers `enter`, a world being deleted or reset around somebody, and any
+    teleport a rule makes later. See `_belongs_to_a_world`.
     """
     destination = target.location
     if source_location is None or destination is None or source_location is destination:
@@ -113,8 +135,14 @@ def move_followers(target, source_location, _depth=0):
         )
         return
 
+    crossing = _world_of(source_location) != _world_of(destination)
     for follower in followers_in(source_location, target):
         if follower is target:
+            continue
+        if crossing and _belongs_to_a_world(follower):
+            follower.db.following = None
+            follower.msg(f"{target.get_display_name(follower)} has gone "
+                         f"somewhere you cannot follow.")
             continue
         follower.msg(f"You follow {target.get_display_name(follower)}.")
         origin = follower.location

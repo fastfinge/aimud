@@ -11,7 +11,7 @@ from unittest import mock
 from django.test import tag
 
 from tests.base import GameCommandTest, GameTest
-from commands.account_cmds import CmdRounds
+from commands.verbs import CmdReset, CmdView
 from tests.support import FakeSponsor, immediately, replying, tool_call, tool_reply
 from world import ledger, llm
 from world import toolbox as tb
@@ -119,14 +119,14 @@ class TheRoundsCommand(_Paying, GameCommandTest):
         self.paying()
 
     def test_with_nothing_counted_it_says_so(self):
-        self.assertIn("No conversations", self.call(CmdRounds(), ""))
+        self.assertIn("No conversations", self.call(CmdView(), "rounds"))
 
     def test_one_line_per_job_with_the_count_first(self):
         ledger.note_loop(self.sponsor, self.dialogue, loop(rounds=2))
         ledger.note_loop(self.sponsor, self.dialogue,
                          loop(rounds=3, outcome="forced"))
         ledger.note_loop(self.sponsor, self.commands, loop(rounds=1))
-        said = self.call(CmdRounds(), "")
+        said = self.call(CmdView(), "rounds")
         self.assertIn("dialogue: 2 conversations, 2.5 rounds on average, 3 at "
                       "most, budget 8, 1 made to answer, 4 seconds on average.",
                       said)
@@ -135,19 +135,19 @@ class TheRoundsCommand(_Paying, GameCommandTest):
     def test_one_job_in_full(self):
         ledger.note_loop(self.sponsor, self.dialogue,
                          loop(complaints=3, tools={"examine": 2, "recall": 1}))
-        said = self.call(CmdRounds(), "dialogue")
+        said = self.call(CmdView(), "rounds dialogue")
         self.assertIn("3 answers sent back", said)
         self.assertIn("examine 2 times, recall 1 time", said)
 
     def test_a_job_nothing_has_counted(self):
         self.assertIn("No conversations have been counted for rooms",
-                      self.call(CmdRounds(), "rooms"))
+                      self.call(CmdView(), "rounds rooms"))
 
     def test_clear(self):
         ledger.note_loop(self.sponsor, self.dialogue, loop())
-        self.call(CmdRounds(), "clear")
+        self.call(CmdReset(), "rounds yes")
         self.assertEqual(ledger.loops(self.account), {})
 
     def test_a_world_number_that_does_not_exist(self):
         self.assertIn("Give a world's number",
-                      self.call(CmdRounds(), "world 7"))
+                      self.call(CmdView(), "rounds world 7"))

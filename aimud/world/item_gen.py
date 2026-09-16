@@ -1,7 +1,7 @@
 """
 AI-powered item validation and generation.
 
-Two models are used (configured separately via the `models` command):
+Two models are used (configured separately under `settings models`):
   validation — decides whether an object/action makes sense
   items       — creates the object with name, description, and takeability
 """

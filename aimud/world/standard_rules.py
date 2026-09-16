@@ -31,7 +31,7 @@ SEEDED = "standard_rules_seeded"
 
 #: Which edition of the standard rules a world holds.
 #:
-#: `worldreset` is this project's usual answer to a change in shape, and it is
+#: `reset world` is this project's usual answer to a change in shape, and it is
 #: the right one for a world's *own* rules -- nobody can say what a world meant
 #: by something it wrote. These are not a world's own rules: they are the
 #: engine's, written here, and a world holding last week's copy of them is

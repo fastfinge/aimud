@@ -24,7 +24,8 @@ is what stops the three of them drifting into three different accounts of what
 from django.test import SimpleTestCase, tag
 
 from tests.base import GameCommandTest, GameTest
-from commands.world_cmds import CmdEffects
+from commands import subjects
+from commands.verbs import CmdView
 from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
 from world import checks, conditions as C, effects, standard_rules, verbs
@@ -262,7 +263,7 @@ class WhatAVerbWillDo(GameCommandTest):
         standard_rules.seed(self.root)
 
     def said(self, args=""):
-        return self.call(CmdEffects(), args)
+        return self.call(CmdView(), f"effects {args}".strip())
 
     def burning(self):
         R.add(self.root, R.blank(
@@ -334,8 +335,9 @@ class WhatAVerbWillDo(GameCommandTest):
     def test_a_world_that_has_worked_nothing_out_says_so(self):
         self.assertIn("has not worked out what any verb does", self.said())
 
-    def test_affects_is_the_same_command(self):
-        self.assertIn("affects", CmdEffects.aliases)
+    def test_affects_is_the_same_subject(self):
+        subject, _rest = subjects.named("view", "affects burn")
+        self.assertEqual(subject.key, "effects")
 
 
 @tag("world")
@@ -381,15 +383,17 @@ class HelpOnEveryChangeThereIs(GameTest):
         self.assertEqual(world_topics(self.char1, world_root=None), {})
         self.assertIn("set_state", self.topics())
 
-    def test_the_commands_own_help_lists_them(self):
+    def test_help_effects_lists_them_all(self):
         """
-        Built rather than written, so a new effect appears here for nothing.
-        `help effects` finds the command before any category, so the command
-        is where the index has to live.
+        Built rather than written, so a new effect appears for nothing. With
+        no command called `effects` any more, `help effects` is a search of
+        the category, which lists everything filed under it.
         """
-        said = CmdEffects().get_help(self.char1, None)
-        for name in effects.VOCABULARY:
-            self.assertIn(name, said)
+        from commands.help_cmds import EFFECT_CATEGORY, effect_topics
+
+        for _key, _label, entry in effect_topics():
+            self.assertEqual(entry.help_category, EFFECT_CATEGORY)
+        self.assertEqual(EFFECT_CATEGORY, "effects")
 
 
 @tag("unit")

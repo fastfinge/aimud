@@ -11,8 +11,7 @@ from unittest import mock
 from django.test import SimpleTestCase, tag
 from evennia import create_object
 
-from tests.base import GameCommandTest, GameTest
-from commands.account_cmds import CmdBusy
+from tests.base import GameTest
 from tests.support import clock
 from world import busy
 
@@ -217,40 +216,6 @@ class NamingEachStage(SimpleTestCase):
 
         _once(None)("a stage with nobody listening")
         _once(None, None)()
-
-
-@tag("world")
-class TheBusyCommand(GameCommandTest):
-    # How often to be told is a preference, and a preference is kept on the
-    # account (`busy.ATTR`). With nobody behind the character the command
-    # has nothing to read or write.
-    accounts = True
-
-    def test_unset_it_says_the_default(self):
-        said = self.call(CmdBusy(), "")
-        self.assertIn("every 10 seconds", said)
-        self.assertIn("default", said)
-
-    def test_setting_it_is_kept_on_the_account(self):
-        self.call(CmdBusy(), "30")
-        self.assertEqual(busy.interval_for(self.char1), 30)
-        self.assertIn("every 30 seconds", self.call(CmdBusy(), ""))
-
-    def test_off(self):
-        self.call(CmdBusy(), "off")
-        self.assertEqual(busy.interval_for(self.char1), 0)
-        self.assertIn("not told", self.call(CmdBusy(), ""))
-
-    def test_back_to_the_default(self):
-        self.call(CmdBusy(), "30")
-        self.call(CmdBusy(), "default")
-        self.assertEqual(busy.interval_for(self.char1), busy.DEFAULT_INTERVAL)
-        self.assertIsNone(busy.chosen(self.char1.account))
-
-    def test_out_of_range_is_refused_and_nothing_changes(self):
-        said = self.call(CmdBusy(), "2")
-        self.assertIn("from 5 to 120", said)
-        self.assertIsNone(busy.chosen(self.char1.account))
 
 
 @tag("world")

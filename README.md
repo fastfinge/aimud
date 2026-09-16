@@ -26,6 +26,7 @@ you can reach through [OpenRouter](https://openrouter.ai/).
 - [Your first world](#your-first-world)
 - [Playing](#playing)
 - [Command reference](#command-reference)
+- [Menus](#menus)
 - [What it costs](#what-it-costs)
 - [Before you host this anywhere](#before-you-host-this-anywhere)
 - [How it fits together](#how-it-fits-together)
@@ -177,7 +178,7 @@ it is asleep and costs nothing: characters act while you are in the room with
 them, keep going for a few minutes after you leave, and go still altogether once
 five minutes pass with nobody typing.
 
-`worldmode always` lifts both of those, when what you want is to watch a world
+`settings mode always` lifts both of those, when what you want is to watch a world
 run rather than to play in it — every character acting every turn, on the far
 side of the map, in rooms you have never visited. Every one of those turns is a
 model call, so it is the one setting that will quietly spend money while you make
@@ -210,7 +211,7 @@ Every part of the game — naming rooms, writing dialogue, deciding what a verb
 means — is a separate job with its own model and its own sampling settings.
 Dialogue is usually better loose and surprising; the rules that decide what an
 action does want to be dull and repeatable. Both the model and its temperature,
-top-p, penalties and the rest are set per job in the `models` menu.
+top-p, penalties and the rest are set per job under `settings models`.
 
 ---
 
@@ -304,13 +305,18 @@ Three steps, in this order. Nothing will generate until all three are done.
 Get one from <https://openrouter.ai/keys>, then in-game:
 
 ```
-apikey set sk-or-v1-...
+settings apikey sk-or-v1-...
 ```
 
 The key is stored on **your account, in your own database**. It is not in any
 file in this repository, not in the settings, and not visible to other
-accounts. `apikey` on its own tells you whether one is set (never the key
-itself), and `apikey delete` removes it.
+accounts. `settings apikey` on its own shows whether one is set (only its first
+and last four characters), and `settings apikey clear` removes it.
+
+Using a provider other than OpenRouter that speaks the same protocol? Set its
+address next to the key: `settings apiurl https://nano-gpt.com/api/v1`. The
+address lives on your account beside the key, because a key only works with
+the provider that issued it.
 
 Put some credit on the OpenRouter account, or pick free models — see
 [What it costs](#what-it-costs).
@@ -318,22 +324,24 @@ Put some credit on the OpenRouter account, or pick free models — see
 ### 2. Choose your models
 
 ```
-models
+settings models
 ```
 
 This opens a menu with a screen for each job the game does. Each screen sets
 which model answers, and how it is asked:
 
 ```
-Configure: dialogue   NPC dialogue generation
+Models: dialogue
+NPC dialogue generation
 
-  Model  z-ai/glm-5.3-flash  (set for this function)
-
-Settings — what is sent with every request for this function:
-   1. Temperature          1.2        (yours)
-   2. Top P                0.95       (model default)
-   3. Top K                0          (OpenRouter default)
+1. Model: z-ai/glm-5.3-flash
+2. Temperature: 1.2 (yours)
+3. Top P: 0.95 (model default)
+4. Top K: 0 (provider default)
 ```
+
+Anything in the menu can also be typed in one line:
+`settings models dialogue temperature 1.2`.
 
 Every setting shows what it currently stands at even if you have never touched
 it, and where that figure came from — so you can see how it is set before
@@ -355,10 +363,10 @@ where it is called rarely:
 ### 3. Make a world
 
 ```
-worldgen
+create world
 ```
 
-This opens a wizard:
+This opens a wizard (`create world <description>` fills the description in):
 
 - **Title** — a short name for your world list.
 - **Description** — as long as you like. Everything in the world is generated
@@ -381,12 +389,13 @@ This opens a wizard:
   to it. Anything concerning one task alone goes in that task's guidance, where
   it can be as detailed as you like without crowding anything else out.
 
-Then `g` to generate. The first room takes a few seconds, and you are moved
-into it when it is ready.
+Then `generate`. The first room takes a few seconds, and you are moved into it
+when it is ready.
 
-Use `worldedit` afterwards to change any of this without throwing the world
+Use `edit world` afterwards to change any of this without throwing the world
 away — edits govern whatever is generated from then on, and what already exists
-keeps the text it was written with. `worldreset` rebuilds from scratch.
+keeps the text it was written with. `reset world` rebuilds from scratch.
+`enter start` takes you back out to Limbo, and `enter world` back in.
 
 ---
 
@@ -420,11 +429,11 @@ Beyond that:
 - **Ask what a word means.** `help bottle`, `help burn`, `help empty`,
   `help composure` — every word a world invents explains itself. `help
   vocabulary` says how the four sorts of word differ.
-- **See the shape of the place.** `zones` lists the areas this world planned
-  for itself, how full each one is, and which you are standing in.
-- **Watch it run without you.** `worldmode always` has every character in the
-  world act every turn, wherever you are. It costs a call each time one of them
-  does; `worldmode normal` puts it back, and so does logging out.
+- **See the shape of the place.** `view zones` lists the areas this world
+  planned for itself, how full each one is, and which you are standing in.
+- **Watch it run without you.** `settings mode always` has every character in
+  the world act every turn, wherever you are. It costs a call each time one of
+  them does; `settings mode normal` puts it back, and so does logging out.
 
 ---
 
@@ -434,27 +443,39 @@ Beyond that:
 
 | Command | What it does |
 |---|---|
-| `apikey` / `apikey set <key>` / `apikey delete` | Your OpenRouter key. Per account. On its own it says whether one is set, never what it is. |
-| `models` / `models refresh` | Model and sampling settings for each job. `refresh` re-fetches the model list from OpenRouter. |
+| `settings` | Every preference in one menu: still-working notices, confirmations, your API key and address, models, and inside a world your name, looks and pronouns there, and (for its creator) how the world runs. |
+| `settings list` | Every setting at once, with what it is set to and the name to type. |
+| `settings <name> [<value> \| default]` | One setting: `settings busy 30`, `settings apikey <key>`, `settings models dialogue temperature 0.9`. `help <name>` explains any of them. |
 
 ### World
 
 | Command | What it does |
 |---|---|
-| `worldgen [<description>]` | The wizard: make a new world. |
-| `worlds` / `worlds <n>` | List your worlds, or enter one. |
-| `worldedit [<n>]` | Change a world's text without rebuilding it. |
-| `worldreset [<n>] confirm` | Wipe and regenerate from the same setup. |
-| `worldremove <n> confirm` | Delete a world permanently. |
-| `worldmode [normal \| always]` | Whether this world thinks only while watched, or all the time. On its own, says which. |
-| `worldopen` | Open a way on, in a world that has built itself into a corner and has nowhere unexplored left. |
-| `zones` | The areas of this world, how full each is, what may exist only once in each, and where you are. |
-| `rules` / `rules <verb>` | Every rule this world holds, or only the ones about one verb: what it needs before it will work, what it does, and what follows. In the order they are consulted, which is the point — a rule about datapads decides what powering a datapad does even aboard a ship with its own rule about powering. Costs nothing. |
-| `rules suggest` | What this world's own faults and refusals suggest it is missing, each with the evidence for it. A condition it can set and never unset, beside a verb it has refused over and over, is usually one rule nobody wrote. Costs nothing — nothing is asked of a model and nothing is ever installed unasked. |
-| `rules accept <id>` / `rules reject <id>` | Take a suggestion up, or decline it. A declined one is remembered as declined and not offered again. |
-| `rules judge` | Hand the whole queue to a model at once and apply its verdicts. The only part of `rules` that costs anything, and it is one call for the lot: the model is judging filled-in rules with the world's own counts beside them, never writing one. |
-| `commonsense [fetch]` | A second dictionary, optional and fetched rather than shipped. WordNet answers what a word can be; this answers what people think is true of it — that open and closed cannot both hold, that a beetle has a thorax, that a datapad is probably a device. On its own it says whether the corpus is here and what it knows. Nothing depends on it: without it, state groups, body parts and anchor suggestions are guessed rather than looked up, which is how the game has always worked. |
-| `npcgen` | Put a character in the current room. |
+| `create world [<description>]` | The wizard: make a new world. |
+| `view worlds` | List your worlds, numbered as they were made. |
+| `enter world [<n or title>]` | Go into one of your worlds, back where you last were. |
+| `enter start` | Back to Limbo, the room everybody starts in. `enter limbo` works too. |
+| `edit world [<n or title>]` | Change a world's text without rebuilding it. |
+| `reset world [<n or title>] [yes]` | Wipe and regenerate from the same setup. Asks first unless you add `yes`. |
+| `delete world [<n or title>] [yes]` | Delete a world permanently. Asks first unless you add `yes`. |
+| `edit world` → Open a way on | Open a way on, in a world that has built itself into a corner and has nowhere unexplored left. |
+| `view zones` | The areas of this world, how full each is, what may exist only once in each, and where you are. |
+| `view rules [<verb>]` | Every rule this world holds, or only the ones about one verb: what it needs before it will work, what it does, and what follows. In the order they are consulted, which is the point — a rule about datapads decides what powering a datapad does even aboard a ship with its own rule about powering. Costs nothing. |
+| `edit rules [<id> suspend \| restore]` / `edit rules dead` | Take a rule out of force, keeping it readable, or put one back. `dead` suspends every rule that provably cannot fire. For whoever made the world. |
+| `view effects [<verb>]` | What a verb will actually do: what it needs, what it changes, what follows, and the odds when it is a contest. |
+| `view suggestions` | What this world's own faults and refusals suggest it is missing, each with the evidence for it. A condition it can set and never unset, beside a verb it has refused over and over, is usually one rule nobody wrote. Costs nothing — nothing is asked of a model and nothing is ever installed unasked. |
+| `edit suggestions [<id> accept \| reject]` | Take a suggestion up, or decline it. A declined one is remembered as declined and not offered again. |
+| `edit suggestions judge` | Hand the whole queue to a model at once and apply its verdicts. The only one of these that costs anything, and it is one call for the lot: the model is judging filled-in rules with the world's own counts beside them, never writing one. Asks first. |
+| `reset verb <verb>` | Forget what a verb takes, so the world is asked again the next time somebody tries it. Its rules are untouched. |
+| `view tokens [<list>]` / `view tokens try <text>` | The word lists this world keeps, one of them in full, or what some text comes to here. |
+| `create tokens <list>[: <what for>] = <entry> \| <entry>` / `delete tokens <list>` | Add or remove a word list. For whoever made the world. |
+| `create pronouns` | Add a pronoun set this world does not have, and go by it. |
+| `create npc` | Put a character in the current room. For whoever made the world, which pays for its people. |
+
+`create`, `edit`, `delete`, `reset`, `view` and `enter` typed on their own open
+a menu of what they can act on. Inside a world they are only these commands when
+the next word is one of their subjects: `reset world` resets the world, while
+`reset the trap` is something you do in it.
 
 ### Playing
 
@@ -464,25 +485,29 @@ Beyond that:
 | `get <thing>` | Pick something up. |
 | `drop <thing>` / `drop all` | Put something down. `all` empties you out, worn clothes included. |
 | `help [<topic>]` | Commands, topics, and every word this world has invented for itself. |
-| `name [<what you are called here>]` / `name clear` | Rename yourself in this world, per world. |
+| `name [<what you are called here>]` / `name clear` | Rename yourself in this world, per world. On its own, shows your name here and lets you change it. |
+| `pronouns [<set>]` | Choose the pronouns people here use about you. On its own, lists this world's sets to choose from. `create pronouns` adds one. |
 | `follow <person>` / `follow` | Travel with somebody, or stop. |
 | `pose <action>` / `emote` | Emote. |
-| `remember <question>` / `recall` | Ask your own memory something. |
-| `score [trait]` / `traits` / `sheet` | Your traits, what they stand at, and what is lending you the difference. |
+| `remember <question>` / `recall` | Ask your own memory something. On its own, asks what you want to remember. |
+| `score [trait]` / `traits` / `sheet` | Your traits, what they stand at, and what is lending you the difference. On its own, offers each trait by number. |
 | `wear` / `remove` / `cover <worn> with <item>` / `uncover` / `inventory` | Clothing. `don` and `doff` also work. |
 | `wield <thing>` / `unwield <thing>` | Take something in hand, or lower it. Two hands, so a sword and a shield. |
-| `quests` / `quests hint` / `quests accept \| decline \| abandon` | Errands. `quest` also works. |
-| `goal <what you want>` / `goal` | Set or drop a goal, with nudges. |
+| `quests` / `quests hint` / `quests accept \| decline \| abandon` | Errands. `quest` also works. On its own, shows the list and offers whichever of the others apply. Abandoning asks first. |
+| `goal <what you want>` / `goal next` / `goal clear` | Set a goal, with a nudge after every command; hear the next step again; or drop it. On its own, offers all three. |
 
 ### Upkeep
 
-One command, and it needs Builder or Admin permission — on a single-player
-install that is the superuser you made at first start.
+These need Builder or Admin permission — on a single-player install that is
+the superuser you made at first start — except round counts, which are every
+account's own.
 
 | Command | What it does |
 |---|---|
-| `worldcheck [<n>]` | What a world's rules say about each other: conditions it can set and never unset, conditions a rule requires that nothing can bring about, verbs it refused and why. Then what the world has actually been asked to do and how it answered — a condition nothing can bring about matters more when eleven people have tried. Says if anything is waiting in `rules suggest`. Costs nothing — no model is asked anything. |
-| `memcheck [sleep \| sweep \| distil \| all]` | Memory upkeep now rather than on its clock: consolidate what characters remember, delete the banks of characters that no longer exist, or turn recent summaries into what a character now knows. On its own it reports what it would do and changes nothing. Distilling is the only part that costs anything. |
+| `view faults [<world number>]` | What a world's rules say about each other: conditions it can set and never unset, conditions a rule requires that nothing can bring about, verbs it refused and why. Then what the world has actually been asked to do and how it answered — a condition nothing can bring about matters more when eleven people have tried. Says if anything is waiting in `view suggestions`. Costs nothing — no model is asked anything. |
+| `view memory` / `edit memory [sleep \| sweep \| distil \| all]` | Memory upkeep now rather than on its clock: consolidate what characters remember, delete the banks of characters that no longer exist, or turn recent summaries into what a character now knows. `view memory` reports and changes nothing. Distilling is the only part that costs anything; sweeping asks first. |
+| `view commonsense` / `import commonsense` | A second dictionary, optional and fetched rather than shipped. WordNet answers what a word can be; this answers what people think is true of it — that open and closed cannot both hold, that a beetle has a thorax, that a datapad is probably a device. `view` says whether the corpus is here and what it knows; `import` downloads it, after asking. Nothing depends on it: without it, state groups, body parts and anchor suggestions are guessed rather than looked up, which is how the game has always worked. |
+| `view rounds [<job>] [world <n>]` / `reset rounds` | How many rounds the game's conversations with models take, per job, and which tools they used. `reset` starts counting again. |
 
 ### Building commands inside a world
 
@@ -496,7 +521,42 @@ you are told the prefixed spelling.
 
 Outside a world — Limbo, or anywhere built by hand — they work exactly as
 Evennia documents them, prefix or not. The game's own commands, such as `look`,
-`worldedit` and `tokens`, never need one.
+`settings` and `score`, never need one.
+
+---
+
+## Menus
+
+A command that needs something you did not type opens a menu instead of
+printing its usage: `create`, `settings`, `goal`, `score`. Every menu has the
+same keys.
+
+| Key | What it does |
+|---|---|
+| a number, or a choice's name | Choose it. Numbers stay the same on every page. |
+| `b` | Back one level. From the top, close the menu. |
+| `q` | Close the menu, however deep you are. |
+| `l` | List the choices again, after something else has scrolled them away. |
+| `?` / `?3` / `? title` | Say what a choice is for. On its own, asks which. |
+| `~` / `~3` / `~ all` | Have a model write a first draft of a field, or of every empty one, for you to keep or not. Only where a field can be filled in, and it costs a model call. |
+| `n` / `p` | Next and previous page, on a long list. |
+| anything else | On a long list, narrow it to what matches. An empty line shows everything again. |
+| `/` in front | Type any of the above as plain text: `/b` sets a field to "b". |
+
+**Menus that only show you something** -- `score`, `quests`, `view rules`,
+`view worlds` -- show it at once and put their choices on one line. By default
+anything you type that is not one of their choices closes the menu and simply
+happens, so `score` then `north` walks north. `settings viewmenus` changes that:
+to never opening a menu at all, or to staying open until `q`.
+
+**Anything that cannot be undone, costs money or throws work away asks yes or
+no first**, with No as option 1. Adding `yes` to the end of the command answers
+in advance -- `delete world 2 yes` -- and each confirmation can be turned off
+under `settings confirmations`.
+
+**Everything a menu does can be typed in one line.** When you finish something
+through a menu you are told the command that would have done it, so the menu
+teaches its own shortcuts. `settings showcommands off` stops that.
 
 ---
 
@@ -523,8 +583,8 @@ nobody active in it does not think at all**.
 | Look at something only mentioned in prose | 2 | Plausibility check + creation |
 | Take on an errand | 1 | Turning it into something checkable |
 | An NPC acting on its own | 0–1 | Free whenever the planner finds a step |
-| Walking, `score`, `inventory`, `quests`, `zones`, `help`, `goal` nudges | 0 | No model involved |
-| A world in `worldmode always` | 1 per character per turn | Every character, everywhere, whether or not you are watching |
+| Walking, `score`, `inventory`, `quests`, `view zones`, `help`, `goal` nudges | 0 | No model involved |
+| A world in `settings mode always` | 1 per character per turn | Every character, everywhere, whether or not you are watching |
 
 ### Roughly what that adds up to
 
@@ -564,9 +624,9 @@ your `default` to try everything at no cost, and expect rougher prose.
 - A world nobody is in is asleep. Five minutes without typing and you stop
   counting as present, so an idle window costs nothing.
 - Cheap `naming` and `dialogue`; capable `commands` and `quests`.
-- Leave `worldmode` at `normal` unless you are deliberately watching a world
+- Leave `settings mode` at `normal` unless you are deliberately watching a world
   run. It is the one setting that spends money with nobody reading the output.
-- `worldreset` regenerates an entire world and costs an entire world's worth.
+- `reset world` regenerates an entire world and costs an entire world's worth.
 
 ---
 
@@ -612,8 +672,8 @@ works out of the box. ConceptNet is not: its licence varies by source, recorded
 per edge, and the share-alike obligation attaches to distributing the data. So
 the repository ships only the code to fetch it — which is not caution but the
 thing that lets the whole corpus be used, since a project that redistributed it
-would have to drop every edge whose licence it could not satisfy. `commonsense
-fetch` builds the index on the machine that will use it and it never leaves.
+would have to drop every edge whose licence it could not satisfy. `import
+commonsense` builds the index on the machine that will use it and it never leaves.
 
 ---
 
@@ -652,7 +712,7 @@ The interesting half is `world/`:
 | `relations.py` | What is in, on, under or behind what |
 | `gear.py` | What a thing is worth to whoever wears, wields or stands beside it |
 | `npc_gen.py` | Creating characters, dressing them, and their dialogue |
-| `activity.py` | Who is worth thinking about just now, and what `worldmode` changes |
+| `activity.py` | Who is worth thinking about just now, and what `settings mode` changes |
 | `goals.py` | Conditions about the world that can be tested |
 | `planner.py` | One next step towards a goal, with no model involved |
 | `quests.py` | Errands: offering, accepting, testing, rewarding |

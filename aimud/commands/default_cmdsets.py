@@ -16,7 +16,6 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 from evennia import default_cmds
 
-from commands.account_cmds import CmdApiKey, CmdBusy, CmdModels, CmdRounds
 from commands.look_take_cmds import CmdAIGet, CmdAILook
 # The contrib's inventory is kept as it stands: it is the one clothing command
 # with nothing for this game to decide, and it already separates what is worn
@@ -29,29 +28,15 @@ from commands.follow_cmds import CmdFollow
 from commands.give_cmds import CmdAIGive
 from commands.goal_cmds import CmdGoal
 from commands.help_cmds import CmdAIHelp
-from commands.memory_cmds import CmdMemoryMaintenance, CmdRemember
+from commands.memory_cmds import CmdRemember
 from commands.name_cmds import CmdName
 from commands.pronoun_cmds import CmdPronouns
-from commands.token_cmds import CmdTokens
 from commands.quest_cmds import CmdQuests
+from commands.settings_cmds import CmdSettings
 from commands.social_cmds import CmdAIEmote
 from commands.trait_cmds import CmdScore
 from commands.unknown_cmd import CmdAIUnknown
-from commands.world_cmds import (
-    CmdNPCGen,
-    CmdCommonsense,
-    CmdEffects,
-    CmdRules,
-    CmdWorldCheck,
-    CmdWorldEdit,
-    CmdWorldMode,
-    CmdWorldOpen,
-    CmdWorldRemove,
-    CmdWorldReset,
-    CmdWorlds,
-    CmdZones,
-)
-from commands.worldgen_cmd import CmdWorldgen
+from commands.verbs import VERB_COMMANDS
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -84,23 +69,10 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdRemember())
         self.add(CmdName())
         self.add(CmdPronouns())
-        self.add(CmdTokens())
         self.add(CmdQuests())
         self.add(CmdGoal())
-        self.add(CmdWorldgen())
-        self.add(CmdWorlds())
-        self.add(CmdWorldRemove())
-        self.add(CmdWorldReset())
-        self.add(CmdWorldEdit())
-        self.add(CmdMemoryMaintenance())
-        self.add(CmdWorldMode())
-        self.add(CmdWorldOpen())
-        self.add(CmdZones())
-        self.add(CmdWorldCheck())
-        self.add(CmdRules())
-        self.add(CmdEffects())
-        self.add(CmdCommonsense())
-        self.add(CmdNPCGen())
+        for verb in VERB_COMMANDS:
+            self.add(verb())
         self.add(CmdAIUnknown())
 
 
@@ -119,10 +91,7 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         Populates the cmdset
         """
         super().at_cmdset_creation()
-        self.add(CmdApiKey())
-        self.add(CmdBusy())
-        self.add(CmdModels())
-        self.add(CmdRounds())
+        self.add(CmdSettings())
 
 
 class UnloggedinCmdSet(default_cmds.UnloggedinCmdSet):

@@ -8,15 +8,13 @@ lists built from a world's own verbs. They are one mechanism, and the point of
 this module existing before any of them do is that the first one should not be
 written somewhere a menu cannot later replace.
 
-**What it does now is the least it can do**: it says the question and the
-options, and the player answers by typing what they meant. There is no pending
-state, nothing is waiting, and a player who types something else entirely has
-simply moved on -- which is the right first version, because a
-half-implemented "waiting for an answer" state is worse than none.
-
-**What it will do** is run the options through Evennia's `EvMenu`, which is
-already how `pronouns new` asks its questions. When that happens, every caller
-here changes in one place and none of them has to know.
+**Asked with a callback, it is a menu.** `ask` with `on_chosen` puts the
+options up through `world.menus`, the same engine every other choice in the
+game uses, so `b`, `q`, `?` and the numbers work the way they do everywhere,
+and choosing one calls `on_chosen` with it. Without a callback, or with nobody
+connected to be shown a menu, it says the question and the options, and the
+player answers by typing what they meant -- which is what the two callers
+today still want, because they answer by the player typing the command again.
 
 The contract is deliberately narrow so that both versions can honour it:
 `ask` never blocks, never returns an answer, and tells the caller only whether
@@ -45,16 +43,42 @@ def question(asked, options):
     return f"Which {asked} do you mean -- {listed}?"
 
 
-def ask(caller, asked, options, on_chosen=None):
+def ask(caller, asked, options, on_chosen=None, session=None):
     """
     Put a choice to somebody. True when it was put, False when there is
     nothing to ask about.
 
-    `on_chosen` is accepted and ignored, and that is not an oversight: it is
-    the argument the menu version will need, and taking it now means the
-    callers written today are the callers that work afterwards.
+    With `on_chosen`, and somebody connected, the options are a menu and
+    `on_chosen(option)` is called with the one chosen. Otherwise the question
+    is said. Never blocks, and never returns the answer.
     """
     if caller is None or not options:
         return False
-    caller.msg(question(asked, options))
+    from world import menus
+
+    runner = menus.account_of(caller) or caller
+    if on_chosen is None or not menus.interactive(runner):
+        caller.msg(question(asked, options))
+        return True
+    menus.open_menu(caller, choice_form(asked, options, on_chosen),
+                    session=session)
     return True
+
+
+def choice_form(asked, options, on_chosen):
+    """The menu `ask` puts up: one entry per option, and choosing ends it."""
+    from world import menus
+
+    def entry(number, option):
+        name = str(option)
+        spoken = name.strip().lower()
+        aliases = () if (spoken in menus.RESERVED or spoken.isdigit()) \
+            else (spoken,)
+        return menus.Action(f"option{number}", name,
+                            run=lambda ctx: on_chosen(option),
+                            after=menus.CLOSE, aliases=aliases)
+
+    names = [option for option in options if str(option or "").strip()]
+    return menus.Form(key="choose", title=f"Which {asked} do you mean?",
+                      items=[entry(number, option)
+                             for number, option in enumerate(names, 1)])
