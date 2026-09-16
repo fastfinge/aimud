@@ -329,3 +329,52 @@ class HelpForEachSetting(_Settings):
         self.assertIn("apiurl", topics)
         self.assertIn("delete_world", topics)
         self.assertIn("settings busy", topics["busy"].entrytext)
+
+
+@tag("world")
+class SettingsAsASubject(_Settings):
+    """`settings` is short for `edit settings`, and both verbs offer it."""
+
+    def test_edit_settings_is_the_same_as_settings(self):
+        from commands.verbs import CmdEdit
+
+        self.call(CmdEdit(), "settings busy 30")
+        self.assertEqual(busy.interval_for(self.char1), 30)
+
+    def test_view_settings_lists_them(self):
+        from commands.verbs import CmdView
+
+        self.assertIn("Still-working notices", self.call(CmdView(), "settings"))
+
+    def test_edit_and_view_both_offer_it(self):
+        from commands import subjects
+
+        ctx = menus.Context(self.char1)
+        for verb in ("edit", "view"):
+            keys = [item.key for item in
+                    subjects.verb_form(verb).items_for(ctx)]
+            self.assertIn("settings", keys, verb)
+
+
+@tag("world")
+class ChoicesPerPageSetting(_Settings):
+
+    def test_a_number(self):
+        self.assertIn("25 choices at a time", self.settings("pagesize 25"))
+        self.assertEqual(menus.page_size(self.account), 25)
+
+    def test_nought_is_all_at_once(self):
+        self.assertIn("every choice at once", self.settings("pagesize 0"))
+        self.assertEqual(menus.page_size(self.account), 0)
+        self.assertIn("Choices per page: all at once", self.settings("list"))
+
+    def test_back_to_the_default(self):
+        self.settings("pagesize 0")
+        self.settings("pagesize default")
+        self.assertEqual(menus.page_size(self.account), menus.PAGE_SIZE)
+        self.assertIn("Choices per page: 10 at a time (the default)",
+                      self.settings("list"))
+
+    def test_not_a_number(self):
+        self.assertIn("0 for all of them", self.settings("pagesize lots"))
+        self.assertIn("0 or more", self.settings("pagesize -3"))

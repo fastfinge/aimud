@@ -18,7 +18,7 @@ asked, even among the live tests:
 `AIMUD_BENCH_MODELS` is a comma-separated list of models to try in place of
 the default candidates, and `AIMUD_BENCH_REPEATS` is how many times each scene
 is played (2 unless set). The report is printed and also written to
-`server/logs/model_bench.txt`.
+`server/logs/model_bench.txt`, with every turn in `model_bench_turns.txt`.
 
 **Nothing the characters do happens.** Their actions are recorded, never
 carried out, so the only model called is the one being measured -- an
@@ -33,7 +33,7 @@ from pathlib import Path
 from unittest import mock
 
 from django.conf import settings
-from django.test import tag
+from django.test import SimpleTestCase, tag
 from evennia import create_object
 
 from tests import live
@@ -115,6 +115,19 @@ class _BenchSponsor(live.LiveSponsor):
 
     def model_for(self, *jobs):
         return ModelChoice(self.candidate, {}, job=jobs[0] if jobs else "")
+
+
+def _print_safely(text):
+    """
+    Print whatever a model wrote, on a console that cannot show all of it.
+
+    The Windows console is not UTF-8, and one non-breaking hyphen in a reply
+    once cost a whole run its report. Anything it cannot show becomes "?".
+    """
+    import sys
+
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    print(text.encode(encoding, errors="replace").decode(encoding))
 
 
 def _refusing(text):
@@ -199,7 +212,19 @@ class DialogueModels(GameTest):
             return 2
 
     def test_compare(self):
-        rows, details = [], []
+        """
+        Every turn is written down as it finishes, and the summary last.
+
+        A run is minutes of paid calls, so nothing that goes wrong afterwards
+        -- a console that cannot print a character a model used -- may lose
+        what it found. The file is written first, in UTF-8, and only then is
+        anything printed.
+        """
+        path = Path(settings.GAME_DIR) / "server" / "logs" / "model_bench.txt"
+        turns = path.with_name("model_bench_turns.txt")
+        turns.write_text("Every turn, as it finished:\n", encoding="utf-8")
+
+        rows = []
         for candidate in self.candidates():
             times, outcomes = [], []
             for scene in SCENES:
@@ -208,15 +233,15 @@ class DialogueModels(GameTest):
                                                 candidate, scene)
                     times.append(seconds)
                     outcomes.append(outcome)
-                    details.append(f"{candidate} {scene[0]}: {outcome}, "
-                                   f"{seconds:.1f} seconds: {did}")
+                    with turns.open("a", encoding="utf-8") as kept:
+                        kept.write(f"{candidate} {scene[0]}: {outcome}, "
+                                   f"{seconds:.1f} seconds: {did}\n")
             rows.append((candidate, times, outcomes))
 
-        report = self.report(rows) + ["", "Every turn:"] + details
-        text = "\n".join(report)
-        print("\n" + text)
-        path = Path(settings.GAME_DIR) / "server" / "logs" / "model_bench.txt"
-        path.write_text(text, encoding="utf-8")
+        summary = "\n".join(self.report(rows))
+        path.write_text(summary + f"\n\nEvery turn is in {turns.name}.\n",
+                        encoding="utf-8")
+        _print_safely("\n" + summary)
         self.assertTrue(rows)
 
     @staticmethod
@@ -301,3 +326,19 @@ class TheBenchItself(GameTest):
         ])
         self.assertLess(said[1].index("fast/model"), 20)
         self.assertIn("1 acted, 1 said nothing, 0 refused, 0 failed", said[1])
+
+
+@tag("unit")
+class PrintingWhatAModelWrote(SimpleTestCase):
+    """What lost the first real run its report."""
+
+    def test_a_character_the_console_cannot_show_does_not_stop_it(self):
+        import io
+        import sys
+
+        console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+        with mock.patch.object(sys, "stdout", console):
+            _print_safely("non‑breaking")
+        console.flush()
+        self.assertEqual(console.buffer.getvalue().rstrip(b"\r\n"),
+                         b"non?breaking")

@@ -62,3 +62,6 @@ nosetests.xml
 
 # VSCode config
 .vscode
+
+# What the model benchmark found (tests/test_model_bench.py). Local, and changes every run.
+server/logs/model_bench*.txt

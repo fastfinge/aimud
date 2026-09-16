@@ -31,6 +31,7 @@ SUBJECT_MODULES = [
     "commands.rules_subject",
     "commands.contents_subject",
     "commands.upkeep_subject",
+    "commands.settings_subject",
 ]
 
 
