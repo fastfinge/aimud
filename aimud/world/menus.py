@@ -84,6 +84,9 @@ ESCAPE = "/"
 #: menu; kept here so no menu has to find it again.
 PRIORITY = 110
 
+#: Said when the player closes a menu themselves, with `q` or by backing out.
+CLOSED = "Menu closed. You are back in the game."
+
 QUIT_WORDS = ("q", "quit", "exit")
 BACK_WORDS = ("b", "back")
 LOOK_WORDS = ("l", "look")
@@ -1240,6 +1243,7 @@ class GameMenu(EvMenu):
         base = self._underlying(frame)
         self.stack.pop()
         self.say(f"|w{chosen.label}|n\n{chosen.target.help_for(base.ctx)}")
+        self._redraw()
 
     def _navigate_minimal(self, text):
         word = text.lower()
@@ -1259,7 +1263,8 @@ class GameMenu(EvMenu):
     def _ask_help(self, frame):
         if frame.kind == "field":
             helped = frame.item.help_for(frame.ctx)
-            return self.say(helped or "There is no more to say about this one.")
+            self.say(helped or "There is no more to say about this one.")
+            return self._redraw()
         entries = self._helped_entries(frame)
         if not entries:
             return self.say("None of these has any help.")
@@ -1279,6 +1284,20 @@ class GameMenu(EvMenu):
         helped = chosen.target.help_for(base.ctx)
         self.say(f"|w{chosen.label}|n\n{helped}" if helped
                  else f"There is no help for {strip_ansi(chosen.label)}.")
+        self._redraw()
+
+    def _redraw(self):
+        """
+        Show where the player is again, after help has been read.
+
+        The help has pushed the choices up and away, and the next thing
+        anybody wants is to choose. A view menu repeats only its choices line:
+        its whole screen is what was just read past to ask.
+        """
+        frame = self.top
+        if frame.kind == "form" and frame.form.kind == VIEW:
+            return self.say(self._choices_line(frame))
+        return self.refresh()
 
     # -- choosing ------------------------------------------------------------
 
@@ -1417,6 +1436,17 @@ class GameMenu(EvMenu):
         PRESENTER.closed(self, why)
         if root is not None and root.form.on_close is not None:
             root.form.on_close(root.ctx, why)
+        if why in ("quit", "back") and not self._walks_away(root):
+            # Said when the player closed it themselves, so they know every
+            # menu is gone and what they type next is a command again. Not
+            # for a finished action, which has already said what it did, nor
+            # for a view menu that closes itself when they walk away.
+            self.msg(CLOSED)
+
+    def _walks_away(self, root):
+        return (root is not None and root.kind == "form"
+                and root.form.kind == VIEW
+                and view_mode(self.caller) == WALK_AWAY)
 
 
 class _Named:
@@ -1567,7 +1597,7 @@ def confirm(caller, question, on_yes, key=None, on_no=None, session=None,
     def no():
         menu = menu_ref["menu"]
         menu.say("Nothing changed.")
-        menu.close_menu(why="quit")
+        menu.close_menu(why="declined")
         if on_no is not None:
             on_no()
 

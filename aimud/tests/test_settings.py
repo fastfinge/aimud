@@ -329,3 +329,28 @@ class HelpForEachSetting(_Settings):
         self.assertIn("apiurl", topics)
         self.assertIn("delete_world", topics)
         self.assertIn("settings busy", topics["busy"].entrytext)
+
+
+@tag("world")
+class SettingsAsASubject(_Settings):
+    """`settings` is short for `edit settings`, and both verbs offer it."""
+
+    def test_edit_settings_is_the_same_as_settings(self):
+        from commands.verbs import CmdEdit
+
+        self.call(CmdEdit(), "settings busy 30")
+        self.assertEqual(busy.interval_for(self.char1), 30)
+
+    def test_view_settings_lists_them(self):
+        from commands.verbs import CmdView
+
+        self.assertIn("Still-working notices", self.call(CmdView(), "settings"))
+
+    def test_edit_and_view_both_offer_it(self):
+        from commands import subjects
+
+        ctx = menus.Context(self.char1)
+        for verb in ("edit", "view"):
+            keys = [item.key for item in
+                    subjects.verb_form(verb).items_for(ctx)]
+            self.assertIn("settings", keys, verb)

@@ -577,3 +577,76 @@ class ThroughARealSession(GameTest):
         said = self.type("say hello there")
         self.assertIsNone(self.account.ndb._evmenu)
         self.assertIn("hello there", said)
+
+
+@tag("world")
+class HelpThenTheMenuAgain(Driving):
+    """After help, the menu is shown again: the next thing wanted is to choose."""
+
+    def test_help_on_a_choice_is_followed_by_the_choices(self):
+        self.open(a_form())
+        said = self.type("?1")
+        self.assertIn("What world listings show.", said)
+        self.assertLess(said.index("What world listings show."),
+                        said.index("1. Title"))
+
+    def test_so_is_help_chosen_from_the_list(self):
+        form = a_form()
+        form.items[1].help = "How many rooms."
+        self.open(form)
+        self.type("?")
+        said = self.type("2")
+        self.assertIn("How many rooms.", said)
+        self.assertIn("1. Title", said)
+
+    def test_help_on_a_field_is_followed_by_the_field(self):
+        self.open(a_form())
+        self.type("1")
+        said = self.type("?")
+        self.assertIn("Type the title", said)
+
+    def test_a_view_menu_repeats_only_its_choices(self):
+        self.open(a_score())
+        said = self.type("?1")
+        self.assertIn("For one of them", said)
+        self.assertNotIn("Composure 12", said)
+
+
+@tag("world")
+class SayingItClosed(Driving):
+    """Closing a menu yourself says so; being done with one does not need to."""
+
+    def test_quit_says_so(self):
+        self.open(a_form())
+        self.assertIn(menus.CLOSED, self.type("q"))
+
+    def test_backing_all_the_way_out_says_so(self):
+        self.open(a_form(), path=["title"])
+        self.type("b")
+        self.assertIn(menus.CLOSED, self.type("b"))
+
+    def test_finishing_something_does_not(self):
+        self.open(a_form())
+        self.assertNotIn(menus.CLOSED, self.type("3"))
+
+    def test_nor_does_walking_away_from_a_view(self):
+        self.open(a_score())
+        with mock.patch.object(self.char1, "execute_cmd"):
+            self.assertNotIn(menus.CLOSED, self.type("north"))
+
+    def test_nor_quitting_a_view_that_would_have_closed_anyway(self):
+        self.open(a_score())
+        self.assertNotIn(menus.CLOSED, self.type("q"))
+
+    def test_but_a_view_that_stays_open_does(self):
+        with mock.patch.object(menus, "view_mode",
+                               return_value=menus.STAY_OPEN):
+            self.open(a_score())
+            self.assertIn(menus.CLOSED, self.type("q"))
+
+    def test_answering_no_to_a_question_does_not(self):
+        menus.confirm(self.char1, "Delete it?", lambda: None,
+                      interactive_only=False)
+        said = self.type("no")
+        self.assertIn("Nothing changed", said)
+        self.assertNotIn(menus.CLOSED, said)

@@ -457,8 +457,8 @@ Beyond that:
 
 | Command | What it does |
 |---|---|
-| `settings` | Every preference in one menu: still-working notices, confirmations, your API key and address, models, and inside a world your name, looks and pronouns there, and (for its creator) how the world runs. |
-| `settings list` | Every setting at once, with what it is set to and the name to type. |
+| `settings` / `edit settings` | Every preference in one menu: still-working notices, confirmations, your API key and address, models, and inside a world your name, looks and pronouns there, and (for its creator) how the world runs. |
+| `settings list` / `view settings` | Every setting at once, with what it is set to and the name to type. |
 | `settings <name> [<value> \| default]` | One setting: `settings busy 30`, `settings apikey <key>`, `settings models dialogue temperature 0.9`. `help <name>` explains any of them. |
 
 ### World
@@ -548,10 +548,10 @@ same keys.
 | Key | What it does |
 |---|---|
 | a number, or a choice's name | Choose it. Numbers stay the same on every page. |
-| `b` | Back one level. From the top, close the menu. |
-| `q` | Close the menu, however deep you are. |
+| `b` | Back one level. From the top, close the menu and say so. |
+| `q` | Close the menu, however deep you are, and say so: "Menu closed. You are back in the game." |
 | `l` | List the choices again, after something else has scrolled them away. |
-| `?` / `?3` / `? title` | Say what a choice is for. On its own, asks which. |
+| `?` / `?3` / `? title` | Say what a choice is for, then show the choices again. On its own, asks which. |
 | `~` / `~3` / `~ all` | Have a model write a first draft of a field, or of every empty one, for you to keep or not. Only where a field can be filled in, and it costs a model call. |
 | `n` / `p` | Next and previous page, on a long list. |
 | anything else | On a long list, narrow it to what matches. An empty line shows everything again. |

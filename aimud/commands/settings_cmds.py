@@ -21,6 +21,9 @@ class CmdSettings(Command):
       settings <name> <value>
       settings <name> default
 
+    |wsettings|n is the short way to type |wedit settings|n: everything after
+    either works the same. |wview settings|n is the same as |wsettings list|n.
+
     On its own it opens a menu of groups: General, Confirmations, API key and
     address, Models, and, inside a world, You in this world and (if you made
     it) This world. Each group lists its settings with what they are set to.
