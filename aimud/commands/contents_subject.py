@@ -227,7 +227,7 @@ VIEW_TOKENS = menus.Form(
     ] + [
         menus.Action(f"list-{name}", name,
                      run=lambda ctx, name=name: token_list(_root(ctx), name),
-                     aliases=names_for(name),
+                     aliases=names_for(name), topic=name,
                      command=lambda ctx, name=name: f"view tokens {name}")
         for name in _list_names(_root(ctx))],
     choices_line="Choose:",
@@ -272,6 +272,15 @@ def _split_entries(text):
     return [part.strip() for part in str(text or "").split("|") if part.strip()]
 
 
+def _world_context(ctx):
+    """What a model filling in a word list should know about the world."""
+    root = _root(ctx)
+    if root is None:
+        return ""
+    return (f"The world is {lore.title(root)}: "
+            f"{(root.db.world_description or '').strip()}")
+
+
 def _keep_list(ctx):
     draft = ctx.draft
     said = add_list(_root(ctx), draft.get("name") or "", draft.get("means") or "",
@@ -286,13 +295,16 @@ NEW_TOKENS = menus.Form(
     intro="A description that says {name} has one entry of the list chosen "
           "for it, and keeps that choice.",
     discard="Throw away this word list?",
+    sponsor=lambda ctx: sponsor_mod.of(_caller(ctx)),
+    context=lambda ctx: _world_context(ctx),
     items=[
-        menus.Field("name", "Name", required=True,
-                    help="What descriptions write in braces: smell for {smell}."),
-        menus.Field("means", "What it is for",
+        menus.Field("name", "Name", required=True, suggestible=True,
+                    help="What descriptions write in braces: smell for {smell}. "
+                         "One lower-case word."),
+        menus.Field("means", "What it is for", suggestible=True,
                     help="One line saying what the list is for, so the next "
                          "model to see it uses it the same way."),
-        menus.Field("entries", "Entries", required=True,
+        menus.Field("entries", "Entries", required=True, suggestible=True,
                     prompt="Type the entries separated by a bar, like brine | "
                            "tar | fish",
                     help="The words or phrases the list chooses between."),

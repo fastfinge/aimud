@@ -29,6 +29,15 @@ evennia test --settings settings.py --tag=unit tests          # the inner loop
 evennia test --settings settings.py --tag=llm tests           # costs money, needs a key
 ```
 
+The `llm` tests need no key file. `tests/live.py` reads the API key, address and
+model choices of the admin account straight from the local game database
+(`server/evennia.db3`, read-only; `AIMUD_LIVE_DB` points elsewhere), so they run
+wherever somebody has set the mud up and used `settings apikey`. Where nobody
+has, they skip themselves. Use `live.live_sponsor(self)` in a live test where a
+free one would use `FakeSponsor`. Tag the test class `llm`, and remember that
+naming a test module on the command line without `--exclude-tag=llm` runs its
+live tests too.
+
 `--settings settings.py` is not optional. Without it the run uses Evennia's
 default settings and so skips this game's test runner
 (`server/conf/test_runner.py`), which stops the suite hashing a real password

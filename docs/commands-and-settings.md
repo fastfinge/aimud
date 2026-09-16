@@ -1,7 +1,7 @@
 # Development plan: commands, menus and settings
 
-Status: phases 1 (the menu engine), 2 (settings), 3 (verbs, subjects and
-worlds) and 4 (every other subject) are built. Phases 5 and 6 are not started.
+Status: phases 1 to 5 are built: the menu engine, settings, verbs and
+worlds, every other subject, and help and `~`. Phase 6 is not started.
 The open questions are settled; see §11.
 
 This covers the first two items in `future-plans.md`: sorting out the command
@@ -834,6 +834,34 @@ topics, the `menus` job, the `~` tool loop, "all empty fields", and the
 proposal node. The live `llm`-tagged tests cover one field of each kind.
 *Done when:* `create world` with only a description can fill in its title and
 guidance through `~`.
+
+*Built.* `world/suggesting.py` asks, `world/menus.py` offers the proposal, and
+`help_cmds.topic_text` is the one help lookup. Tests are in
+`tests/test_suggesting.py`. Where it differs from the plan:
+
+* **One finish tool, not one per field.** `llm.converse` ends on the first
+  answer a finish tool accepts, so "all empty fields" is a single `fill` tool
+  with a parameter for each field. Every value still passes that field's own
+  `read`, and whatever is refused goes back together with the reasons.
+* **A proposal is offered the moment it arrives**, on top of wherever the
+  player is in the menu. It is not held until they return to the field. It is
+  one screen, so no is always a single keypress away.
+* **Which fields `~` can fill:** every field of the world wizard; a word
+  list's name, purpose and entries; and how you look in "You in this world".
+  Name, API key, busy interval, confirmations, model choices and pronoun forms
+  cannot be filled.
+* **Who pays:** the wizard is paid by the account that will own the world, as
+  generating it is. A word list and your looks are paid by the world you are
+  standing in.
+* **`?` reads a help topic when an entry has no help of its own.** The verbs
+  in `view rules` and `view effects` read `help <verb>`, and a word list reads
+  `help <list>`.
+* **Live tests pay with the local admin's own key.** `tests/live.py` reads
+  the API key, address and model choices of the admin account from the local
+  game database, read-only, so the tests run anywhere somebody has set the mud
+  up. They skip themselves where nobody has. `tests/test_live_models.py` fills
+  in one field of every kind with a real model. Every reply in
+  `test_suggesting.py` stays scripted and free.
 
 **Phase 6: in-character commands, and tidying up.** The bare forms in §7.2,
 `choosing.ask` running on the engine, the retired-name table checked,

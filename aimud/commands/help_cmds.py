@@ -574,3 +574,63 @@ class CmdAIHelp(default_cmds.CmdHelp):
             if permitted(entry, caller):
                 merged.setdefault(key, entry)
         return cmd_topics, db_topics, merged
+
+
+def topic_text(caller, key):
+    """
+    The text `help <key>` would show `caller`, or "".
+
+    What menus read for `?`, so a menu and `help` can never give two answers to
+    the same question. Looked up in the order `help` itself prefers a name:
+    a command first, then the database entries, then everything filed -- this
+    world's own words, the effects, the settings and the file entries.
+    """
+    from evennia.help.filehelp import FILE_HELP_ENTRIES
+    from evennia.help.models import HelpEntry
+
+    key = str(key or "").lower().strip()
+    if not key:
+        return ""
+
+    command = _command_named(caller, key)
+    if command is not None:
+        try:
+            return str(command.get_help(caller, None) or "").strip()
+        except Exception:
+            return str(command.__doc__ or "").strip()
+
+    stored = HelpEntry.objects.filter(db_key__iexact=key).first()
+    if stored is not None:
+        return str(stored.entrytext or "").strip()
+
+    from world import preferences
+
+    filed = dict(world_topics(caller))
+    for name, _label, entry in effect_topics():
+        filed.setdefault(name, entry)
+    for name, entry in preferences.help_entries():
+        filed.setdefault(name, entry)
+    for entry in FILE_HELP_ENTRIES.all():
+        filed.setdefault(entry.key.lower().strip(), entry)
+
+    entry = filed.get(key)
+    if entry is None:
+        entry = next((found for found in filed.values()
+                      if key in [alias.lower() for alias in
+                                 (getattr(found, "aliases", None) or [])]),
+                     None)
+    return str(getattr(entry, "entrytext", "") or "").strip()
+
+
+def _command_named(caller, key):
+    """A command in the game's own command sets answering to `key`, or None."""
+    from commands.default_cmdsets import AccountCmdSet, CharacterCmdSet
+
+    for cmdset_class in (CharacterCmdSet, AccountCmdSet):
+        cmdset = cmdset_class()
+        cmdset.at_cmdset_creation()
+        for command in cmdset.commands:
+            names = [command.key] + list(command.aliases or [])
+            if key in [str(name).lower() for name in names]:
+                return command
+    return None

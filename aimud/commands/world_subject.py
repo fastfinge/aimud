@@ -213,6 +213,7 @@ def _guidance_field(facet):
 
     return menus.Field(
         facet.key, f"{facet.label} guidance", kind=menus.LONG_TEXT,
+        suggestible=True,
         aliases=names_for(facet.label),
         get=get, set=put,
         help=(f"{facet.hint[0].upper() + facet.hint[1:]}. Only this part of "
@@ -231,7 +232,7 @@ def _draft_field(key, label, spec_key, kind, help, empty="not set",
         ctx.dirty = True
 
     return menus.Field(key, label, kind=kind, get=get, set=put, help=help,
-                       empty=empty, required=required)
+                       empty=empty, required=required, suggestible=True)
 
 
 WIZARD_FIELDS = [
@@ -382,9 +383,21 @@ def _wizard_title(ctx):
     return "A new world"
 
 
+def _wizard_sponsor(ctx):
+    """
+    Whoever will own the world pays for a draft of it, as they pay for
+    generating it: there is no world yet to read a payer off.
+    """
+    return sponsor_mod.of_account(account_of(ctx.character or ctx.caller))
+
+
 WIZARD = menus.Form(
     key="world", title=_wizard_title, intro=_wizard_intro,
     items=_wizard_items, discard="Throw away what you have entered?",
+    sponsor=_wizard_sponsor,
+    context=lambda ctx: ("This form sets up a world that a game will generate "
+                         "rooms, characters and items for. Guidance is read "
+                         "only by the generator it names."),
 )
 
 

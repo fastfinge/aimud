@@ -149,7 +149,7 @@ def _rule_verbs(root):
 def _verb_entry(verb, show, command):
     return menus.Action(f"verb-{verb}", verb,
                         run=lambda ctx: show(_seeded(_root(ctx)), verb),
-                        aliases=names_for(verb),
+                        aliases=names_for(verb), topic=verb,
                         command=lambda ctx: f"{command} {verb}")
 
 
@@ -592,7 +592,7 @@ VIEW_EFFECTS = menus.Form(
         menus.Action(f"verb-{verb}", verb,
                      run=lambda ctx, verb=verb: one_effect(
                          _seeded(_root(ctx)), verb, _caller(ctx)),
-                     aliases=names_for(verb),
+                     aliases=names_for(verb), topic=verb,
                      command=lambda ctx, verb=verb: f"view effects {verb}")
         for verb in _effect_verbs(_root(ctx))],
     choices_line="What one of them does:",

@@ -263,10 +263,13 @@ class Item:
     """What every entry in a form has: a name, a label, help and a lock."""
 
     def __init__(self, key, label, help="", lock=None, aliases=(),
-                 default=False, command=None):
+                 default=False, command=None, topic=None):
         self.key = str(key).lower()
         self.label = label
         self.help = help
+        # A help topic to read when there is no help text of its own, so `?`
+        # says what `help <topic>` says rather than a second version of it.
+        self.topic = topic
         self.lock = lock
         self.aliases = tuple(str(alias).lower() for alias in aliases)
         self.default = default
@@ -286,7 +289,13 @@ class Item:
         return str(_call(self.label, ctx, ""))
 
     def help_for(self, ctx):
-        return str(_call(self.help, ctx, "") or "").strip()
+        text = str(_call(self.help, ctx, "") or "").strip()
+        if text or not self.topic:
+            return text
+        from commands.help_cmds import topic_text
+
+        return topic_text(ctx.character or ctx.caller,
+                          _call(self.topic, ctx, ""))
 
     def command_for(self, ctx):
         return str(_call(self.command, ctx, "") or "").strip()
@@ -490,8 +499,14 @@ class Form:
     def __init__(self, key, title, items=(), intro="", kind=EDIT,
                  guided=False, command=None, on_close=None,
                  discard="Throw away what you have entered?",
-                 choices_line="For one of them:", page_size=PAGE_SIZE):
+                 choices_line="For one of them:", page_size=PAGE_SIZE,
+                 sponsor=None, context=None):
         self.key = key
+        # `sponsor(ctx)` is who pays when `~` asks a model to fill a field in;
+        # a form without one cannot be filled in. `context(ctx)` is anything
+        # the model should know beyond the fields themselves.
+        self.sponsor = sponsor
+        self.context = context
         self.title = title
         self.items = items
         self.intro = intro
@@ -617,6 +632,10 @@ class GameMenu(EvMenu):
             text = self._render_confirm(frame)
         elif frame.kind == "help":
             text = self._render_help(frame)
+        elif frame.kind == "suggest":
+            text = self._render_suggest(frame)
+        elif frame.kind == "proposal":
+            text = self._render_proposal(frame)
         elif frame.form.kind == VIEW:
             text = self._render_view(frame)
         else:
@@ -689,7 +708,8 @@ class GameMenu(EvMenu):
         if self._has_help(frame):
             said.append("? explains a choice")
         if self._suggestible(frame):
-            said.append("~ fills one in for you")
+            said.append("~ fills it in for you" if entry
+                        else "~ fills one in for you")
         if paged:
             said.append("n and p turn the page")
         if filterable:
@@ -825,10 +845,173 @@ class GameMenu(EvMenu):
         return bool(self._helped_entries(frame))
 
     def _suggestible(self, frame):
-        # Filling fields in with a model is phase 5 of the plan. Until then a
-        # form may mark fields suggestible, and `~` says it is not ready,
-        # rather than the key meaning nothing.
-        return False
+        """Whether `~` means anything here."""
+        base = self._underlying(frame)
+        if base.form.sponsor is None:
+            return False
+        if frame.kind == "field":
+            return frame.item.suggestible
+        from world import suggesting
+
+        return bool(suggesting.fillable(base.ctx, base.form))
+
+    # -- filling in with a model --------------------------------------------
+
+    def _suggest(self, frame, asked):
+        """`~`, `~2` or `~ title`: choose what to fill, or fill it."""
+        from world import suggesting
+
+        base = self._underlying(frame)
+        if not self._suggestible(frame):
+            return self.say("Nothing here can be filled in for you.")
+        if frame.kind == "field" and not asked:
+            return self._fill(base, [frame.item])
+
+        fields = suggesting.fillable(base.ctx, base.form)
+        if asked:
+            if asked in ("all", "empty"):
+                return self._fill_empty(base, fields)
+            entries = self._form_entries(base)
+            chosen = _pick(_filtered(entries, base.filter), asked)
+            if chosen is None or chosen.target not in fields:
+                return self._refuse(f"{asked} is not something that can be "
+                                    f"filled in for you here.")
+            return self._fill(base, [chosen.target])
+        if len(fields) == 1:
+            return self._fill(base, fields)
+        self.stack.append(_Frame("suggest", base.form, base.ctx))
+        self.refresh()
+
+    def _fill_empty(self, base, fields):
+        empty = [field for field in fields if not field.is_set(base.ctx)]
+        if not empty:
+            return self.say("Every field that can be filled in already has "
+                            "something in it.")
+        return self._fill(base, empty)
+
+    def _suggest_entries(self, frame):
+        from world import suggesting
+
+        base = self._underlying(frame)
+        fields = suggesting.fillable(base.ctx, base.form)
+        entries = [_Entry(field, field.label_for(base.ctx), field.names())
+                   for field in fields]
+        entries.append(_Entry("all", "All empty fields", ("all", "empty")))
+        return entries
+
+    def _render_suggest(self, frame):
+        lines = ["|wFill in which?|n", ""]
+        for number, entry in enumerate(self._suggest_entries(frame), 1):
+            lines.append(f"{number}. {entry.label}")
+        lines += ["", "Choose by number. A model writes a first draft for you "
+                      "to keep or not. b goes back and q quits."]
+        return "\n".join(lines)
+
+    def _suggest_input(self, frame, text):
+        if self._navigate_minimal(text):
+            return None
+        chosen = _pick(self._suggest_entries(frame), text)
+        if chosen is None:
+            return self._refuse()
+        self.stack.pop()
+        base = self._underlying(frame)
+        if chosen.target == "all":
+            from world import suggesting
+
+            return self._fill_empty(base, suggesting.fillable(base.ctx,
+                                                              base.form))
+        return self._fill(base, [chosen.target])
+
+    def _fill(self, base, fields):
+        """
+        Ask a model for values, and offer them when they come.
+
+        The menu stays usable meanwhile. An answer that arrives after the menu
+        has closed is not used, and the player is told so.
+        """
+        from world import busy, suggesting
+
+        labels = ", ".join(strip_ansi(field.label_for(base.ctx))
+                           for field in fields)
+        runner = self.caller
+        teller = base.ctx.character or runner
+        self.say(f"Asking a model to fill in {labels}...")
+        wait = busy.start(teller, f"filling in {labels}")
+
+        def arrived(values):
+            if runner.ndb._evmenu is not self:
+                return teller.msg(f"The suggestion for {labels} arrived after "
+                                  f"the menu closed, so it was not used.")
+            self._offer(base, fields, values)
+
+        def failed(why):
+            if runner.ndb._evmenu is not self:
+                return teller.msg(f"Filling in {labels} failed: {why}")
+            self.say(f"|rCould not fill in {labels}: {why}|n")
+
+        suggesting.fill(base.ctx, base.form, fields,
+                        on_done=busy.closing(wait, arrived),
+                        on_error=busy.closing(wait, failed), wait=wait)
+
+    def _offer(self, base, fields, values):
+        """A proposal: shown to be kept, refused or tried again."""
+        if not confirmation_wanted(self.caller, "suggestion"):
+            return self._keep(base, fields, values)
+        offer = _Frame("proposal", base.form, base.ctx)
+        offer.pending = (base, fields, values)
+        self.stack.append(offer)
+        self.refresh()
+
+    def _keep(self, base, fields, values):
+        said = []
+        for field in fields:
+            if field.key in values:
+                PRESENTER.chose(self, field)
+                said.append(field.store(base.ctx, values[field.key]))
+        for text in said:
+            self.say(text)
+        # Filled from inside the field itself: back to the form, as a typed
+        # value would have gone.
+        while self.top.kind == "field" and self.top.item in fields:
+            self.stack.pop()
+        self.refresh()
+
+    def _render_proposal(self, frame):
+        base, fields, values = frame.pending
+        lines = ["|wSuggested|n", ""]
+        for field in fields:
+            if field.key not in values:
+                continue
+            value = values[field.key]
+            if field.kind in (CHOICE, BOOLEAN):
+                shown = next((str(_call(choice.label, base.ctx, ""))
+                              for choice in field.choices_for(base.ctx)
+                              if choice.value == value), str(value))
+            else:
+                shown = str(value)
+            lines += [f"|w{strip_ansi(field.label_for(base.ctx))}|n", shown, ""]
+        lines += ["Use this?", "", "1. No (the default)", "2. Yes",
+                  "3. Try again", "", "Choose by number."]
+        return "\n".join(lines)
+
+    def _proposal_input(self, frame, text):
+        base, fields, values = frame.pending
+        word = text.lower()
+        if word in ("2",) + YES_WORDS:
+            PRESENTER.confirmed(self, "suggestion", True)
+            self.stack.pop()
+            return self._keep(base, fields, values)
+        if word in ("3", "again", "try", "retry"):
+            self.stack.pop()
+            return self._fill(base, fields)
+        if word in ("1",) + NO_WORDS + QUIT_WORDS + BACK_WORDS:
+            PRESENTER.confirmed(self, "suggestion", False)
+            self.stack.pop()
+            self.say("Nothing changed.")
+            return self.refresh()
+        if word in LOOK_WORDS or not word:
+            return self.display_nodetext()
+        return self._refuse("Choose 1 for no, 2 for yes or 3 to try again.")
 
     # -- reading input -------------------------------------------------------
 
@@ -846,6 +1029,10 @@ class GameMenu(EvMenu):
                 self._confirm_input(frame, text)
             elif frame.kind == "help":
                 self._help_input(frame, text)
+            elif frame.kind == "suggest":
+                self._suggest_input(frame, text)
+            elif frame.kind == "proposal":
+                self._proposal_input(frame, text)
         except Refuse as refusal:
             self.say(str(refusal))
 
@@ -870,7 +1057,7 @@ class GameMenu(EvMenu):
             asked = word[1:] if word[:1] == "?" else word.split(None, 1)[1]
             self._explain(frame, asked.strip())
         elif word[:1] == "~":
-            self.say("Nothing here can be filled in for you yet.")
+            self._suggest(frame, word[1:].strip())
         else:
             return False
         return True

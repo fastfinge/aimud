@@ -52,6 +52,7 @@ JOBS = [
     ("quests", "Turning an NPC's request into a checkable quest"),
     ("validation", "Player input validation"),
     ("commands", "Command and object behavior creation"),
+    ("menus", "Filling in a menu field for you, when you type ~"),
 ]
 JOB_NAMES = dict(JOBS)
 
@@ -708,7 +709,7 @@ def _looks_set(ctx, value):
 
 
 LOOKS = m.Field(
-    "looks", "How you look here", kind=m.LONG_TEXT,
+    "looks", "How you look here", kind=m.LONG_TEXT, suggestible=True,
     get=_looks_get, set=_looks_set,
     help="What other characters see when they look at you in this world.",
 )
@@ -772,9 +773,22 @@ def _world_title(ctx):
     return lore.title(world_root_of(ctx))
 
 
+def _you_here_context(ctx):
+    root = world_root_of(ctx)
+    return (f"The world is {_world_title(ctx)}: "
+            f"{(root.db.world_description or '').strip()}")
+
+
+def _you_here_sponsor(ctx):
+    from world import sponsor
+
+    return sponsor.of(ctx.character)
+
+
 YOU_HERE = m.Form(
     key="you", title=lambda ctx: f"You in {_world_title(ctx)}",
-    items=_you_here_items,
+    items=_you_here_items, sponsor=_you_here_sponsor,
+    context=_you_here_context,
 )
 
 
