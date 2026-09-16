@@ -11,8 +11,8 @@ from unittest import mock
 
 from django.test import SimpleTestCase, tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import immediately, tool_call
 from world import actions, lookups, token_lists, traits, verbs, zones
 from world import rulebooks as R
@@ -86,7 +86,8 @@ class Paging(SimpleTestCase):
 
 
 @tag("world")
-class AskingEachOne(EvenniaTest):
+class AskingEachOne(GameTest):
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

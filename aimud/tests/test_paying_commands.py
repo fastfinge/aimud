@@ -14,14 +14,15 @@ hand them, and what the commands do with the answer.
 from unittest import mock
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaCommandTest
 
+from tests.base import GameCommandTest
 from commands.world_cmds import CmdNPCGen, CmdRules
 from tests.support import FakeSponsor
 
 
 @tag("world")
-class MakingACharacter(EvenniaCommandTest):
+class MakingACharacter(GameCommandTest):
+    characters = 2
 
     def setUp(self):
         super().setUp()
@@ -73,7 +74,7 @@ class MakingACharacter(EvenniaCommandTest):
 
 
 @tag("world")
-class JudgingSuggestions(EvenniaCommandTest):
+class JudgingSuggestions(GameCommandTest):
 
     def setUp(self):
         super().setUp()

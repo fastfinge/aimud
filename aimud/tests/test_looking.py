@@ -14,8 +14,8 @@ ever. Every spelling is asserted here for that reason.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
 from world import actions, conditions as C, rulebooks as R
@@ -23,7 +23,7 @@ from world import gear, standard_rules, traits, verbs
 
 
 @tag("unit")
-class TheVerbThePipelineOwns(EvenniaTest):
+class TheVerbThePipelineOwns(GameTest):
     """Canonical spellings only, because everything folds before the test."""
 
     def test_look_is_owned_by_the_pipeline(self):
@@ -95,8 +95,11 @@ class DescribeSpeaksAndAchievesNothing(SimpleTestCase):
 
 
 @tag("world")
-class Looking(EvenniaTest):
+class Looking(GameTest):
     """A world with a room, a thing in it, and the standard rules."""
+
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -206,6 +209,8 @@ class SightIsNotReach(Looking):
     actions were declared, and nothing ever enforced it. So the one standard
     rule that applies to every action demanded reach -- of looking too.
     """
+
+    loose_objects = 2
 
     def test_looking_ships_declared_visible(self):
         """
@@ -339,7 +344,7 @@ class Darkness(Looking):
 
 
 @tag("world")
-class TheVerbTheCommandSetStillAnswers(EvenniaTest):
+class TheVerbTheCommandSetStillAnswers(GameTest):
     """
     The bounce, asserted in both directions.
 
@@ -353,6 +358,9 @@ class TheVerbTheCommandSetStillAnswers(EvenniaTest):
     so a pipeline that handed `look` back would loop the other way round. Hence
     one test per spelling rather than one test.
     """
+
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -419,13 +427,15 @@ class TheVerbTheCommandSetStillAnswers(EvenniaTest):
 
 
 @tag("world")
-class OutsideAGeneratedWorld(EvenniaTest):
+class OutsideAGeneratedWorld(GameTest):
     """
     No world root, no rulebooks, and nothing to consult them with.
 
     A look that stopped working in Limbo would be a far worse bug than anything
     rules could fix, so the original behaviour stands there untouched.
     """
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -505,7 +515,7 @@ class ArrivingInTheDark(Looking):
 
 
 @tag("world")
-class WhatGenerationCanNowSay(EvenniaTest):
+class WhatGenerationCanNowSay(GameTest):
     """
     The capability was built; nothing asked for it. A room could always have
     been worth something to whoever stood in it -- `gear` says so in as many
@@ -571,7 +581,7 @@ class WhatGenerationCanNowSay(EvenniaTest):
 
 
 @tag("world")
-class TheOneTraitThatIsAlwaysOnOffer(EvenniaTest):
+class TheOneTraitThatIsAlwaysOnOffer(GameTest):
     """
     The deadlock the inverted default walked into.
 
@@ -706,6 +716,8 @@ class CarryingALampAbout(Looking):
     everybody else stood in the dark.
     """
 
+    characters = 2
+
     def setUp(self):
         super().setUp()
         traits.register(self.root, traits.LIGHT, name="Light",
@@ -829,6 +841,8 @@ class BeingToldWhoIsBusy(Looking):
     "Someone else is already doing that" is true of another player and a lie to
     the person who typed it twice because the world had not answered yet.
     """
+
+    characters = 2
 
     def test_your_own_attempt_says_so(self):
         attempt_mod._hold(self.thing, "power", self.char1)

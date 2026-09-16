@@ -15,8 +15,8 @@ question, and a caller must not have to know which case it got.
 from unittest import mock
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import kinds, verbs, zones
 
 
@@ -75,8 +75,10 @@ class OneKindBeingAnother(SimpleTestCase):
 
 
 @tag("world")
-class FindingTheEnclosingPlace(EvenniaTest):
+class FindingTheEnclosingPlace(GameTest):
     """The walk: the room, then the zones outward from it."""
+
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -156,7 +158,8 @@ class FindingTheEnclosingPlace(EvenniaTest):
 
 
 @tag("world")
-class APlaceInACondition(EvenniaTest):
+class APlaceInACondition(GameTest):
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -206,7 +209,7 @@ class APlaceInACondition(EvenniaTest):
 
 
 @tag("world")
-class WhatSortOfPlaceAZoneIs(EvenniaTest):
+class WhatSortOfPlaceAZoneIs(GameTest):
 
     def setUp(self):
         super().setUp()

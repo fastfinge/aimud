@@ -14,14 +14,16 @@ character in a world counted as one question to the attempt counters.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import conditions as C
 from world import kinds, verbs
 
 
 @tag("world")
-class APersonIsASortOfThing(EvenniaTest):
+class APersonIsASortOfThing(GameTest):
+    characters = 2
+    loose_objects = 2
 
     def setUp(self):
         super().setUp()
@@ -84,12 +86,15 @@ class APersonIsASortOfThing(EvenniaTest):
 
 
 @tag("world")
-class BeingAlive(EvenniaTest):
+class BeingAlive(GameTest):
     """
     The fault behind the report. `alive` is in the seeded `life_status` group
     beside `dead`, and nothing anywhere set it -- so a rule asking for it could
     never pass, however long anybody played.
     """
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -184,7 +189,7 @@ class TheDefaultIsPartOfAGroup(SimpleTestCase):
 
 
 @tag("world")
-class WhatAdmissionIsAbout(EvenniaTest):
+class WhatAdmissionIsAbout(GameTest):
     """
     Giving characters kinds broke every bare verb, and the fix is worth a test
     of its own because the coupling is not obvious.
@@ -197,6 +202,9 @@ class WhatAdmissionIsAbout(EvenniaTest):
     asked whether a person can be launched and was refused before the redirect
     that gives it the ship could run.
     """
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

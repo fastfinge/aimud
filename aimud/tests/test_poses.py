@@ -16,8 +16,8 @@ splicing it onto "{actor} " as though it were a bare verb.
 
 from django.test import SimpleTestCase, tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import events
 
 
@@ -59,7 +59,7 @@ class ThePoseAsATemplate(SimpleTestCase):
 
 
 @tag("world")
-class WhatTheRoomReads(EvenniaTest):
+class WhatTheRoomReads(GameTest):
 
     def setUp(self):
         super().setUp()

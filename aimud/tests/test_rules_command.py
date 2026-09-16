@@ -11,15 +11,15 @@ Plain prose, one rule to a line, no columns or box-drawing -- the same reason
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaCommandTest
 
+from tests.base import GameCommandTest
 from commands.world_cmds import CmdRules
 from world import actions
 from world import rulebooks as R
 
 
 @tag("world")
-class ListingRules(EvenniaCommandTest):
+class ListingRules(GameCommandTest):
 
     def setUp(self):
         super().setUp()

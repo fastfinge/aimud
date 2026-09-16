@@ -8,14 +8,14 @@ cannot be repaired, but the state can.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import attempt as attempt_mod
 from world import clothing, verbs
 
 
 @tag("world")
-class WhatTheNameSays(EvenniaTest):
+class WhatTheNameSays(GameTest):
 
     def setUp(self):
         super().setUp()

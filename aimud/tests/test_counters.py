@@ -14,8 +14,8 @@ than it is, and a suggester weighs its proposals by exactly that ratio.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import FakeSponsor, finishing, immediately, replying
 from world import attempt as attempt_mod
 from world import actions, counters, kinds, rulebooks as R
@@ -46,7 +46,9 @@ class ReadingAKey(SimpleTestCase):
 
 
 @tag("world")
-class Counting(EvenniaTest):
+class Counting(GameTest):
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -70,6 +72,8 @@ class WhatAQuestionIs(Counting):
     week apart add up to two, which is what makes a count evidence about
     datapads rather than about one object.
     """
+
+    loose_objects = 2
 
     def test_a_named_thing_gives_its_kind(self):
         self.assertEqual(
@@ -230,6 +234,8 @@ class EveryWayOutIsCounted(Counting):
     so each way out of the pipeline is asserted separately.
     """
 
+    loose_objects = 2
+
     def setUp(self):
         super().setUp()
         standard_rules.seed(self.root)
@@ -326,6 +332,8 @@ class WhoTriedIt(Counting):
     character reaches for verbs the world already knows -- the ones that stress
     this design come from a person typing something nobody anticipated.
     """
+
+    characters = 2
 
     def setUp(self):
         super().setUp()

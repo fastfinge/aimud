@@ -13,8 +13,8 @@ promise, tested rather than trusted.
 from unittest import mock
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import english, events, lexicon, pronouns, tokens
 
 #: (function, arguments, expected) that hold whether or not WordNet is here.
@@ -159,7 +159,8 @@ class RegularPast(SimpleTestCase):
 
 
 @tag("world")
-class WhatTheThingKnows(EvenniaTest):
+class WhatTheThingKnows(GameTest):
+    loose_objects = 2
 
     def setUp(self):
         super().setUp()
@@ -210,7 +211,9 @@ class WhatTheThingKnows(EvenniaTest):
 
 
 @tag("world")
-class ThePast(EvenniaTest):
+class ThePast(GameTest):
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

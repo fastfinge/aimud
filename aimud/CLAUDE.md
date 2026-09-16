@@ -19,6 +19,55 @@ evennia shell         # open a Python shell with full Evennia/Django context
 evennia status # check server status
 ```
 
+## Tests
+
+Run from the game directory, the same one the `evennia` commands above need:
+
+```bash
+evennia test --settings settings.py --exclude-tag=llm tests   # free and deterministic
+evennia test --settings settings.py --tag=unit tests          # the inner loop
+evennia test --settings settings.py --tag=llm tests           # costs money, needs a key
+```
+
+`--settings settings.py` is not optional. Without it the run uses Evennia's
+default settings and so skips this game's test runner
+(`server/conf/test_runner.py`), which stops the suite hashing a real password
+for every fixture account and garbage-collecting the WordNet indices after
+every test. Those two cost about twenty minutes of wall clock between them.
+
+### Fixtures: start small, opt in
+
+Test base classes live in `tests/base.py`. **Do not inherit from Evennia's
+`EvenniaTest` or `EvenniaCommandTest` directly.** Use `GameTest` and
+`GameCommandTest`, which build one room (`room1`) with one character (`char1`)
+standing in it, and nothing else. Anything more is a class attribute:
+
+| attribute       | default | what it adds                                    |
+|-----------------|---------|-------------------------------------------------|
+| `characters`    | `1`     | `char1`; `2` also makes `char2`                 |
+| `loose_objects` | `0`     | `1` makes `obj1`; `2` also makes `obj2`         |
+| `second_room`   | `False` | `room2`, and `exit` leading there from `room1`  |
+| `accounts`      | `False` | `account`/`account2`, puppeting the characters  |
+| `session`       | `False` | a logged-in session; implies `accounts`         |
+| `script`        | `False` | a bare `Script`, as `self.script`               |
+
+```python
+class TakingSomething(GameTest):
+    loose_objects = 1
+```
+
+The names are upstream's, so a test that outgrows its category only changes the
+line at the top. For logic that needs no world at all, use `SimpleTestCase`.
+
+When adding a test, add the dial you need and no more. In particular `accounts`
+is almost never the answer -- an account is the out-of-character layer, and a
+test about what a character does in a room does not need one -- and
+`characters = 2` is the most expensive dial there is.
+
+**Read the module docstring in `tests/base.py` before adding a test class.** It
+records how every existing class was assigned its category, and why a fixture
+can be load-bearing without being named in the test.
+
 ## Architecture
 
 Evennia's architecture separates the server into two processes (Portal and Server) and uses Django for the database and web layer.

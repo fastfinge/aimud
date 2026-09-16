@@ -12,8 +12,8 @@ instead, and a wrong `instead` silently changes what a verb means.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import (FakeSponsor, as_json, finishing, immediately,
                            replying)
 from world import attempt as attempt_mod
@@ -59,11 +59,14 @@ class WhatMakesTwoProposalsTheSame(SimpleTestCase):
 
 
 @tag("world")
-class AWorldWithFaults(EvenniaTest):
+class AWorldWithFaults(GameTest):
     """
     A door that can be opened and never closed -- the pair the development
     corpus produces five of -- and a ship nobody can launch bare.
     """
+
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -213,7 +216,7 @@ class FromRefusedAttempts(AWorldWithFaults):
 
 
 @tag("world")
-class FromSiblingKinds(EvenniaTest):
+class FromSiblingKinds(GameTest):
     """
     The only generator that makes a world simpler. Two kinds affording exactly
     the same things, one with a rule and one without, and the proposal widens the
@@ -437,13 +440,15 @@ class AnsweringTheQueue(AWorldWithFaults):
 
 
 @tag("world")
-class TheWholeRoad(EvenniaTest):
+class TheWholeRoad(GameTest):
     """
     The spaceship, one more time, with nobody writing a rule.
 
     A world that has never been told what `launch` means aboard a ship, a player
     who tries it three times, and a proposal that works when accepted.
     """
+
+    second_room = True
 
     def setUp(self):
         super().setUp()

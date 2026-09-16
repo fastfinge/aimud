@@ -10,16 +10,18 @@ on `narrate`, which goes through the same door and the same repair.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import (FakeSponsor, finishing, immediately, replying,
                            tool_reply)
 from world import llm, verb_gen, verbs
 
 
 @tag("world")
-class KeepingARule(EvenniaTest):
+class KeepingARule(GameTest):
     """The per-world store `attempt` still reads and `ask_admission` writes out."""
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -72,7 +74,7 @@ def _narrating(sponsor, answer, bound, actor, raw="hand obj to char2",
 
 
 @tag("world")
-class TheDoorIsClosed(EvenniaTest):
+class TheDoorIsClosed(GameTest):
     """
     Without `immediately()`, nothing happens -- which is the point of having it.
 
@@ -80,6 +82,8 @@ class TheDoorIsClosed(EvenniaTest):
     `deferToThread` callback does not fire in a test, so a generator driven
     without this helper asserts nothing at all while appearing to pass.
     """
+
+    loose_objects = 1
 
     def test_a_callback_does_not_fire_on_its_own(self):
         got = []
@@ -95,7 +99,7 @@ class TheDoorIsClosed(EvenniaTest):
 
 
 @tag("world")
-class NarratingATemplate(EvenniaTest):
+class NarratingATemplate(GameTest):
     """
     What the narrator is asked for, since P4: a template with every
     participant as a placeholder and the verb as `$pconj(...)`, so that one
@@ -103,6 +107,9 @@ class NarratingATemplate(EvenniaTest):
     watching. The prompt is the only place a model learns that, so what it
     says is held still here.
     """
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

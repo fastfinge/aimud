@@ -8,8 +8,8 @@ still first.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import (clothing, conditions, effects, gear, goals, kinds, pronouns,
                    relations, token_lists, traits, verbs, vocabulary)
 from world import toolbox as tb
@@ -107,7 +107,7 @@ class TheEnumCap(SimpleTestCase):
         self.assertNotIn("enum", tb.choice([], "anything"))
 
 
-class _World(EvenniaTest):
+class _World(GameTest):
 
     def setUp(self):
         super().setUp()

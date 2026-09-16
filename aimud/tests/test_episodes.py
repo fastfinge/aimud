@@ -12,12 +12,14 @@ from datetime import datetime, timedelta
 from unittest import mock
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import events, memory, ownership, pronouns
 
 
-class Stage(EvenniaTest):
+class Stage(GameTest):
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -41,6 +43,7 @@ class Stage(EvenniaTest):
 
 @tag("world")
 class WhatIsRemembered(Stage):
+    second_room = True
 
     def test_an_episode_is_the_narration_in_the_past(self):
         line, _about, _metadata = memory.episode_of(self.event())
@@ -109,6 +112,8 @@ class WhereThingsWent(Stage):
     Making them is not: things are made when first needed, not when first
     mentioned, so a record of it would be misleading.
     """
+
+    second_room = True
 
     def noted(self, action):
         written = {"note": [], "end": []}

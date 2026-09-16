@@ -10,8 +10,8 @@ is sent back instead, and so is a trait nothing measures.
 
 from django.test import tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import (FakeSponsor, finishing, immediately, replying,
                            tool_call, tool_reply)
 from world import quest_gen, traits
@@ -33,7 +33,7 @@ def _results(recorder, index):
                      for message in recorder.tool_results(index))
 
 
-class _World(EvenniaTest):
+class _World(GameTest):
 
     def setUp(self):
         super().setUp()

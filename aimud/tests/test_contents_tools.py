@@ -11,8 +11,8 @@ from unittest import mock
 
 from django.test import tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import (FakeSponsor, finishing, immediately, replying,
                            tool_call, tool_reply)
 from world import goals, planner, worldgen
@@ -26,7 +26,8 @@ def _results(recorder, index):
                      for message in recorder.tool_results(index))
 
 
-class _World(EvenniaTest):
+class _World(GameTest):
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -49,6 +50,9 @@ class _World(EvenniaTest):
 
 @tag("world")
 class FindingWhatNobodyMade(_World):
+    # `char1` has to read as a player for its want to be a gap worth
+    # filling; world/goals.py decides that by the account behind it.
+    accounts = True
 
     def test_a_want_for_a_thing_nowhere_is_met_by_exploring(self):
         goal = [{"type": "holds", "object": "raw ore"}]

@@ -16,8 +16,8 @@ from unittest import mock
 
 from django.test import tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaCommandTest, EvenniaTest
 
+from tests.base import GameCommandTest, GameTest
 from world import conditions as C
 from world import goals, ownership, rulebooks, standard_rules
 
@@ -34,8 +34,11 @@ def _restore(root):
 
 
 @tag("world")
-class Somebody(EvenniaTest):
+class Somebody(GameTest):
     """The guard the rule needs, since the condition language has no "not"."""
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -65,8 +68,11 @@ class Somebody(EvenniaTest):
 
 
 @tag("world")
-class TheRule(EvenniaCommandTest):
+class TheRule(GameCommandTest):
     """Every world has it; no world is bound by it until it says so."""
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -167,8 +173,11 @@ class TheRule(EvenniaCommandTest):
 
 
 @tag("world")
-class TheOwnerNotices(EvenniaCommandTest):
+class TheOwnerNotices(GameCommandTest):
     """Whose it was reaches the witnesses, and the owner wants it back."""
+
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()

@@ -11,15 +11,15 @@ words.
 from unittest import mock
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import FakeSponsor, finishing, immediately, replying
 from world import fact_gen
 from world import toolbox as tb
 
 
 @tag("world")
-class DistillingFacts(EvenniaTest):
+class DistillingFacts(GameTest):
 
     def test_too_many_facts_are_sent_back(self):
         tool = fact_gen.facts_tool()
@@ -61,7 +61,7 @@ class DistillingFacts(EvenniaTest):
 
 
 @tag("world")
-class Remembering(EvenniaTest):
+class Remembering(GameTest):
 
     def remember(self, question, *replies):
         from commands.memory_cmds import CmdRemember

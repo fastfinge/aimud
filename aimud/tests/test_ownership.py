@@ -19,15 +19,18 @@ from unittest import mock
 from evennia import create_object
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaCommandTest, EvenniaTest
 
+from tests.base import GameCommandTest, GameTest
 from world import conditions as C
 from world import effects, ownership
 
 
 @tag("world")
-class TheRecord(EvenniaTest):
+class TheRecord(GameTest):
     """What is written down, and what can be read back off it."""
+
+    characters = 2
+    loose_objects = 2
 
     def setUp(self):
         super().setUp()
@@ -78,11 +81,14 @@ class TheRecord(EvenniaTest):
 
 
 @tag("world")
-class TheCascade(EvenniaTest):
+class TheCascade(GameTest):
     """
     Handing somebody a box of things hands them the things -- and hands them
     nothing else. The cascade claims only what the previous owner owned.
     """
+
+    characters = 2
+    loose_objects = 2
 
     def setUp(self):
         super().setUp()
@@ -127,8 +133,11 @@ class TheCascade(EvenniaTest):
 
 
 @tag("world")
-class TheCondition(EvenniaTest):
+class TheCondition(GameTest):
     """`owned_by`, in all three of its moods."""
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -219,12 +228,15 @@ class ReadingItBackwards(SimpleTestCase):
 
 
 @tag("world")
-class TakingClaims(EvenniaCommandTest):
+class TakingClaims(GameCommandTest):
     """
     The first of the two seeded rules. `get` is a command rather than a trip
     through the pipeline, so what is really being tested is that an after-rule
     about it fires at all.
     """
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -267,8 +279,11 @@ class TakingClaims(EvenniaCommandTest):
 
 
 @tag("world")
-class Giving(EvenniaCommandTest):
+class Giving(GameCommandTest):
     """The mechanic, and the second of the two seeded rules."""
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -326,13 +341,16 @@ class Giving(EvenniaCommandTest):
 
 
 @tag("world")
-class TheCommand(EvenniaCommandTest):
+class TheCommand(GameCommandTest):
     """
     What a player types. Evennia ships a `give` of its own and this game
     replaces it, which is the part worth asserting: without the replacement
     the mechanic is unreachable from the keyboard and only NPCs ever transfer
     anything.
     """
+
+    characters = 2
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -370,7 +388,7 @@ class TheCommand(EvenniaCommandTest):
 
 
 @tag("world")
-class MadeThings(EvenniaTest):
+class MadeThings(GameTest):
     """Rules three and four: what you make is yours, what you wear is yours."""
 
     def setUp(self):
@@ -405,12 +423,14 @@ class MadeThings(EvenniaTest):
 
 
 @tag("world")
-class WhatIsRecordedOfIt(EvenniaTest):
+class WhatIsRecordedOfIt(GameTest):
     """
     The provenance. Two writes, because they answer two different questions:
     the readable fact recall can find, and the exact temporal triple that
     outlives the thing it is about.
     """
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

@@ -12,13 +12,13 @@ from unittest import mock
 
 from django.test import tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import FakeSponsor, immediately, replying, tool_call, tool_reply
 from world import effects, npc_gen, ownership, quests, token_lists, verbs
 
 
-class _Scene(EvenniaTest):
+class _Scene(GameTest):
     """A world, a character in it, and a letter in an open tray."""
 
     def setUp(self):
@@ -47,6 +47,9 @@ class _Scene(EvenniaTest):
 
 @tag("world")
 class WhatACharacterIsOffered(_Scene):
+    characters = 2
+    loose_objects = 2
+    second_room = True
 
     def test_get_reaches_into_an_open_tray(self):
         self.assertIn("letter", self.choices("get", "object_name"))
@@ -157,6 +160,8 @@ class WhatACharacterDoes(_Scene):
 class ChangingAThing(_Scene):
     """`modify`, held to the rules every generated name is held to."""
 
+    loose_objects = 1
+
     def modify(self, **args):
         self.npc._execute_one("modify", {"object_name": self.obj1.key, **args},
                               self.room1)
@@ -236,6 +241,8 @@ class ATurnThatGoesRound(_Scene):
     Phase 3: a character's turn is a loop, so what it looks up it can act on
     at once, and what it is refused comes back as the tool's answer.
     """
+
+    loose_objects = 1
 
     def turn(self, *replies, idle=False):
         from contextlib import ExitStack

@@ -16,16 +16,18 @@ order the player met them.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import FakeSponsor, finishing, immediately, replying
 from world import actions, conditions as C, crossing, rulebooks as R
 from world import attempt as attempt_mod
 from world import standard_rules, traits, verbs
 
 
-class ACharacter(EvenniaTest):
+class ACharacter(GameTest):
     """One world, one room in it, and somebody standing there."""
+
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -52,6 +54,8 @@ class BeingToldWhatHappenedToYou(ACharacter):
     a trait anyone can play with. States said nothing at all, and states are
     the half that can end the game.
     """
+
+    loose_objects = 1
 
     def test_a_state_arriving_is_announced(self):
         verbs.apply_states(self.char1, add=["dead"], world_root=self.root)
@@ -271,6 +275,8 @@ class ActingInSpiteOfIt(ACharacter):
 @tag("world")
 class TheGateIsStillThere(ACharacter):
     """The waiver is a decision, so the refusal it lifts has to still work."""
+
+    loose_objects = 1
 
     def test_a_verb_with_no_waiver_is_refused_while_dead(self):
         from world import kinds

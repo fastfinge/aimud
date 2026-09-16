@@ -13,8 +13,8 @@ attempt be refused, and then blame the launch rule for not doing what it promise
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import conditions as C
 from world import goals, planner, rulebooks as R
 from world import standard_rules, verbs
@@ -101,11 +101,13 @@ class ReadingAConditionBackAsAGoal(SimpleTestCase):
 
 
 @tag("world")
-class AShipThatNeedsPowerFirst(EvenniaTest):
+class AShipThatNeedsPowerFirst(GameTest):
     """
     The spaceship from the planner's side. Nothing here writes a plan; the world
     is asked what to do next and answers with the step before the one wanted.
     """
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -431,7 +433,7 @@ class AVerbNobodyHasTried(AShipThatNeedsPowerFirst):
 
 
 @tag("world")
-class AskingTwiceAndNoMore(EvenniaTest):
+class AskingTwiceAndNoMore(GameTest):
     """
     The bill that could otherwise run on its own.
 
@@ -443,6 +445,8 @@ class AskingTwiceAndNoMore(EvenniaTest):
     `kinds.admit` caches a no and `actions.declare` caches an arity. This was
     the one answer cached nowhere.
     """
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

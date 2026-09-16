@@ -11,8 +11,8 @@ from unittest import mock
 
 from django.test import SimpleTestCase, tag
 from evennia import create_object
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.test_rulecheck import rule, world
 from world import goals, planner, quests, rulecheck, verbs
 
@@ -73,7 +73,7 @@ class WhatTheFaultsSayAboutOneAttempt(SimpleTestCase):
         self.assertEqual(self.hints(world(), "close"), [])
 
 
-class _World(EvenniaTest):
+class _World(GameTest):
 
     def setUp(self):
         super().setUp()
@@ -84,6 +84,7 @@ class _World(EvenniaTest):
 
 @tag("world")
 class WhyThereIsNoStep(_World):
+    loose_objects = 2
 
     def why(self, condition, who=None):
         return planner.blocker(who or self.char1, self.root, condition)
@@ -131,6 +132,10 @@ class WhyThereIsNoStep(_World):
 
 @tag("world")
 class WhatPeopleWantAndCannotGet(_World):
+    loose_objects = 1
+    # A player's quest comes before an NPC's goal, and world/goals.py tells
+    # them apart by whether an account is behind the character.
+    accounts = True
 
     def setUp(self):
         super().setUp()
@@ -190,6 +195,7 @@ class WhatPeopleWantAndCannotGet(_World):
 
 @tag("world")
 class TheStatesNearAnAttempt(_World):
+    loose_objects = 1
 
     def test_what_things_are_in_now_and_what_their_sorts_have_been_in(self):
         verbs.apply_states(self.obj1, add=["dusty"], world_root=self.root)

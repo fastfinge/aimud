@@ -6,13 +6,14 @@ them out is not offered for any job. See docs/generator-tool-loops.md §3.2.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from commands import model_menu
 
 
 @tag("world")
-class ChoosingAModel(EvenniaTest):
+class ChoosingAModel(GameTest):
+    accounts = True
 
     def setUp(self):
         super().setUp()

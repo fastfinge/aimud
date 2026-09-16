@@ -7,9 +7,9 @@ is here is that a total only ever goes up, that the tail stays short, and that
 a ledger cannot break the turn that was waiting on the call it is recording.
 """
 
-from evennia.utils.test_resources import EvenniaTest
 from django.test import tag
 
+from tests.base import GameTest
 from world import ledger
 from world.model_params import ModelChoice
 from world.sponsor import Sponsor
@@ -20,7 +20,8 @@ def usage(prompt=10, completion=5):
 
 
 @tag("world")
-class WhatACallCost(EvenniaTest):
+class WhatACallCost(GameTest):
+    accounts = True
 
     def setUp(self):
         super().setUp()
@@ -127,13 +128,15 @@ class WhatACallCost(EvenniaTest):
 
 
 @tag("world")
-class HowLongACallTook(EvenniaTest):
+class HowLongACallTook(GameTest):
     """
     Seconds per call, per job and per world.
 
     What a player actually waited, which the tool-loop plan's soak compares
     against a baseline taken before anything changed.
     """
+
+    accounts = True
 
     def setUp(self):
         super().setUp()

@@ -13,14 +13,16 @@ module now works, and the success path through the same delivery also works.
 """
 
 from django.test import tag
-from evennia.utils.test_resources import EvenniaCommandTest
 
+from tests.base import GameCommandTest
 from world import clothing, referents
 
 
 @tag("world")
-class Wearing(EvenniaCommandTest):
+class Wearing(GameCommandTest):
     """A coat, a wearer, and somebody watching them."""
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()
@@ -102,8 +104,10 @@ class Wearing(EvenniaCommandTest):
 
 
 @tag("world")
-class GearWield(EvenniaCommandTest):
+class GearWield(GameCommandTest):
     """gear.wield has the identical fix."""
+
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

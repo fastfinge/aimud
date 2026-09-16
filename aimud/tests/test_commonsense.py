@@ -15,8 +15,8 @@ import os
 import tempfile
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from tests.support import FIXTURES
 from world import anatomy, commonsense, lexicon, verbs
 
@@ -269,7 +269,7 @@ class WhatTheAnchorMenuSuggests(WithSampleCorpus):
 
 
 @tag("world")
-class AGroupSeededFromOpposites(EvenniaTest):
+class AGroupSeededFromOpposites(GameTest):
     """
     `DistinctFrom` is definitionally what a state group is, so the ordinary pairs
     -- open/closed, locked/unlocked -- should not have to be declared by hand.
@@ -361,7 +361,7 @@ class AGroupSeededFromOpposites(EvenniaTest):
 
 
 @tag("world")
-class BodyPartsBeyondTheList(EvenniaTest):
+class BodyPartsBeyondTheList(GameTest):
     """
     `anatomy.PARTS` is about 120 hand-written nouns whose own comment admits the
     problem: a world with beetles and birds in it has mandibles and wings.

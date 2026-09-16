@@ -15,8 +15,8 @@ import ast
 import pathlib
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import sponsor
 
 GAME = pathlib.Path(__file__).resolve().parent.parent
@@ -51,7 +51,10 @@ class ASponsorWithNobodyBehindIt(SimpleTestCase):
 
 
 @tag("world")
-class FindingWhoPays(EvenniaTest):
+class FindingWhoPays(GameTest):
+    characters = 2
+    second_room = True
+    accounts = True
 
     def setUp(self):
         super().setUp()

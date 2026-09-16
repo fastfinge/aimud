@@ -13,8 +13,8 @@ cannot disagree.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import rulebooks as R
 from world import zones
 
@@ -46,7 +46,7 @@ class MakingARule(SimpleTestCase):
 
 
 @tag("world")
-class StoringRules(EvenniaTest):
+class StoringRules(GameTest):
 
     def setUp(self):
         super().setUp()
@@ -82,7 +82,9 @@ class StoringRules(EvenniaTest):
 
 
 @tag("world")
-class WhichRulesApply(EvenniaTest):
+class WhichRulesApply(GameTest):
+    loose_objects = 2
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -171,13 +173,16 @@ class WhichRulesApply(EvenniaTest):
 
 
 @tag("world")
-class TheEnclosureCase(EvenniaTest):
+class TheEnclosureCase(GameTest):
     """
     `power datapad` against `power`, which is the whole reason for `about`.
 
     A rule scoped to `spacecraft.n.01` might mean the ship you are standing in
     or a model spaceship on the shelf. Saying which is not decoration.
     """
+
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -229,8 +234,11 @@ class TheEnclosureCase(EvenniaTest):
 
 
 @tag("world")
-class MostSpecificFirst(EvenniaTest):
+class MostSpecificFirst(GameTest):
     """Every tier, and every tie-break, asserted."""
+
+    loose_objects = 1
+    second_room = True
 
     def setUp(self):
         super().setUp()
@@ -337,7 +345,8 @@ class MostSpecificFirst(EvenniaTest):
 
 
 @tag("world")
-class RulesLeftBehind(EvenniaTest):
+class RulesLeftBehind(GameTest):
+    loose_objects = 1
 
     def setUp(self):
         super().setUp()

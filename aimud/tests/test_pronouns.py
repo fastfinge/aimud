@@ -9,8 +9,8 @@ the only thing that stops a generator declaring she/her once per character.
 """
 
 from django.test import SimpleTestCase, tag
-from evennia.utils.test_resources import EvenniaTest
 
+from tests.base import GameTest
 from world import pronouns
 
 
@@ -96,7 +96,7 @@ class ReadingADeclaration(SimpleTestCase):
 
 
 @tag("world")
-class AddingOne(EvenniaTest):
+class AddingOne(GameTest):
 
     def setUp(self):
         super().setUp()
@@ -148,7 +148,7 @@ class AddingOne(EvenniaTest):
 
 
 @tag("world")
-class WhoGoesByWhat(EvenniaTest):
+class WhoGoesByWhat(GameTest):
 
     def setUp(self):
         super().setUp()
@@ -184,7 +184,7 @@ class SayingWhatAWorldKeeps(SimpleTestCase):
 
 
 @tag("world")
-class ReadingAboutThem(EvenniaTest):
+class ReadingAboutThem(GameTest):
     """
     A player meets a pronoun set in narration before they meet it anywhere
     else, so `help she` has to answer -- and so does `help hers`, which is the
@@ -222,7 +222,7 @@ class ReadingAboutThem(EvenniaTest):
 
 
 @tag("world")
-class WhatAGeneratedCharacterGoesBy(EvenniaTest):
+class WhatAGeneratedCharacterGoesBy(GameTest):
     """
     The declaration channel, from the end a model writes to.
 
@@ -231,6 +231,8 @@ class WhatAGeneratedCharacterGoesBy(EvenniaTest):
     way to say how to refer to it. What keeps that safe is that a word merely
     *used* does nothing and a word *declared* arrives whole.
     """
+
+    characters = 2
 
     def setUp(self):
         super().setUp()
@@ -283,7 +285,7 @@ class WhatAGeneratedCharacterGoesBy(EvenniaTest):
 
 
 @tag("world")
-class WhatTheRegisterRecords(EvenniaTest):
+class WhatTheRegisterRecords(GameTest):
     """
     An empty attribute is the useful answer, not a missing one.
 
