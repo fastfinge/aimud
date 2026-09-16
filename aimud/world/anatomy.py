@@ -329,9 +329,15 @@ def instead_of_a_part(caller, phrase):
     if is_part(tail):
         return person, None
 
-    # Not a part, and not anything of theirs either -- `verbs.bind` has
-    # already looked, because matching a possessive is what it does now, and
-    # what it could not find is not here. So this is the refusal, and the
-    # owner is named in it: "you see no hat here" is a lie when there are
-    # three on the floor and none of them is hers.
+    # Something of theirs, then: what they wear, carry or own. `verbs.bind`
+    # matches possessives for the attempt pipeline, but a command that asks
+    # here first -- `look Bram's vest` -- has not been through it, and was
+    # refused for a vest Bram was plainly wearing.
+    found = ownership.theirs(caller, person, nounphrase.read(phrase))
+    if found is not None:
+        return found, None
+
+    # Not a part, and not anything of theirs either. So this is the refusal,
+    # and the owner is named in it: "you see no hat here" is a lie when there
+    # are three on the floor and none of them is hers.
     return None, ownership.no_such(caller, person, tail, spoken=spoken)

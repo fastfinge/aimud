@@ -55,6 +55,40 @@ def _reach(caller, query):
     return relations.find(caller, query)
 
 
+def _on_somebody(caller, query):
+    """
+    (thing, who has it, question) for a name only a person here answers to.
+
+    The things people have on them are not in reach -- nobody takes a vest off
+    somebody by naming it -- so neither search above finds them, and a look at
+    a hat an NPC was wearing conjured a second hat instead. One match is
+    (thing, holder, ""); several are a question, "Which hat do you mean --
+    Bram's canvas hat or Juno's straw hat?"; none is (None, None, "").
+    """
+    from world import anatomy, choosing
+
+    found = []
+    for person in anatomy.people_near(caller):
+        if person is caller:
+            continue
+        held = [obj for obj in person.contents
+                if getattr(obj, "destination", None) is None]
+        if not held:
+            continue
+        result = caller.search(query, candidates=held, quiet=True)
+        if hasattr(result, "return_appearance"):
+            result = [result]
+        for obj in (result or []):
+            if obj is not None:
+                found.append((obj, person))
+    if not found:
+        return None, None, ""
+    if len(found) == 1:
+        return found[0][0], found[0][1], ""
+    return None, None, choosing.question(
+        query, [f"{person.key}'s {obj.key}" for obj, person in found])
+
+
 def _or_typo(caller, query):
     """
     (obj, complaint) for a name nothing here answered to.
@@ -252,6 +286,17 @@ class CmdAILook(_DefaultLook):
             # open drawer. Inventing a second mug because the first one was
             # put down somewhere would be the worst of both.
             obj = _reach(caller, named)
+        if not obj and root is not None:
+            # And at the people here: what they wear and carry is listed when
+            # you look at them, so "look hat" means the hat Bram has on, not
+            # a new hat. Handed on as "Bram's hat", which the rulebooks bind.
+            held, holder, question = _on_somebody(caller, named)
+            if question:
+                caller.msg(question)
+                return
+            if held is not None:
+                self._attempt(caller, f"look {holder.key}'s {named}")
+                return
         if not obj:
             obj, complaint = _or_typo(caller, named)
             if complaint:
