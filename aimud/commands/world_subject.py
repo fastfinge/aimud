@@ -318,9 +318,54 @@ def _wizard_intro(ctx):
     return said
 
 
+def open_a_way(ctx):
+    """
+    Open a way on, in a world that has built itself into a corner.
+
+    A world grows by having somewhere unexplored left in it. Every room built
+    spends one of those and leaves behind however many its exits promise, so a
+    run of dead ends can close a world off. Worlds built now do this for
+    themselves the moment they would otherwise end; this is for one that
+    already has. It was `worldopen`.
+    """
+    from evennia.objects.models import ObjectDB
+
+    from world.worldgen import ensure_frontier, frontier, pending_exits
+
+    try:
+        root = ObjectDB.objects.get(id=ctx.draft.get("world_id"))
+    except ObjectDB.DoesNotExist:
+        return "That world no longer exists."
+    left = frontier(root)
+    if left:
+        ways = pending_exits(root)[:5]
+        where = ", ".join(
+            f"{ex.key} from {ex.location.db.room_title or ex.location.key}"
+            for ex in ways)
+        return (f"|w{lore.title(root)}|n still has {left} way(s) nobody has "
+                f"taken. Nothing to open.\n|x{where}|n")
+    location = getattr(ctx.character or ctx.caller, "location", None)
+    in_it = location is not None and location.db.world_root == root
+    opened = ensure_frontier(root, near=location if in_it else root)
+    if opened is None:
+        return ("There is nowhere left to open a way onto: every room is "
+                "walled in on all six sides. That should not be possible; the "
+                "world may have lost its coordinates.")
+    where = opened.location.db.room_title or opened.location.key
+    return (f"A way |w{opened.key}|n opens from |w{where}|n. The world has "
+            f"somewhere to go again.")
+
+
 def _wizard_items(ctx):
     items = list(WIZARD_FIELDS) + [_guidance_field(f) for f in lore.FACETS]
     if ctx.draft.get("mode") == "edit":
+        items.append(menus.Action(
+            "open", "Open a way on, if the world has nowhere left to go",
+            run=open_a_way, help=(
+                "A run of dead ends can close a world off, with no unexplored "
+                "ways left and so no more rooms. This finds the best place to "
+                "carry on from and opens a door there. Nothing else in the "
+                "form is saved by it.")))
         items.append(menus.Action("save", "Save these changes", run=_save,
                                   after=menus.CLOSE))
     else:

@@ -54,6 +54,19 @@ RETIRED = {
     "worldremove": "delete world",
     "worldreset": "reset world",
     "worlds": "view worlds, or enter world <number>",
+    "worldmode": "settings mode",
+    "worldopen": "edit world, then Open a way on",
+    "worldcheck": "view faults",
+    "zones": "view zones",
+    "rules": "view rules or edit rules",
+    "effects": "view effects",
+    "affects": "view effects",
+    "npcgen": "create npc",
+    "tokens": "view tokens, create tokens or delete tokens",
+    "wordlists": "view tokens, create tokens or delete tokens",
+    "commonsense": "view commonsense or import commonsense",
+    "memcheck": "view memory or edit memory",
+    "rounds": "view rounds or reset rounds",
 }
 
 

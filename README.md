@@ -177,7 +177,7 @@ it is asleep and costs nothing: characters act while you are in the room with
 them, keep going for a few minutes after you leave, and go still altogether once
 five minutes pass with nobody typing.
 
-`worldmode always` lifts both of those, when what you want is to watch a world
+`settings mode always` lifts both of those, when what you want is to watch a world
 run rather than to play in it — every character acting every turn, on the far
 side of the map, in rooms you have never visited. Every one of those turns is a
 model call, so it is the one setting that will quietly spend money while you make
@@ -428,11 +428,11 @@ Beyond that:
 - **Ask what a word means.** `help bottle`, `help burn`, `help empty`,
   `help composure` — every word a world invents explains itself. `help
   vocabulary` says how the four sorts of word differ.
-- **See the shape of the place.** `zones` lists the areas this world planned
-  for itself, how full each one is, and which you are standing in.
-- **Watch it run without you.** `worldmode always` has every character in the
-  world act every turn, wherever you are. It costs a call each time one of them
-  does; `worldmode normal` puts it back, and so does logging out.
+- **See the shape of the place.** `view zones` lists the areas this world
+  planned for itself, how full each one is, and which you are standing in.
+- **Watch it run without you.** `settings mode always` has every character in
+  the world act every turn, wherever you are. It costs a call each time one of
+  them does; `settings mode normal` puts it back, and so does logging out.
 
 ---
 
@@ -457,20 +457,24 @@ Beyond that:
 | `edit world [<n or title>]` | Change a world's text without rebuilding it. |
 | `reset world [<n or title>] [yes]` | Wipe and regenerate from the same setup. Asks first unless you add `yes`. |
 | `delete world [<n or title>] [yes]` | Delete a world permanently. Asks first unless you add `yes`. |
+| `edit world` → Open a way on | Open a way on, in a world that has built itself into a corner and has nowhere unexplored left. |
+| `view zones` | The areas of this world, how full each is, what may exist only once in each, and where you are. |
+| `view rules [<verb>]` | Every rule this world holds, or only the ones about one verb: what it needs before it will work, what it does, and what follows. In the order they are consulted, which is the point — a rule about datapads decides what powering a datapad does even aboard a ship with its own rule about powering. Costs nothing. |
+| `edit rules [<id> suspend \| restore]` / `edit rules dead` | Take a rule out of force, keeping it readable, or put one back. `dead` suspends every rule that provably cannot fire. For whoever made the world. |
+| `view effects [<verb>]` | What a verb will actually do: what it needs, what it changes, what follows, and the odds when it is a contest. |
+| `view suggestions` | What this world's own faults and refusals suggest it is missing, each with the evidence for it. A condition it can set and never unset, beside a verb it has refused over and over, is usually one rule nobody wrote. Costs nothing — nothing is asked of a model and nothing is ever installed unasked. |
+| `edit suggestions [<id> accept \| reject]` | Take a suggestion up, or decline it. A declined one is remembered as declined and not offered again. |
+| `edit suggestions judge` | Hand the whole queue to a model at once and apply its verdicts. The only one of these that costs anything, and it is one call for the lot: the model is judging filled-in rules with the world's own counts beside them, never writing one. Asks first. |
+| `reset verb <verb>` | Forget what a verb takes, so the world is asked again the next time somebody tries it. Its rules are untouched. |
+| `view tokens [<list>]` / `view tokens try <text>` | The word lists this world keeps, one of them in full, or what some text comes to here. |
+| `create tokens <list>[: <what for>] = <entry> \| <entry>` / `delete tokens <list>` | Add or remove a word list. For whoever made the world. |
+| `create pronouns` | Add a pronoun set this world does not have, and go by it. |
+| `create npc` | Put a character in the current room. For whoever made the world, which pays for its people. |
 
 `create`, `edit`, `delete`, `reset`, `view` and `enter` typed on their own open
 a menu of what they can act on. Inside a world they are only these commands when
 the next word is one of their subjects: `reset world` resets the world, while
 `reset the trap` is something you do in it.
-| `worldmode [normal \| always]` | Whether this world thinks only while watched, or all the time. On its own, says which. |
-| `worldopen` | Open a way on, in a world that has built itself into a corner and has nowhere unexplored left. |
-| `zones` | The areas of this world, how full each is, what may exist only once in each, and where you are. |
-| `rules` / `rules <verb>` | Every rule this world holds, or only the ones about one verb: what it needs before it will work, what it does, and what follows. In the order they are consulted, which is the point — a rule about datapads decides what powering a datapad does even aboard a ship with its own rule about powering. Costs nothing. |
-| `rules suggest` | What this world's own faults and refusals suggest it is missing, each with the evidence for it. A condition it can set and never unset, beside a verb it has refused over and over, is usually one rule nobody wrote. Costs nothing — nothing is asked of a model and nothing is ever installed unasked. |
-| `rules accept <id>` / `rules reject <id>` | Take a suggestion up, or decline it. A declined one is remembered as declined and not offered again. |
-| `rules judge` | Hand the whole queue to a model at once and apply its verdicts. The only part of `rules` that costs anything, and it is one call for the lot: the model is judging filled-in rules with the world's own counts beside them, never writing one. |
-| `commonsense [fetch]` | A second dictionary, optional and fetched rather than shipped. WordNet answers what a word can be; this answers what people think is true of it — that open and closed cannot both hold, that a beetle has a thorax, that a datapad is probably a device. On its own it says whether the corpus is here and what it knows. Nothing depends on it: without it, state groups, body parts and anchor suggestions are guessed rather than looked up, which is how the game has always worked. |
-| `npcgen` | Put a character in the current room. |
 
 ### Playing
 
@@ -487,18 +491,21 @@ the next word is one of their subjects: `reset world` resets the world, while
 | `score [trait]` / `traits` / `sheet` | Your traits, what they stand at, and what is lending you the difference. |
 | `wear` / `remove` / `cover <worn> with <item>` / `uncover` / `inventory` | Clothing. `don` and `doff` also work. |
 | `wield <thing>` / `unwield <thing>` | Take something in hand, or lower it. Two hands, so a sword and a shield. |
-| `quests` / `quests hint` / `quests accept \| decline \| abandon` | Errands. `quest` also works. |
+| `quests` / `quests hint` / `quests accept \| decline \| abandon` | Errands. `quest` also works. Abandoning asks first. |
 | `goal <what you want>` / `goal` | Set or drop a goal, with nudges. |
 
 ### Upkeep
 
-One command, and it needs Builder or Admin permission — on a single-player
-install that is the superuser you made at first start.
+These need Builder or Admin permission — on a single-player install that is
+the superuser you made at first start — except round counts, which are every
+account's own.
 
 | Command | What it does |
 |---|---|
-| `worldcheck [<n>]` | What a world's rules say about each other: conditions it can set and never unset, conditions a rule requires that nothing can bring about, verbs it refused and why. Then what the world has actually been asked to do and how it answered — a condition nothing can bring about matters more when eleven people have tried. Says if anything is waiting in `rules suggest`. Costs nothing — no model is asked anything. |
-| `memcheck [sleep \| sweep \| distil \| all]` | Memory upkeep now rather than on its clock: consolidate what characters remember, delete the banks of characters that no longer exist, or turn recent summaries into what a character now knows. On its own it reports what it would do and changes nothing. Distilling is the only part that costs anything. |
+| `view faults [<world number>]` | What a world's rules say about each other: conditions it can set and never unset, conditions a rule requires that nothing can bring about, verbs it refused and why. Then what the world has actually been asked to do and how it answered — a condition nothing can bring about matters more when eleven people have tried. Says if anything is waiting in `view suggestions`. Costs nothing — no model is asked anything. |
+| `view memory` / `edit memory [sleep \| sweep \| distil \| all]` | Memory upkeep now rather than on its clock: consolidate what characters remember, delete the banks of characters that no longer exist, or turn recent summaries into what a character now knows. `view memory` reports and changes nothing. Distilling is the only part that costs anything; sweeping asks first. |
+| `view commonsense` / `import commonsense` | A second dictionary, optional and fetched rather than shipped. WordNet answers what a word can be; this answers what people think is true of it — that open and closed cannot both hold, that a beetle has a thorax, that a datapad is probably a device. `view` says whether the corpus is here and what it knows; `import` downloads it, after asking. Nothing depends on it: without it, state groups, body parts and anchor suggestions are guessed rather than looked up, which is how the game has always worked. |
+| `view rounds [<job>] [world <n>]` / `reset rounds` | How many rounds the game's conversations with models take, per job, and which tools they used. `reset` starts counting again. |
 
 ### Building commands inside a world
 
@@ -512,7 +519,7 @@ you are told the prefixed spelling.
 
 Outside a world — Limbo, or anywhere built by hand — they work exactly as
 Evennia documents them, prefix or not. The game's own commands, such as `look`,
-`settings` and `tokens`, never need one.
+`settings` and `score`, never need one.
 
 ---
 
@@ -539,8 +546,8 @@ nobody active in it does not think at all**.
 | Look at something only mentioned in prose | 2 | Plausibility check + creation |
 | Take on an errand | 1 | Turning it into something checkable |
 | An NPC acting on its own | 0–1 | Free whenever the planner finds a step |
-| Walking, `score`, `inventory`, `quests`, `zones`, `help`, `goal` nudges | 0 | No model involved |
-| A world in `worldmode always` | 1 per character per turn | Every character, everywhere, whether or not you are watching |
+| Walking, `score`, `inventory`, `quests`, `view zones`, `help`, `goal` nudges | 0 | No model involved |
+| A world in `settings mode always` | 1 per character per turn | Every character, everywhere, whether or not you are watching |
 
 ### Roughly what that adds up to
 
@@ -580,7 +587,7 @@ your `default` to try everything at no cost, and expect rougher prose.
 - A world nobody is in is asleep. Five minutes without typing and you stop
   counting as present, so an idle window costs nothing.
 - Cheap `naming` and `dialogue`; capable `commands` and `quests`.
-- Leave `worldmode` at `normal` unless you are deliberately watching a world
+- Leave `settings mode` at `normal` unless you are deliberately watching a world
   run. It is the one setting that spends money with nobody reading the output.
 - `reset world` regenerates an entire world and costs an entire world's worth.
 
@@ -628,8 +635,8 @@ works out of the box. ConceptNet is not: its licence varies by source, recorded
 per edge, and the share-alike obligation attaches to distributing the data. So
 the repository ships only the code to fetch it — which is not caution but the
 thing that lets the whole corpus be used, since a project that redistributed it
-would have to drop every edge whose licence it could not satisfy. `commonsense
-fetch` builds the index on the machine that will use it and it never leaves.
+would have to drop every edge whose licence it could not satisfy. `import
+commonsense` builds the index on the machine that will use it and it never leaves.
 
 ---
 
@@ -668,7 +675,7 @@ The interesting half is `world/`:
 | `relations.py` | What is in, on, under or behind what |
 | `gear.py` | What a thing is worth to whoever wears, wields or stands beside it |
 | `npc_gen.py` | Creating characters, dressing them, and their dialogue |
-| `activity.py` | Who is worth thinking about just now, and what `worldmode` changes |
+| `activity.py` | Who is worth thinking about just now, and what `settings mode` changes |
 | `goals.py` | Conditions about the world that can be tested |
 | `planner.py` | One next step towards a goal, with no model involved |
 | `quests.py` | Errands: offering, accepting, testing, rewarding |

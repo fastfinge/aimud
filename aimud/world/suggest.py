@@ -537,7 +537,7 @@ def report(world_root):
         return ("Nothing to suggest. Either this world has no faults anything "
                 "can name, or everything it has has been answered.")
     lines = [f"|w{len(standing)} suggestions|n, best evidence first. "
-             f"|wrules accept <id>|n or |wrules reject <id>|n."]
+             f"|wedit suggestions <id> accept|n or |wedit suggestions <id> reject|n."]
     lines += [said(rule, world_root) for rule in standing]
     return "\n".join(lines)
 

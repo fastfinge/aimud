@@ -14,7 +14,7 @@ class CmdQuests(Command):
       quests hint
       quests accept
       quests decline
-      quests abandon
+      quests abandon [yes]
 
     Characters you meet may ask you to do things. Anything offered waits at
     the top of the list until you accept or decline it; anything underway
@@ -45,6 +45,7 @@ class CmdQuests(Command):
     def parse(self):
         parts = self.args.strip().split()
         self.action = parts[0].lower() if parts else ""
+        self.confirmed = bool(parts) and parts[-1].lower() in ("yes", "confirm")
         self.number = None
         for part in parts[1:]:
             if part.isdigit():
@@ -75,6 +76,23 @@ class CmdQuests(Command):
             caller.msg("Usage: |wquests|n, |wquests hint|n, |wquests accept|n, "
                        "|wquests decline|n, |wquests abandon|n.")
             return
+
+        if self.action == "abandon" and not self.confirmed:
+            # The giver is told, so it is asked first -- unless the player has
+            # said yes already or turned that confirmation off.
+            from world import menus
+
+            menus.confirm(caller, "Give up on the errand you are carrying? "
+                                  "Whoever asked is told.",
+                          self._answer, key="abandon_quest",
+                          session=self.session,
+                          command="quests abandon")
+            return
+        self._answer()
+
+    def _answer(self):
+        caller = self.caller
+        from world import quests
 
         # The number is optional: there is only ever one offer waiting and one
         # errand underway, so naming it is a convenience, not a requirement.

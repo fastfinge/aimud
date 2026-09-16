@@ -372,8 +372,8 @@ def _effect_text(name, entry):
             "A character planning ahead can use this as a step: it can be "
             "read backwards into the thing somebody would want it for.",
         ]
-    lines += ["", "|weffects <verb>|n says which of these a verb will make, "
-                  "and |wrules <verb>|n says in what order."]
+    lines += ["", "|wview effects <verb>|n says which of these a verb will make, "
+                  "and |wview rules <verb>|n says in what order."]
     return "\n".join(lines)
 
 
@@ -486,7 +486,7 @@ def _token_text(name, entry):
     if entry.get("group"):
         lines.append(f"Each choice is a condition in the group "
                      f"|w{entry['group']}|n, so rules can read it.")
-    lines += ["", f"Type |wtokens {name}|n for the whole list."]
+    lines += ["", f"Type |wview tokens {name}|n for the whole list."]
     return "\n".join(lines)
 
 

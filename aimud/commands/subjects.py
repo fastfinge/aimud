@@ -28,6 +28,9 @@ VERBS = ("create", "edit", "delete", "reset", "view", "import", "export",
 #: The modules that define subjects. A plugin appends its own.
 SUBJECT_MODULES = [
     "commands.world_subject",
+    "commands.rules_subject",
+    "commands.contents_subject",
+    "commands.upkeep_subject",
 ]
 
 
@@ -164,9 +167,100 @@ def names_for(*names):
 
 def owns(account, world_root):
     """Whether `account` may change what `world_root` is made of."""
+    from evennia.accounts.accounts import DefaultAccount
+
     from world import sponsor
 
-    if account is None or world_root is None:
+    if not isinstance(account, DefaultAccount) or world_root is None:
         return False
     return bool(account.is_superuser
                 or sponsor.creator_of(world_root) == account)
+
+
+def account_of(caller):
+    """The account behind whoever typed, or None."""
+    return menus.account_of(caller)
+
+
+def world_here(caller):
+    """The world the caller is standing in, or None."""
+    room = getattr(caller, "location", None)
+    return getattr(room.db, "world_root", None) if room is not None else None
+
+
+def in_world(ctx):
+    """For `Use.offered`: only inside a world."""
+    return world_here(ctx.character or ctx.caller) is not None
+
+
+def owns_here(ctx):
+    """For `Use.offered`: only inside a world this account made."""
+    caller = ctx.character or ctx.caller
+    return owns(account_of(caller), world_here(caller))
+
+
+def is_builder(caller):
+    """Whether the caller holds Builder or Admin, as the upkeep tools need."""
+    try:
+        return bool(caller.locks.check_lockstring(
+            caller, "dummy:perm(Builder) or perm(Admin)"))
+    except Exception:
+        return False
+
+
+def builder(ctx):
+    """For `Use.offered`: only for a Builder or Admin."""
+    return is_builder(ctx.character or ctx.caller)
+
+
+def require_world(caller):
+    """The world the caller is in, or None having told them they are not."""
+    root = world_here(caller)
+    if root is None:
+        caller.msg("You are not in a generated world.")
+    return root
+
+
+def require_owner(caller, root, what="change it"):
+    """Whether the caller may change `root`, telling them if not."""
+    if owns(account_of(caller), root):
+        return True
+    caller.msg(f"Only whoever made this world can {what}.")
+    return False
+
+
+def require_builder(caller):
+    if is_builder(caller):
+        return True
+    caller.msg("That is for builders.")
+    return False
+
+
+#: Typed on the end of a line to answer its yes/no in advance.
+ANSWERS = ("yes", "confirm")
+
+
+def answered(words):
+    """(words without a trailing yes, whether there was one)."""
+    if words and words[-1].lower() in ANSWERS:
+        return list(words[:-1]), True
+    return list(words), False
+
+
+def asking(cmd, question, key, command, do, already=False):
+    """
+    Run `do` now, or once it has been confirmed.
+
+    `already` is a trailing `yes` on the line. `command` is what to type with
+    `yes` on the end, for somebody who cannot be shown a yes/no.
+    """
+    if already:
+        return do()
+    return menus.confirm(cmd.caller, question, do, key=key,
+                         session=cmd.session, command=command)
+
+
+def said(caller, text):
+    """Send text if there is any: a helper for handlers that return prose."""
+    if text:
+        caller.msg(text)

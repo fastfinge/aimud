@@ -7,7 +7,7 @@ freighter. What differs is that a name is free text and a pronoun set is a
 word from the world's register -- so this command both picks from that
 register and, when nothing in it fits, adds to it.
 
-`pronouns new` is the second half and the reason this is not four lines. A
+`create pronouns` is the second half and the reason this is not four lines. A
 world's register grows either because a model declared a set for a character
 it invented or because a player said what theirs are, and both go through the
 same `pronouns.register`. Neither is more entitled to the register than the
@@ -38,12 +38,11 @@ class CmdPronouns(Command):
     Usage:
       pronouns
       pronouns <set>
-      pronouns new
 
     Each world keeps its own sets, and each world remembers you separately.
     |wpronouns|n on its own lists what this world has and says which is yours.
 
-    |wpronouns new|n walks through adding a set this world does not have yet.
+    |wcreate pronouns|n walks through adding a set this world does not have yet.
     It asks for five forms and whether the verb after it is singular or
     plural -- "she picks up" against "they pick up" -- and the set it makes is
     then available to everybody here, characters included.
@@ -70,14 +69,14 @@ class CmdPronouns(Command):
             return
 
         if wanted in ("new", "add", "another"):
-            self._ask(caller, world_root)
+            caller.msg("That is |wcreate pronouns|n now.")
             return
 
         slug = pronoun_mod.give(caller, wanted, world_root)
         if not slug:
             caller.msg(
                 f"This world keeps no pronoun set called |w{wanted}|n. "
-                f"Type |wpronouns|n to see what it has, or |wpronouns new|n "
+                f"Type |wpronouns|n to see what it has, or |wcreate pronouns|n "
                 f"to add one."
             )
             return
@@ -94,22 +93,9 @@ class CmdPronouns(Command):
             lines.append(f" {mark} |w{slug}|n — {pronoun_mod.spelled(entry)}"
                          f" — {entry.get('means', '')}")
         lines.append("")
-        lines.append("|wpronouns <set>|n to pick one, |wpronouns new|n to add "
+        lines.append("|wpronouns <set>|n to pick one, |wcreate pronouns|n to add "
                      "one this world does not have.")
         caller.msg("\n".join(lines))
-
-    def _ask(self, caller, world_root):
-        """
-        Walk through a new set, one form at a time.
-
-        Through the game's menu engine, as a guided form: each form is asked
-        in turn, and once all six are in, the whole set is shown to be kept or
-        corrected. See world.menus.
-        """
-        from world import menus
-
-        menus.open_menu(caller, NEW_SET, session=self.session,
-                        world_root=world_root)
 
 
 # ---------------------------------------------------------------------------
@@ -183,5 +169,3 @@ NEW_SET = menus.Form(
         menus.Action("keep", "Keep this set", run=_keep, after=menus.CLOSE),
     ],
 )
-
-

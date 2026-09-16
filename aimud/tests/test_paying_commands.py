@@ -16,24 +16,29 @@ from unittest import mock
 from django.test import tag
 
 from tests.base import GameCommandTest
-from commands.world_cmds import CmdNPCGen, CmdRules
+from commands.verbs import CmdCreate, CmdEdit
+from world import sponsor
 from tests.support import FakeSponsor
 
 
 @tag("world")
 class MakingACharacter(GameCommandTest):
     characters = 2
+    # The world pays for its own people, so only whoever made it adds them.
+    accounts = True
 
     def setUp(self):
         super().setUp()
         self.room1.db.is_ai_room = True
+        self.room1.db.world_root = self.room1
+        sponsor.claim(self.room1, self.account)
         self.sponsor = FakeSponsor()
 
     def npcgen(self, generate):
-        with mock.patch("commands.world_cmds.sponsor_mod.of",
+        with mock.patch("commands.contents_subject.sponsor_mod.of",
                         return_value=self.sponsor) as of, \
                 mock.patch("world.npc_gen.generate_npc", generate):
-            said = self.call(CmdNPCGen(), "")
+            said = self.call(CmdCreate(), "npc")
         return said, of
 
     def test_the_generator_is_handed_the_worlds_sponsor(self):
@@ -46,7 +51,7 @@ class MakingACharacter(GameCommandTest):
         of.assert_called_once_with(self.char1)
         self.assertIs(asked["sponsor"], self.sponsor)
         self.assertIs(asked["room"], self.room1)
-        self.assertIn("Generating NPC", said)
+        self.assertIn("Generating a character", said)
 
     def test_the_room_is_free_again_once_somebody_arrives(self):
         def generate(sponsor, room, on_success, on_error):
@@ -61,7 +66,7 @@ class MakingACharacter(GameCommandTest):
 
         said, _of = self.npcgen(generate)
         self.assertFalse(self.room1.ndb.generating_npc)
-        self.assertIn("NPC generation failed", said)
+        self.assertIn("Character generation failed", said)
 
     def test_with_no_key_nothing_is_asked_and_the_room_stays_free(self):
         self.sponsor = FakeSponsor(key="")
@@ -75,6 +80,7 @@ class MakingACharacter(GameCommandTest):
 
 @tag("world")
 class JudgingSuggestions(GameCommandTest):
+    accounts = True
 
     def setUp(self):
         super().setUp()
@@ -82,6 +88,7 @@ class JudgingSuggestions(GameCommandTest):
         self.root.db.is_world_root = True
         self.room1.db.world_root = self.root
         self.room1.db.is_ai_room = True
+        sponsor.claim(self.root, self.account)
         self.sponsor = FakeSponsor()
 
     def test_the_judge_is_handed_the_worlds_sponsor(self):
@@ -91,12 +98,12 @@ class JudgingSuggestions(GameCommandTest):
             asked.append((sponsor, world_root))
             on_success(["r1"], [])
 
-        with mock.patch("commands.world_cmds.sponsor_mod.of",
+        with mock.patch("commands.rules_subject.sponsor_mod.of",
                         return_value=self.sponsor) as of, \
                 mock.patch("world.suggest.queue",
                            return_value=[{"id": "r1"}]), \
                 mock.patch("world.suggest.judge", judge):
-            said = self.call(CmdRules(), "judge")
+            said = self.call(CmdEdit(), "suggestions judge yes")
 
         of.assert_called_once_with(self.char1)
         self.assertEqual(asked, [(self.sponsor, self.root)])

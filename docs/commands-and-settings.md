@@ -1,7 +1,7 @@
 # Development plan: commands, menus and settings
 
-Status: phases 1 (the menu engine), 2 (settings) and 3 (verbs, subjects and
-worlds) are built. Phases 4 to 6 are not started.
+Status: phases 1 (the menu engine), 2 (settings), 3 (verbs, subjects and
+worlds) and 4 (every other subject) are built. Phases 5 and 6 are not started.
 The open questions are settled; see §11.
 
 This covers the first two items in `future-plans.md`: sorting out the command
@@ -801,6 +801,33 @@ tokens, npc, pronouns, commonsense, memory and rounds, each with its
 confirmations. Delete the old commands. `test_rules_command` and
 `test_paying_commands` move to the new spellings.
 *Done when:* nothing listed in the "today" column of §7.1 still exists.
+
+*Built.* `commands/rules_subject.py` (rules, suggestions, effects, faults,
+verb), `commands/contents_subject.py` (zones, npc, tokens, pronouns) and
+`commands/upkeep_subject.py` (commonsense, memory, rounds), with tests in
+`tests/test_subjects.py`. `world_cmds.py`, `token_cmds.py` and
+`account_cmds.py` are gone, and so is `memcheck` from `memory_cmds.py`. Every
+retired name says what replaced it. Where it differs from the plan:
+
+* **`worldmode` is only `settings mode`.** The world wizard does not have a
+  mode field as well, because a second place to set it would be a second
+  place to look.
+* **`edit rules <id>`** opens that rule's own menu, with suspend or restore.
+  The one-line forms are `edit rules <id> suspend` and `edit rules <id>
+  restore`. Suspending every dead rule is `edit rules dead`.
+* **`create npc` is now for whoever made the world.** `npcgen` let anybody do
+  it, although the world pays for its people. `create pronouns` stays open to
+  anybody standing in a world, as `pronouns new` was.
+* **`pronouns new` says "That is `create pronouns` now."** `pronouns` and
+  `pronouns <set>` are unchanged.
+* **`quests abandon` asks first**, as §8 planned. It was listed there and fell
+  into this phase because every other confirmation did.
+* **`help effects` is a list of topics now.** With no command called
+  `effects`, it lists every effect filed in that category, as `help kinds`
+  does.
+* **The verb commands are only available to a character, not out of
+  character.** `rounds` used to work out of character, and `view rounds` does
+  not. `settings` still works both ways.
 
 **Phase 5: help and `~`.** `help_cmds.topic_text`, `?` falling back to help
 topics, the `menus` job, the `~` tool loop, "all empty fields", and the
