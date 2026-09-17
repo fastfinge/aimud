@@ -84,6 +84,17 @@ class Paging(SimpleTestCase):
         self.assertIn("No fruit matching 'kiwi'",
                       tb.paged(["apple"], {"query": "kiwi"}, "fruit"))
 
+    def test_and_shows_a_short_list_whole_rather_than_have_it_guessed_at(self):
+        said = tb.paged(["apple", "pear"], {"query": "kiwi"}, "fruit")
+        self.assertIn("All 2 fruit:", said)
+        self.assertIn("pear", said)
+
+    def test_but_only_says_how_to_page_a_long_one(self):
+        fruit = [f"fruit{n}" for n in range(30)]
+        said = tb.paged(fruit, {"query": "kiwi"}, "fruit")
+        self.assertIn("No fruit matching 'kiwi' among 30", said)
+        self.assertNotIn("fruit29", said)
+
 
 @tag("world")
 class AskingEachOne(GameTest):

@@ -493,6 +493,13 @@ def converse(sponsor, model, messages, toolbox, *, on_done, on_error,
         spoken = {"role": "assistant", "content": message.get("content") or ""}
         if calls:
             spoken["tool_calls"] = calls
+        # The model's own working-out, handed back as it came. Gemini sends its
+        # thinking and an encrypted signature here, and both Google and
+        # OpenRouter say to return them: dropped, every round's reasoning
+        # started again from nothing. Only ever what the reply carried, so a
+        # service that sends none is sent none.
+        if message.get("reasoning_details"):
+            spoken["reasoning_details"] = message["reasoning_details"]
         convo.append(spoken)
 
         if not calls:
@@ -549,9 +556,27 @@ def converse(sponsor, model, messages, toolbox, *, on_done, on_error,
                 return ended("exhausted", value=None)
             return ended("exhausted", exhausted=True,
                          error=f"the model never answered with {finish.name}")
+        if finish is not None:
+            convo.append({"role": "user",
+                          "content": _budget(rounds - state["round"], finish)})
         return ask()
 
     ask()
+
+
+def _budget(left, finish):
+    """
+    How many replies a loop has left, said after every round of lookups.
+
+    Nothing told a model its rounds were counted. Traced against a real world,
+    learning what "drink" does spent seven of eight rounds on one lookup each
+    -- "drink", then "liquid", then "oil" as searches of the same short list --
+    and answered only when the last round insisted, every time.
+    """
+    if left <= 1:
+        return f"Your next reply is the last one: answer with {finish.name}."
+    return (f"{left} replies left, and the last of them must answer with "
+            f"{finish.name}. Several lookups can go in one reply.")
 
 
 def _loop_measured(sponsor, model, toolbox, state, outcome, rounds, why=None):

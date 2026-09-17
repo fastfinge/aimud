@@ -260,6 +260,7 @@ def choice(values, description="", most=ENUM_MOST, ask=""):
 def paged(entries, args, noun="entries", most=20):
     """A list, filtered by `query` and cut to `limit` from `offset`, as text."""
     entries = [str(entry) for entry in entries]
+    everything = entries
     query = str((args or {}).get("query") or "").lower().strip()
     if query:
         entries = [entry for entry in entries if query in entry.lower()]
@@ -270,6 +271,15 @@ def paged(entries, args, noun="entries", most=20):
         limit, offset = most, 0
     matching = f" matching '{query}'" if query else ""
     shown = entries[offset:offset + limit]
+    if not shown and query and not offset and everything:
+        # A search that finds nothing in a short list answers with the list.
+        # Otherwise a model guesses its way through it a word at a time --
+        # "drink", "liquid", "oil" -- and spends a round on every guess.
+        if len(everything) <= limit:
+            return "\n".join([f"No {noun}{matching}. All {len(everything)} "
+                              f"{noun}:"] + everything)
+        return (f"No {noun}{matching} among {len(everything)}. Ask without a "
+                f"query to see them {limit} at a time.")
     if not shown:
         return (f"No {noun}{matching}" + (" past that offset" if offset else "")
                 + ".")

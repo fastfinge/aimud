@@ -104,6 +104,36 @@ class HowALoopEnds(_Conversing, SimpleTestCase):
         self.assertEqual(got["done"], [2])
         self.assertIn("Answer by calling answer", asked.sent(1))
 
+    def test_each_round_of_lookups_is_told_what_is_left(self):
+        _got, asked, _box = self.converse(
+            [answer_tool(), lookup_tool()],
+            tool_reply(tool_call("count", what="apples")),
+            tool_reply(tool_call("count", what="pears")),
+            tool_reply(tool_call("answer", n=2)), rounds=3)
+        self.assertEqual(asked.prompts[1][-1],
+                         {"role": "user", "content":
+                          "2 replies left, and the last of them must answer "
+                          "with answer. Several lookups can go in one reply."})
+        self.assertEqual(asked.prompts[2][-1]["content"],
+                         "Your next reply is the last one: answer with answer.")
+
+    def test_a_loop_with_no_finish_tool_is_not_counted_down(self):
+        _got, asked, _box = self.converse(
+            [lookup_tool(), act_tool()],
+            tool_reply(tool_call("count", what="apples")),
+            tool_reply(tool_call("wave")))
+        self.assertEqual(asked.prompts[1][-1]["role"], "tool")
+
+    def test_the_models_reasoning_is_handed_back(self):
+        details = [{"type": "reasoning.encrypted", "data": "abc"}]
+        reply = tool_reply(tool_call("count", what="apples"))
+        reply["choices"][0]["message"]["reasoning_details"] = details
+        _got, asked, _box = self.converse(
+            [answer_tool(), lookup_tool()], reply,
+            tool_reply(tool_call("answer", n=2)))
+        spoken = [m for m in asked.prompts[1] if m["role"] == "assistant"]
+        self.assertEqual(spoken[0]["reasoning_details"], details)
+
     def test_the_last_round_names_the_finish_tool(self):
         _got, asked, _box = self.converse(
             [answer_tool(), lookup_tool()],
