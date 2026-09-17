@@ -556,7 +556,7 @@ _EFFECTS = """An effect is one of:
                           "preposition": "in"}
   {"type": "move_object", "name_role": "direct", "to": "<a room's name>"}
   {"type": "set_exit", "exit": "airlock", "to": "<a room's name>"}
-  {"type": "create_object", "name": "...", "description": "..."}
+  {"type": "create_object", "name": "loaf of bread", "why": "what baking makes"}
   {"type": "destroy_object", "name_role": "direct"}
   {"type": "set_owner", "name_role": "direct", "to": "actor"}
   {"type": "set_owner", "name_role": "direct", "to": "nobody"}
@@ -573,6 +573,12 @@ letter moves it to the container with "in", one that sets a cup on a table
 moves it to the target with "on", and one that sends a parcel away names the
 room. Never invent a state like "in_box" to stand in for this; where a thing
 is, is not a property of the thing, and the game tracks it properly.
+
+"create_object" names what is made, in plain words, and "why" says what it is
+made for. Leave out what sort of thing it is, what can be done with it and what
+it looks like: that is worked out once, when your rule is filed, the same way
+as for anything else in the world, and kept with the rule. A "description" is
+kept if you give one.
 
 "move_contents" empties a thing out: everything it holds goes wherever a
 single thing would have gone, with the same "to". That is what looting,
@@ -714,8 +720,9 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
             # that every one of them failed validation. Counted, so that the next
             # attempt at this verb is not another call to the same effect.
             note_fruitless(world_root, action, cannot)
-        on_success([rulebooks.add(world_root, rule) for rule in kept]
-                   + adopted)
+        filed = [rulebooks.add(world_root, rule) for rule in kept]
+        flesh_out(sponsor, world_root, filed)
+        on_success(filed + adopted)
 
     llm.converse(sponsor, model, messages, box, on_done=answered,
                  on_error=on_error, on_exhausted=answered,
@@ -1322,11 +1329,62 @@ def learn_becoming(sponsor, world_root, slug, on_success=None,
         for complaint in complaints:
             logger.log_info(f"rule_gen: running out of {slug} dropped -- "
                             f"{complaint}")
-        on_success([rulebooks.add(world_root, rule) for rule in kept])
+        filed = [rulebooks.add(world_root, rule) for rule in kept]
+        flesh_out(sponsor, world_root, filed)
+        on_success(filed)
 
     llm.converse(sponsor, model, messages, box, on_done=answered,
                  on_error=on_error, on_exhausted=answered,
                  rounds=BECOMING_ROUNDS)
+
+
+def flesh_out(sponsor, world_root, rules):
+    """
+    Async. Ask the item generator, once, what each thing a rule makes is.
+
+    A rule writer names what a `create_object` effect makes and, if it likes,
+    why. What sort of thing that is -- its kind, what can be done with it, how
+    it looks -- is the item generator's question, asked the same way as for a
+    thing somebody reaches for, with the rule as the reason. The answer is kept
+    on the rule, so firing it builds the same thing every time and never calls
+    a model: an effect runs before the narration is sent, a becomes rule may
+    never pay for firing, and the planner reads the name the rule wrote.
+
+    Until the answer arrives -- or if it never does -- the rule makes the thing
+    from its name alone, as rules always have. One call per thing per rule
+    written, never one per firing.
+    """
+    from world import item_gen
+
+    for rule in rules or []:
+        if not rule or not rule.get("id"):
+            continue
+        effects = rule.get("effects") or []
+        if hasattr(effects, "values"):
+            effects = [e for branch in effects.values() for e in branch or []]
+        asked = set()
+        for effect in effects:
+            if not rulebooks.thin_creation(effect):
+                continue
+            name = str(effect.get("name")).strip()
+            if name.lower() in asked:
+                continue
+            asked.add(name.lower())
+            wanted = item_gen.Wanted(
+                verb=rule.get("action") or "", role="made",
+                made_by=rule.get("name") or rule["id"],
+                why=effect.get("why") or "")
+
+            def keep(spec, rule_id=rule["id"], name=name):
+                rulebooks.fill_created(world_root, rule_id, name, spec)
+
+            def missed(why, name=name):
+                logger.log_info(f"rule_gen: what {name!r} is went "
+                                f"unanswered, so it is made from its name "
+                                f"alone -- {why}")
+
+            item_gen.ask_for_item(sponsor, name, keep, missed,
+                                  world_root=world_root, wanted=wanted)
 
 
 def ask_when_it_runs_out(character, slug, world_root):

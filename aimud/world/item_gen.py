@@ -152,13 +152,18 @@ class Wanted:
     attempt, the rulebook, or the character.
     """
 
-    __slots__ = ("actor", "verb", "role", "said")
+    __slots__ = ("actor", "verb", "role", "said", "made_by", "why")
 
-    def __init__(self, actor=None, verb="", role="direct", said=""):
+    def __init__(self, actor=None, verb="", role="direct", said="",
+                 made_by="", why=""):
         self.actor = actor
         self.verb = str(verb or "").strip().lower()
         self.role = str(role or "direct")
         self.said = str(said or "").strip()
+        # A thing a rule makes: the rule's name, and what its writer said the
+        # thing is made for. See `rule_gen.flesh_out`.
+        self.made_by = str(made_by or "").strip()
+        self.why = str(why or "").strip()
 
     def block(self, world_root=None, brief=False):
         """
@@ -168,6 +173,8 @@ class Wanted:
         wants who and what and not what the world's rules say about the verb.
         """
         lines = []
+        if self.made_by:
+            return self._made_block(world_root, brief)
         who = self._who()
         if self.said:
             # Typed words, quoted and never read as instructions. See
@@ -187,6 +194,23 @@ class Wanted:
             return ""
         lines.append("Make it fit that: what they are doing with it should "
                      "be something it can plausibly take part in.")
+        return "Why it is wanted:\n" + "\n".join(lines) + "\n\n"
+
+    def _made_block(self, world_root, brief):
+        """Why, for a thing one of this world's rules makes whenever it fires."""
+        when = (f", whenever somebody manages to {self.verb}" if self.verb
+                else ", whenever what it watches for becomes true")
+        lines = [f"It is made by this world's rule \"{self.made_by}\"{when}."]
+        if self.verb:
+            meaning = self._meaning(world_root)
+            if meaning:
+                lines.append(f"{self.verb}{meaning}.")
+        if self.why:
+            lines.append(f"It is made for this: {self.why}.")
+        if not brief:
+            lines += self._rules(world_root)
+        lines.append("The same thing is made every time the rule fires, so "
+                     "make the one that fits every time, not one occasion.")
         return "Why it is wanted:\n" + "\n".join(lines) + "\n\n"
 
     def _who(self):
@@ -313,11 +337,12 @@ def validate_object_takeable(sponsor, room, obj, on_valid, on_invalid, on_error)
             on_valid, on_invalid, on_error, room)
 
 
-def _why(wanted, room, brief=False):
+def _why(wanted, room, brief=False, world_root=None):
     """A `Wanted` as prompt lines, or "" when nobody said why."""
     if wanted is None:
         return ""
-    world_root = room.db.world_root if room else None
+    if world_root is None:
+        world_root = room.db.world_root if room else None
     try:
         return wanted.block(world_root, brief=brief)
     except Exception as exc:
@@ -326,6 +351,99 @@ def _why(wanted, room, brief=False):
 
         logger.log_info(f"item_gen: could not say why an item is wanted: {exc}")
         return ""
+
+
+def ask_for_item(sponsor, object_name, on_spec, on_error, room=None,
+                 world_root=None, wanted=None):
+    """
+    Async. What `object_name` would be, as a spec, without making it.
+
+    on_spec(spec) is given what `make_item` answered -- name, description,
+    kind, affordances, holds, states and the rest -- with any word lists it
+    declared already registered, so the description's choices can be made the
+    moment a thing is built from it. The one question of what a thing is,
+    asked the same way whether the answer is made at once (`generate_item`)
+    or kept in a rule and made every time it fires (`rule_gen.flesh_out`).
+
+    `room` is where somebody reached for it, when they did. A rule's thing is
+    made wherever the rule fires, so it is asked about with the world alone.
+    """
+    model = sponsor.model_for("items")
+    try:
+        sponsor.key()          # refuse early rather than mid-prompt
+    except ValueError as e:
+        on_error(str(e))
+        return
+
+    from world import affordances as af, gear, lexicon, lore, verbs
+
+    from world import kinds, lookups, token_lists
+    from world import toolbox as tb
+
+    if world_root is None:
+        world_root = room.db.world_root if room else None
+    if room is not None:
+        setting = _world_and_room(room, "items")
+    else:
+        setting = (f"World: {lore.description(world_root)}\n\n"
+                   f"{lore.guidance_block(world_root, 'items')}").rstrip()
+    if wanted is not None and wanted.made_by:
+        asking = f"Generate the item this rule makes: '{object_name}'"
+    elif wanted is not None:
+        asking = f"Generate the item they reached for: '{object_name}'"
+    else:
+        asking = f"Generate the item the player is examining: '{object_name}'"
+
+    # Which sense, or what an invented noun hangs under, is in the tool's
+    # schema now: an enum of the senses for a word whose senses disagree, and
+    # an open field with the anchors for one no dictionary knows. The prompt
+    # only says that it is being asked.
+    messages = [
+        {"role": "system",
+         "content": _ITEM_SYSTEM_PROMPT.replace(
+             "{naming_rule}", verbs.naming_rule()).replace(
+             "{anchor_rule}", kinds.anchor_rule()).replace(
+             "{affordance_rule}", af.PROMPT)},
+        {
+            "role": "user",
+            "content": (
+                f"{setting}\n\n"
+                f"{gear.prompt_block(world_root)}"
+                f"{token_lists.TOOL_PROMPT}\n"
+                f"{_sense_note(object_name)}"
+                f"{_state_hints(world_root, [lexicon.head_noun(object_name)])}"
+                f"{_plural_note(object_name)}"
+                f"{_why(wanted, room, world_root=world_root)}"
+                f"{asking}"
+            ),
+        },
+    ]
+    box = tb.Toolbox([item_tool(object_name)] + lookups.named(*ITEM_LOOKUPS),
+                     tb.ToolContext(world_root=world_root, room=room,
+                                    sponsor=sponsor, job="items"))
+
+    def _done(data):
+        try:
+            data = dict(data or {})
+            data["name"] = str(data.get("name") or object_name).strip()
+            data["description"] = str(data.get("description", "")).strip()
+            data["takeable"] = bool(data.get("takeable", True))
+            # Lists first, so that the description's choices can be made the
+            # moment the thing exists.
+            token_lists.declare(world_root, data.pop("new_token_lists", None))
+        except Exception as exc:
+            on_error(str(exc))
+            return
+        on_spec(data)
+
+    # Rounds out, the last item sent is used as it stands: a thing the player
+    # reached for and got is better than an error, and the registers still
+    # fold whatever near-duplicates it carries.
+    llm.converse(sponsor, model, messages, box, on_done=_done,
+                 on_error=on_error,
+                 on_exhausted=lambda last: _done(last) if last
+                 else on_error("no item came back"),
+                 rounds=ITEM_ROUNDS)
 
 
 def generate_item(sponsor, room, object_name, on_success, on_error,
@@ -338,72 +456,16 @@ def generate_item(sponsor, room, object_name, on_success, on_error,
     `wanted` is why it is being made -- see `Wanted` -- so that what is made
     fits what somebody is doing with it.
     """
-    model = sponsor.model_for("items")
-    try:
-        sponsor.key()          # refuse early rather than mid-prompt
-    except ValueError as e:
-        on_error(str(e))
-        return
-
-    from world import affordances as af, gear, lexicon, verbs
-
-    from world import kinds, lookups, token_lists
-    from world import toolbox as tb
-
-    # Which sense, or what an invented noun hangs under, is in the tool's
-    # schema now: an enum of the senses for a word whose senses disagree, and
-    # an open field with the anchors for one no dictionary knows. The prompt
-    # only says that it is being asked.
-    world_root = room.db.world_root if room else None
-    messages = [
-        {"role": "system",
-         "content": _ITEM_SYSTEM_PROMPT.replace(
-             "{naming_rule}", verbs.naming_rule()).replace(
-             "{anchor_rule}", kinds.anchor_rule()).replace(
-             "{affordance_rule}", af.PROMPT)},
-        {
-            "role": "user",
-            "content": (
-                f"{_world_and_room(room, 'items')}\n\n"
-                f"{gear.prompt_block(world_root)}"
-                f"{token_lists.TOOL_PROMPT}\n"
-                f"{_sense_note(object_name)}"
-                f"{_state_hints(world_root, [lexicon.head_noun(object_name)])}"
-                f"{_plural_note(object_name)}"
-                f"{_why(wanted, room)}"
-                + (f"Generate the item they reached for: '{object_name}'"
-                   if wanted is not None else
-                   f"Generate the item the player is examining: "
-                   f"'{object_name}'")
-            ),
-        },
-    ]
-    box = tb.Toolbox([item_tool(object_name)] + lookups.named(*ITEM_LOOKUPS),
-                     tb.ToolContext(world_root=world_root, room=room,
-                                    sponsor=sponsor, job="items"))
-
-    def _done(data):
+    def _made(data):
         try:
-            data = dict(data or {})
-            name = str(data.get("name") or object_name).strip()
-            description = str(data.get("description", "")).strip()
-            takeable = bool(data.get("takeable", True))
-
             from world import clothing
 
-            # Lists first, so that the description's choices can be made the
-            # moment the thing exists.
-            token_lists.declare(world_root, data.get("new_token_lists"))
-
+            name = data["name"]
             # Built through the clothing layer so that anything the model
             # called wearable really can be put on. A coat found in a
             # wardrobe is the same kind of thing as a coat a character was
             # born in, and nothing here has to know which.
-            item = clothing.create(
-                {**dict(data), "name": name, "description": description,
-                 "takeable": takeable},
-                location=room,
-            )
+            item = clothing.create(data, location=room)
             if item is None:
                 raise ValueError("the model named no item")
             # Answer to the words that asked for it, not only to the name it
@@ -418,14 +480,8 @@ def generate_item(sponsor, room, object_name, on_success, on_error,
         except Exception as exc:
             on_error(str(exc))
 
-    # Rounds out, the last item sent is made as it stands: a thing the player
-    # reached for and got is better than an error, and the registers still
-    # fold whatever near-duplicates it carries.
-    llm.converse(sponsor, model, messages, box, on_done=_done,
-                 on_error=on_error,
-                 on_exhausted=lambda last: _done(last) if last
-                 else on_error("no item came back"),
-                 rounds=ITEM_ROUNDS)
+    ask_for_item(sponsor, object_name, _made, on_error, room=room,
+                 wanted=wanted)
 
 
 # ---------------------------------------------------------------------------

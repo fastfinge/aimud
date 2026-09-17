@@ -369,7 +369,7 @@ VOCABULARY = {
     },
     "create_object": {
         "means": "brings something into being, here or in your hands",
-        "takes": 'name, description, location: "room" | "actor"',
+        "takes": 'name, why, description, location: "room" | "actor"',
         "backwards": True, "answers": False,
     },
     "destroy_object": {
@@ -1005,7 +1005,12 @@ def schema(ctx=None):
                      "description": "create_object: what the new thing is "
                                     "called"},
             "description": {"type": "string",
-                            "description": "create_object: what it looks like"},
+                            "description": "create_object: what it looks "
+                                           "like, if you want to say; it is "
+                                           "worked out otherwise"},
+            "why": {"type": "string",
+                    "description": "create_object: what it is made for, so "
+                                   "what is made fits"},
             "location": {"type": "string", "enum": ["room", "actor"],
                          "description": "create_object: on the floor, or in "
                                         "the hands of whoever acted"},

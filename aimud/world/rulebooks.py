@@ -195,6 +195,70 @@ def _clean_scope(scope):
     return {WORLD: True}
 
 
+#: What a filled-in `create_object` effect keeps from the item generator's
+#: answer: everything `clothing.create` reads, except the name, which stays
+#: as the rule wrote it so that a goal matching on it still matches.
+CREATED_FIELDS = ("description", "kind", "kinds", "qualifiers", "sense",
+                  "under", "affordances", "holds", "states", "takeable",
+                  "clothing_type", "wearstyle", "trait_bonuses", "bonus_when",
+                  "bonus_while")
+
+
+def thin_creation(effect):
+    """True for a `create_object` effect that names a thing and no more."""
+    try:
+        return (str(effect.get("type") or "") == "create_object"
+                and bool(str(effect.get("name") or "").strip())
+                and not effect.get("kind") and not effect.get("affordances"))
+    except AttributeError:
+        return False
+
+
+def fill_created(world_root, rule_id, name, spec):
+    """
+    Keep what the item generator said a rule's thing is, on the rule.
+
+    Every `create_object` effect in the rule that still names `name` and no
+    more is filled in from `spec`, so the thing is built the same way each
+    time the rule fires, with no model asked. The name the rule wrote is kept;
+    a description the rule wrote is kept too. Answers how many were filled.
+    """
+    store = _store(world_root)
+    rule = store.get(str(rule_id))
+    if rule is None:
+        return 0
+    wanted = str(name or "").strip().lower()
+    filled = 0
+
+    def fill(effects):
+        nonlocal filled
+        out = []
+        for effect in effects or []:
+            if (thin_creation(effect)
+                    and str(effect.get("name")).strip().lower() == wanted):
+                effect = dict(effect)
+                for field in CREATED_FIELDS:
+                    if field not in spec or spec[field] in (None, "", []):
+                        continue
+                    if field == "description" and effect.get("description"):
+                        continue
+                    effect[field] = spec[field]
+                filled += 1
+            out.append(effect)
+        return out
+
+    effects = rule.get("effects")
+    if hasattr(effects, "items"):
+        rule["effects"] = {outcome: fill(branch)
+                           for outcome, branch in effects.items()}
+    else:
+        rule["effects"] = fill(effects)
+    if filled:
+        store[str(rule_id)] = rule
+        setattr(world_root.db, ATTR, store)
+    return filled
+
+
 def set_listed(world_root, rule_id, listed=True):
     """
     Take a rule out of its rulebook, or put it back.
