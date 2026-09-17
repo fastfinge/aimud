@@ -704,6 +704,14 @@ def _verb_for(actor, world_root, condition, obj, depth=0):
         # answering "not yet" with "try something else".
         return None, None
 
+    # Nothing a verb does sets it directly -- but a becomes rule may: a thing
+    # is dead once its health falls to 0, so wanting it dead is wanting its
+    # health down. One step deep, and before guessing at an untried word,
+    # because this is something the world already knows.
+    step, key = _towards_becoming(actor, world_root, condition, obj, depth)
+    if step:
+        return step, key
+
     # Nothing this world knows would do it. A word it has never been taught
     # might, and trying one is how it finds out.
     #
@@ -713,6 +721,49 @@ def _verb_for(actor, world_root, condition, obj, depth=0):
     if depth == 0:
         for verb in untried_verbs(world_root, condition):
             return f"{verb} {obj.key}", None
+    return None, None
+
+
+def _towards_becoming(actor, world_root, condition, obj, depth):
+    """
+    A step towards a state some becomes rule brings about.
+
+    A goal `is: dead` is met by a rule that adds `dead` when health falls to 0,
+    so the rule's `when` -- about `obj`, and without anything it asks of the
+    cause -- is the subgoal. The same for `lacks` and a rule that removes the
+    state. See docs/becoming-and-time.md §10.
+    """
+    from world import becoming, conditions
+    from world.model_json import listed
+    from world.quests import is_person
+
+    if depth >= MAX_SUBGOALS or world_root is None:
+        return None, None
+    wanted_on = {str(s).lower() for s in listed(condition.get("is"))}
+    wanted_off = {str(s).lower() for s in listed(condition.get("lacks"))}
+    if not (wanted_on or wanted_off):
+        return None, None
+    person = obj if is_person(obj) else actor
+    for rule in becoming.rules(world_root):
+        adds, removes = set(), set()
+        for effect in rule.get("effects") or []:
+            if str(effect.get("type") or "") != "set_state":
+                continue
+            if str(effect.get("role") or effect.get("name_role")
+                   or "direct") != "direct":
+                continue
+            adds |= {str(s).lower() for s in listed(effect.get("add"))}
+            removes |= {str(s).lower() for s in listed(effect.get("remove"))}
+        if not ((wanted_on & adds) or (wanted_off & removes)):
+            continue
+        target = {"all": [becoming._without_cause(c)
+                          for c in (rule.get("when") or [])]}
+        goal = conditions.as_goal(target, {"direct": obj}, person)
+        if goal is None:
+            continue
+        step, key = _for_condition(actor, world_root, goal, depth + 1)
+        if step:
+            return step, key
     return None, None
 
 

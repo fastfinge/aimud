@@ -1113,3 +1113,239 @@ def _related(what, words):
         if wanted in spelled(commonsense.forward(word, "HasA")):
             return word
     return ""
+
+# ---------------------------------------------------------------------------
+# What running out of a figure means
+# ---------------------------------------------------------------------------
+#
+# A becomes rule is never an answer to "what does this verb do", so it is never
+# asked for when a verb is attempted. It is asked for once per figure, the first
+# time somebody's gauge in this world actually runs out -- evidence from this
+# world that the question matters, and one call rather than one per verb that
+# could hurt somebody. See docs/becoming-and-time.md §6 and world/becoming.py.
+
+#: Marks a figure whose running out has been asked about, so it is asked once.
+ASKED_BECOMING = "asked_becoming"
+
+BECOMING_ROUNDS = 6
+
+_BECOMING_SYSTEM = """You write rules for a text MUD about what happens when
+something becomes true -- not when anybody does anything, but when a fact about
+somebody changes. Answer by calling file_becoming.
+
+You are told a figure somebody has, such as health or hunger, and that it has
+just run out for the first time in this world. Say what running out of it means
+here, in the fewest rules that say it. Often that is one rule: somebody whose
+health runs out is dead. Sometimes it means nothing at all, and then say so in
+cannot_say.
+
+A rule has:
+  "name"    what is so, in one short sentence: "no health left is dead"
+  "when"    the conditions that become true, about "direct", the person:
+            [{"subject": "direct", "trait": "health", "max": 0}]
+  "effects" what follows, about "direct" -- the person it happened to
+  "report"  what everybody present is told, as a sentence with {direct} for
+            the person and $pconj(verb) for a verb that agrees:
+            "{direct} $pconj(collapse) to the ground."
+
+{conditions}
+{effects}
+A rule may name whoever caused the change as "cause" -- the one who struck the
+blow -- but only if its "when" also says there must be one:
+{"subject": "cause", "unbound": false}. A figure that ran down on its own has
+no cause.
+
+Never use "try" or "describe" here: nobody is doing anything, and nobody asked
+to look. A state that is worked out from other conditions cannot be set by an
+effect; the tools say which those are.
+"""
+
+
+def becoming_tool():
+    """`file_becoming`, the finish tool `learn_becoming` answers with."""
+    from world import conditions
+    from world import effects as effects_mod
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        rule = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string",
+                         "description": "What is so, in one short sentence"},
+                "when": {"type": "array", "items": conditions.schema(ctx),
+                         "description": "What becomes true"},
+                "effects": {"type": "array",
+                            "items": effects_mod.schema(ctx),
+                            "description": "What follows"},
+                "report": {"type": "string",
+                           "description": "What everybody present is told"},
+            },
+            "required": ["name", "when"],
+        }
+        return tb.params({
+            "rules": {"type": "array", "items": rule, "maxItems": 3,
+                      "description": "The fewest rules that say it; empty "
+                                     "with cannot_say if it means nothing"},
+            "cannot_say": {"type": "string",
+                           "description": "Why running out means nothing "
+                                          "here, or what could not be said"},
+        }, ["rules"])
+
+    def handler(ctx, args, answer):
+        kept, said = validate_becoming(args, ctx.world_root)
+        if (not said and not kept
+                and not str(args.get("cannot_say") or "").strip()):
+            said.append("that files nothing: write a rule, or say in "
+                        "cannot_say why running out means nothing here")
+        if said:
+            answer(tb.complain("Not filed: " + "; ".join(said) + ". Send the "
+                               "whole answer again with that put right, or "
+                               "leave that part out.", value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("file_becoming", "File what running out of it means.",
+                   parameters, handler, finishes=True)
+
+
+def validate_becoming(reply, world_root=None):
+    """
+    The becomes rules in a reply worth keeping, and what was wrong with the rest.
+
+    Returns `(rules, complaints)`, the same shape `validate` answers in, held
+    to what a becomes rule must be: something to watch, something that
+    follows, no `try` or `describe`, no state that is worked out rather than
+    set, and no cause named without asking that there was one.
+    """
+    from world import conditions, rulecheck
+
+    kept, complaints = [], []
+    try:
+        given = list(reply.get("rules") or [])
+    except AttributeError:
+        return [], ["the reply was not a rule"]
+    for entry in given:
+        try:
+            entry = dict(entry)
+        except (TypeError, ValueError):
+            complaints.append("a rule that was not an object")
+            continue
+        guards, bad = _clean_conditions(entry.get("when"), conditions)
+        complaints += bad
+        effects_given, bad = _clean_effects(entry.get("effects"))
+        complaints += bad
+        report = str(entry.get("report") or "").strip()
+        if not guards:
+            complaints.append("a rule that watches nothing")
+            continue
+        if not effects_given and not report:
+            complaints.append("a rule where nothing follows and nothing is "
+                              "said")
+            continue
+        refused = sorted({str(e.get("type")) for e in effects_given
+                          if str(e.get("type")) in ("try", "describe")})
+        if refused:
+            complaints.append(f"{', '.join(refused)} cannot follow from "
+                              f"something becoming true")
+            continue
+        written = _derived_written(effects_given, world_root)
+        if written:
+            complaints.append(
+                f"{', '.join(written)} is worked out from other conditions, "
+                f"so no effect can set or clear it")
+            continue
+        rule = rulebooks.blank(
+            phase=rulebooks.BECOMES, scope={rulebooks.WORLD: True},
+            about="direct", name=str(entry.get("name") or "").strip(),
+            when=guards, effects=effects_given, report=report,
+            source="generated")
+        if rulecheck.cause_unguarded({"new": rule}):
+            complaints.append(
+                "a rule naming the cause must also say there has to be one: "
+                "{\"subject\": \"cause\", \"unbound\": false}")
+            continue
+        kept.append(rule)
+    return kept, complaints
+
+
+def learn_becoming(sponsor, world_root, slug, on_success=None,
+                   on_error=None):
+    """
+    Async. Ask this world what running out of `slug` means, and file it.
+
+    Asked once per figure: the register entry is marked before the call, so
+    two characters running out at once do not pay for the same question.
+    """
+    from world import lookups, lore, traits
+    from world import toolbox as tb
+
+    on_success = on_success or (lambda rules: None)
+    on_error = on_error or (lambda why: logger.log_info(
+        f"rule_gen: what running out of {slug} means went unanswered -- {why}"))
+    try:
+        sponsor.key()
+    except ValueError as err:
+        on_error(str(err))
+        return
+    entry = dict(traits.known(world_root, slug) or {})
+    vocab = dict(world_root.db.trait_vocabulary or {})
+    if slug in vocab:
+        vocab[slug] = dict(vocab[slug], **{ASKED_BECOMING: True})
+        world_root.db.trait_vocabulary = vocab
+
+    model = sponsor.model_for("commands")
+    system = _BECOMING_SYSTEM.replace("{conditions}", _CONDITIONS) \
+                             .replace("{effects}", _EFFECTS)
+    lowest = entry.get("min", 0)
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": (
+            f"World: {lore.description(world_root)}\n\n"
+            f"The figure: {slug} -- {entry.get('name') or slug}: "
+            f"{entry.get('means') or 'not described'}. It is a "
+            f"{entry.get('trait_type') or 'counter'}, and it has just run "
+            f"out -- fallen to {lowest} -- for somebody in this world for "
+            f"the first time. What does that mean here?")},
+    ]
+    box = tb.Toolbox(
+        [becoming_tool()] + lookups.named(*LOOKUPS),
+        tb.ToolContext(world_root=world_root, sponsor=sponsor,
+                       job="commands"))
+
+    def answered(reply):
+        reply = reply if isinstance(reply, dict) else {}
+        cannot = str(reply.get("cannot_say") or "").strip()
+        if cannot:
+            logger.log_info(f"rule_gen: running out of {slug} -- {cannot}")
+        kept, complaints = validate_becoming(reply, world_root)
+        for complaint in complaints:
+            logger.log_info(f"rule_gen: running out of {slug} dropped -- "
+                            f"{complaint}")
+        on_success([rulebooks.add(world_root, rule) for rule in kept])
+
+    llm.converse(sponsor, model, messages, box, on_done=answered,
+                 on_error=on_error, on_exhausted=answered,
+                 rounds=BECOMING_ROUNDS)
+
+
+def ask_when_it_runs_out(character, slug, world_root):
+    """
+    A figure has just reached its lowest for somebody. If this world has never
+    said what that means, ask -- once, and only where somebody is paying and
+    no becomes rule already watches the figure.
+    """
+    from world import becoming, sponsor as sponsor_mod, traits
+
+    if world_root is None:
+        return
+    entry = traits.known(world_root, slug) or {}
+    if entry.get(ASKED_BECOMING):
+        return
+    for rule in becoming.rules(world_root):
+        if slug in becoming.thresholds_of_rule(world_root, rule):
+            return
+    payer = sponsor_mod.of_world(world_root, actor=character)
+    if not payer.answers:
+        return
+    learn_becoming(payer, world_root, slug)

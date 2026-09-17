@@ -53,7 +53,7 @@ REFUSAL_KINDS = ("engine already does it", "needs a place or a context",
 #: it. Both rule shapes are in here: `verb_rules` is one rule per verb per world
 #: and `rules` is the rulebook, and a world mid-cutover holds some of each.
 REGISTERS = ("verb_rules", "rules", "state_vocabulary", "state_groups",
-             "kind_specs")
+             "kind_specs", "trait_vocabulary")
 
 
 def of_world(world_root):
@@ -256,6 +256,11 @@ def scan(registers):
             registers.get("rules") or {}),
         "writes_derived": sorted(writes_derived),
         "cause_unguarded": cause_unguarded(registers.get("rules") or {}),
+        "contradictory": contradictory(registers.get("rules") or {}),
+        "never_becomes": never_becomes(
+            registers.get("rules") or {}, rules,
+            registers.get("trait_vocabulary") or {}),
+        "overlapping_bands": overlapping_bands(vocabulary),
         "ungrounded": ungrounded(registers.get("kind_specs") or {}),
         "inert": sorted(inert),
         "refusals": {kind: sorted(verbs) for kind, verbs in refusals.items()},
@@ -445,6 +450,157 @@ def _defeated(listed, produced, phase, key, field):
         if clash:
             found.append((str(rule_id), str(rule.get("action") or ""), clash,
                           str(rule.get("name") or "")))
+    return found
+
+
+def _plain(condition):
+    """A condition as something two of can be compared by value."""
+    import json
+
+    try:
+        return json.dumps(condition, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return repr(condition)
+
+
+def contradictory(rules):
+    """
+    Rules that demand a condition and its exact opposite at once.
+
+    Such a rule can never pass -- or, for a guard, never apply -- and it is
+    provable by reading, since every predicate declares its opposite
+    (world/conditions.py). Only what the rule demands is compared: two
+    branches of one `any` may disagree without the rule being dead.
+
+    Returns [(rule id, name), ...].
+    """
+    from world import conditions as conditions_mod
+
+    found = []
+    for rule_id, rule in sorted((rules or {}).items()):
+        if not hasattr(rule, "get") or not rule.get("listed", True):
+            continue
+        for field in ("conditions", "when"):
+            demanded = [leaf for top in (rule.get(field) or [])
+                        for leaf, optional in conditions_mod.leaves(top)
+                        if not optional]
+            seen = {_plain(dict(leaf)) for leaf in demanded}
+            mirrors = [conditions_mod.negate(leaf) for leaf in demanded]
+            if any(mirror is not None and _plain(mirror) in seen
+                   for mirror in mirrors):
+                found.append((str(rule_id), str(rule.get("name") or "")))
+                break
+    return found
+
+
+def never_becomes(rules, every_rule, trait_vocabulary):
+    """
+    Becomes rules waiting on a figure nothing can ever move that way.
+
+    A rule on `health max 0` fires when health falls to 0. If no effect in the
+    world lowers health, no rate drains it and the register gives it no drain,
+    the rule is waiting for something that cannot happen. Only figures are
+    judged: whether a state can come about is `unsettable`'s question.
+
+    Returns [(rule id, name, trait), ...].
+    """
+    from world import conditions as conditions_mod
+
+    falling, rising = set(), set()
+    for rule in (every_rule or {}).values():
+        for effect in effects_of(rule):
+            if effect.get("type") != "set_trait":
+                continue
+            slug = str(effect.get("trait") or "").lower()
+            for amount in (effect.get("change"), effect.get("rate")):
+                try:
+                    amount = float(amount)
+                except (TypeError, ValueError):
+                    continue
+                if amount:
+                    (falling if amount < 0 else rising).add(slug)
+            if effect.get("set_to") is not None:
+                falling.add(slug)
+                rising.add(slug)
+    for slug, entry in (trait_vocabulary or {}).items():
+        try:
+            rate = float((entry or {}).get("rate") or 0)
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if rate < 0:
+            falling.add(str(slug).lower())
+        elif rate > 0:
+            rising.add(str(slug).lower())
+
+    found = []
+    for rule_id, rule in sorted((rules or {}).items()):
+        if not hasattr(rule, "get") or rule.get("phase") != "becomes":
+            continue
+        if not rule.get("listed", True):
+            continue
+        for top in (rule.get("when") or []):
+            for leaf, optional in conditions_mod.leaves(top):
+                slug = str(leaf.get("trait") or "").lower()
+                if optional or not slug:
+                    continue
+                needs_fall = (leaf.get("max") is not None
+                              or leaf.get("below") is not None)
+                needs_rise = (leaf.get("min") is not None
+                              or leaf.get("above") is not None)
+                if ((needs_fall and slug not in falling)
+                        or (needs_rise and slug not in rising)):
+                    found.append((str(rule_id), str(rule.get("name") or ""),
+                                  slug))
+    return sorted(set(found))
+
+
+def overlapping_bands(vocabulary):
+    """
+    Derived states in one group, over one figure, whose ranges overlap.
+
+    A group's members are meant to exclude each other, and a set state's
+    exclusivity is enforced when it is set -- but a derived state is never
+    set, so only its definition keeps it apart from its siblings. Checked for
+    the common case: each defined by one figure's bounds alone.
+
+    Returns [(group, first state, second state), ...].
+    """
+    bands = {}
+    for slug, entry in (vocabulary or {}).items():
+        if not hasattr(entry, "get") or not entry.get("when"):
+            continue
+        when = list(entry.get("when") or [])
+        if len(when) != 1 or not hasattr(when[0], "get"):
+            continue
+        leaf = when[0]
+        if not leaf.get("trait") or not entry.get("group"):
+            continue
+        low, high = float("-inf"), float("inf")
+        low_open = high_open = False
+        try:
+            if leaf.get("min") is not None:
+                low = float(leaf["min"])
+            if leaf.get("above") is not None:
+                low, low_open = float(leaf["above"]), True
+            if leaf.get("max") is not None:
+                high = float(leaf["max"])
+            if leaf.get("below") is not None:
+                high, high_open = float(leaf["below"]), True
+        except (TypeError, ValueError):
+            continue
+        key = (str(entry["group"]), str(leaf["trait"]).lower())
+        bands.setdefault(key, []).append(
+            (low, low_open, high, high_open, str(slug)))
+    found = []
+    for (group, _trait), ranges in sorted(bands.items()):
+        ranges.sort()
+        for first, second in zip(ranges, ranges[1:]):
+            _low_a, _lo_a, high_a, high_open_a, one = first
+            low_b, low_open_b, _high_b, _ho_b, other = second
+            touching = low_b < high_a or (
+                low_b == high_a and not high_open_a and not low_open_b)
+            if touching:
+                found.append((group, one, other))
     return found
 
 
@@ -644,6 +800,24 @@ def report(findings, name=""):
             f"{len(dead)} after rules follow only when their own verb has not "
             f"done what it just did, so they can never fire, over "
             f"{len(verbs)} verbs: {_listed(verbs)}.")
+    if findings.get("contradictory"):
+        names = [name or rule_id
+                 for rule_id, name in findings["contradictory"]]
+        trouble.append(
+            f"{len(names)} rules demand a condition and its opposite at once, "
+            f"so they can never pass: {_listed(names)}.")
+    if findings.get("never_becomes"):
+        names = sorted({f"{name or rule_id} ({slug})"
+                        for rule_id, name, slug in findings["never_becomes"]})
+        trouble.append(
+            f"{len(names)} rules about what becomes true wait on a figure "
+            f"nothing here moves that way: {_listed(names)}.")
+    if findings.get("overlapping_bands"):
+        pairs_said = [f"{one} and {other} in {group}"
+                      for group, one, other in findings["overlapping_bands"]]
+        trouble.append(
+            f"{len(pairs_said)} pairs of worked-out conditions in one group "
+            f"can both hold at once: {_listed(pairs_said)}.")
     if findings.get("cause_unguarded"):
         names = [name or rule_id
                  for rule_id, name in findings["cause_unguarded"]]

@@ -1217,17 +1217,23 @@ It rings in every occupied room of the town at dawn, and in no empty one.
   * overlapping bands over one trait in one exclusive group;
   * rules that exceed the pass limit;
   * what already matches a becomes rule when it is added (6.4).
-* **`world/suggest.py`**: proposes a becomes rule for a gauge seen at its bound
-  with nothing to say what that means. The evidence is a count, kept like
-  `counters`, of settles that found a character there. It is evidence from this
-  world, as `propose` requires.
+* **`world/suggest.py`**: the plan had it propose a becomes rule for a gauge seen
+  at its bound with nothing to say what that means. Phase 9 does not, on
+  purpose. A proposal is a rule, and nothing but a model can say what running
+  out of a figure means here -- dead, fainted, or nothing at all -- so a
+  proposal would be a guess dressed as evidence. Instead the first time a gauge
+  actually runs out is the evidence, and it asks `rule_gen` the question
+  directly (below).
 * **`world/rule_gen.py`**: `any` one level deep and the opposites in the schema.
   The prompt says combinators are for "or", and `validate` complains about a
   check rule packed into one `all`. The becomes phase and `report` go in the
   schema, prompt and `validate` too, and `validate` refuses a becomes rule that
-  names `cause` without guarding on it being bound. That question is asked when
-  a gauge is registered ("what happens when this runs out?"), never when a verb
-  is attempted.
+  names `cause` without guarding on it being bound. That question ("what
+  happens when this runs out?") is never asked when a verb is attempted. It is
+  asked the first time somebody's gauge in this world really runs out, rather
+  than when the gauge is registered: once per figure, only where somebody pays,
+  and not for a figure a becomes rule already watches. Many gauges never run
+  out, and a question nobody needed answering is a call nobody should pay for.
 * **`commands/rules_subject.py` and `world_subject.py`**: the listing in 8.5 and
   the clock fields.
 * **`world/crossing.py`**: nothing. Things keep no memo, and the place memo is
@@ -1288,7 +1294,7 @@ with both. Afterwards an NPC that wants bread at midnight does something else
 until morning, then goes and buys it.
 
 **Phase 9: authoring and diagnosis.** `rule_gen` writing becomes rules and
-reports, `suggest` proposing them, the new `rulecheck` faults, bands from
+reports when a gauge first runs out, the new `rulecheck` faults, bands from
 `descs`, and the planner following a becomes rule. Afterwards a generated world
 works out what running out of health means, and says when it got it wrong.
 

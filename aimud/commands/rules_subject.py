@@ -253,6 +253,40 @@ def suspend_dead(root):
     ])
 
 
+def apply_rule_once(root, rule_id):
+    """Fire a becomes rule once for what it already holds for, and say so."""
+    from world import becoming, rulebooks
+
+    rule = rulebooks.get(root, rule_id)
+    if rule is None:
+        return f"There is no rule |w{rule_id}|n in this world."
+    if rule.get("phase") != rulebooks.BECOMES:
+        return ("Only a rule about what becomes true can be applied once; "
+                "any other rule applies whenever its verb is tried.")
+    done = becoming.apply_once(root, rule_id)
+    if not done:
+        return f"Nothing here is already as {rule_id} watches for."
+    names = ", ".join(sorted(getattr(obj, "key", str(obj)) for obj in done))
+    return f"|w{rule_id}|n applied once, for {names}."
+
+
+def already_lines(root):
+    """What each becomes rule already holds for, and so has never fired for."""
+    from world import becoming
+
+    lines = []
+    for rule in becoming.rules(root):
+        matched = becoming.already_true(root, rule)
+        if matched:
+            names = ", ".join(sorted(getattr(obj, "key", str(obj))
+                                     for obj in matched))
+            lines.append(
+                f"{rule['id']} ({rule.get('name') or 'unnamed'}) already holds "
+                f"for {names}, and waits for a change before it fires. "
+                f"|wedit rules {rule['id']} apply|n fires it once.")
+    return lines
+
+
 DEAD_QUESTION = ("Suspend every rule that provably cannot fire? They stay in "
                  "the book and can each be restored.")
 
@@ -265,13 +299,23 @@ def _rule_form(rule_id):
         if rule is None:
             return []
         listed = rule.get("listed", True)
-        return [menus.Action(
+        found = [menus.Action(
             "restore" if not listed else "suspend",
             "Put it back in force" if not listed else "Suspend it",
             run=lambda ctx: set_listed(_root(ctx), rule_id, not listed),
             after=menus.BACK,
             command=lambda ctx: f"edit rules {rule_id} "
                                 f"{'restore' if not listed else 'suspend'}")]
+        if rule.get("phase") == rulebooks.BECOMES and listed:
+            found.append(menus.Action(
+                "apply", "Apply it once to what it already holds for",
+                run=lambda ctx: apply_rule_once(_root(ctx), rule_id),
+                after=menus.BACK,
+                command=lambda ctx: f"edit rules {rule_id} apply",
+                help="A rule added to a world waits for something to change, "
+                     "so whatever it already holds for has never had it "
+                     "fire. This fires it once for each of them."))
+        return found
 
     def intro(ctx):
         from world import rulebooks
@@ -330,9 +374,12 @@ def edit_rules_run(cmd, ctx, words):
         caller.msg(set_listed(root, first, False))
     elif action in ("restore", "unsuspend", "list"):
         caller.msg(set_listed(root, first, True))
+    elif action == "apply":
+        caller.msg(apply_rule_once(root, first))
     elif action:
         caller.msg(f"A rule can be suspended or restored: |wedit rules "
-                   f"{first} suspend|n.")
+                   f"{first} suspend|n. A rule about what becomes true can "
+                   f"also be applied once: |wedit rules {first} apply|n.")
     else:
         from world import rulebooks
 
@@ -685,6 +732,9 @@ def faults_report(root):
              counters.report(root)]
     from world import becoming
 
+    waiting_lines = already_lines(root)
+    if waiting_lines:
+        lines += [""] + waiting_lines
     looping = dict(getattr(root.db, becoming.OVERFLOW_ATTR, None) or {})
     if looping:
         lines += ["", f"|w{len(looping)} rules|n about what becomes true kept "

@@ -554,6 +554,28 @@ def thresholds(world_root, character):
     return found
 
 
+def thresholds_of_rule(world_root, rule):
+    """The figures one becomes rule watches, through derived states too."""
+    from world import verbs
+
+    found = {}
+    derived = verbs.derived_states(world_root)
+    wanted = set()
+    for condition in (rule.get("when") or []):
+        _trait_figures(condition, found)
+        wanted |= _named_states(condition)
+    seen = set()
+    while wanted:
+        slug = wanted.pop()
+        if slug in seen or slug not in derived:
+            continue
+        seen.add(slug)
+        for condition in (derived[slug].get("when") or []):
+            _trait_figures(condition, found)
+            wanted |= _named_states(condition)
+    return set(found)
+
+
 def next_crossing(world_root, character):
     """
     Seconds until one of this character's moving figures reaches a threshold,
@@ -955,6 +977,74 @@ def arrived(person):
     root = world_of(room)
     if root is not None:
         settle_place(root, room)
+
+
+# ---------------------------------------------------------------------------
+# A rule added to what is already so
+# ---------------------------------------------------------------------------
+
+def people_in(world_root):
+    """Everybody in this world somebody could ask about: players and NPCs."""
+    from evennia.server.sessionhandler import SESSIONS
+
+    from typeclasses.npcs import NPC
+
+    found = {}
+    people = [getattr(session, "puppet", None)
+              for session in SESSIONS.get_sessions()]
+    people += list(NPC.objects.all_family())
+    for person in people:
+        if not _gone(person) and world_of(person) == world_root:
+            found[person.id] = person
+    return list(found.values())
+
+
+def already_true(world_root, rule, candidates=None):
+    """
+    The people, and the rooms they are in, a becomes rule already holds for.
+
+    A new rule waits for a change -- nothing crossed, so nothing fired -- and
+    that is right, but it must not be hidden. This says what the rule would
+    have fired for, so `view faults` can list it and `edit rules <id> apply`
+    can fire it once for exactly these. See docs/becoming-and-time.md 6.4.
+    """
+    from world import conditions, rulebooks
+
+    people = people_in(world_root) if candidates is None else list(candidates)
+    rooms = {room_of(person).id: room_of(person) for person in people
+             if room_of(person) is not None}
+    about_place = str(rule.get("about") or "direct") in rulebooks.PLACES
+    found = []
+    for subject in (rooms.values() if about_place else people):
+        if rule not in applying(world_root, subject):
+            continue
+        ctx = _context(world_root, subject)
+        if all(conditions.evaluate(_without_cause(c), ctx)
+               for c in (rule.get("when") or [])):
+            found.append(subject)
+    return found
+
+
+def apply_once(world_root, rule_id, candidates=None):
+    """
+    Fire a becomes rule once for everything it already holds for. Answers
+    what it fired for. Nobody caused it, so a rule that needs a cause skips.
+    """
+    from world import conditions, rulebooks
+
+    rule = rulebooks.get(world_root, rule_id)
+    if rule is None or rule.get("phase") != rulebooks.BECOMES:
+        return []
+    done = []
+    for subject in already_true(world_root, rule, candidates):
+        ctx = _context(world_root, subject)
+        if not all(conditions.evaluate(c, ctx)
+                   for c in (rule.get("when") or [])):
+            continue
+        fire(world_root, rule, subject)
+        done.append(subject)
+    settle()
+    return done
 
 
 # ---------------------------------------------------------------------------

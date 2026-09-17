@@ -190,7 +190,43 @@ def register(world_root, slug, name="", means="", trait_type=DEFAULT_TRAIT_TYPE,
     vocab[slug] = entry
     world_root.db.trait_vocabulary = vocab
     logger.log_info(f"traits: {world_root.key} learned {slug!r} ({trait_type})")
+    if entry.get("descs"):
+        bands(world_root, slug, entry["descs"])
     return slug
+
+
+def bands(world_root, slug, descs):
+    """
+    A figure's own words for where it stands, as derived states.
+
+    `descs` is the Traits contrib's map from a lower bound to a word --
+    {0: "starving", 10: "hungry", 30: "fed"} -- and a world that writes it has
+    already said what the bands are called. So each band becomes a state that
+    holds while the figure is in it, in an exclusive group named after the
+    figure, and rules ask for `starving` without anybody writing it twice. See
+    docs/becoming-and-time.md 5.7. Answers the states made.
+    """
+    from world import verbs
+
+    try:
+        ordered = sorted((float(bound), str(word))
+                         for bound, word in dict(descs or {}).items())
+    except (TypeError, ValueError):
+        return []
+    made = []
+    for index, (bound, word) in enumerate(ordered):
+        leaf = {"subject": "direct", "trait": slug, "min": bound}
+        if index + 1 < len(ordered):
+            leaf["below"] = ordered[index + 1][0]
+        state = verbs.register_state(
+            world_root, word,
+            means=f"{slug.replace('_', ' ')} from {_round(bound)}"
+                  + (f" to below {_round(leaf['below'])}"
+                     if "below" in leaf else " up"),
+            group=slug, when=[leaf])
+        if state:
+            made.append(state)
+    return made
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +458,7 @@ def adjust(character, slug, change=None, set_to=None, rate=None, world_root=None
         _announce(character, slug, trait, before, after, gained, reason)
     if gained or after != before:
         _recount_worth(character, world_root)
+        _ran_out(character, slug, trait, before, after, world_root)
     if rate is not None:
         # A figure that has started, stopped or changed its drift has a new
         # moment at which it will next reach something a rule cares about.
@@ -429,6 +466,31 @@ def adjust(character, slug, change=None, set_to=None, rate=None, world_root=None
 
         becoming.arm(character, world_root)
     return slug, before, after
+
+
+def _ran_out(character, slug, trait, before, after, world_root):
+    """
+    A gauge has just reached its lowest. The first time that happens to
+    anybody in a world, the world is asked what it means -- once, and only
+    where somebody pays. See `rule_gen.ask_when_it_runs_out`.
+    """
+    if getattr(trait, "trait_type", "") != "gauge":
+        return
+    low, _high = _bounds(trait)
+    floor = 0.0 if low is None else float(low)
+    try:
+        if float(after) > floor or (before is not None
+                                    and float(before) <= floor):
+            return
+    except (TypeError, ValueError):
+        return
+    try:
+        from world import rule_gen
+
+        rule_gen.ask_when_it_runs_out(character, slug, world_root)
+    except Exception as exc:
+        logger.log_info(f"traits: could not ask what running out of {slug} "
+                        f"means: {exc}")
 
 
 def _recount_worth(character, world_root):
@@ -572,6 +634,11 @@ def notice_changes(character):
                   reason="")
     if moved or len(seen) != len(_seen(character)):
         setattr(character.db, _SEEN, seen)
+    if moved:
+        world_root = _world_root(character)
+        for slug, trait, current, previous in figures:
+            if slug in moved:
+                _ran_out(character, slug, trait, previous, current, world_root)
     return moved
 
 
