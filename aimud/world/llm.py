@@ -178,19 +178,67 @@ def call(sponsor, model, messages, tools=None, timeout=TIMEOUT,
     already waiting on two failures.
     """
     try:
-        return _call_once(sponsor, model, messages, tools, timeout,
-                          tool_choice)
+        return _call_insisting(sponsor, model, messages, tools, timeout,
+                               tool_choice)
     except MODEL_ERRORS as first:
         spare = getattr(model, "fallback", None)
         if not spare:
             raise
         _fell_back(model, spare, first)
         try:
-            return _call_once(sponsor, spare, messages, tools, timeout,
-                              tool_choice)
+            return _call_insisting(sponsor, spare, messages, tools, timeout,
+                                   tool_choice)
         except MODEL_ERRORS as second:
             raise LLMError(f"{model} failed ({_short(first)}), and so did its "
                            f"fallback {spare} ({_short(second)})") from second
+
+
+def _call_insisting(sponsor, model, messages, tools, timeout, tool_choice):
+    """
+    `_call_once`, and asked again without insisting when insisting is refused.
+
+    Naming the tool a reply must call is how a loop's last round gets an
+    answer, and it is an optimisation: the model is told the same thing in
+    words. Google compiles a named tool's schema into the reply's grammar, and
+    past some size it will not, answering "Request contains an invalid
+    argument." -- while taking the very same schema when the choice is left to
+    the model. The size is undocumented and a world's schemas grow with its
+    states, traits and places: one world's `file_rules` went through without
+    any one of six of its enums and was refused with all of them. So a refused
+    insistence is asked once more with the choice left open and the name said
+    in words. A timeout is not a refusal, and is not waited on twice.
+    """
+    try:
+        return _call_once(sponsor, model, messages, tools, timeout,
+                          tool_choice)
+    except LLMError as refused:
+        name = _named(tool_choice)
+        if not name or not tools:
+            raise
+        _stopped_insisting(model, name, refused)
+        asked = list(messages) + [{"role": "user",
+                                   "content": f"Answer now by calling {name}."}]
+        return _call_once(sponsor, model, asked, tools, timeout, None)
+
+
+def _named(tool_choice):
+    """The tool a `tool_choice` insists on, or "" when it names none."""
+    try:
+        return str(tool_choice["function"]["name"] or "")
+    except (KeyError, TypeError):
+        return ""
+
+
+def _stopped_insisting(model, name, error):
+    """One line each time, so how often a provider refuses is on record."""
+    try:
+        from evennia.utils import logger
+
+        job = str(getattr(model, "job", "") or "unknown")
+        logger.log_info(f"llm: unforced job={job} model={model} tool={name} "
+                        f"why={_short(error)!r}")
+    except Exception:
+        pass
 
 
 def _short(error):
