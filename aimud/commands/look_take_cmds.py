@@ -335,9 +335,12 @@ class CmdAILook(_DefaultLook):
         caller.msg(f"You look carefully for {query}...")
 
         from world import busy
-        from world.item_gen import validate_object_existence, generate_item
+        from world.item_gen import (Wanted, generate_item,
+                                    validate_object_existence)
 
         wait = busy.start(caller, f"looking for {query}")
+        wanted = Wanted(caller, verb="look", role="direct",
+                        said=f"look {query}")
 
         def on_valid(_reason):
             wait.stage(f"working out what {query} is")
@@ -347,6 +350,7 @@ class CmdAILook(_DefaultLook):
                     wait, lambda item: _finish_look(caller, item, room, key)),
                 on_error=busy.closing(
                     wait, lambda err: _gen_error(caller, room, key, err)),
+                wanted=wanted,
             )
 
         def on_invalid(_reason):
@@ -359,7 +363,8 @@ class CmdAILook(_DefaultLook):
             _release_gen_lock(room, key)
             caller.msg(f"|rError: {err}|n")
 
-        validate_object_existence(sponsor, room, query, on_valid, on_invalid, on_error)
+        validate_object_existence(sponsor, room, query, on_valid, on_invalid,
+                                  on_error, wanted=wanted)
 
 
 def _finish_look(caller, item, room, key):
@@ -553,9 +558,12 @@ class CmdAIGet(_DefaultGet):
         caller.msg(f"You look for {query}...")
 
         from world import busy
-        from world.item_gen import validate_object_existence, generate_item
+        from world.item_gen import (Wanted, generate_item,
+                                    validate_object_existence)
 
         wait = busy.start(caller, f"looking for {query}")
+        wanted = Wanted(caller, verb="get", role="direct",
+                        said=f"get {query}")
 
         def on_valid(_reason):
             wait.stage(f"working out what {query} is")
@@ -565,6 +573,7 @@ class CmdAIGet(_DefaultGet):
                     wait, lambda item: _finish_take(caller, item, room, key)),
                 on_error=busy.closing(
                     wait, lambda err: _gen_error(caller, room, key, err)),
+                wanted=wanted,
             )
 
         def on_invalid(_reason):
@@ -577,7 +586,8 @@ class CmdAIGet(_DefaultGet):
             _release_gen_lock(room, key)
             caller.msg(f"|rError: {err}|n")
 
-        validate_object_existence(sponsor, room, query, on_valid, on_invalid, on_error)
+        validate_object_existence(sponsor, room, query, on_valid, on_invalid,
+                                  on_error, wanted=wanted)
 
 
 def _root(room):

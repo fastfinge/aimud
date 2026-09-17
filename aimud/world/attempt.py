@@ -258,7 +258,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
         waiter("looking for " + ", ".join(
             str(parsed["roles"][role]) for role in unbound))
         _promote(caller, room, sponsor, parsed, bound, unbound, resume,
-                 on_message, fuzzy=fuzzy)
+                 on_message, fuzzy=fuzzy, verb=verb, raw=raw)
         return
 
     _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
@@ -453,7 +453,7 @@ def _follow(caller, parsed, on_message):
 
 
 def _promote(caller, room, sponsor, parsed, bound, unbound, resume, on_message,
-             fuzzy=False):
+             fuzzy=False, verb="", raw=""):
     """
     Try to turn an unbound noun into a real object.
 
@@ -511,8 +511,13 @@ def _promote(caller, room, sponsor, parsed, bound, unbound, resume, on_message,
         bound[role] = obj
         resume()
 
+    # Why it is being made, so it fits: who reached for it, what they typed,
+    # and what it is in the sentence. See `item_gen.Wanted`.
+    from world.item_gen import Wanted
+
     conjure(caller, room, sponsor, parsed["roles"][role], ready,
-            lambda message: on_message(message), fuzzy=fuzzy)
+            lambda message: on_message(message), fuzzy=fuzzy,
+            wanted=Wanted(caller, verb=verb, role=role, said=raw))
 
 def _holder(obj, verb):
     """Who has this verb in flight against this object, or None."""
