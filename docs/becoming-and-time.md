@@ -347,7 +347,10 @@ What uses it:
   (rules, conditions, `any`). Google took that when the model chose its own
   tool, but refused it as "an invalid argument" when the call named the tool,
   which the last round of every loop does. `normalise` checks each member
-  either way.
+  either way. Nesting was not the whole of it: Google has a size budget for a
+  named tool that it does not publish, and a real world's enums of states,
+  traits and places went over it again. So `llm.call` now asks once more,
+  without naming the tool, when naming it is refused.
 * **`view rules`** prints a node as a group, one member to a line. That reads
   better aloud than one long sentence joined by "or".
 

@@ -159,6 +159,63 @@ class AskingAModel(SimpleTestCase):
             llm.call(SPONSOR, "m", [], tools=tools, tool_choice=choice)
         self.assertEqual(sent["payload"]["tool_choice"], choice)
 
+    def test_a_refused_insistence_is_asked_again_without_it(self):
+        """
+        Google refuses a named tool whose schema is too big to compile, and
+        takes the same schema when the choice is left open.
+        """
+        tools = [{"type": "function", "function": {"name": "give"}}]
+        choice = {"type": "function", "function": {"name": "give"}}
+        sent = []
+
+        def urlopen(request, timeout=None):
+            payload = json.loads(request.data.decode())
+            sent.append(payload)
+            if payload["tool_choice"] != "auto":
+                raise urllib.error.HTTPError(
+                    request.full_url, 400, "Bad Request", {}, io.BytesIO(
+                        json.dumps({"error": {"message": "Request contains "
+                                   "an invalid argument."}}).encode()))
+            return FakeResponse(json.dumps(reply("ok")).encode())
+
+        with mock.patch.object(llm.urllib.request, "urlopen", urlopen):
+            got = llm.call(SPONSOR, "m", [{"role": "user", "content": "hi"}],
+                           tools=tools, tool_choice=choice)
+        self.assertEqual(llm.content(got), "ok")
+        self.assertEqual([p["tool_choice"] for p in sent], [choice, "auto"])
+        self.assertEqual(sent[1]["messages"][-1],
+                         {"role": "user", "content": "Answer now by calling give."})
+        self.assertEqual(len(sent[0]["messages"]), 1, "the first ask is untouched")
+
+    def test_but_a_refusal_with_nothing_insisted_on_is_not_repeated(self):
+        tools = [{"type": "function", "function": {"name": "give"}}]
+        sent = []
+
+        def urlopen(request, timeout=None):
+            sent.append(request)
+            raise urllib.error.HTTPError(request.full_url, 400, "Bad Request",
+                                         {}, io.BytesIO(b"{}"))
+
+        with mock.patch.object(llm.urllib.request, "urlopen", urlopen):
+            with self.assertRaises(llm.LLMError):
+                llm.call(SPONSOR, "m", [], tools=tools)
+        self.assertEqual(len(sent), 1)
+
+    def test_nor_is_a_timeout(self):
+        """Not a refusal, and a player should not wait for it twice."""
+        tools = [{"type": "function", "function": {"name": "give"}}]
+        choice = {"type": "function", "function": {"name": "give"}}
+        sent = []
+
+        def urlopen(request, timeout=None):
+            sent.append(request)
+            raise TimeoutError("timed out")
+
+        with mock.patch.object(llm.urllib.request, "urlopen", urlopen):
+            with self.assertRaises(OSError):
+                llm.call(SPONSOR, "m", [], tools=tools, tool_choice=choice)
+        self.assertEqual(len(sent), 1)
+
     def test_a_tool_choice_with_no_tools_is_not_sent(self):
         """It means nothing without them, and a provider may refuse it."""
         patch, sent = sending(reply())
