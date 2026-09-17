@@ -218,6 +218,57 @@ def store(root, spec):
         root.db.world_description = str(spec["description"]).strip()
     if "guidance" in spec:
         root.db.world_guidance = clean_guidance(spec.get("guidance"))
+    if spec.get("clock"):
+        store_clock(root, spec["clock"])
+
+
+def store_clock(root, wanted):
+    """
+    Apply what a world spec says about the clock. Returns what went wrong.
+
+    `settings` puts a clock back exactly as it was stored, which is what
+    `reset world` rebuilds from, so a world keeps its date across a reset. The
+    rest are changes somebody asked for, applied in the order they compose:
+    back to real time, then a date and hour, then a year, then a day length.
+    """
+    from datetime import datetime
+
+    from world import clock
+
+    wanted = dict(wanted or {})
+    problems = []
+    settings = wanted.get("settings")
+    if settings:
+        root.db.clock = dict(settings)
+    if wanted.get("real"):
+        clock.reset(root)
+    if wanted.get("now"):
+        try:
+            clock.set_now(root, datetime.fromisoformat(str(wanted["now"])))
+        except (TypeError, ValueError) as exc:
+            problems.append(f"the date and time: {exc}")
+    if wanted.get("year"):
+        try:
+            clock.set_year(root, int(wanted["year"]))
+        except (TypeError, ValueError) as exc:
+            problems.append(f"the year: {exc}")
+    if wanted.get("day_minutes"):
+        try:
+            clock.set_day_length(root, float(wanted["day_minutes"]))
+        except (TypeError, ValueError) as exc:
+            problems.append(f"the length of a day: {exc}")
+    return problems
+
+
+def when(obj):
+    """
+    What day and time it is in the world `obj` is in, as a line for a prompt
+    followed by a blank line, or "" when it is not in a world.
+    """
+    from world import clock
+
+    root = _root(obj)
+    return f"{clock.said(root)}\n\n" if root is not None else ""
 
 
 def spec_of(root, character=None):
@@ -236,6 +287,9 @@ def spec_of(root, character=None):
         "player_name": (character.world_name(root) if character else "") or "",
         "player_description": (character.world_desc(root) if character else "") or "",
         "guidance": dict(root.db.world_guidance or {}),
+        # The clock exactly as it is stored, so a reset keeps the date.
+        "clock": ({"settings": dict(root.db.clock)} if root.db.clock
+                  else {}),
     }
 
 

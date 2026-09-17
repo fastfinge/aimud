@@ -235,6 +235,133 @@ def _draft_field(key, label, spec_key, kind, help, empty="not set",
                        empty=empty, required=required, suggestible=True)
 
 
+def _draft_root(ctx):
+    """The world a draft is editing, or None for a world not made yet."""
+    from evennia.objects.models import ObjectDB
+
+    world_id = ctx.draft.get("world_id")
+    if not world_id:
+        return None
+    try:
+        return ObjectDB.objects.get(id=world_id)
+    except ObjectDB.DoesNotExist:
+        return None
+
+
+def _clock_change(ctx):
+    return dict((ctx.draft.get("clock") or {}))
+
+
+def _clock_field(key, label, show, parse, help):
+    """
+    One of the clock's fields. Every world has a clock, the real one until
+    told otherwise, so each field shows what is true now and a change waits in
+    the draft until the world is saved or made. "real" puts it back.
+    """
+    def get(ctx):
+        change = _clock_change(ctx)
+        if change.get("real"):
+            return "back to the real date and time"
+        return show(ctx, change)
+
+    def put(ctx, value):
+        change = _clock_change(ctx)
+        change.pop("settings", None)
+        if value == "real":
+            change = {"real": True}
+        else:
+            change.pop("real", None)
+            change[key] = value
+        ctx.draft["clock"] = change
+        ctx.dirty = True
+
+    def parsing(ctx, text):
+        text = str(text or "").strip()
+        if text.lower() in ("real", "the real one", "reset"):
+            return "real", None
+        return parse(text)
+
+    return menus.Field(key, label, kind=menus.TEXT, get=get, set=put,
+                       parse=parsing, help=help)
+
+
+def _show_year(ctx, change):
+    from world import clock
+
+    if change.get("year"):
+        return str(change["year"])
+    root = _draft_root(ctx)
+    year = clock.now(root).year
+    return f"{year}" + (" (the real year)" if clock.is_real(root) else "")
+
+
+def _parse_year(text):
+    try:
+        year = int(text)
+    except ValueError:
+        return None, "A year is a whole number, like 1852 or 2253."
+    if not 1 <= year <= 9999:
+        return None, "A year from 1 to 9999."
+    return year, None
+
+
+def _show_now(ctx, change):
+    from world import clock
+
+    if change.get("now"):
+        return str(change["now"]).replace("T", " ")
+    return clock.exactly(_draft_root(ctx))
+
+
+def _parse_now(text):
+    from datetime import datetime
+
+    for shape in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, shape).isoformat(), None
+        except ValueError:
+            continue
+    return None, "Write it as year-month-day and hour:minute, like 1852-06-14 19:30."
+
+
+def _show_day(ctx, change):
+    from world import clock, traits
+
+    if change.get("day_minutes"):
+        return f"{traits._round(change['day_minutes'])} real minutes"
+    root = _draft_root(ctx)
+    if clock.speed(root) == 1.0:
+        return "a real day"
+    return f"{traits._round(clock.day_length_minutes(root))} real minutes"
+
+
+def _parse_day(text):
+    words = text.lower().replace("minutes", "").replace("minute", "").strip()
+    try:
+        minutes = float(words)
+    except ValueError:
+        return None, "How many real minutes a day lasts, like 120, or real."
+    if minutes <= 0:
+        return None, "A day has to last some time."
+    return minutes, None
+
+
+CLOCK_FIELDS = [
+    _clock_field("year", "Year", _show_year, _parse_year,
+                 "The year it is here. The day and the hour stay as they are, "
+                 "so a Victorian London is real time in 1852. Type real to "
+                 "go back to the real date."),
+    _clock_field("now", "Date and time", _show_now, _parse_now,
+                 "The date and hour it is here now, from which the clock runs "
+                 "on: year-month-day and hour:minute. Type real to go back to "
+                 "the real date and time."),
+    _clock_field("day_minutes", "Length of a day", _show_day, _parse_day,
+                 "How many real minutes a day lasts here. Leave it a real day "
+                 "unless this world's days truly differ. Type real to go back "
+                 "to the real day."),
+]
+
+
 WIZARD_FIELDS = [
     _draft_field("title", "Title", "title", menus.TEXT,
                  "A short name, which is what world listings show."),
@@ -358,7 +485,8 @@ def open_a_way(ctx):
 
 
 def _wizard_items(ctx):
-    items = list(WIZARD_FIELDS) + [_guidance_field(f) for f in lore.FACETS]
+    items = (list(WIZARD_FIELDS) + list(CLOCK_FIELDS)
+             + [_guidance_field(f) for f in lore.FACETS])
     if ctx.draft.get("mode") == "edit":
         items.append(menus.Action(
             "open", "Open a way on, if the world has nowhere left to go",
@@ -660,7 +788,7 @@ def _worlds_listing(ctx):
 
 
 def _world_detail(root, count, number):
-    from world import activity
+    from world import activity, clock, verbs
 
     description = (root.db.world_description or "").strip().splitlines()
     first = description[0] if description else ""
@@ -668,6 +796,12 @@ def _world_detail(root, count, number):
              f"running {activity.mode(root)}."]
     if first:
         lines.append(first)
+    # What time it is there, and what part of the day, which every world has.
+    period = sorted(state for state in verbs.implied_states(root, root)
+                    if verbs.group_of(root, state) == clock.PERIOD_GROUP)
+    lines.append(f"It is {clock.exactly(root)}"
+                 + (f", {' and '.join(period)}" if period else "")
+                 + (", real time." if clock.is_real(root) else "."))
     lines.append(f"|wenter world {number}|n goes there.")
     return "\n".join(lines)
 

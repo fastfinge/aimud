@@ -1302,6 +1302,7 @@ def generate_npc(sponsor, room, on_success, on_error):
     world_desc = lore.description(room)
     room_title = room.db.room_title or room.key
     room_desc = tokens.text_of(room)
+    when = lore.when(room)
 
     # Who is already here, so the model is not asked to invent a stranger in
     # ignorance of everyone it has invented before. Listing them is most of
@@ -1318,6 +1319,7 @@ def generate_npc(sponsor, room, on_success, on_error):
             "role": "user",
             "content": (
                 f"World: {world_desc}\n\n"
+                f"{when}"
                 f"{lore.guidance_block(room, 'npcs')}"
                 f"{token_lists.TOOL_PROMPT}\n"
                 f"Room: [{room_title}]\n{room_desc}\n\n"
@@ -1451,6 +1453,7 @@ def dress_npc(sponsor, npc):
             "role": "user",
             "content": (
                 f"World: {lore.description(room)}\n\n"
+                f"{lore.when(room)}"
                 f"{lore.guidance_block(room, 'npcs')}"
                 f"Room: [{room.db.room_title or room.key}]\n"
                 f"{tokens.text_of(room)}\n\n"
@@ -1563,6 +1566,9 @@ def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked,
     nearby = active_players_in(room)
     world_desc = (lore.description(room, nearby[0] if nearby else None)
                   or npc.db.world_description or "")
+    # What day and time it is, so a character in 1852 does not mention the
+    # telephone. Worked out here, never kept by the model.
+    world_desc = f"{world_desc}\n\n{lore.when(room)}".rstrip()
     room_title = room.db.room_title or room.key
     room_desc = tokens.text_of(room)
     room_contents = _room_context(room, npc)

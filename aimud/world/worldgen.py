@@ -70,7 +70,10 @@ and the world goes on growing somewhere else instead.
 singleton_types lists the slugs that must exist only ONCE in the whole world —
 a school has one principal's office and one gymnasium, but many classrooms.
 Judge this at the scale of the WHOLE world: a world that is one school has one
-gymnasium, but a world that is a county has one of very little."""
+gymnasium, but a world that is a county has one of very little.
+year is the year it is, and only when the setting names an era -- Victorian
+London is 1852, a starship might be 2253. Leave it out otherwise, and the world
+keeps the real date and time. Nothing else about its clock is yours to choose."""
 
 _ZONE_SYSTEM_PROMPT = """You describe one area of a world for a text-based MUD.
 Answer by calling describe_area.
@@ -1032,7 +1035,16 @@ def _generate_plan(sponsor, world_description, guidance, on_done):
                 if str(z.get("name", "")).strip()
             ]
             singles = [str(t).strip().lower() for t in raw.get("singleton_types", [])]
-            on_done({"zones": zones, "singleton_types": singles})
+            plan = {"zones": zones, "singleton_types": singles}
+            # The year, when the setting names an era. Everything else about
+            # the clock stays real. See world/clock.py.
+            try:
+                year = int(raw.get("year") or 0)
+            except (TypeError, ValueError):
+                year = 0
+            if 1 <= year <= 9999:
+                plan["year"] = year
+            on_done(plan)
         except Exception:
             on_done({})
 
@@ -1506,6 +1518,12 @@ def generate_first_room(sponsor, spec, on_success, on_error,
                     from world import lore
 
                     lore.store(room, spec)
+                    # A year the plan chose, unless whoever made the world
+                    # already said what time it is.
+                    if plan.get("year") and not (spec.get("clock") or {}):
+                        from world import clock
+
+                        clock.set_year(room, plan["year"])
                     lore.apply_to_player(room, creator_character, spec)
                     # Record this world on the sponsor so `worlds` can list it,
                     # and on the world so anything standing in it can find out
@@ -1680,6 +1698,10 @@ def plan_world_tool():
             "singleton_types": {"type": "array", "items": {"type": "string"},
                                 "description": "Room types that exist only "
                                                "once in the whole world"},
+            "year": {"type": "integer", "minimum": 1, "maximum": 9999,
+                     "description": "Only if the setting names an era: the "
+                                    "year it is. Leave it out for the real "
+                                    "date and time"},
         }, ["zones"])
 
     def handler(ctx, args, answer):
