@@ -1072,7 +1072,7 @@ plain comparison.
 * **`view world`** says the date, the time and the period. `view rules` lists becomes
   rules under their own heading, "when things change", in firing order, with
   the report beside each.
-* A `{time}` token and in-game memory ages are §15, not this plan.
+* A `{time}` token is §15, not this plan. Memory ages are 8.7 and phase 10.
 
 **The clock runs on real time while the world sleeps.** It costs nothing, since
 it is only read, and quest deadlines already do the same. There is no setting to
@@ -1093,6 +1093,73 @@ one line from `clock.said(world_root)`, such as "It is a Tuesday evening in June
 1852." A barman who knows it is 1852 does not mention the telephone. It is one
 line and costs one lookup, and the model is never asked to keep track of time
 itself.
+
+### 8.7 How long ago, to a character
+
+Written after phases 1 to 9 were built, against the code at `4f221ca`.
+
+**Most of this is already here.** mnemosyne stamps every memory with the real
+time it was written. `memory.format_recalled` puts an age in front of each
+recalled memory ("yesterday: Raldor handed Jessica the sword"), and NPC prompts
+carry today's date from `lore.when`. So a character already has some sense of
+how long ago something happened, and the memory back-end needs nothing new.
+What is wrong is in how the time is shown, in five places, most harmful first.
+
+**1. "Just now" is not always just now.** Working memory is the last five
+entries of `db.action_history`, sent verbatim under "Just now:" by
+`npc_gen._memory_inputs`. The entries carry no time. A player who talks to an
+NPC, leaves for a week and comes back finds the NPC told that the week-old talk
+happened just now. `_add_to_history` and `_note_to_self` stamp each entry with
+the real time it was added. `_format_history` keeps recent entries under "Just
+now" and gives an older one its age, in the words recall uses. Entries written
+before the stamp have none and are shown as they are today.
+
+**2. Ages are measured in real time, not the world's clock.** `age_of` says so
+in its docstring. A real-time world, and a world that only changed its year, are
+already right. A world whose day lasts an hour is not: "yesterday" means the
+real yesterday. The age becomes world time: the real seconds since the memory
+was written, times `clock.speed(world_root)`, counted back from
+`clock.now(world_root)` so that "earlier today" and "yesterday" fall on the
+world's own midnight. The thresholds ("moments ago", "a little while ago") are
+world seconds too, so in a fast world a conversation ten real minutes old reads
+as hours ago, which is what it is there.
+
+Converted when read, and never stamped with a world date when written. A world
+date stored on each memory would go wrong the moment the year is changed: a
+world moved to 1852 would find every older memory dated 174 years in the
+future. Real elapsed time survives that. What it does not survive is a change
+of speed, which rescales every older memory's age; speed is chosen when a world
+is made, before anybody remembers anything, and a later change is rare enough
+to accept that.
+
+**3. Summaries and facts carry the wrong time.** Sleep condenses only working
+memories older than half of mnemosyne's `MNEMOSYNE_WM_TTL_HOURS` (84 real hours
+by default), and stamps the summary with the time sleep ran. A summary of last
+week reads "earlier today". Distilled facts are stamped when distillation ran,
+and are then shown as if they happened then. A summary is aged by the memories
+it summarises instead: mnemosyne records them in `summary_of`, and the age is
+the span from the oldest to the newest ("over several days, about a week ago").
+A distilled fact (`FACT_SOURCE`) is shown with no age at all, because it is
+simply still true. Rows that cannot be traced keep the age they have.
+
+**4. The `recall` tool shows no ages.** When an NPC searches its own memory in
+the middle of a turn, `memory.lookup_tools` answers with bare content, neither
+aged nor said again with today's names. It answers through `format_recalled`,
+like the prompt, which needs its reads moved to the main thread as `npc_gen`
+already does.
+
+**5. Distillation cannot know when anything happened.** `fact_gen`'s prompt
+offers "the ledger went missing last winter" as an example, but the summaries it
+reads carry no dates. A relative date also stops being true: "last winter" says
+the same thing a year later. Summaries are given to it with their world dates,
+from 3, and it is asked for a date that stays true ("in the winter of 1851") or
+no date at all.
+
+**Left as they are.** mnemosyne's own recency weighting stays real time: it
+ranks what is recalled and is never shown to a character. The whereabouts and
+ownership triples are read `as_of` real timestamps inside the engine, and never
+reach a prompt as a date. Wording past days ("last week", "a few months ago",
+"years ago") comes with 2, since it is the same function.
 
 ---
 
@@ -1304,6 +1371,15 @@ reports when a gauge first runs out, the new `rulecheck` faults, bands from
 `descs`, and the planner following a becomes rule. Afterwards a generated world
 works out what running out of health means, and says when it got it wrong.
 
+**Phase 10: how long ago, to a character.** The five fixes in 8.7: stamped
+working memory with older entries aged, ages in world time with wording past
+days, summaries aged by what they summarise and facts not aged, the `recall`
+tool formatted like the prompt, and dated summaries for distillation. It needs
+the clock from phase 7 and nothing else here. Tested with a hand-moved clock and
+`format_recalled` given rows directly; none of it needs a model or mnemosyne.
+Afterwards an NPC met again a week later knows it has been a week, in a world
+whose weeks may be an afternoon long.
+
 ---
 
 ## 12. Decisions on the record
@@ -1457,8 +1533,9 @@ works out what running out of health means, and says when it got it wrong.
   dial, and belong there, built on this.
 * **Per-zone clocks**, for planets with their own days. The shape allows an
   offset per zone later.
-* **A `{time}` token, in-game memory ages, and the `period` scope** deferred by
-  `tokens-and-phrases.md` §12.
+* **A `{time}` token and the `period` scope** deferred by
+  `tokens-and-phrases.md` §12. In-game memory ages were deferred there too, and
+  are now 8.7 and phase 10.
 * **Writing becomes rules by hand through menus.** That belongs to the "full
   menu-based building" item in `future-plans.md`. Until then, becomes rules come
   from the generator, from suggestions, and from the standard rules.
