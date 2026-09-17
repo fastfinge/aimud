@@ -48,6 +48,7 @@ def at_server_start():
     _claim_unowned_worlds()
     _normalise_world_modes()
     _warm_lexicon()
+    _arm_crossings()
 
     from world.memory import consolidate, sweep_orphans, warm_up
 
@@ -325,7 +326,20 @@ def at_server_reload_start():
     """
     This is called only when server starts back up after a reload.
     """
-    pass
+    _arm_crossings()
+
+
+def _arm_crossings():
+    """
+    Put back the timers for figures that will cross a threshold.
+
+    They live in memory, so a reload ends every one of them. Missing one loses
+    nothing but precision -- the crossing is found at the next checkpoint --
+    but somebody standing beside a poisoned character should see them fall.
+    """
+    from world import becoming
+
+    becoming.arm_everyone_awake()
 
 
 def at_server_reload_stop():

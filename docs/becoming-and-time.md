@@ -814,8 +814,10 @@ and short of `ratetarget`.
 
 The thresholds that matter are the trait bounds in the `when` of becomes rules
 that could apply to this character. That includes rules that watch a derived
-state, whose definition is expanded (5.2). A per-world index of "trait slug to
-thresholds" is rebuilt when rules or the register change.
+state, whose definition is expanded (5.2), and derived states that are worth
+something to a figure (5.6), since gear has to follow those as well. They are
+worked out when a timer is armed rather than kept in an index, for the reason
+6.4 gives.
 
 For each character with a moving trait, **one** timer (`ndb`, never persistent)
 is armed for the earliest crossing. It is re-armed whenever that character
@@ -1258,7 +1260,7 @@ this phase and not a later one, because the open sandbox means a rule that fires
 has to be readable the day it can fire. Afterwards a blow that takes health to 0
 kills.
 
-**Phase 6: predicted crossings.** Rate arithmetic, the threshold index,
+**Phase 6: predicted crossings.** Rate arithmetic, the thresholds,
 per-character timers, waking at puppet and at arrival, and re-arming after a
 reload. Afterwards a poison kills while somebody watches.
 

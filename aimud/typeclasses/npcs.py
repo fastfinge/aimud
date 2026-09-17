@@ -310,6 +310,7 @@ class NPC(ObjectParent, DefaultObject):
         from world import becoming
 
         becoming.settle()
+        becoming.arm(self)
 
         sponsor = self._sponsor(room)
         if not sponsor.answers:
@@ -363,6 +364,7 @@ class NPC(ObjectParent, DefaultObject):
         from world import becoming
 
         becoming.settle()
+        becoming.arm(self)
 
     def at_object_receive(self, moved_obj, source_location, move_type="move", **kwargs):
         """React when a player gives this NPC an object."""

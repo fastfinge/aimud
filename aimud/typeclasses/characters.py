@@ -180,6 +180,19 @@ class Character(ObjectParent, DefaultCharacter):
                     exclude=self, actor=self,
                     targets=list(make_iter(receivers)) if receivers else ())
 
+    def at_post_puppet(self, **kwargs):
+        """
+        Somebody is playing this character now, which wakes the world around
+        them: whatever drifted while nobody watched is noticed and settled, and
+        the timers for what will cross next are set for everybody here.
+        """
+        super().at_post_puppet(**kwargs)
+        from world import becoming, traits
+
+        traits.notice_changes(self)
+        becoming.settle()
+        becoming.arm_around(self)
+
     def at_post_move(self, source_location, move_type="move", **kwargs):
         super().at_post_move(source_location, move_type=move_type, **kwargs)
         room = self.location
@@ -238,10 +251,16 @@ class Character(ObjectParent, DefaultCharacter):
         notice_changes(self)
 
         # And whatever became true on the way: the fever that broke, the
-        # hunger that became starving. See world/becoming.py.
+        # hunger that became starving. See world/becoming.py. Then the timer
+        # for the next thing that will -- for everybody here, when this is a
+        # world waking up because somebody walked into it.
         from world import becoming
 
         becoming.settle()
+        if came_from_root != room.db.world_root:
+            becoming.arm_around(self)
+        else:
+            becoming.arm(self)
 
         # Where the character has been is part of what they know. Named and in
         # the past tense, never "I": a memory is searched by the names in it.

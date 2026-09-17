@@ -459,6 +459,236 @@ def _overflowed(last_pass):
 
 
 # ---------------------------------------------------------------------------
+# Predicted crossings
+# ---------------------------------------------------------------------------
+#
+# Every door above is somebody doing something. A poison draining a character
+# while a player stands and watches is nobody doing anything, and yet somebody
+# is looking. A figure with a rate moves in a straight line, though, so the
+# moment it will reach a threshold a rule cares about can be worked out -- and
+# one timer per character, for the earliest such moment, fires exactly then.
+# Not a poll: it fires once, and re-arms for the next. Only while the world is
+# awake, since a world nobody is watching costs nothing, not even free work; a
+# crossing that happens while it sleeps is still true when somebody next looks,
+# because the figure is worked out whenever it is read. See docs §7.
+
+#: How late a timer fires past the moment it worked out, so that a figure
+#: arrived at by floating-point arithmetic has really arrived.
+SLACK = 0.05
+
+#: Where a character keeps its timer. In memory only: a reload ends it, and
+#: `arm_everyone_awake` puts it back.
+TIMER = "crossing_timer"
+
+
+def _awake(world_root):
+    """Whether this world is being watched, which is when timers may run."""
+    from world import activity
+
+    return bool(world_root is not None
+                and (activity.world_has_active_player(world_root)
+                     or activity.always_on(world_root)))
+
+
+def _trait_figures(condition, found):
+    """Add every trait bound in `condition` to found: {slug: {figure, ...}}."""
+    from world import conditions
+
+    for leaf, _optional in conditions.leaves(condition):
+        slug = leaf.get("trait")
+        if not slug:
+            continue
+        for bound in conditions.TRAIT_BOUNDS:
+            figure = leaf.get(bound)
+            if figure is None:
+                continue
+            try:
+                found.setdefault(str(slug).lower(), set()).add(float(figure))
+            except (TypeError, ValueError):
+                continue
+
+
+def _named_states(condition):
+    """The states a condition asks about by name."""
+    from world import conditions
+    from world.model_json import listed
+
+    named = set()
+    for leaf, _optional in conditions.leaves(condition):
+        for field in ("is", "lacks"):
+            named |= {str(s).lower() for s in listed(leaf.get(field))}
+    return named
+
+
+def thresholds(world_root, character):
+    """
+    {trait slug: {figure, ...}}: the figures at which something about this
+    character would change.
+
+    The trait bounds in the `when` of the becomes rules about the character,
+    and in the definitions of derived states those rules ask about -- so a rule
+    on `is: starving` is timed by hunger -- and in derived states that are
+    worth something to a figure, since gear has to follow those as well.
+    """
+    from world import verbs
+
+    found = {}
+    derived = verbs.derived_states(world_root)
+    wanted = set()
+    for rule in applying(world_root, character):
+        for condition in (rule.get("when") or []):
+            _trait_figures(condition, found)
+            wanted |= _named_states(condition)
+    wanted |= {slug for slug in verbs.state_bonuses(world_root)
+               if slug in derived}
+    seen = set()
+    while wanted:
+        slug = wanted.pop()
+        if slug in seen or slug not in derived:
+            continue
+        seen.add(slug)
+        for condition in (derived[slug].get("when") or []):
+            _trait_figures(condition, found)
+            wanted |= _named_states(condition)
+    return found
+
+
+def next_crossing(world_root, character):
+    """
+    Seconds until one of this character's moving figures reaches a threshold,
+    or None when none of them will.
+
+    A figure only reaches one ahead of it in the direction it is moving, and
+    only if its bounds and `ratetarget` let it get there: the Traits contrib
+    stops a rate at either.
+    """
+    from world import traits
+
+    if not traits.has_traits(character):
+        return None
+    soonest = None
+    for slug, figures in thresholds(world_root, character).items():
+        trait = character.traits.get(slug)
+        if trait is None:
+            continue
+        rate = float(getattr(trait, "rate", 0) or 0)
+        if not rate:
+            continue
+        current = trait.value
+        low, high = traits._bounds(trait)
+        target = getattr(trait, "ratetarget", None)
+        for figure in figures:
+            if rate > 0 and figure > current:
+                limit = min(x for x in (high, target, float("inf"))
+                            if x is not None)
+                if figure > limit:
+                    continue
+                seconds = (figure - current) / rate
+            elif rate < 0 and figure < current:
+                limit = max(x for x in (low, target, float("-inf"))
+                            if x is not None)
+                if figure < limit:
+                    continue
+                seconds = (current - figure) / -rate
+            else:
+                continue
+            if soonest is None or seconds < soonest:
+                soonest = seconds
+    return soonest
+
+
+def arm(character, world_root=None):
+    """
+    Set this character's one timer for the next crossing, or clear it.
+
+    Called when a rate is set, when the character settles, when a world wakes
+    around them, and when the timer itself fires. Cheap to call too often:
+    it works the next moment out afresh and replaces whatever was set.
+    """
+    if _gone(character):
+        return
+    disarm(character)
+    root = world_root or world_of(character)
+    if root is None or not _awake(root):
+        return
+    seconds = next_crossing(root, character)
+    if seconds is None:
+        return
+    try:
+        from twisted.internet import reactor
+
+        call = (CLOCK or reactor).callLater(max(seconds, 0) + SLACK,
+                                            _crossed, character)
+    except Exception as exc:
+        logger.log_info(f"becomes: could not arm a crossing for "
+                        f"{character}: {exc}")
+        return
+    setattr(character.ndb, TIMER, call)
+
+
+def disarm(character):
+    """Cancel this character's crossing timer, if one is set."""
+    call = getattr(getattr(character, "ndb", None), TIMER, None)
+    if call is None:
+        return
+    try:
+        if call.active():
+            call.cancel()
+    except Exception:
+        pass
+    setattr(character.ndb, TIMER, None)
+
+
+def _crossed(character):
+    """
+    A figure has reached a threshold with nobody doing anything.
+
+    Asks the character what drifted, which marks them with the figures as they
+    were, then settles, then sets the timer for the next one. Into a world
+    that has gone to sleep it does nothing at all and does not re-arm: the
+    crossing is still true when somebody next looks.
+    """
+    if _gone(character):
+        return
+    setattr(character.ndb, TIMER, None)
+    root = world_of(character)
+    if root is None or not _awake(root):
+        return
+    from world import traits
+
+    traits.notice_changes(character)
+    traits._recount_worth(character, root)
+    settle()
+    arm(character, root)
+
+
+def arm_around(obj):
+    """Arm every person in the room `obj` is in, `obj` included."""
+    from world.quests import is_person
+
+    room = room_of(obj)
+    people = [thing for thing in (room.contents if room is not None else [])
+              if is_person(thing)]
+    if obj is not None and obj not in people and is_person(obj):
+        people.append(obj)
+    for person in people:
+        arm(person)
+
+
+def arm_everyone_awake():
+    """
+    After a start or a reload, arm the people in every room somebody is
+    playing in. Timers live in memory, so a reload ends every one of them.
+    """
+    from evennia.server.sessionhandler import SESSIONS
+
+    for session in SESSIONS.get_sessions():
+        puppet = getattr(session, "puppet", None)
+        if puppet is not None:
+            arm_around(puppet)
+
+
+# ---------------------------------------------------------------------------
 # The backstop
 # ---------------------------------------------------------------------------
 

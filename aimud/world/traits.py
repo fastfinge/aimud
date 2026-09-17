@@ -422,6 +422,12 @@ def adjust(character, slug, change=None, set_to=None, rate=None, world_root=None
         _announce(character, slug, trait, before, after, gained, reason)
     if gained or after != before:
         _recount_worth(character, world_root)
+    if rate is not None:
+        # A figure that has started, stopped or changed its drift has a new
+        # moment at which it will next reach something a rule cares about.
+        from world import becoming
+
+        becoming.arm(character, world_root)
     return slug, before, after
 
 
