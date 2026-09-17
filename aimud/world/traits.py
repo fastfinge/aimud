@@ -373,7 +373,28 @@ def adjust(character, slug, change=None, set_to=None, rate=None, world_root=None
     _remember_seen(character, slug, after)
     if announce and (gained or after != before or rate):
         _announce(character, slug, trait, before, after, gained, reason)
+    if gained or after != before:
+        _recount_worth(character, world_root)
     return slug, before, after
+
+
+def _recount_worth(character, world_root):
+    """
+    Redo the gear sums when a figure moving may have changed a state worth one.
+
+    A derived state such as `starving` comes and goes with a figure, and if it
+    is worth something -- 3 strength -- the sum has to follow it. Only in a
+    world holding a derived state that is worth something, so everywhere else
+    this is one lookup. `gear.recompute` never moves a figure through here, so
+    this cannot set itself going.
+    """
+    from world import verbs
+
+    worth = verbs.state_bonuses(world_root)
+    if worth and any(verbs.is_derived(world_root, state) for state in worth):
+        from world import gear
+
+        gear.recompute(character)
 
 
 def _set_rate(trait, rate):

@@ -1127,6 +1127,65 @@ def derived_holds(obj, world_root, only=None):
     return found
 
 
+# ---------------------------------------------------------------------------
+# States that are worth something to a person's figures
+# ---------------------------------------------------------------------------
+
+def _clean_bonuses(bonuses):
+    """{trait slug: amount}, with anything that is not a number left out."""
+    clean = {}
+    try:
+        items = dict(bonuses or {}).items()
+    except (TypeError, ValueError):
+        return clean
+    for trait, amount in items:
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            continue
+        name = str(trait or "").strip().lower()
+        if name and amount:
+            clean[name] = amount
+    return clean
+
+
+def set_bonuses(world_root, slug, bonuses):
+    """
+    Say what being in a state is worth to a person's figures.
+
+    Kept on the state's register entry, the same shape an item's
+    `trait_bonuses` has, and summed by `gear.total` from scratch like the
+    rest: "starving costs 3 strength" is said once, on `starving`, and taking
+    away the hunger takes away the cost with no accounting kept anywhere.
+    An empty map takes the bonuses away. Returns the map as stored.
+    """
+    vocab = vocabulary(world_root)
+    if not world_root or slug not in vocab:
+        return {}
+    entry = dict(vocab[slug] or {})
+    clean = _clean_bonuses(bonuses)
+    if clean:
+        entry["bonuses"] = clean
+    else:
+        entry.pop("bonuses", None)
+    vocab[slug] = entry
+    world_root.db.state_vocabulary = vocab
+    return clean
+
+
+def state_bonuses(world_root):
+    """{state: {trait: amount}} for every state that is worth something."""
+    found = {}
+    for slug, entry in vocabulary(world_root).items():
+        try:
+            clean = _clean_bonuses(entry.get("bonuses"))
+        except AttributeError:
+            continue
+        if clean:
+            found[slug] = clean
+    return found
+
+
 def _worded_definition(definition):
     """A derived state's definition as it reads, with nothing to evaluate."""
     from world import conditions
@@ -1717,7 +1776,8 @@ def _slug_state(word):
 
 def register_state(world_root, slug, means="", conflicts=(), group=None,
                    ends_on_move=None, prevents_acting=None,
-                   prevents_moving=None, prevents_speaking=None, when=None):
+                   prevents_moving=None, prevents_speaking=None, when=None,
+                   bonuses=None):
     """
     Add a state to the world's vocabulary, or fold it onto an existing one.
 
@@ -1727,6 +1787,10 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
 
     `when` makes it a derived state: worked out from those conditions and
     never written. See `_derive` for what that refuses.
+
+    `bonuses` is what being in it is worth to a person's figures --
+    {"strength": -3} -- summed by `gear` beside what they carry. See
+    `set_bonuses`.
     """
     if not world_root or not slug:
         return slug
@@ -1738,11 +1802,16 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
     if len(slug) < 2:
         return ""
     if when is not None:
-        return _derive(world_root, slug, when, means, group)
+        slug = _derive(world_root, slug, when, means, group)
+        if slug and bonuses is not None:
+            set_bonuses(world_root, slug, bonuses)
+        return slug
 
     vocab = vocabulary(world_root)
     for existing in vocab:
         if _similar(slug, existing):
+            if bonuses is not None:
+                set_bonuses(world_root, existing, bonuses)
             return existing
 
     # The same guard traits keep, from the other side. See `world.vocabulary`.
@@ -1805,6 +1874,8 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
         "group": group or "",
     }
     world_root.db.state_vocabulary = vocab
+    if bonuses is not None:
+        set_bonuses(world_root, slug, bonuses)
     return slug
 
 
@@ -2011,6 +2082,17 @@ def apply_states(obj, add=(), remove=(), world_root=None, announce=True):
     refresh_state_aliases(obj)
     if announce:
         announce_states(obj, before, set(current), world_root)
+    # A state that is worth something to a person's figures changes the sum
+    # the moment it is set or ended. Only when one of those actually changed,
+    # so the ordinary case costs one lookup.
+    changed = before ^ set(current)
+    if changed and world_root is not None and changed & set(
+            state_bonuses(world_root)):
+        from world import gear
+        from world.quests import is_person
+
+        if is_person(obj):
+            gear.recompute(obj)
     return obj.db.states
 
 
