@@ -524,6 +524,131 @@ def _judge_node(kind, members, ctx, mood, depth):
 
 
 # ---------------------------------------------------------------------------
+# Whether it will come true with nobody doing anything
+# ---------------------------------------------------------------------------
+
+def eventually(condition, ctx, depth=0):
+    """
+    Real seconds until this condition comes true on its own, or None.
+
+    0 when it already holds. None when nothing but somebody acting will make it
+    true -- a state that is set, something being held, somewhere being gone
+    to -- because nobody can say when that will be. Only two things change
+    with nobody acting, and both can be worked out: the clock, which is
+    periodic, and a figure with a rate, which is linear. See
+    docs/becoming-and-time.md 7.4.
+
+    Closed per predicate, like opposites. An `any` is its soonest member. An
+    `all` is the latest of its members not yet true, which is an estimate --
+    one true now may have stopped by then -- and is why a planner checks again
+    when the time comes rather than trusting this.
+    """
+    if depth > MAX_DEPTH * 2:
+        return None
+    kind, members = node_of(condition)
+    if kind == ANY:
+        found = [eventually(m, ctx, depth + 1) for m in members]
+        found = [seconds for seconds in found if seconds is not None]
+        return min(found) if found else None
+    if kind == ALL:
+        latest = 0.0
+        for member in members:
+            seconds = eventually(member, ctx, depth + 1)
+            if seconds is None:
+                return None
+            latest = max(latest, seconds)
+        return latest
+
+    if evaluate(condition, ctx):
+        return 0.0
+    name, value = predicate_of(condition)
+    if name == "clock":
+        from world import clock
+
+        span = _clock_span(value)
+        if span is None:
+            return None
+        return clock.real_seconds_until(ctx.world_root, span[0])
+    if name == "trait":
+        return _trait_eventually(condition, ctx)
+    if name in ("is", "lacks"):
+        return _derived_eventually(condition, name, value, ctx, depth)
+    return None
+
+
+def _trait_eventually(condition, ctx):
+    """When a moving figure will meet every bound it does not meet yet."""
+    subject = resolve(condition.get("subject"), ctx)
+    if not subject.found or subject.obj is None:
+        return None
+    from world import traits
+
+    trait = (subject.obj.traits.get(traits._slug(condition.get("trait")))
+             if traits.has_traits(subject.obj) else None)
+    if trait is None:
+        return None
+    rate = float(getattr(trait, "rate", 0) or 0)
+    if not rate:
+        return None
+    current = trait.value
+    low, high = traits._bounds(trait)
+    target = getattr(trait, "ratetarget", None)
+    rising_limit = min(x for x in (high, target, float("inf")) if x is not None)
+    falling_limit = max(x for x in (low, target, float("-inf"))
+                        if x is not None)
+    latest = 0.0
+    for bound, figure in (("min", condition.get("min")),
+                          ("max", condition.get("max")),
+                          ("below", condition.get("below")),
+                          ("above", condition.get("above"))):
+        if figure is None:
+            continue
+        figure = float(figure)
+        wants_up = bound in ("min", "above")
+        met = (current >= figure if bound == "min"
+               else current <= figure if bound == "max"
+               else current < figure if bound == "below"
+               else current > figure)
+        if met:
+            continue
+        if wants_up != (rate > 0):
+            return None          # moving the wrong way for this bound
+        if wants_up and figure > rising_limit:
+            return None
+        if not wants_up and figure < falling_limit:
+            return None
+        latest = max(latest, abs(figure - current) / abs(rate))
+    return latest
+
+
+def _derived_eventually(condition, name, value, ctx, depth):
+    """When a derived state will come to hold, or stop holding, on its own."""
+    from world import verbs
+
+    derived = verbs.derived_states(ctx.world_root)
+    slugs = [str(s).lower() for s in _listed(value)]
+    if not slugs or any(slug not in derived for slug in slugs):
+        return None              # a state that is set waits on somebody
+    subject = resolve(condition.get("subject"), ctx)
+    if not subject.found:
+        return None
+    inner = context({"direct": subject.obj},
+                    subject.obj if subject.what == THING else None,
+                    ctx.world_root, room=ctx.room)
+    latest = 0.0
+    for slug in slugs:
+        definition = {ALL: list(derived[slug].get("when") or [])}
+        target = definition if name == "is" else negate(definition)
+        if target is None:
+            return None
+        seconds = eventually(target, inner, depth + 1)
+        if seconds is None:
+            return None
+        latest = max(latest, seconds)
+    return latest
+
+
+# ---------------------------------------------------------------------------
 # Opposites, and working out a mirror
 # ---------------------------------------------------------------------------
 

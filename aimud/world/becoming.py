@@ -595,7 +595,36 @@ def next_crossing(world_root, character):
                 continue
             if soonest is None or seconds < soonest:
                 soonest = seconds
+    # And a planner's wait falling due, which shares this one timer. See
+    # docs 7.4.
+    due = _wait_due_in(character)
+    if due is not None and (soonest is None or due < soonest):
+        soonest = due
     return soonest
+
+
+def _wait_until(character):
+    """The real time a character's goal wait falls due, or None."""
+    waiting = getattr(character.db, "goal_waiting", None)
+    try:
+        return float((waiting or {}).get("until") or 0) or None
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _wait_due_in(character):
+    """
+    Seconds until a character's goal wait falls due, or None -- including for
+    a wait already due, which the timer has done its part for and must not be
+    armed for again, or it would fire over and over until the character acts.
+    """
+    from world import clock
+
+    until = _wait_until(character)
+    if until is None:
+        return None
+    seconds = until - clock._real_now()
+    return seconds if seconds > 0 else None
 
 
 def arm(character, world_root=None):
@@ -660,6 +689,13 @@ def _crossed(character):
     traits.notice_changes(character)
     traits._recount_worth(character, root)
     settle()
+    until = _wait_until(character)
+    from world import clock
+
+    if until is not None and until <= clock._real_now():
+        # A wait has fallen due: the character acts on its next tick, still
+        # through `npc_may_act` like any other turn, and looks again then.
+        character.ndb.idle_probability = 100
     arm(character, root)
 
 

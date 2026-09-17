@@ -807,6 +807,16 @@ def _want_line(npc):
 
     quest = quests.current(npc)
     owed = f" You took this on for {quest['giver']}." if quest else ""
+    waiting = dict(npc.db.goal_waiting or {})
+    if waiting.get("until") and list(waiting.get("goal") or []) == goal:
+        # So the model neither sends the character to try the step anyway nor
+        # forgets it wanted anything. See docs/becoming-and-time.md 7.4.
+        return (
+            "What you want: " + ", then ".join(outstanding) + f".{owed}\n"
+            "It cannot be done yet, so you are waiting -- "
+            f"{waiting.get('said') or 'for the right time'}. Until then, do "
+            "what you would otherwise, in character.\n\n"
+        )
     return (
         "What you want: " + ", then ".join(outstanding) + f".{owed}\n"
         "Work towards it when the moment allows, in character.\n\n"

@@ -930,6 +930,15 @@ step" or "not yet", and at least one is "not yet", does `plan_for` return
   for a week of real time because its mana regenerates at a crawl.
 * A quest deadline still lapses a goal while it waits. `QuestDeadlineScript` does
   not care why the goal is unfinished.
+* A wait belongs to the goal it was for. A character that reaches the goal, or
+  takes up another, is not still waiting on the old one.
+* Waiting for the same thing more than `REWAITS_ALLOWED` times in a row (three)
+  counts as being stuck, so a goal whose conditions never line up is given up
+  in the ordinary way.
+
+**Waiting is not guessing.** When the only thing blocking a verb this world
+already knows is a wait, the planner does not fall back on a verb nobody has
+tried. That would answer "not yet" with "try something else".
 
 **Players get the same answer.** `advise`, behind the goal command, says "Nothing
 to do until morning, in about twenty minutes" rather than "you cannot see how".
