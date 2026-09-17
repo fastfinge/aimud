@@ -24,8 +24,6 @@ is used to let NPCs answer basic questions like "What do you want?" without an L
 create AIML entries for characters, as well as menu based creator for players to create AIML files and attach them to
 characters. In theory an entire mud that could run with wordnet, commonsense, and no LLM at all if players want to be
 the builders. Just depend on AIML here maybe? But replace support for JavaScript with ability to execute an action instead. Allow matches and responses to use tokens to substitute real information from world state.
-* allow changing the api url so players can use providers other than openrouter if they want (nano-gpt.com is the
-primary use case)
 * do something interesting with the web interface. Web editor? Examine stats in the browser? Prettier looking interface
 for playing in browser? Ability to read help files and documentation online, with hyperlinks?
 * let characters use Evennia's built-in discord/IRC support so characters can reach out of their world
@@ -43,7 +41,6 @@ unexpectedly, etc.
 * mcp servers: let other AI's play? Give generators and npcs new tools?
 * editor improvements: evennia's editor is based on vi and confusing. Let "@" on a blank line stop editing, the same way MOO does it. Support the local editor OOB protocol and MUD Client Protocol v2.1 for players who have better editors
 * Agent Client Protocol (ACP): let your coding agent or claude join you in the mud and help you make things? By its nature this mud welcomes players and bots on equal footing. The idea is have fun, no matter who or what you are. Document plugin surfaces in agent friendly form for player's Claude or codex or other agent, so they can build plugins. 
-* Plural objects as a single bound thing: use wordnet or something for better pluralizing. Objects with a quantity trait that reduces and is plural. Somehow without hardcoding? Can we do better than the verb tenses Evennia already gives us with wordnet/conceptnet?
 * Co-ownership and institutional owners: worth having for corporations, countries, gangs, guilds, etc.
 * view term command: just for player interest. define returns everything conceptnet and wordnet both know about a term. Useful for players to get ideas if they're building themselves with no LLM. And things they build can get associated with wordnet senses, so players will need the ability to explore the lexicons anyway.
 * create term commands: allow players to add terms on top of the wordnet and conceptnet lexicons? Then players could invent terms for there worlds that all the other machineries could reuse. Don't think models should be doing this. Or should they, to ground invented vocabulary?
