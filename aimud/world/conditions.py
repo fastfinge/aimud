@@ -81,16 +81,37 @@ THING, ROOM, ZONE, NOWHERE = "thing", "room", "zone", "nowhere"
 #: wall ask different things of the same notice. Everything that tests a
 #: condition outside an attempt (a quest, a goal, a `rules` listing) leaves it
 #: empty, and the predicate then asks for reach, which is the safe answer.
-Context = namedtuple("Context", "bound actor world_root action")
-Context.__new__.__defaults__ = (None, None, None, "")
+#:
+#: `room` is where it is being asked, when that is not simply wherever the actor
+#: stands now. An after rule's guards are tested once carry-out has run, and a
+#: carry-out may have moved the actor -- but `here` in a rule about launching
+#: still means the bridge the ship was launched from. Empty for everything else,
+#: and then `here` is the actor's room as it always was.
+Context = namedtuple("Context", "bound actor world_root action room")
+Context.__new__.__defaults__ = (None, None, None, "", None)
 
 
-def context(bound=None, actor=None, world_root=None, action=""):
+def context(bound=None, actor=None, world_root=None, action="", room=None):
     """The world as a condition sees it."""
     if world_root is None and actor is not None:
-        room = getattr(actor, "location", None)
-        world_root = getattr(room.db, "world_root", None) if room else None
-    return Context(dict(bound or {}), actor, world_root, str(action or ""))
+        where = room or getattr(actor, "location", None)
+        world_root = getattr(where.db, "world_root", None) if where else None
+    return Context(dict(bound or {}), actor, world_root, str(action or ""),
+                   room)
+
+
+def _still_here(obj):
+    """
+    The object, or None if it has been deleted since it was bound.
+
+    A carry-out can destroy what the attempt was about, and an after rule is
+    asked about the world afterwards. Evennia leaves the Python object behind
+    with its primary key cleared, so a role bound to a burnt note still holds
+    something, and every predicate would go looking in a row that is gone.
+    """
+    if obj is not None and getattr(obj, "pk", True) is None:
+        return None
+    return obj
 
 
 # ---------------------------------------------------------------------------
@@ -179,11 +200,12 @@ def resolve(subject, ctx):
 
     if isinstance(subject, str):
         if subject == HERE:
-            room = getattr(ctx.actor, "location", None)
+            room = ctx.room or getattr(ctx.actor, "location", None)
             return Subject(ROOM, room, ctx=ctx) if room else Subject(ctx=ctx)
         if subject == WORLD:
             return Subject(WORLD, ctx.world_root, ctx=ctx)
         obj = ctx.actor if subject == "actor" else ctx.bound.get(subject)
+        obj = _still_here(obj)
         return Subject(THING, obj, ctx=ctx) if obj is not None \
             else Subject(ctx=ctx)
 

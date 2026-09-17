@@ -243,6 +243,8 @@ def scan(registers):
         "dead_vocabulary": sorted(set(vocabulary) - touched),
         "pairs": pairs(one_way, unsettable, vocabulary, groups),
         "self_defeating": self_defeating(registers.get("rules") or {}),
+        "after_self_defeating": after_self_defeating(
+            registers.get("rules") or {}),
         "ungrounded": ungrounded(registers.get("kind_specs") or {}),
         "inert": sorted(inert),
         "refusals": {kind: sorted(verbs) for kind, verbs in refusals.items()},
@@ -388,16 +390,46 @@ def self_defeating(rules):
                 produced.setdefault(rule.get("action"), set()).update(
                     _states(effect, "add"))
 
+    return _defeated(listed, produced, "check", "conditions", "is")
+
+
+def after_self_defeating(rules):
+    """
+    After rules that only follow when their own verb's result is absent.
+
+    The twin of `self_defeating`, and possible only since an after rule's
+    guards are tested once carry-out has run (docs/becoming-and-time.md 6.8).
+    "After lighting it, when it is not lit" was written against the world as it
+    was before the verb, and against the world after it can never pass: the
+    carry-out that ran is the one that made it lit.
+
+    Returns [(rule id, action, [states], name), ...], the same shape.
+    """
+    listed = {rule_id: rule for rule_id, rule in (rules or {}).items()
+              if hasattr(rule, "get") and rule.get("listed", True)}
+    produced = {}
+    for rule in listed.values():
+        if rule.get("phase") != "carry_out":
+            continue
+        for effect in effects_of(rule):
+            if effect.get("type") == "set_state":
+                produced.setdefault(rule.get("action"), set()).update(
+                    _states(effect, "add"))
+    return _defeated(listed, produced, "after", "when", "lacks")
+
+
+def _defeated(listed, produced, phase, key, field):
+    """Rules of `phase` whose `key` conditions `field` a state their verb makes."""
     found = []
     for rule_id, rule in sorted(listed.items()):
-        if rule.get("phase") != "check":
+        if rule.get("phase") != phase:
             continue
         made = produced.get(rule.get("action")) or set()
         if not made:
             continue
         clash = set()
-        for condition in (rule.get("conditions") or []):
-            clash |= dead_states(condition, made)
+        for condition in (rule.get(key) or []):
+            clash |= dead_states(condition, made, field)
         clash = sorted(clash)
         if clash:
             found.append((str(rule_id), str(rule.get("action") or ""), clash,
@@ -405,12 +437,13 @@ def self_defeating(rules):
     return found
 
 
-def dead_states(condition, made):
+def dead_states(condition, made, field="is"):
     """
     The states that make this condition impossible, given what its verb makes.
 
-    A check condition demanding a state its own carry-out adds can never pass.
-    For a plain condition that is the `is` states among `made`. Through a
+    A check condition demanding a state its own carry-out adds can never pass,
+    and nor can an after rule's guard forbidding one (`field` is then "lacks").
+    For a plain condition that is the `field` states among `made`. Through a
     node: an `all` is dead when any member is, and an `any` only when every
     branch is -- a rule with one live way through is not dead, and suspending
     it would take away a verb that works.
@@ -425,15 +458,15 @@ def dead_states(condition, made):
     if kind == conditions_mod.ALL:
         found = set()
         for member in members:
-            found |= dead_states(member, made)
+            found |= dead_states(member, made, field)
         return found
     if kind == conditions_mod.ANY:
-        branches = [dead_states(member, made) for member in members]
+        branches = [dead_states(member, made, field) for member in members]
         if branches and all(branches):
             return set().union(*branches)
         return set()
     try:
-        return {str(v).lower() for v in listed(condition.get("is"))} & made
+        return {str(v).lower() for v in listed(condition.get(field))} & made
     except AttributeError:
         return set()
 
@@ -556,6 +589,13 @@ def report(findings, name=""):
             f"{len(dead)} check rules require the very condition their own "
             f"verb produces, so those {len(verbs)} verbs can never work: "
             f"{_listed(verbs)}.")
+    if findings.get("after_self_defeating"):
+        dead = findings["after_self_defeating"]
+        verbs = sorted({action for _id, action, _states, _name in dead})
+        trouble.append(
+            f"{len(dead)} after rules follow only when their own verb has not "
+            f"done what it just did, so they can never fire, over "
+            f"{len(verbs)} verbs: {_listed(verbs)}.")
     if findings.get("ungrounded"):
         trouble.append(
             f"{len(findings['ungrounded'])} kinds have nothing above them in "
@@ -699,7 +739,9 @@ def relevant(findings, registers, verb, near=(), proposals=(), wants=(),
                      f"{_listed(unused)}. Reuse one before coining another.")
 
     never = [name or rule_id for rule_id, action, _states, name
-             in findings.get("self_defeating") or [] if action == verb]
+             in (findings.get("self_defeating") or [])
+             + (findings.get("after_self_defeating") or [])
+             if action == verb]
     inert = [key for key in findings.get("inert") or [] if verb_of(key) == verb]
     if never or inert:
         said = []

@@ -1021,6 +1021,13 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
     ctx = conditions.context(bound, caller, world_root, verb)
     book = rulebooks.for_attempt(world_root, verb, bound, caller,
                                  verb_rule=rule)
+    # The after rules about this attempt are settled here, where it happens,
+    # and their guards are not tested yet. A guard on an after rule is a
+    # question about how things came out, and until carry-out has run the only
+    # answer available is how they were. See docs/becoming-and-time.md 6.8.
+    afters = rulebooks.for_attempt(world_root, verb, bound, caller,
+                                   verb_rule=rule, phase=rulebooks.AFTER,
+                                   guarded=False)
 
     # INSTEAD. The most specific rule that says this means something else
     # here wins outright, and processing ends. One winner, never a merge:
@@ -1166,14 +1173,21 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             outcome=outcome, effects=list(extra), raw=raw,
             contested=result is not None,
             room_template=events_mod.repair(room_text))
-        # AFTER. What follows from it having worked, gathered before any of
-        # it landed so that nothing an after-rule does can set another one
-        # going. Bounded by the action, which is how consequence happens here
-        # without a tick: launching a ship makes everyone aboard weightless,
-        # and the rule saying so lives on `spacecraft` rather than inside
-        # `launch`.
+        # AFTER. What follows from it having worked. Every after rule's guards
+        # are tested together, against the world as carry-out left it, and
+        # only then does any of them land -- so a guard can ask how things
+        # came out, and still nothing an after rule does can set another one
+        # going. `here` is the room it happened in, wherever carry-out left
+        # the actor. Bounded by the action, which is how consequence happens
+        # here without a tick: launching a ship makes everyone aboard
+        # weightless, and the rule saying so lives on `spacecraft` rather than
+        # inside `launch`.
         if outcome != "failure":
-            for later in [r for r in book if r["phase"] == rulebooks.AFTER]:
+            after_ctx = conditions.context(bound, caller, world_root, verb,
+                                           room=room)
+            following = [later for later in afters
+                         if rulebooks.guards_pass(later, after_ctx)]
+            for later in following:
                 extra += effects_mod.apply(
                     caller, room, later.get("effects") or [],
                     bound=bound, world_root=world_root)

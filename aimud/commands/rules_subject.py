@@ -207,7 +207,8 @@ def suspend_dead(root):
 
     findings = rulecheck.scan(rulecheck.of_world(root))
     dead = [rule_id for rule_id, _action, _states, _name
-            in findings.get("self_defeating") or []]
+            in (findings.get("self_defeating") or [])
+            + (findings.get("after_self_defeating") or [])]
     if not dead:
         return "Nothing in this world is provably dead."
     done = [rulebooks.set_listed(root, rule_id, False) for rule_id in dead]
@@ -215,7 +216,8 @@ def suspend_dead(root):
     return "\n".join([
         f"|w{len([r for r in done if r])}|n rules suspended, over "
         f"{len(verbs)} verbs: {', '.join(verbs)}.",
-        "|xEach demanded the condition its own verb produces. They are still "
+        "|xEach demanded the condition its own verb produces, or followed only "
+        "when it had not produced it. They are still "
         "in the book -- |wview rules <verb>|n shows them marked suspended, "
         "and |wedit rules <id> restore|n puts one back.|n",
     ])

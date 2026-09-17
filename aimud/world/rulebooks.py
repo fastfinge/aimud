@@ -225,12 +225,18 @@ class Attempt:
         return []
 
 
-def gather(world_root, action, bound=None, actor=None, phase=None):
+def gather(world_root, action, bound=None, actor=None, phase=None,
+           guarded=True):
     """
     Every rule that applies to this attempt, most specific first.
 
     Dict lookups and set tests: no inference, no fixpoint, and bounded by the
     number of scopes in play rather than by how many rules a world holds.
+
+    `guarded=False` matches scope and leaves `when` untested, for the after
+    phase: which after rules are about an attempt is settled where it
+    happened, and whether each follows is asked once carry-out has run. See
+    docs/becoming-and-time.md 6.8.
     """
     from world import conditions
 
@@ -248,10 +254,17 @@ def gather(world_root, action, bound=None, actor=None, phase=None):
         tier = matches(rule, attempt)
         if tier is None:
             continue
-        if not all(conditions.evaluate(c, ctx) for c in (rule.get("when") or [])):
+        if guarded and not guards_pass(rule, ctx):
             continue
         found.append((rank(rule, tier, world_root), rule))
     return [rule for _key, rule in sorted(found, key=lambda pair: pair[0])]
+
+
+def guards_pass(rule, ctx):
+    """Whether every one of a rule's `when` conditions holds in `ctx`."""
+    from world import conditions
+
+    return all(conditions.evaluate(c, ctx) for c in (rule.get("when") or []))
 
 
 def tier_of(rule):
@@ -484,7 +497,7 @@ def from_verb_rule(rule, action, world_root=None):
 
 
 def for_attempt(world_root, action, bound=None, actor=None, verb_rule=None,
-                phase=None):
+                phase=None, guarded=True):
     """
     Every rule an attempt runs, in order: the world's own, plus the learned.
 
@@ -495,7 +508,8 @@ def for_attempt(world_root, action, bound=None, actor=None, verb_rule=None,
     from world import standard_rules
 
     standard_rules.seed(world_root)
-    found = gather(world_root, action, bound, actor, phase=phase)
+    found = gather(world_root, action, bound, actor, phase=phase,
+                   guarded=guarded)
     if verb_rule is None:
         return found
 
