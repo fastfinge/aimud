@@ -31,6 +31,7 @@ here is the layer above it, and exists for three reasons.
 """
 
 import re
+import threading
 
 from evennia.utils import logger
 
@@ -202,8 +203,49 @@ def _bounds(trait):
     return low, high
 
 
+_OVERLAY = threading.local()
+
+
+class overlaid:
+    """
+    Read these figures for this character as they were, for the length of it.
+
+    A figure that drifts has already moved by the time anybody notices, so the
+    before a becomes rule needs is what the character was last told -- laid
+    over the live figures while the rules are asked, and nowhere else. See
+    `world.becoming.mark`. `values` is {slug: figure}; None or empty does
+    nothing.
+    """
+
+    def __init__(self, character, values):
+        self.key = getattr(character, "id", None)
+        self.values = {_slug(slug): figure
+                       for slug, figure in dict(values or {}).items()}
+
+    def __enter__(self):
+        stack = getattr(_OVERLAY, "stack", None)
+        if stack is None:
+            stack = _OVERLAY.stack = []
+        stack.append((self.key, self.values))
+        return self
+
+    def __exit__(self, *exc):
+        _OVERLAY.stack.pop()
+        return False
+
+
+def _overlaid_value(character, slug):
+    for key, values in reversed(getattr(_OVERLAY, "stack", None) or []):
+        if key == getattr(character, "id", None) and slug in values:
+            return True, values[slug]
+    return False, None
+
+
 def value(character, slug):
     """A character's value for a trait, or None if they do not have it."""
+    found, figure = _overlaid_value(character, _slug(slug))
+    if found:
+        return figure
     if not has_traits(character):
         return None
     trait = character.traits.get(_slug(slug))
@@ -352,6 +394,11 @@ def adjust(character, slug, change=None, set_to=None, rate=None, world_root=None
         # what somebody already has would lose the figure.
         slug = resolve(world_root, slug)
         existing = character.traits.get(slug)
+    # Before anything moves: what the becomes rules about this character say
+    # now, so that what they say afterwards can be told apart from it.
+    from world import becoming
+
+    becoming.mark(character, world_root)
     gained = existing is None
     trait = existing or ensure(character, slug, world_root=world_root)
     if trait is None:
@@ -496,10 +543,21 @@ def notice_changes(character):
     if not has_traits(character):
         return []
     seen = _seen(character)
+    figures = [(slug, trait, trait.value, seen.get(slug))
+               for slug, trait in all_of(character)]
+    drifted = {slug: previous for slug, _trait, current, previous in figures
+               if previous is not None and current != previous}
+    if drifted:
+        # It has already moved, so the before a becomes rule needs is what the
+        # character was last told, laid over the live figures. A figure that
+        # drifted on its own was moved by nobody; one that moved because
+        # somebody put a helmet on was moved by them.
+        from world import becoming
+
+        becoming.mark(character, cause=becoming.current_cause(None),
+                      overlay=drifted)
     moved = []
-    for slug, trait in all_of(character):
-        current = trait.value
-        previous = seen.get(slug)
+    for slug, trait, current, previous in figures:
         seen[slug] = current
         if previous is None or current == previous:
             continue

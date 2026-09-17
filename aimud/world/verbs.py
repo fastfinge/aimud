@@ -2037,6 +2037,12 @@ def apply_states(obj, add=(), remove=(), world_root=None, announce=True):
     """
     from world.model_json import listed
 
+    # Before anything is written: what the becomes rules about this thing say
+    # now, so what they say afterwards can be told apart. See world/becoming.
+    from world import becoming
+
+    becoming.mark(obj, world_root)
+
     current = states(obj)
     before = set(current)
     # A derived state is worked out, never written: setting one would make it

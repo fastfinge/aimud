@@ -241,6 +241,10 @@ def forget(obj):
 
 def _write(obj, owner):
     """Put the record on one object, with no cascade and no provenance."""
+    # Whose a thing is, is a condition too. See world/becoming.py.
+    from world import becoming
+
+    becoming.mark(obj)
     if owner is None:
         try:
             obj.attributes.remove(ATTR)

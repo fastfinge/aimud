@@ -44,3 +44,17 @@ class Garment(ObjectParent, ContribClothing):
         if self.db.worn and wearer is not None and wearer is not destination:
             self.remove(wearer, quiet=True)
         return True
+
+    def wear(self, wearer, wearstyle, quiet=False):
+        """Put on; what somebody wears is a condition. See world/becoming.py."""
+        from world import becoming
+
+        becoming.mark(wearer)
+        return super().wear(wearer, wearstyle, quiet=quiet)
+
+    def remove(self, wearer, quiet=False):
+        """Take off; likewise marked before anything changes."""
+        from world import becoming
+
+        becoming.mark(wearer)
+        return super().remove(wearer, quiet=quiet)

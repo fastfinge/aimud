@@ -307,6 +307,9 @@ class NPC(ObjectParent, DefaultObject):
         # Anything that drifted since the last turn reaches this character's
         # working memory now, in time to be part of what it does next.
         traits.notice_changes(self)
+        from world import becoming
+
+        becoming.settle()
 
         sponsor = self._sponsor(room)
         if not sponsor.answers:
@@ -354,6 +357,12 @@ class NPC(ObjectParent, DefaultObject):
         clear_on_move(self, room.db.world_root if room else None)
         if active_players_in(self.location):
             note_player_nearby(self)
+
+        # Whatever became true by arriving. Does nothing mid-attempt: an NPC
+        # walked by an effect is settled when the attempt ends.
+        from world import becoming
+
+        becoming.settle()
 
     def at_object_receive(self, moved_obj, source_location, move_type="move", **kwargs):
         """React when a player gives this NPC an object."""

@@ -143,7 +143,9 @@ def _note_states(actor, obj, added, removed, world_root):
     """
     from world import memory, verbs
 
-    where = memory.where_for(actor, world_root)
+    # A rule that fired because something became true has nobody acting, and
+    # the thing it happened to is who the history is about.
+    where = memory.where_for(actor if actor is not None else obj, world_root)
     if not where.bank or obj is None:
         return
     for slug in added or ():
@@ -183,14 +185,19 @@ def apply(actor, room, effects, bound=None, world_root=None):
     bound = bound or {}
     announcements = []
 
-    for effect in effects or []:
-        try:
-            line = _apply_one(actor, room, effect, bound, world_root)
-        except Exception as exc:
-            logger.log_info(f"verb effect failed ({effect!r}): {exc}")
-            continue
-        if line:
-            announcements.append(line)
+    # Whatever these change was brought about by whoever is acting, unless a
+    # cause is already being carried -- a becomes rule's own, down a chain.
+    from world import becoming
+
+    with becoming.caused_by(actor):
+        for effect in effects or []:
+            try:
+                line = _apply_one(actor, room, effect, bound, world_root)
+            except Exception as exc:
+                logger.log_info(f"verb effect failed ({effect!r}): {exc}")
+                continue
+            if line:
+                announcements.append(line)
     return announcements
 
 
@@ -284,6 +291,8 @@ def _put(obj, where, effect, bound, room, actor, world_root=None):
         return f"{label.capitalize()} is gone."
 
     destination = actor if where == "actor" else room
+    if destination is None:
+        return None
     if obj.move_to(destination, quiet=True):
         # It is in a hand or on a floor now, not on or in anything.
         relations.displace(obj)
@@ -308,7 +317,9 @@ def _resolve(effect, key, bound, room, actor):
         return bound.get(role)
 
     name = str(effect.get(key, "")).strip()
-    if not name:
+    if not name or actor is None:
+        # Finding a thing by name is a search made by somebody, and a rule
+        # that fired because something became true has nobody to search.
         return None
     from commands.look_take_cmds import _find_one
 
@@ -617,7 +628,8 @@ def _apply_one(actor, room, effect, bound, world_root):
     if etype == "create_object":
         from world import clothing
 
-        location = actor if effect.get("location") == "actor" else room
+        location = (actor if effect.get("location") == "actor"
+                    and actor is not None else room)
         # Through the clothing layer: a verb that produces a cloak has
         # produced something wearable, not a cloak-shaped prop.
         obj = clothing.create(effect, location=location)
@@ -720,6 +732,8 @@ def _apply_one(actor, room, effect, bound, world_root):
         where = str(effect.get("to", "actor")).strip()
         owner = None
         if where == "actor":
+            if actor is None:
+                return None      # nobody acting is nobody to own it
             owner = actor
         elif where != "nobody":
             owner = bound.get(where)
@@ -767,6 +781,8 @@ def _apply_one(actor, room, effect, bound, world_root):
         if not moved:
             return None
         emptied = host.get_numbered_name(1, None, return_string=True)
+        if actor is None:
+            return f"{emptied.capitalize()} is emptied: {_and_then(moved)}."
         return (f"{actor.get_display_name(actor)} empties {emptied}: "
                 f"{_and_then(moved)}.")
 
@@ -911,6 +927,8 @@ def _apply_one(actor, room, effect, bound, world_root):
         return None
 
     if etype == "move_actor":
+        if actor is None:
+            return None          # nobody is acting, so nobody is taken anywhere
         direction = str(effect.get("exit", "")).strip()
         if direction:
             from commands.look_take_cmds import _find_one

@@ -47,7 +47,8 @@ from collections import namedtuple
 
 #: What a condition can be about. The six roles are what a player named, and
 #: the rest are what nobody named but a rule may still mean.
-ROLES = ("actor", "direct", "instrument", "target", "container", "source")
+ROLES = ("actor", "direct", "instrument", "target", "container", "source",
+         "cause")
 
 #: How a subject may be written, beyond a bare role.
 #:
@@ -744,7 +745,8 @@ def _judge(condition, ctx, mood, depth=0):
 _SUBJECT_WORDS = {
     "actor": "you", "direct": "what you act on", "instrument": "what you use",
     "target": "what you aim at", "container": "what it goes in",
-    "source": "what it comes from", HERE: "this place", WORLD: "this world",
+    "source": "what it comes from", "cause": "whoever brought it about",
+    HERE: "this place", WORLD: "this world",
 }
 
 

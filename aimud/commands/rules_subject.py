@@ -118,6 +118,8 @@ def every_rule(root):
     found = rulebooks.all_rules(root)
     if not found:
         return "This world has no rules yet."
+    becoming = [r for r in found if r.get("phase") == rulebooks.BECOMES]
+    found = [r for r in found if r.get("phase") != rulebooks.BECOMES]
     by_action = {}
     for rule in found:
         by_action.setdefault(rule.get("action") or "any action", []).append(rule)
@@ -128,8 +130,36 @@ def every_rule(root):
         for rule in sorted(by_action[action],
                            key=lambda r: rulebooks.rank(r, None, root)):
             lines.append(f"    {rule.get('phase', ''):10} {rule_line(rule, root)}")
+    lines += changing_lines(root, becoming)
     lines += ["", "|xType |wview rules <verb>|x for one verb in firing order.|n"]
     return "\n".join(lines)
+
+
+def changing_lines(root, rules):
+    """
+    The becomes rules, in the order they fire, each with what it watches and
+    what it says.
+
+    Most general first, which is the reverse of every other listing and the
+    order they really fire in: nothing wins here, so the specific rule lands
+    last and has the last word. Said so, because a listing that sorted them
+    the ordinary way would describe a world that does not exist.
+    """
+    from world import rulebooks
+
+    if not rules:
+        return []
+    ordered = sorted(rules, key=lambda r: rulebooks.rank(r, None, root),
+                     reverse=True)
+    lines = ["", "  |wwhen things change|n, most general first, which is the "
+                 "order they fire in"]
+    for rule in ordered:
+        lines.append(f"    {rule_line(rule, root)}")
+        for guard in (rule.get("when") or []):
+            lines += condition_lines(guard, "      ", lead="|xwhen |n")
+        if rule.get("report"):
+            lines.append(f"      |xsays:|n {rule['report']}")
+    return lines
 
 
 def _seeded(root):
@@ -653,6 +683,15 @@ def faults_report(root):
     findings = rulecheck.scan(rulecheck.of_world(root))
     lines = [rulecheck.report(findings, lore.title(root)), "",
              counters.report(root)]
+    from world import becoming
+
+    looping = dict(getattr(root.db, becoming.OVERFLOW_ATTR, None) or {})
+    if looping:
+        lines += ["", f"|w{len(looping)} rules|n about what becomes true kept "
+                      f"setting each other off, and were stopped each time: "
+                      + ", ".join(f"{rule_id} ({count} times)"
+                                  for rule_id, count in sorted(looping.items()))
+                      + "."]
     standing = len(suggest.queue(root))
     if standing:
         lines += ["", f"|w{standing} suggestions|n are waiting. "

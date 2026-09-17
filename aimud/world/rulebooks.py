@@ -43,6 +43,13 @@ COUNTER = "rule_counter"
 INSTEAD, CHECK, CARRY_OUT, AFTER = "instead", "check", "carry_out", "after"
 PHASES = (INSTEAD, CHECK, CARRY_OUT, AFTER)
 
+#: The rulebook that runs because something became true rather than because
+#: somebody tried something. Kept out of PHASES on purpose: `rule_gen` offers
+#: PHASES to a model asked about a verb, and this is never an answer to that
+#: question. See world/becoming.py and docs/becoming-and-time.md §6.
+BECOMES = "becomes"
+STORED_PHASES = PHASES + (BECOMES,)
+
 #: What a scope may be filed against. Every one is a closed identifier: a
 #: synset, a zone id, a dbref, or the world. There is no free text in a scope,
 #: so a scope cannot drift the way an affordance list drifted.
@@ -77,7 +84,7 @@ def get(world_root, rule_id):
 def blank(action=None, phase=CHECK, scope=None, about="direct", name="",
           when=None, conditions=None, effects=None, contest=None,
           outcome=None, source="generated", why="", overrides=None,
-          evidence=None):
+          evidence=None, report=""):
     """
     A rule with every slot present, so nothing downstream has to guess.
 
@@ -94,7 +101,7 @@ def blank(action=None, phase=CHECK, scope=None, about="direct", name="",
     return {
         "id": "",
         "name": str(name or ""),
-        "phase": phase if phase in PHASES else CHECK,
+        "phase": phase if phase in STORED_PHASES else CHECK,
         "action": str(action) if action else None,
         "scope": dict(scope or {WORLD: True}),
         "about": str(about or "direct"),
@@ -108,6 +115,9 @@ def blank(action=None, phase=CHECK, scope=None, about="direct", name="",
         "why": str(why or ""),
         "overrides": overrides,
         "evidence": dict(evidence or {}),
+        # What a becomes rule says when it fires, as an event template. It
+        # never calls a model: a world's clock would otherwise be a paid tick.
+        "report": str(report or ""),
         "born": time.time(),
     }
 
@@ -124,8 +134,17 @@ def add(world_root, rule):
         return None
     record = dict(blank(), **{k: v for k, v in dict(rule or {}).items()
                               if k in blank()})
-    record["phase"] = record["phase"] if record["phase"] in PHASES else CHECK
+    record["phase"] = (record["phase"] if record["phase"] in STORED_PHASES
+                       else CHECK)
     record["scope"] = _clean_scope(record.get("scope"))
+    if record["phase"] == BECOMES:
+        # A becomes rule has no action: it runs because something became
+        # true, not because anybody tried anything.
+        record["action"] = None
+        if record.get("report"):
+            from world import events
+
+            record["report"] = events.repair(record["report"])
     # Nodes tidied and held to their caps on the way in, whoever wrote the
     # rule. A condition that cannot be stored is dropped and logged rather
     # than kept to evaluate as nothing for ever.
@@ -201,14 +220,17 @@ class Attempt:
     answer the same question.
     """
 
-    def __init__(self, world_root, action, bound=None, actor=None):
+    def __init__(self, world_root, action, bound=None, actor=None, room=None):
         from world import zones
 
         self.world_root = world_root
         self.action = str(action or "")
         self.bound = dict(bound or {})
         self.actor = actor
-        self.room = getattr(actor, "location", None) if actor else None
+        # Given outright when there is no actor to work it out from: a becomes
+        # rule about a lamp, or about a room, has nobody acting.
+        self.room = room if room is not None else (
+            getattr(actor, "location", None) if actor else None)
         self.zone_ids = []
         zone_id = zones.slugify(getattr(self.room.db, "zone", "") or "") \
             if self.room else ""
@@ -248,6 +270,8 @@ def gather(world_root, action, bound=None, actor=None, phase=None,
             continue
         if phase and rule.get("phase") != phase:
             continue
+        if rule.get("phase") == BECOMES and phase != BECOMES:
+            continue             # never part of an attempt's book
         wanted = rule.get("action")
         if wanted and wanted != attempt.action:
             continue
@@ -257,7 +281,14 @@ def gather(world_root, action, bound=None, actor=None, phase=None,
         if guarded and not guards_pass(rule, ctx):
             continue
         found.append((rank(rule, tier, world_root), rule))
-    return [rule for _key, rule in sorted(found, key=lambda pair: pair[0])]
+    ordered = [rule for _key, rule in sorted(found, key=lambda pair: pair[0])]
+    if phase == BECOMES:
+        # Most general first, the reverse of everywhere else. Elsewhere rank
+        # picks a winner; here every rule that became true fires and nothing
+        # wins, so order only decides whose effects land last -- and the
+        # specific rule should have the last word. See docs 6.3.
+        ordered.reverse()
+    return ordered
 
 
 def guards_pass(rule, ctx):

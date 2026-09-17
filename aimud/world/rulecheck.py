@@ -255,6 +255,7 @@ def scan(registers):
         "after_self_defeating": after_self_defeating(
             registers.get("rules") or {}),
         "writes_derived": sorted(writes_derived),
+        "cause_unguarded": cause_unguarded(registers.get("rules") or {}),
         "ungrounded": ungrounded(registers.get("kind_specs") or {}),
         "inert": sorted(inert),
         "refusals": {kind: sorted(verbs) for kind, verbs in refusals.items()},
@@ -447,6 +448,43 @@ def _defeated(listed, produced, phase, key, field):
     return found
 
 
+def cause_unguarded(rules):
+    """
+    Becomes rules that use the cause without saying there has to be one.
+
+    `cause` is bound only when somebody acted. A death by poison has nobody
+    behind it, so a rule that names the cause in its effects or its report and
+    does not guard on `{"subject": "cause", "unbound": false}` either skips
+    those effects without a word or would say "{cause}" aloud -- the report is
+    held back rather than shown that way. See docs/becoming-and-time.md 6.2.
+
+    Returns [(rule id, name), ...].
+    """
+    from world import conditions as conditions_mod
+
+    found = []
+    for rule_id, rule in sorted((rules or {}).items()):
+        if not hasattr(rule, "get") or rule.get("phase") != "becomes":
+            continue
+        if not rule.get("listed", True):
+            continue
+        named = "{cause" in str(rule.get("report") or "")
+        for effect in effects_of(rule):
+            if "cause" in {str(effect.get(key) or "")
+                           for key in ("role", "name_role", "to")}:
+                named = True
+        if not named:
+            continue
+        guarded = any(
+            not optional and leaf.get("subject") == "cause"
+            and leaf.get("unbound") is False
+            for top in (rule.get("when") or [])
+            for leaf, optional in conditions_mod.leaves(top))
+        if not guarded:
+            found.append((str(rule_id), str(rule.get("name") or "")))
+    return found
+
+
 def dead_states(condition, made, field="is"):
     """
     The states that make this condition impossible, given what its verb makes.
@@ -606,6 +644,13 @@ def report(findings, name=""):
             f"{len(dead)} after rules follow only when their own verb has not "
             f"done what it just did, so they can never fire, over "
             f"{len(verbs)} verbs: {_listed(verbs)}.")
+    if findings.get("cause_unguarded"):
+        names = [name or rule_id
+                 for rule_id, name in findings["cause_unguarded"]]
+        trouble.append(
+            f"{len(names)} rules about what becomes true name whoever caused "
+            f"it without asking that somebody did, so they do nothing when "
+            f"nobody did: {_listed(names)}.")
     if findings.get("writes_derived"):
         slugs = sorted({slug for _key, found in findings["writes_derived"]
                         for slug in found})

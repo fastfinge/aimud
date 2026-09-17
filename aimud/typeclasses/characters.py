@@ -237,6 +237,12 @@ class Character(ObjectParent, DefaultCharacter):
 
         notice_changes(self)
 
+        # And whatever became true on the way: the fever that broke, the
+        # hunger that became starving. See world/becoming.py.
+        from world import becoming
+
+        becoming.settle()
+
         # Where the character has been is part of what they know. Named and in
         # the past tense, never "I": a memory is searched by the names in it.
         from world.memory import remember

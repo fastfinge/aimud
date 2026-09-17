@@ -279,12 +279,18 @@ def _mechanics(caller, verb, parsed, bound, on_message):
     the curtain", "put out the fire", "give up" -- and those go on through the
     ordinary pipeline. True when one of them took the attempt.
     """
-    from world import clothing, gear, ownership, relations
+    from world import becoming, clothing, gear, ownership, relations
 
-    return bool(clothing.handle(caller, verb, bound, on_message)
-                or gear.handle(caller, verb, bound, on_message)
-                or ownership.handle(caller, verb, parsed, bound, on_message)
-                or relations.handle(caller, verb, parsed, bound, on_message))
+    # What a mechanic changes, the caller changed -- and a becomes rule it sets
+    # off fires once the mechanic has said what it did, not in the middle.
+    with becoming.caused_by(caller):
+        handled = bool(
+            clothing.handle(caller, verb, bound, on_message)
+            or gear.handle(caller, verb, bound, on_message)
+            or ownership.handle(caller, verb, parsed, bound, on_message)
+            or relations.handle(caller, verb, parsed, bound, on_message))
+    becoming.settle(cause=caller)
+    return handled
 
 
 def consequences(caller, verb, bound):
@@ -319,6 +325,10 @@ def consequences(caller, verb, bound):
                                        phase=rulebooks.AFTER):
         done += effects_mod.apply(caller, room, later.get("effects") or [],
                                   bound=bound, world_root=world_root)
+    # And whatever became true because of it, now that it has happened.
+    from world import becoming
+
+    becoming.settle(cause=caller)
     return done
 
 
@@ -1284,3 +1294,9 @@ def _remember(caller, event, actor_text):
 def _release(caller, on_message, actor_text, event=None):
     caller.ndb.attempting = None
     on_message(actor_text, event)
+    # After the narration, never before it: the blow is described, and then
+    # the character collapses, even when the narration waited on a model.
+    # See docs/becoming-and-time.md 6.3.
+    from world import becoming
+
+    becoming.settle(cause=caller)

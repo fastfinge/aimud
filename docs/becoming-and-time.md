@@ -337,7 +337,6 @@ What uses it:
   suspend a rule that could still fire. Because there is no `not`, none of them
   has to track polarity: `lacks` and every `not_` predicate already mean
   "forbidden".
-* **The index in 6.4** walks trees.
 * **`conditions.schema`**, the tool parameters a model writes to, offers the
   opposites as ordinary fields and `any` one level deep over plain conditions.
   That needs no recursive schema. The toolbox builds schemas inline with no
@@ -657,13 +656,17 @@ thing, and seeing every thing is the scan this design refuses.
 were like before it:
 
 * **Before a write**, the first time a subject is marked in a settle, the door
-  evaluates the `when` of the becomes rules that could care about this change,
-  against the subject as it still is. It keeps the answers in the dirty set.
-  "Could care" comes from a per-world index, from what a condition reads (a
-  state's group, a trait, where something is, what someone holds) to the rules
-  that read it. Derived states are expanded, so a rule on `is: starving` is
-  indexed under `hunger`. §7 needs the same index for its thresholds. This is
-  not a scan: it is the rules about one change, for the one thing changing.
+  evaluates the `when` of the becomes rules about that subject, against the
+  subject as it still is. It keeps the answers in the dirty set. This is not a
+  scan: it is the rules about one thing, for the one thing changing.
+
+  The first draft narrowed this further with a per-world index from what a
+  condition reads (a state's group, a trait, where something is) to the rules
+  that read it. Phase 5 left the index out, on purpose. Becomes rules are few,
+  and an index that missed a predicate would make a rule silently never fire,
+  which is a worse failure than asking a handful of extra questions. If
+  measuring ever shows the cost, the index can be added then, with a test that
+  every predicate declares what it reads.
 * **After**, `settle` evaluates the same rules again. A rule fires where the
   answer went from false to true.
 * **Drift** has already happened by the time anyone notices it, so its before
@@ -720,8 +723,10 @@ But a chain must end:
 
 * **A rule fires at most once per subject per settle.**
 * **Settling makes at most four passes.** What is still dirty after the fourth
-  is left for the next checkpoint, logged, and counted, so that `view faults`
-  can name the rules that keep setting each other off. Four, because the longest
+  is dropped, logged, and counted against the rules that fired last, so that
+  `view faults` can name the rules that keep setting each other off. Dropped
+  rather than left for the next checkpoint, because the backstop would make the
+  next checkpoint the next turn of the reactor, and a loop would spin for ever. Four, because the longest
   honest chain anybody has described is three: a blow, a death, a dropped
   lantern that sets the straw alight.
 
@@ -1164,8 +1169,8 @@ It rings in every occupied room of the town at dawn, and in no empty one.
 * **`world/attempt.py`**: in `_with_rule`, after rules are gathered unguarded,
   and their guards are tested together after carry-out, against the attempt's
   room (6.8). `settle` runs after `_release` and at the end of `consequences`.
-* **A new `world/becoming.py`**: the index from what a condition reads to the
-  rules that read it, the dirty set with its befores, `settle`, the place memo,
+* **A new `world/becoming.py`**: the dirty set with its befores, who caused
+  what, `settle`, the place memo,
   the pass limit, the crossing timers and the clock timer. It is one module
   because it is one question: "has anything become true".
 * **A new `world/clock.py`**: the date over `datetime`, setting the year and the
@@ -1245,7 +1250,7 @@ events.
 **Phase 4: states that carry bonuses.** `gear.total` and `gear.sources`, and
 recompute on state change. Afterwards "starving costs strength" works.
 
-**Phase 5: becomes rules, from direct changes.** The phase, `report`, the index,
+**Phase 5: becomes rules, from direct changes.** The phase, `report`,
 marking and befores at the doors, `settle` at the call sites in 6.3, the pass
 limit, effects without an actor, the `cause` role and its guard, and the
 `view rules` listing. The listing is in
@@ -1382,11 +1387,10 @@ works out what running out of health means, and says when it got it wrong.
   negates, and it hides at the edges: a missing subject, a missing figure, a list
   of several values. The complement test in 4.6 is the guard, and its fixtures
   have to cover those edges.
-* **The index has to be complete.** A before is only taken for rules the index
-  says could care. A condition that reads something the index does not know
-  about never gets a before, and its rule never fires. Every predicate in
-  `conditions.py` must declare what it reads, and a test should fail for one
-  that does not.
+* **Asking every becomes rule about a changing thing.** Phase 5 has no index
+  (6.4), so every door asks every becomes rule that applies to the thing. That
+  is cheap while becomes rules are few. A world with hundreds of them would want
+  the index, and a soak should say when.
 * **Money, indirectly.** A report is an event, and events wake NPCs. Every
   reaction passes `activity.npc_may_act`, so an NPC with no player nearby spends
   nothing. `worldmode always` lifts that brake, though, and then place rules
