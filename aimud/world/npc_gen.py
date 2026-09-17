@@ -1214,7 +1214,43 @@ def _memory_inputs(npc, room, room_title):
     recent = history[-WORKING_MEMORY_EVENTS:]
     on_show = [_format_history([event]) for event in recent]
     cues = _recall_cues(npc, room, room_title)
-    return _format_history(recent), where_for(npc), cues, on_show
+    return (_aged_history(recent, room.db.world_root), where_for(npc), cues,
+            on_show)
+
+
+#: What working memory is headed with, when all of it is recent, and when it
+#: is not.
+JUST_NOW = "Just now:"
+MOST_RECENTLY = "Most recently:"
+
+#: The ages that are still "just now", and need saying no more precisely.
+_RECENT_AGES = ("", "moments ago")
+
+
+def _aged_history(history, world_root=None):
+    """
+    Working memory as the prompt shows it: headed, and aged where it is old.
+
+    Every entry was shown under "Just now", however old. A player who talked
+    to somebody, went away for a week and came back found them told the talk
+    had just happened. An entry older than a few minutes now carries its age,
+    in the words recall uses, and the heading stops claiming it is just now.
+    Entries written before they were stamped carry no age, as before.
+    """
+    from world.memory import age_of
+
+    lines, aged = [], False
+    for event in history or []:
+        line = _format_history([event])
+        age = age_of(event.get("at"), world_root=world_root)
+        if age in _RECENT_AGES:
+            lines.append(line)
+        else:
+            aged = True
+            lines.append(f"{age}: {line}")
+    heading = MOST_RECENTLY if aged else JUST_NOW
+    return f"{heading}\n" + ("\n".join(lines) if lines
+                             else _format_history([]))
 
 
 def _format_history(history):
@@ -1619,7 +1655,7 @@ def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked,
         from world.memory import format_recalled
 
         try:
-            recalled = format_recalled(rows)
+            recalled = format_recalled(rows, world_root=room.db.world_root)
         except Exception as exc:
             on_error(str(exc))
             return
@@ -1628,7 +1664,7 @@ def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked,
             {
                 "role": "user",
                 "content": (f"{remembered}\n{recalled}\n\n"
-                            f"Just now:\n{history_text}\n\n{asked}"),
+                            f"{history_text}\n\n{asked}"),
             },
         ]
         llm.converse(sponsor, model, messages, box,

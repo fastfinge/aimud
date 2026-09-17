@@ -1113,9 +1113,12 @@ entries of `db.action_history`, sent verbatim under "Just now:" by
 `npc_gen._memory_inputs`. The entries carry no time. A player who talks to an
 NPC, leaves for a week and comes back finds the NPC told that the week-old talk
 happened just now. `_add_to_history` and `_note_to_self` stamp each entry with
-the real time it was added. `_format_history` keeps recent entries under "Just
-now" and gives an older one its age, in the words recall uses. Entries written
-before the stamp have none and are shown as they are today.
+the real time it was added, as `at`. `npc_gen._aged_history` gives an entry
+older than "moments ago" its age, in the words recall uses ("a week ago: Raldor
+said hello."), and heads the block "Most recently:" instead of "Just now:" when
+any entry is aged. Entries written before the stamp have none and are shown as
+they are today. The lines recall compares against to leave out what is already
+on show stay unaged, because recall matches words.
 
 **2. Ages are measured in real time, not the world's clock.** `age_of` says so
 in its docstring. A real-time world, and a world that only changed its year, are
@@ -1123,7 +1126,7 @@ already right. A world whose day lasts an hour is not: "yesterday" means the
 real yesterday. The age becomes world time: the real seconds since the memory
 was written, times `clock.speed(world_root)`, counted back from
 `clock.now(world_root)` so that "earlier today" and "yesterday" fall on the
-world's own midnight. The thresholds ("moments ago", "a little while ago") are
+world's own midnight. That conversion is `clock.at_real`. The thresholds ("moments ago", "a little while ago") are
 world seconds too, so in a fast world a conversation ten real minutes old reads
 as hours ago, which is what it is there.
 
@@ -1141,7 +1144,9 @@ by default), and stamps the summary with the time sleep ran. A summary of last
 week reads "earlier today". Distilled facts are stamped when distillation ran,
 and are then shown as if they happened then. A summary is aged by the memories
 it summarises instead: mnemosyne records them in `summary_of`, and the age is
-the span from the oldest to the newest ("over several days, about a week ago").
+the span from the oldest to the newest ("between a week ago and 5 days ago").
+No public call reads `summary_of`, so `memory._span_sync` reads it with SQL,
+beside the other functions that know the library.
 A distilled fact (`FACT_SOURCE`) is shown with no age at all, because it is
 simply still true. Rows that cannot be traced keep the age they have.
 
@@ -1155,8 +1160,9 @@ already does.
 offers "the ledger went missing last winter" as an example, but the summaries it
 reads carry no dates. A relative date also stops being true: "last winter" says
 the same thing a year later. Summaries are given to it with their world dates,
-from 3, and it is asked for a date that stays true ("in the winter of 1851") or
-no date at all.
+from 3, as "- (from 12 September 1852 to 14 September 1852) ..." through
+`memory.dated`, and it is asked for a date that stays true ("in the winter of
+1851") or no date at all.
 
 **Left as they are.** mnemosyne's own recency weighting stays real time: it
 ranks what is recalled and is never shown to a character. The whereabouts and
@@ -1381,7 +1387,8 @@ tool formatted like the prompt, and dated summaries for distillation. It needs
 the clock from phase 7 and nothing else here. Tested with a hand-moved clock and
 `format_recalled` given rows directly; none of it needs a model or mnemosyne.
 Afterwards an NPC met again a week later knows it has been a week, in a world
-whose weeks may be an afternoon long.
+whose weeks may be an afternoon long. Built as planned; the details are in 8.7,
+and the tests are `tests/test_memory_ages.py`.
 
 ---
 

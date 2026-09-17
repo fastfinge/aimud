@@ -119,6 +119,23 @@ def now(world_root=None):
         return datetime.fromtimestamp(real)
 
 
+def at_real(world_root, when):
+    """
+    The date and time it was in this world at real timestamp `when`.
+
+    Counted back from now at the world's speed today. Real time since is what
+    survives a world being moved to another year -- a memory written before
+    the move is as long ago afterwards as it was before -- and what it does
+    not survive is a change of speed, which is chosen when a world is made.
+    See docs/becoming-and-time.md 8.7.
+    """
+    elapsed = max(_real_now() - float(when), 0.0) * speed(world_root)
+    try:
+        return now(world_root) - timedelta(seconds=elapsed)
+    except OverflowError:
+        return datetime.min
+
+
 def hour(world_root=None):
     """The hour on a 24-hour dial, with the minutes as a fraction: 20.5."""
     moment = now(world_root)
@@ -309,6 +326,11 @@ def said(world_root=None):
     at = moment.hour + moment.minute / 60
     return (f"It is a {moment.strftime('%A')} {_part_of_day(at)} in "
             f"{moment.strftime('%B')}, {moment.year}.")
+
+
+def date_words(at):
+    """A date as it is written: "14 June 1852"."""
+    return f"{at.day} {at.strftime('%B')} {at.year}"
 
 
 def exactly(world_root=None):

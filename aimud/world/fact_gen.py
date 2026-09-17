@@ -42,8 +42,12 @@ worth carrying: what they learned about a person, a place, a thing, or an
 arrangement between them.
 
 Write each fact as one short sentence in the character's own first person —
-"Bram owes me a favour", "the ledger went missing last winter", "the archivist
-does not trust the steward".
+"Bram owes me a favour", "the ledger went missing in the winter of 1851", "the
+archivist does not trust the steward".
+
+Each summary says when it happened. Most facts need no date. One that does
+gives a date that stays true — "in June 1852", not "last week" or "yesterday",
+which stop being true — taken from the summary it came from.
 
 Leave out:
 - anything that was only true for a moment (where somebody was standing, what
@@ -97,6 +101,32 @@ def facts_tool():
                    parameters, handler, finishes=True)
 
 
+def _summary_line(summary, world_root=None):
+    """
+    One summary as distillation reads it: "- (from 14 June 1852 to 18 June
+    1852) ...". A bare string, from before summaries were rows, is shown as it
+    is.
+    """
+    from world import memory
+
+    if not isinstance(summary, dict):
+        return f"- {summary}"
+    when = memory.dated(summary, world_root)
+    content = summary.get("content", "")
+    return f"- ({when}) {content}" if when else f"- {content}"
+
+
+def _world_of(where):
+    """The world a bank belongs to, whose clock its dates are read on. Main thread."""
+    from evennia.objects.models import ObjectDB
+
+    from world import memory
+
+    owner = memory._owner_id(getattr(where, "bank", None))
+    return (ObjectDB.objects.filter(id=owner).first()
+            if owner is not None else None)
+
+
 def _account_for(where):
     """
     Whoever pays for distilling these memories. Main thread.
@@ -113,7 +143,7 @@ def _account_for(where):
 
     from world import memory, sponsor as sponsor_mod
 
-    owner = memory._owner_id(where.bank)
+    owner = memory._owner_id(getattr(where, "bank", None))
     if owner is not None:
         world_root = ObjectDB.objects.filter(id=owner).first()
         creator = sponsor_mod.creator_of(world_root)
@@ -166,12 +196,14 @@ def distil(banks=None, on_done=None):
             return _finish("no API key")
 
         model = sponsor.model_for("memory")
+        world_root = _world_of(where)
         messages = [
             {"role": "system",
              "content": _SYSTEM_PROMPT.replace("{max_facts}", str(MAX_FACTS))},
             {"role": "user",
              "content": ("What this character has been through lately:\n"
-                         + "\n".join(f"- {s}" for s in summaries)
+                         + "\n".join(_summary_line(summary, world_root)
+                                     for summary in summaries)
                          + "\n\nWhat do they know now?")},
         ]
 

@@ -134,7 +134,9 @@ def recall(caller, question):
         from world.memory import format_recalled
 
         try:
-            memories = format_recalled(rows)
+            here = caller.location
+            memories = format_recalled(
+                rows, world_root=here.db.world_root if here is not None else None)
         except Exception as exc:
             wait.done()
             caller.ndb.recalling = False
