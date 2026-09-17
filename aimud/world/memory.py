@@ -818,6 +818,9 @@ def _distillable_sync(where):
     """
     (summaries, through) for one character. Must run in a thread.
 
+    Each summary is a row -- {"content", "timestamp", "span"} -- so that
+    whoever asks can say when it happened: see `dated`.
+
     Only what sleep has already condensed is offered: raw events are many and
     repetitive, and summarising a summary is both cheaper and better than
     asking a model to read a week of somebody's afternoons.
@@ -840,7 +843,18 @@ def _distillable_sync(where):
             if not rows:
                 return [], marker
             through = str(rows[-1].get("timestamp") or "")
-            return [row["content"] for row in rows if row.get("content")], through
+            summaries = []
+            for row in rows:
+                if not row.get("content"):
+                    continue
+                try:
+                    span = _span_sync(instance, row["id"]) if row.get("id") else ()
+                except Exception:
+                    span = ()
+                summaries.append({"content": row["content"],
+                                  "timestamp": row.get("timestamp") or "",
+                                  "span": span})
+            return summaries, through
         except Exception:
             return [], ""
 
@@ -1355,7 +1369,7 @@ def format_memories(memories):
 MOST_NOW = 3
 
 
-def format_recalled(rows, now=None):
+def format_recalled(rows, now=None, world_root=None):
     """
     Recalled rows as a prompt reads them: oldest first, each with its age,
     then what is true now of the things they name. Main thread only.
@@ -1365,14 +1379,18 @@ def format_recalled(rows, now=None):
     else in the prompt says whether "Raldor handed Jessica the sword" was a
     minute ago or a week. The present-state line is what lets an old memory
     sit beside the truth without contradicting it.
+
+    Aged in `world_root`'s own time. A summary is aged by the memories it
+    summarises, not by when sleep wrote it, and a distilled fact is not aged
+    at all: it is simply still true.
     """
     if not rows:
         return "(nothing comes to mind)"
-    ordered = sorted(rows, key=lambda row: str(row.get("timestamp") or ""))
+    ordered = sorted(rows, key=_when_it_happened)
     lines = []
     for row in ordered:
         said = rerender(row) or row.get("content", "")
-        age = age_of(row.get("timestamp"), now)
+        age = _age_of_row(row, now, world_root)
         lines.append(f"- {age}: {said}" if age else f"- {said}")
     state = present_state(rows)
     if state:
@@ -1422,30 +1440,117 @@ def _object(ref):
         return None
 
 
-def age_of(timestamp, now=None):
+def _when_it_happened(row):
+    """What a row is ordered by: the newest thing a summary summarises."""
+    span = row.get("span") or ()
+    return str((span[-1] if span else None) or row.get("timestamp") or "")
+
+
+def _age_of_row(row, now=None, world_root=None):
+    """The age a recalled row is shown with, or "" for none."""
+    if row.get("source") == FACT_SOURCE:
+        return ""
+    span = row.get("span") or ()
+    if len(span) == 2 and span[0] and span[1]:
+        older = age_of(span[0], now, world_root)
+        newer = age_of(span[1], now, world_root)
+        if older and newer and older != newer:
+            return f"between {older} and {newer}"
+        return newer or older
+    return age_of(row.get("timestamp"), now, world_root)
+
+
+def real_seconds(timestamp):
+    """
+    A timestamp as real seconds since the epoch, or None when it does not read.
+
+    Two shapes reach here: mnemosyne's, an ISO string in the server's local
+    time, and working memory's, the number itself.
+    """
+    if timestamp is None or timestamp == "":
+        return None
+    if isinstance(timestamp, (int, float)):
+        return float(timestamp)
+    try:
+        return datetime.fromisoformat(str(timestamp)).timestamp()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def age_of(timestamp, now=None, world_root=None):
     """
     How long ago, in the words a person would use: "moments ago", "earlier
-    today", "yesterday", "3 days ago". "" for a timestamp that does not read.
+    today", "yesterday", "3 days ago", "2 weeks ago", "a year ago". "" for a
+    timestamp that does not read.
 
-    Real time, because that is what a timestamp holds. A world with a clock
-    of its own would want in-game time here instead, and has none yet.
+    In the world's own time. The real seconds since, at the world's speed,
+    counted back from the world's now, so "yesterday" falls on the world's
+    midnight and a conversation ten real minutes old in a world whose day is
+    an hour long is hours old, which is what it is there. `now` is the real
+    moment to measure from, for a test; the world's clock is read as it was
+    then. See docs/becoming-and-time.md 8.7.
     """
-    try:
-        then = datetime.fromisoformat(str(timestamp))
-    except (TypeError, ValueError):
+    then = real_seconds(timestamp)
+    if then is None:
         return ""
-    now = now or datetime.now(then.tzinfo)
-    seconds = max((now - then).total_seconds(), 0)
+    from world import clock
+
+    if now is not None:
+        with clock.pinned(now.timestamp()):
+            return _age(then, world_root)
+    return _age(then, world_root)
+
+
+def _age(then, world_root):
+    from world import clock
+
+    world_now = clock.now(world_root)
+    world_then = clock.at_real(world_root, then)
+    seconds = max((world_now - world_then).total_seconds(), 0)
     if seconds < 600:
         return "moments ago"
     if seconds < 7200:
         return "a little while ago"
-    days = (now.date() - then.date()).days
+    days = (world_now.date() - world_then.date()).days
     if days <= 0:
         return "earlier today"
     if days == 1:
         return "yesterday"
-    return f"{days} days ago"
+    if days < 7:
+        return f"{days} days ago"
+    if days < 14:
+        return "a week ago"
+    if days < 30:
+        return f"{days // 7} weeks ago"
+    if days < 60:
+        return "a month ago"
+    if days < 365:
+        return f"{days // 30} months ago"
+    if days < 730:
+        return "a year ago"
+    return f"{days // 365} years ago"
+
+
+def dated(row, world_root=None):
+    """
+    When a row happened, as dates that stay true: "on 14 June 1852", or "from
+    14 June 1852 to 18 June 1852" for a summary. "" when it cannot be told.
+
+    For distillation, whose facts are kept for good. "Last week" written into
+    a fact is wrong a week later; a date is not.
+    """
+    from world import clock
+
+    span = [real_seconds(stamp) for stamp in (row.get("span") or ())]
+    span = [stamp for stamp in span if stamp is not None]
+    if not span:
+        stamp = real_seconds(row.get("timestamp"))
+        span = [stamp] if stamp is not None else []
+    if not span:
+        return ""
+    first = clock.date_words(clock.at_real(world_root, min(span)))
+    last = clock.date_words(clock.at_real(world_root, max(span)))
+    return f"on {last}" if first == last else f"from {first} to {last}"
 
 
 def present_state(rows, limit=MOST_NOW):
@@ -1586,12 +1691,40 @@ def _recall_sync(bank, session, query, top_k):
                 raw = (stored or {}).get("metadata")
                 row["metadata"] = (json.loads(raw) if isinstance(raw, str) and raw
                                    else dict(raw or {}))
+                row["source"] = (stored or {}).get("source") or ""
+                if (stored or {}).get("memory_store") == "episodic":
+                    row["span"] = _span_sync(memory, result["id"])
             except Exception:
                 pass
             found.append(row)
         return found
 
     return _with_memory(bank, session, _read) or []
+
+
+def _span_sync(memory, memory_id):
+    """
+    (oldest, newest) timestamps of what an episodic summary summarises, or ().
+
+    Sleep stamps a summary with when it ran, which is days after anything in
+    it happened: it only condenses what is older than half of mnemosyne's
+    working-memory lifetime. The rows it condensed keep their own stamps, and
+    `summary_of` names them. Read with SQL because no public call answers it;
+    kept here, at the boundary, with the other two that know the library.
+    """
+    cursor = memory.conn.cursor()
+    cursor.execute("SELECT summary_of FROM episodic_memory WHERE id = ?",
+                   (memory_id,))
+    found = cursor.fetchone()
+    ids = [part for part in str((found[0] if found else "") or "").split(",")
+           if part]
+    if not ids:
+        return ()
+    marks = ",".join("?" * len(ids))
+    cursor.execute(f"SELECT MIN(timestamp), MAX(timestamp) FROM working_memory "
+                   f"WHERE id IN ({marks})", ids)
+    oldest, newest = cursor.fetchone() or (None, None)
+    return (oldest, newest) if oldest and newest else ()
 
 
 # ---------------------------------------------------------------------------
@@ -1612,9 +1745,13 @@ def lookup_tools():
         where = where_for(ctx.actor, ctx.world_root)
 
         def found(rows):
-            lines = [str(row.get("content") or "") for row in rows or []]
-            answer("\n".join(line for line in lines if line)
-                   or f"Nothing comes to mind about {query}.")
+            # Back on the main thread, where saying a memory again with
+            # today's names may read the game's database: aged and said the
+            # way the prompt says them, so a memory found by asking reads
+            # like one that came to mind.
+            if not rows:
+                return answer(f"Nothing comes to mind about {query}.")
+            answer(format_recalled(rows, world_root=ctx.world_root))
 
         llm.fetch(recall_rows_sync, where, query, 6,
                   on_success=found,

@@ -72,7 +72,8 @@ class NPC(ObjectParent, DefaultObject):
       db.desc              — physical description
       db.world_description — cached world theme
       db.is_npc            — True (used as a quick type check)
-      db.action_history    — list of {"type", "actor", "text"} event dicts
+      db.action_history    — list of {"type", "actor", "text", "at"} event
+                             dicts; "at" is the real time it was added
     """
 
     #: An NPC is a person, not a thing.  Without this they inherit
@@ -400,9 +401,13 @@ class NPC(ObjectParent, DefaultObject):
         # out what is already on show. An episode when there is an event
         # behind it, in the past tense; otherwise described from the text.
         said = line or describe_event(event_type, actor_name, text)
+        from world import clock
+
         history = self.db.action_history or []
+        # When, so that a conversation a week old is not shown as just now to
+        # somebody who comes back after a week.
         history.append({"type": event_type, "actor": actor_name, "text": text,
-                        "line": said})
+                        "line": said, "at": clock._real_now()})
         if len(history) > MAX_HISTORY:
             history = history[-MAX_HISTORY:]
         self.db.action_history = history
@@ -441,7 +446,10 @@ class NPC(ObjectParent, DefaultObject):
             last = history[-1]
             if last.get("actor") == self.key and last.get("text") == text:
                 return
-        history.append({"type": "action", "actor": self.key, "text": text})
+        from world import clock
+
+        history.append({"type": "action", "actor": self.key, "text": text,
+                        "at": clock._real_now()})
         if len(history) > MAX_HISTORY:
             history = history[-MAX_HISTORY:]
         self.db.action_history = history
