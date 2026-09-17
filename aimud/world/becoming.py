@@ -386,7 +386,7 @@ def _settle_one(root, entry, fired):
     return done
 
 
-def fire(world_root, rule, obj, cause=None):
+def fire(world_root, rule, obj, cause=None, silent=False):
     """
     Run one becomes rule about `obj`, and say what it says.
 
@@ -407,7 +407,8 @@ def fire(world_root, rule, obj, cause=None):
     with caused_by(cause, force=True):
         lines = effects.apply(person, room, rule.get("effects") or [],
                               bound=bound, world_root=world_root)
-    _report(rule, person, room, bound, lines)
+    if not silent:
+        _report(rule, person, room, bound, lines)
 
 
 def _report(rule, person, room, bound, lines):
@@ -673,6 +674,7 @@ def arm_around(obj):
         people.append(obj)
     for person in people:
         arm(person)
+    arm_clock(world_of(room))
 
 
 def arm_everyone_awake():
@@ -686,6 +688,237 @@ def arm_everyone_awake():
         puppet = getattr(session, "puppet", None)
         if puppet is not None:
             arm_around(puppet)
+
+
+# ---------------------------------------------------------------------------
+# The clock, and places
+# ---------------------------------------------------------------------------
+#
+# A room changes with nobody in it and no door to take a before: dawn comes
+# whether anybody is standing in the square or not. So a place rule that
+# watches the clock is asked in two ways, and neither is a scan:
+#
+# * **Live**, for a room somebody is in -- player or NPC -- when the world's one
+#   clock timer fires at a boundary a place rule mentions. The before is the
+#   clock just short of the boundary, the after is now, and a rule that rose
+#   fires and says so.
+# * **On arrival**, for a room nobody was watching. Each room remembers, per
+#   rule, what was true when it was last asked and when; a rising edge since
+#   then fires **once, silently**. The stock was replaced at midnight, and
+#   nobody arriving at noon hears a bell.
+#
+# That memo is on the world root, and holds only rooms somebody has been in
+# since the rule was written. See docs/becoming-and-time.md 8.4.
+
+#: Where a world keeps what its place rules said about each room, and when:
+#: {rule id: {room id: [was true, real timestamp]}}.
+SEEN_ATTR = "becomes_seen"
+
+#: Where a world keeps its clock timer. In memory only, like a character's.
+CLOCK_TIMER = "clock_timer"
+
+
+def _clock_hours_in(world_root, conditions_list, derived=None, seen=None):
+    """Every hour a list of conditions watches, through derived states too."""
+    from world import conditions, verbs
+
+    derived = verbs.derived_states(world_root) if derived is None else derived
+    seen = set() if seen is None else seen
+    hours = set()
+    for condition in conditions_list or []:
+        for leaf, _optional in conditions.leaves(condition):
+            span = conditions._clock_span(leaf.get("clock")) \
+                if leaf.get("clock") is not None else None
+            if span is not None:
+                hours |= set(span)
+        for slug in _named_states(condition):
+            if slug in derived and slug not in seen:
+                seen.add(slug)
+                hours |= _clock_hours_in(world_root,
+                                         derived[slug].get("when"),
+                                         derived, seen)
+    return hours
+
+
+def _place_rules(world_root):
+    """The becomes rules about places that watch the clock."""
+    from world import rulebooks
+
+    return [rule for rule in rules(world_root)
+            if str(rule.get("about") or "direct") in rulebooks.PLACES
+            and _clock_hours_in(world_root, rule.get("when"))]
+
+
+def clock_hours(world_root):
+    """Every hour on the dial at which some place rule might change."""
+    hours = set()
+    for rule in _place_rules(world_root):
+        hours |= _clock_hours_in(world_root, rule.get("when"))
+    return hours
+
+
+def _edge_at(world_root, room, rule, real_when=None):
+    """Whether a rule's edge held for a room at real time `real_when`."""
+    from world import clock, conditions
+
+    def asked():
+        ctx = _context(world_root, room)
+        return all(conditions.evaluate(_without_cause(c), ctx)
+                   for c in (rule.get("when") or []))
+
+    if real_when is None:
+        return asked()
+    with clock.pinned(real_when):
+        return asked()
+
+
+def _rose_between(world_root, room, rule, was_true, start, end):
+    """
+    Whether a rule became true for a room at some moment after `start`.
+
+    The plain comparison first: false then and true now. Then each boundary
+    the rule watches, at the last time the dial reached it: a rule that was
+    true, went false and came true again while nobody watched still rose, at
+    the boundary where it came true.
+    """
+    from world import clock
+
+    if not was_true and _edge_at(world_root, room, rule):
+        return True
+    for boundary in _clock_hours_in(world_root, rule.get("when")):
+        crossed = clock.real_time_of_last(world_root, boundary, before=end)
+        if crossed <= start:
+            continue
+        if (not _edge_at(world_root, room, rule, crossed - SLACK)
+                and _edge_at(world_root, room, rule, crossed + SLACK)):
+            return True
+    return False
+
+
+def settle_place(world_root, room, boundary=None):
+    """
+    Fire the clock-watching place rules that became true for one room.
+
+    With `boundary` -- the real time the clock timer was set for -- a rule
+    that rose across it fires and says so. Without, this is a room somebody
+    has just come into, and a rule that rose since it was last asked fires
+    once and silently. Either way the room's memo is brought up to now.
+    """
+    from world import clock
+
+    if world_root is None or room is None:
+        return
+    places = [rule for rule in applying(world_root, room)
+              if rule in _place_rules(world_root)]
+    if not places:
+        return
+    now = clock._real_now()
+    seen = dict(getattr(world_root.db, SEEN_ATTR, None) or {})
+    key = str(room.id)
+    for rule in places:
+        entries = dict(seen.get(rule["id"]) or {})
+        entry = entries.get(key)
+        rose = False
+        if boundary is not None:
+            rose = (_edge_at(world_root, room, rule)
+                    and not _edge_at(world_root, room, rule,
+                                     boundary - 2 * SLACK))
+        elif entry is not None:
+            try:
+                rose = _rose_between(world_root, room, rule, bool(entry[0]),
+                                     float(entry[1]), now)
+            except (TypeError, ValueError, IndexError):
+                rose = False
+        if rose:
+            fire(world_root, rule, room, None, silent=boundary is None)
+        entries[key] = [_edge_at(world_root, room, rule), now]
+        seen[rule["id"]] = entries
+    setattr(world_root.db, SEEN_ATTR, seen)
+
+
+def occupied_rooms(world_root):
+    """
+    The rooms of this world a person is in, player or NPC.
+
+    Players by their sessions and NPCs by their typeclass, so a world is never
+    walked room by room: a room with nobody in it is exactly the one this does
+    not need to find.
+    """
+    from evennia.server.sessionhandler import SESSIONS
+
+    from typeclasses.npcs import NPC
+
+    found = {}
+    people = [getattr(session, "puppet", None)
+              for session in SESSIONS.get_sessions()]
+    people += list(NPC.objects.all_family())
+    for person in people:
+        if _gone(person):
+            continue
+        room = room_of(person)
+        if room is not None and world_of(room) == world_root:
+            found[room.id] = room
+    return list(found.values())
+
+
+def arm_clock(world_root):
+    """
+    Set this world's one clock timer for the next boundary a place rule
+    watches, or clear it. Only while the world is awake.
+    """
+    if world_root is None or _gone(world_root):
+        return
+    call = getattr(world_root.ndb, CLOCK_TIMER, None)
+    if call is not None:
+        try:
+            if call.active():
+                call.cancel()
+        except Exception:
+            pass
+        setattr(world_root.ndb, CLOCK_TIMER, None)
+    if not _awake(world_root):
+        return
+    hours = clock_hours(world_root)
+    if not hours:
+        return
+    from world import clock
+
+    seconds = min(clock.real_seconds_until(world_root, h) for h in hours)
+    boundary = clock._real_now() + seconds
+    try:
+        from twisted.internet import reactor
+
+        call = (CLOCK or reactor).callLater(seconds + SLACK, _clock_crossed,
+                                            world_root, boundary)
+    except Exception as exc:
+        logger.log_info(f"becomes: could not arm the clock for "
+                        f"{world_root}: {exc}")
+        return
+    setattr(world_root.ndb, CLOCK_TIMER, call)
+
+
+def _clock_crossed(world_root, boundary):
+    """The dial reached a boundary: settle every room somebody is in."""
+    if _gone(world_root):
+        return
+    setattr(world_root.ndb, CLOCK_TIMER, None)
+    if not _awake(world_root):
+        return
+    for room in occupied_rooms(world_root):
+        settle_place(world_root, room, boundary=boundary)
+    arm_clock(world_root)
+
+
+def arrived(person):
+    """
+    Somebody has come into a room: catch it up on what the clock did.
+
+    Silent, and once, for whatever rose while nobody was there to see it.
+    """
+    room = room_of(person)
+    root = world_of(room)
+    if root is not None:
+        settle_place(root, room)
 
 
 # ---------------------------------------------------------------------------

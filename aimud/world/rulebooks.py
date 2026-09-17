@@ -170,6 +170,12 @@ def add(world_root, rule):
     store = _store(world_root)
     store[record["id"]] = record
     setattr(world_root.db, ATTR, store)
+    if record["phase"] == BECOMES:
+        # A rule about a place may watch the clock, and a new boundary wants
+        # the world's timer set afresh. See world/becoming.py.
+        from world import becoming
+
+        becoming.arm_clock(world_root)
     logger.log_info(
         f"rules: {record['id']} {record['phase']} "
         f"{record['action'] or 'any action'} at {said_scope(record['scope'])}"

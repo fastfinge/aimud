@@ -283,7 +283,7 @@ PREDICATES = ("is", "lacks", "affords", "kind", "not_kind", "holds",
               "not_holds", "wears", "not_wears", "owned_by", "not_owned_by",
               "placed", "not_placed", "trait", "in_room", "not_in_room",
               "exists", "gone", "able", "reachable_by", "visible_to",
-              "leads_to", "not_leads_to", "never", "unbound")
+              "leads_to", "not_leads_to", "never", "unbound", "clock")
 
 
 def predicate_of(condition):
@@ -549,6 +549,7 @@ OPPOSITES = {
     "exists": "gone", "gone": "exists",
     "unbound": "unbound",
     "trait": "trait",
+    "clock": "clock",
 }
 
 #: The predicates that have no opposite, and why. A decision on the record
@@ -622,6 +623,15 @@ def negate(condition):
 
     if name == "unbound":
         return dict(rest, unbound=not bool(value))
+
+    if name == "clock":
+        # The same dial with its ends swapped: a range includes its start and
+        # not its end, so the two cover the day exactly once between them.
+        # A range that starts where it ends is empty, and has no exact mirror.
+        span = _clock_span(value)
+        if span is None or span[0] == span[1]:
+            return None
+        return dict(rest, clock={"from": span[1], "to": span[0]})
 
     # `owned_by: nobody` and `owned_by: somebody` look like a pair and are not
     # one: both say no about a thing that is not there. So even those two are
@@ -862,6 +872,14 @@ def _abstractly(condition):
         return f"no way leads from {subject} to {value}"
     if name == "never":
         return str(condition.get("because") or "this cannot be done")
+    if name == "clock":
+        from world import clock
+
+        span = _clock_span(value)
+        if span is None:
+            return ""
+        return (f"it is between {clock.hour_words(span[0])} and "
+                f"{clock.hour_words(span[1])}")
     if name == "unbound":
         return (f"nobody said {subject}" if value
                 else f"somebody said {subject}")
@@ -1535,6 +1553,37 @@ def _p_not_leads_to(subject, value, condition, ctx, mood):
     return met, f"A way from here still leads to {value}."
 
 
+def _clock_span(value):
+    """(from, to) hours from a clock condition's value, or None."""
+    try:
+        span = dict(value)
+        return float(span["from"]) % 24, float(span["to"]) % 24
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _p_clock(subject, value, condition, ctx, mood):
+    """
+    Whether it is between two hours on this world's dial.
+
+    Asked of the world rather than of any thing: every world has a clock, and
+    it is the real one until the world says otherwise. Nothing achieves it --
+    no verb makes it night -- so a planner waits for it instead. See
+    world/clock.py.
+    """
+    from world import clock
+
+    span = _clock_span(value)
+    if span is None:
+        return True, ""          # nothing asked is nothing to refuse
+    met = clock.in_range(clock.hour(ctx.world_root), *span)
+    said = (f"between {clock.hour_words(span[0])} and "
+            f"{clock.hour_words(span[1])}")
+    if mood == WANT:
+        return met, f"wait until it is {said}"
+    return met, f"It must be {said}."
+
+
 def _p_never(subject, value, condition, ctx, mood):
     """
     A condition that cannot be met, carrying its own reason.
@@ -1660,6 +1709,7 @@ _PREDICATES = {
     "able": _p_able,
     "reachable_by": _p_reachable,
     "never": _p_never,
+    "clock": _p_clock,
     "unbound": _p_unbound,
 }
 
@@ -2209,6 +2259,15 @@ def _leaf_schema(names, known_traits, tb):
                       "description": "never true: a rule nothing can pass"},
             "unbound": {"type": "boolean",
                         "description": "nobody named one"},
+            "clock": {"type": "object",
+                      "properties": {
+                          "from": {"type": "number",
+                                   "description": "hour it starts, 0 to 24"},
+                          "to": {"type": "number",
+                                 "description": "hour it ends, not included"}},
+                      "description": "with subject world: the time of day "
+                                     "it must be, and it may wrap past "
+                                     "midnight"},
         },
         "required": ["subject"],
     }

@@ -346,6 +346,8 @@ class AConditionAndItsMirrorAlwaysDisagree(GameTest):
         {"subject": "direct", "unbound": True},
         {"subject": "here", "leads_to": "Library"},
         {"subject": "here", "leads_to": "Nowhere"},
+        {"subject": "world", "clock": {"from": 20, "to": 6}},
+        {"subject": "world", "clock": {"from": 6, "to": 20}},
         {"any": [{"subject": "direct", "is": ["open"]},
                  {"subject": "actor", "holds": ["direct"]}]},
         {"all": [{"subject": "direct", "lacks": ["open"]},

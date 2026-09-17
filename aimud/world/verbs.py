@@ -1120,6 +1120,8 @@ def derived_holds(obj, world_root, only=None):
     _DERIVING.depth = depth + 1
     try:
         for slug, entry in derived.items():
+            if not _about_this(entry, obj, world_root):
+                continue
             if all(conditions.evaluate(c, ctx) for c in _definition(entry)):
                 found.add(slug)
     finally:
@@ -1186,6 +1188,23 @@ def state_bonuses(world_root):
     return found
 
 
+#: What a derived state may be restricted to being about. Night is a state of
+#: the world, and a definition that only asks about the world would otherwise
+#: be true of every lamp and chair in it: "It is night" under every look.
+DERIVED_OF = ("world",)
+
+
+def _about_this(entry, obj, world_root):
+    """Whether a derived state's `of` lets it be true of `obj` at all."""
+    try:
+        of = str(entry.get("of") or "")
+    except AttributeError:
+        return True
+    if of == "world":
+        return world_root is not None and obj is not None             and getattr(obj, "id", None) == getattr(world_root, "id", None)
+    return True
+
+
 def _worded_definition(definition):
     """A derived state's definition as it reads, with nothing to evaluate."""
     from world import conditions
@@ -1223,7 +1242,7 @@ def _makes_a_cycle(vocab, slug):
     return False
 
 
-def _derive(world_root, slug, when, means="", group=None):
+def _derive(world_root, slug, when, means="", group=None, of=None):
     """
     Register a state that is worked out from `when`. Returns the slug, or "".
 
@@ -1274,6 +1293,8 @@ def _derive(world_root, slug, when, means="", group=None):
 
     entry = {"means": str(means or (existing or {}).get("means") or ""),
              "conflicts": [], "group": group or "", "when": kept}
+    if of in DERIVED_OF:
+        entry["of"] = of
     trial = dict(vocab)
     trial[slug] = entry
     if _makes_a_cycle(trial, slug):
@@ -1777,7 +1798,7 @@ def _slug_state(word):
 def register_state(world_root, slug, means="", conflicts=(), group=None,
                    ends_on_move=None, prevents_acting=None,
                    prevents_moving=None, prevents_speaking=None, when=None,
-                   bonuses=None):
+                   bonuses=None, of=None):
     """
     Add a state to the world's vocabulary, or fold it onto an existing one.
 
@@ -1802,7 +1823,7 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
     if len(slug) < 2:
         return ""
     if when is not None:
-        slug = _derive(world_root, slug, when, means, group)
+        slug = _derive(world_root, slug, when, means, group, of)
         if slug and bonuses is not None:
             set_bonuses(world_root, slug, bonuses)
         return slug

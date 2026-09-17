@@ -257,6 +257,7 @@ class Character(ObjectParent, DefaultCharacter):
         from world import becoming
 
         becoming.settle()
+        becoming.arrived(self)
         if came_from_root != room.db.world_root:
             becoming.arm_around(self)
         else:

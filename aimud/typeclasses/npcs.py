@@ -364,6 +364,7 @@ class NPC(ObjectParent, DefaultObject):
         from world import becoming
 
         becoming.settle()
+        becoming.arrived(self)
         becoming.arm(self)
 
     def at_object_receive(self, moved_obj, source_location, move_type="move", **kwargs):
