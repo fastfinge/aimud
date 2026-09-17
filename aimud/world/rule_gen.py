@@ -241,6 +241,12 @@ def validate(reply, offered, action, world_root=None):
         if phase == rulebooks.CHECK and not conds:
             complaints.append("a check rule that checks nothing")
             continue
+        if phase == rulebooks.CHECK and _packed(entry.get("conditions"),
+                                                conditions):
+            complaints.append(
+                "a check rule packed into one all -- write one check rule per "
+                "requirement, and keep any and all for saying \"or\"")
+            continue
         dead = _self_defeating(conds, produced)
         if phase == rulebooks.CHECK and dead:
             complaints.append(
@@ -249,6 +255,13 @@ def validate(reply, offered, action, world_root=None):
             continue
         if phase in (rulebooks.CARRY_OUT, rulebooks.AFTER) and not effects:
             complaints.append(f"a {phase} rule that changes nothing")
+            continue
+        written = _derived_written(effects, world_root)
+        if written:
+            complaints.append(
+                f"{', '.join(written)} is worked out from other conditions, "
+                f"so no effect can set or clear it -- change what it is worked "
+                f"out from instead")
             continue
 
         # Through `checks.clean`, so that a contest nothing can roll leaves the
@@ -322,18 +335,22 @@ def _self_defeating(conds, produced):
     """
     if not produced:
         return []
-    wanted = set()
+    from world import rulecheck
+
+    dead = set()
     for condition in (conds or []):
-        try:
-            wanted |= {str(s).lower()
-                       for s in model_json.listed(condition.get("is"))}
-        except AttributeError:
-            continue
-    return sorted(wanted & produced)
+        dead |= rulecheck.dead_states(condition, produced)
+    return sorted(dead)
 
 
 def _clean_conditions(given, conditions):
-    """Conditions that name a predicate this game can actually test."""
+    """
+    Conditions that name a predicate this game can actually test.
+
+    Through `conditions.normalise_all`, so an `any` is held to the same depth
+    and width as anything else stored, and an `all` at the top joins the list
+    it is in, since that is what the list already means.
+    """
     kept, complaints = [], []
     for entry in (given or []):
         try:
@@ -341,12 +358,51 @@ def _clean_conditions(given, conditions):
         except (TypeError, ValueError):
             complaints.append("a condition that was not an object")
             continue
-        name, _value = conditions.predicate_of(entry)
-        if not name:
-            complaints.append(f"a condition asking nothing: {entry}")
+        tidy, refused = conditions.normalise_all([entry])
+        if refused:
+            if conditions.node_of(entry)[0]:
+                complaints.append(
+                    f"an any or all that is empty, holds a condition asking "
+                    f"nothing, or nests more than {conditions.MAX_DEPTH} deep: "
+                    f"{entry}")
+            else:
+                complaints.append(f"a condition asking nothing: {entry}")
             continue
-        kept.append(entry)
+        kept.extend(tidy)
     return kept, complaints
+
+
+def _derived_written(effects, world_root):
+    """The derived states a list of effects tries to set or clear."""
+    from world import verbs
+
+    derived = set(verbs.derived_states(world_root)) if world_root else set()
+    if not derived:
+        return []
+    found = set()
+    for effect in effects or []:
+        if str(effect.get("type") or "") != "set_state":
+            continue
+        for field in ("add", "remove"):
+            found |= {str(s).lower() for s in model_json.listed(
+                effect.get(field))} & derived
+    return sorted(found)
+
+
+def _packed(given, conditions):
+    """
+    True when a check rule's only condition is an `all`.
+
+    Combinators are for "or". A check rule keeps one requirement to a rule so
+    that a refusal names exactly what is missing and `view rules` shows a line
+    per requirement, and packing them into one `all` loses both.
+    """
+    try:
+        given = list(given or [])
+    except TypeError:
+        return False
+    return (len(given) == 1
+            and conditions.node_of(given[0])[0] == conditions.ALL)
 
 
 def _clean_effects(given):
@@ -475,6 +531,20 @@ check rule it says what must hold before the verb may happen at all:
   {"subject": {"zone": true}, "lacks": ["port_closed"]}
   {"subject": "direct", "unbound": true}            nobody named one
 Subjects are the roles, "actor", "here", {"enclosure": kind} or {"zone": true}.
+
+Every predicate that has an opposite says it with its own word, never "not":
+"lacks" for "is", and "not_holds", "not_wears", "not_kind", "not_placed",
+"not_in_room", "not_owned_by" and "not_leads_to" for the rest. For a figure,
+"below" and "above" are less than and more than, where "min" and "max" include
+the number itself.
+
+When more than one thing would do, say so with "any", which takes the place of
+a subject and a predicate:
+  {"any": [{"subject": "actor", "holds": ["key"]},
+           {"subject": "actor", "holds": ["lockpick"]}]}
+"any" is for "or" and nothing else. A list of conditions already means all of
+them, so a check rule with two requirements is two check rules, never one rule
+wrapped around both.
 """
 
 _EFFECTS = """An effect is one of:
@@ -486,7 +556,7 @@ _EFFECTS = """An effect is one of:
                           "preposition": "in"}
   {"type": "move_object", "name_role": "direct", "to": "<a room's name>"}
   {"type": "set_exit", "exit": "airlock", "to": "<a room's name>"}
-  {"type": "create_object", "name": "...", "description": "..."}
+  {"type": "create_object", "name": "loaf of bread", "why": "what baking makes"}
   {"type": "destroy_object", "name_role": "direct"}
   {"type": "set_owner", "name_role": "direct", "to": "actor"}
   {"type": "set_owner", "name_role": "direct", "to": "nobody"}
@@ -503,6 +573,12 @@ letter moves it to the container with "in", one that sets a cup on a table
 moves it to the target with "on", and one that sends a parcel away names the
 room. Never invent a state like "in_box" to stand in for this; where a thing
 is, is not a property of the thing, and the game tracks it properly.
+
+"create_object" names what is made, in plain words, and "why" says what it is
+made for. Leave out what sort of thing it is, what can be done with it and what
+it looks like: that is worked out once, when your rule is filed, the same way
+as for anything else in the world, and kept with the rule. A "description" is
+kept if you give one.
 
 "move_contents" empties a thing out: everything it holds goes wherever a
 single thing would have gone, with the same "to". That is what looting,
@@ -644,8 +720,9 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
             # that every one of them failed validation. Counted, so that the next
             # attempt at this verb is not another call to the same effect.
             note_fruitless(world_root, action, cannot)
-        on_success([rulebooks.add(world_root, rule) for rule in kept]
-                   + adopted)
+        filed = [rulebooks.add(world_root, rule) for rule in kept]
+        flesh_out(sponsor, world_root, filed)
+        on_success(filed + adopted)
 
     llm.converse(sponsor, model, messages, box, on_done=answered,
                  on_error=on_error, on_exhausted=answered,
@@ -1043,3 +1120,290 @@ def _related(what, words):
         if wanted in spelled(commonsense.forward(word, "HasA")):
             return word
     return ""
+
+# ---------------------------------------------------------------------------
+# What running out of a figure means
+# ---------------------------------------------------------------------------
+#
+# A becomes rule is never an answer to "what does this verb do", so it is never
+# asked for when a verb is attempted. It is asked for once per figure, the first
+# time somebody's gauge in this world actually runs out -- evidence from this
+# world that the question matters, and one call rather than one per verb that
+# could hurt somebody. See docs/becoming-and-time.md §6 and world/becoming.py.
+
+#: Marks a figure whose running out has been asked about, so it is asked once.
+ASKED_BECOMING = "asked_becoming"
+
+BECOMING_ROUNDS = 6
+
+_BECOMING_SYSTEM = """You write rules for a text MUD about what happens when
+something becomes true -- not when anybody does anything, but when a fact about
+somebody changes. Answer by calling file_becoming.
+
+You are told a figure somebody has, such as health or hunger, and that it has
+just run out for the first time in this world. Say what running out of it means
+here, in the fewest rules that say it. Often that is one rule: somebody whose
+health runs out is dead. Sometimes it means nothing at all, and then say so in
+cannot_say.
+
+A rule has:
+  "name"    what is so, in one short sentence: "no health left is dead"
+  "when"    the conditions that become true, about "direct", the person:
+            [{"subject": "direct", "trait": "health", "max": 0}]
+  "effects" what follows, about "direct" -- the person it happened to
+  "report"  what everybody present is told, as a sentence with {direct} for
+            the person and $pconj(verb) for a verb that agrees:
+            "{direct} $pconj(collapse) to the ground."
+
+{conditions}
+{effects}
+A rule may name whoever caused the change as "cause" -- the one who struck the
+blow -- but only if its "when" also says there must be one:
+{"subject": "cause", "unbound": false}. A figure that ran down on its own has
+no cause.
+
+Never use "try" or "describe" here: nobody is doing anything, and nobody asked
+to look. A state that is worked out from other conditions cannot be set by an
+effect; the tools say which those are.
+"""
+
+
+def becoming_tool():
+    """`file_becoming`, the finish tool `learn_becoming` answers with."""
+    from world import conditions
+    from world import effects as effects_mod
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        rule = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string",
+                         "description": "What is so, in one short sentence"},
+                "when": {"type": "array", "items": conditions.schema(ctx),
+                         "description": "What becomes true"},
+                "effects": {"type": "array",
+                            "items": effects_mod.schema(ctx),
+                            "description": "What follows"},
+                "report": {"type": "string",
+                           "description": "What everybody present is told"},
+            },
+            "required": ["name", "when"],
+        }
+        return tb.params({
+            "rules": {"type": "array", "items": rule, "maxItems": 3,
+                      "description": "The fewest rules that say it; empty "
+                                     "with cannot_say if it means nothing"},
+            "cannot_say": {"type": "string",
+                           "description": "Why running out means nothing "
+                                          "here, or what could not be said"},
+        }, ["rules"])
+
+    def handler(ctx, args, answer):
+        kept, said = validate_becoming(args, ctx.world_root)
+        if (not said and not kept
+                and not str(args.get("cannot_say") or "").strip()):
+            said.append("that files nothing: write a rule, or say in "
+                        "cannot_say why running out means nothing here")
+        if said:
+            answer(tb.complain("Not filed: " + "; ".join(said) + ". Send the "
+                               "whole answer again with that put right, or "
+                               "leave that part out.", value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("file_becoming", "File what running out of it means.",
+                   parameters, handler, finishes=True)
+
+
+def validate_becoming(reply, world_root=None):
+    """
+    The becomes rules in a reply worth keeping, and what was wrong with the rest.
+
+    Returns `(rules, complaints)`, the same shape `validate` answers in, held
+    to what a becomes rule must be: something to watch, something that
+    follows, no `try` or `describe`, no state that is worked out rather than
+    set, and no cause named without asking that there was one.
+    """
+    from world import conditions, rulecheck
+
+    kept, complaints = [], []
+    try:
+        given = list(reply.get("rules") or [])
+    except AttributeError:
+        return [], ["the reply was not a rule"]
+    for entry in given:
+        try:
+            entry = dict(entry)
+        except (TypeError, ValueError):
+            complaints.append("a rule that was not an object")
+            continue
+        guards, bad = _clean_conditions(entry.get("when"), conditions)
+        complaints += bad
+        effects_given, bad = _clean_effects(entry.get("effects"))
+        complaints += bad
+        report = str(entry.get("report") or "").strip()
+        if not guards:
+            complaints.append("a rule that watches nothing")
+            continue
+        if not effects_given and not report:
+            complaints.append("a rule where nothing follows and nothing is "
+                              "said")
+            continue
+        refused = sorted({str(e.get("type")) for e in effects_given
+                          if str(e.get("type")) in ("try", "describe")})
+        if refused:
+            complaints.append(f"{', '.join(refused)} cannot follow from "
+                              f"something becoming true")
+            continue
+        written = _derived_written(effects_given, world_root)
+        if written:
+            complaints.append(
+                f"{', '.join(written)} is worked out from other conditions, "
+                f"so no effect can set or clear it")
+            continue
+        rule = rulebooks.blank(
+            phase=rulebooks.BECOMES, scope={rulebooks.WORLD: True},
+            about="direct", name=str(entry.get("name") or "").strip(),
+            when=guards, effects=effects_given, report=report,
+            source="generated")
+        if rulecheck.cause_unguarded({"new": rule}):
+            complaints.append(
+                "a rule naming the cause must also say there has to be one: "
+                "{\"subject\": \"cause\", \"unbound\": false}")
+            continue
+        kept.append(rule)
+    return kept, complaints
+
+
+def learn_becoming(sponsor, world_root, slug, on_success=None,
+                   on_error=None):
+    """
+    Async. Ask this world what running out of `slug` means, and file it.
+
+    Asked once per figure: the register entry is marked before the call, so
+    two characters running out at once do not pay for the same question.
+    """
+    from world import lookups, lore, traits
+    from world import toolbox as tb
+
+    on_success = on_success or (lambda rules: None)
+    on_error = on_error or (lambda why: logger.log_info(
+        f"rule_gen: what running out of {slug} means went unanswered -- {why}"))
+    try:
+        sponsor.key()
+    except ValueError as err:
+        on_error(str(err))
+        return
+    entry = dict(traits.known(world_root, slug) or {})
+    vocab = dict(world_root.db.trait_vocabulary or {})
+    if slug in vocab:
+        vocab[slug] = dict(vocab[slug], **{ASKED_BECOMING: True})
+        world_root.db.trait_vocabulary = vocab
+
+    model = sponsor.model_for("commands")
+    system = _BECOMING_SYSTEM.replace("{conditions}", _CONDITIONS) \
+                             .replace("{effects}", _EFFECTS)
+    lowest = entry.get("min", 0)
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": (
+            f"World: {lore.description(world_root)}\n\n"
+            f"The figure: {slug} -- {entry.get('name') or slug}: "
+            f"{entry.get('means') or 'not described'}. It is a "
+            f"{entry.get('trait_type') or 'counter'}, and it has just run "
+            f"out -- fallen to {lowest} -- for somebody in this world for "
+            f"the first time. What does that mean here?")},
+    ]
+    box = tb.Toolbox(
+        [becoming_tool()] + lookups.named(*LOOKUPS),
+        tb.ToolContext(world_root=world_root, sponsor=sponsor,
+                       job="commands"))
+
+    def answered(reply):
+        reply = reply if isinstance(reply, dict) else {}
+        cannot = str(reply.get("cannot_say") or "").strip()
+        if cannot:
+            logger.log_info(f"rule_gen: running out of {slug} -- {cannot}")
+        kept, complaints = validate_becoming(reply, world_root)
+        for complaint in complaints:
+            logger.log_info(f"rule_gen: running out of {slug} dropped -- "
+                            f"{complaint}")
+        filed = [rulebooks.add(world_root, rule) for rule in kept]
+        flesh_out(sponsor, world_root, filed)
+        on_success(filed)
+
+    llm.converse(sponsor, model, messages, box, on_done=answered,
+                 on_error=on_error, on_exhausted=answered,
+                 rounds=BECOMING_ROUNDS)
+
+
+def flesh_out(sponsor, world_root, rules):
+    """
+    Async. Ask the item generator, once, what each thing a rule makes is.
+
+    A rule writer names what a `create_object` effect makes and, if it likes,
+    why. What sort of thing that is -- its kind, what can be done with it, how
+    it looks -- is the item generator's question, asked the same way as for a
+    thing somebody reaches for, with the rule as the reason. The answer is kept
+    on the rule, so firing it builds the same thing every time and never calls
+    a model: an effect runs before the narration is sent, a becomes rule may
+    never pay for firing, and the planner reads the name the rule wrote.
+
+    Until the answer arrives -- or if it never does -- the rule makes the thing
+    from its name alone, as rules always have. One call per thing per rule
+    written, never one per firing.
+    """
+    from world import item_gen
+
+    for rule in rules or []:
+        if not rule or not rule.get("id"):
+            continue
+        effects = rule.get("effects") or []
+        if hasattr(effects, "values"):
+            effects = [e for branch in effects.values() for e in branch or []]
+        asked = set()
+        for effect in effects:
+            if not rulebooks.thin_creation(effect):
+                continue
+            name = str(effect.get("name")).strip()
+            if name.lower() in asked:
+                continue
+            asked.add(name.lower())
+            wanted = item_gen.Wanted(
+                verb=rule.get("action") or "", role="made",
+                made_by=rule.get("name") or rule["id"],
+                why=effect.get("why") or "")
+
+            def keep(spec, rule_id=rule["id"], name=name):
+                rulebooks.fill_created(world_root, rule_id, name, spec)
+
+            def missed(why, name=name):
+                logger.log_info(f"rule_gen: what {name!r} is went "
+                                f"unanswered, so it is made from its name "
+                                f"alone -- {why}")
+
+            item_gen.ask_for_item(sponsor, name, keep, missed,
+                                  world_root=world_root, wanted=wanted)
+
+
+def ask_when_it_runs_out(character, slug, world_root):
+    """
+    A figure has just reached its lowest for somebody. If this world has never
+    said what that means, ask -- once, and only where somebody is paying and
+    no becomes rule already watches the figure.
+    """
+    from world import becoming, sponsor as sponsor_mod, traits
+
+    if world_root is None:
+        return
+    entry = traits.known(world_root, slug) or {}
+    if entry.get(ASKED_BECOMING):
+        return
+    for rule in becoming.rules(world_root):
+        if slug in becoming.thresholds_of_rule(world_root, rule):
+            return
+    payer = sponsor_mod.of_world(world_root, actor=character)
+    if not payer.answers:
+        return
+    learn_becoming(payer, world_root, slug)

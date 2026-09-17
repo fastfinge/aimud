@@ -118,6 +118,8 @@ def every_rule(root):
     found = rulebooks.all_rules(root)
     if not found:
         return "This world has no rules yet."
+    becoming = [r for r in found if r.get("phase") == rulebooks.BECOMES]
+    found = [r for r in found if r.get("phase") != rulebooks.BECOMES]
     by_action = {}
     for rule in found:
         by_action.setdefault(rule.get("action") or "any action", []).append(rule)
@@ -128,8 +130,36 @@ def every_rule(root):
         for rule in sorted(by_action[action],
                            key=lambda r: rulebooks.rank(r, None, root)):
             lines.append(f"    {rule.get('phase', ''):10} {rule_line(rule, root)}")
+    lines += changing_lines(root, becoming)
     lines += ["", "|xType |wview rules <verb>|x for one verb in firing order.|n"]
     return "\n".join(lines)
+
+
+def changing_lines(root, rules):
+    """
+    The becomes rules, in the order they fire, each with what it watches and
+    what it says.
+
+    Most general first, which is the reverse of every other listing and the
+    order they really fire in: nothing wins here, so the specific rule lands
+    last and has the last word. Said so, because a listing that sorted them
+    the ordinary way would describe a world that does not exist.
+    """
+    from world import rulebooks
+
+    if not rules:
+        return []
+    ordered = sorted(rules, key=lambda r: rulebooks.rank(r, None, root),
+                     reverse=True)
+    lines = ["", "  |wwhen things change|n, most general first, which is the "
+                 "order they fire in"]
+    for rule in ordered:
+        lines.append(f"    {rule_line(rule, root)}")
+        for guard in (rule.get("when") or []):
+            lines += condition_lines(guard, "      ", lead="|xwhen |n")
+        if rule.get("report"):
+            lines.append(f"      |xsays:|n {rule['report']}")
+    return lines
 
 
 def _seeded(root):
@@ -207,7 +237,8 @@ def suspend_dead(root):
 
     findings = rulecheck.scan(rulecheck.of_world(root))
     dead = [rule_id for rule_id, _action, _states, _name
-            in findings.get("self_defeating") or []]
+            in (findings.get("self_defeating") or [])
+            + (findings.get("after_self_defeating") or [])]
     if not dead:
         return "Nothing in this world is provably dead."
     done = [rulebooks.set_listed(root, rule_id, False) for rule_id in dead]
@@ -215,10 +246,45 @@ def suspend_dead(root):
     return "\n".join([
         f"|w{len([r for r in done if r])}|n rules suspended, over "
         f"{len(verbs)} verbs: {', '.join(verbs)}.",
-        "|xEach demanded the condition its own verb produces. They are still "
+        "|xEach demanded the condition its own verb produces, or followed only "
+        "when it had not produced it. They are still "
         "in the book -- |wview rules <verb>|n shows them marked suspended, "
         "and |wedit rules <id> restore|n puts one back.|n",
     ])
+
+
+def apply_rule_once(root, rule_id):
+    """Fire a becomes rule once for what it already holds for, and say so."""
+    from world import becoming, rulebooks
+
+    rule = rulebooks.get(root, rule_id)
+    if rule is None:
+        return f"There is no rule |w{rule_id}|n in this world."
+    if rule.get("phase") != rulebooks.BECOMES:
+        return ("Only a rule about what becomes true can be applied once; "
+                "any other rule applies whenever its verb is tried.")
+    done = becoming.apply_once(root, rule_id)
+    if not done:
+        return f"Nothing here is already as {rule_id} watches for."
+    names = ", ".join(sorted(getattr(obj, "key", str(obj)) for obj in done))
+    return f"|w{rule_id}|n applied once, for {names}."
+
+
+def already_lines(root):
+    """What each becomes rule already holds for, and so has never fired for."""
+    from world import becoming
+
+    lines = []
+    for rule in becoming.rules(root):
+        matched = becoming.already_true(root, rule)
+        if matched:
+            names = ", ".join(sorted(getattr(obj, "key", str(obj))
+                                     for obj in matched))
+            lines.append(
+                f"{rule['id']} ({rule.get('name') or 'unnamed'}) already holds "
+                f"for {names}, and waits for a change before it fires. "
+                f"|wedit rules {rule['id']} apply|n fires it once.")
+    return lines
 
 
 DEAD_QUESTION = ("Suspend every rule that provably cannot fire? They stay in "
@@ -233,13 +299,23 @@ def _rule_form(rule_id):
         if rule is None:
             return []
         listed = rule.get("listed", True)
-        return [menus.Action(
+        found = [menus.Action(
             "restore" if not listed else "suspend",
             "Put it back in force" if not listed else "Suspend it",
             run=lambda ctx: set_listed(_root(ctx), rule_id, not listed),
             after=menus.BACK,
             command=lambda ctx: f"edit rules {rule_id} "
                                 f"{'restore' if not listed else 'suspend'}")]
+        if rule.get("phase") == rulebooks.BECOMES and listed:
+            found.append(menus.Action(
+                "apply", "Apply it once to what it already holds for",
+                run=lambda ctx: apply_rule_once(_root(ctx), rule_id),
+                after=menus.BACK,
+                command=lambda ctx: f"edit rules {rule_id} apply",
+                help="A rule added to a world waits for something to change, "
+                     "so whatever it already holds for has never had it "
+                     "fire. This fires it once for each of them."))
+        return found
 
     def intro(ctx):
         from world import rulebooks
@@ -298,9 +374,12 @@ def edit_rules_run(cmd, ctx, words):
         caller.msg(set_listed(root, first, False))
     elif action in ("restore", "unsuspend", "list"):
         caller.msg(set_listed(root, first, True))
+    elif action == "apply":
+        caller.msg(apply_rule_once(root, first))
     elif action:
         caller.msg(f"A rule can be suspended or restored: |wedit rules "
-                   f"{first} suspend|n.")
+                   f"{first} suspend|n. A rule about what becomes true can "
+                   f"also be applied once: |wedit rules {first} apply|n.")
     else:
         from world import rulebooks
 
@@ -572,7 +651,7 @@ def _effect_rule(root, rule):
     mark = f"|x({where}, standard)|n" if standard else f"|x({where})|n"
     out = []
     for condition in (rule.get("conditions") or []):
-        out.append(f"    {conditions.describe(condition)} {mark}")
+        out += condition_lines(condition, "    ", suffix=f" {mark}")
     for effect in rulecheck.effects_of(rule):
         out.append(f"    {effects_mod.say(effect)} {mark}")
     if not out:
@@ -581,8 +660,30 @@ def _effect_rule(root, rule):
     # verb gathers the same ones, so they are not printed.
     if not standard:
         for guard in (rule.get("when") or []):
-            out.append(f"      |xonly when {conditions.describe(guard)}|n")
+            out += condition_lines(guard, "      ", lead="|xonly when ",
+                                   suffix="|n")
     return out
+
+
+def condition_lines(condition, indent, lead="", suffix=""):
+    """
+    One condition as the lines of a listing.
+
+    A plain condition is one line. An `any` or an `all` is a heading and then
+    a line per member, indented under it, because this is read aloud at least
+    as often as it is looked at, and "any of these" followed by a short list
+    is easier to follow by ear than one long sentence joined by "or".
+    """
+    from world import conditions
+
+    kind, members = conditions.node_of(condition)
+    if not kind:
+        return [f"{indent}{lead}{conditions.describe(condition)}{suffix}"]
+    heading = "any one of these" if kind == conditions.ANY else "all of these"
+    lines = [f"{indent}{lead}{heading}:{suffix}"]
+    for member in members:
+        lines += condition_lines(member, indent + "  ")
+    return lines
 
 
 VIEW_EFFECTS = menus.Form(
@@ -629,6 +730,18 @@ def faults_report(root):
     findings = rulecheck.scan(rulecheck.of_world(root))
     lines = [rulecheck.report(findings, lore.title(root)), "",
              counters.report(root)]
+    from world import becoming
+
+    waiting_lines = already_lines(root)
+    if waiting_lines:
+        lines += [""] + waiting_lines
+    looping = dict(getattr(root.db, becoming.OVERFLOW_ATTR, None) or {})
+    if looping:
+        lines += ["", f"|w{len(looping)} rules|n about what becomes true kept "
+                      f"setting each other off, and were stopped each time: "
+                      + ", ".join(f"{rule_id} ({count} times)"
+                                  for rule_id, count in sorted(looping.items()))
+                      + "."]
     standing = len(suggest.queue(root))
     if standing:
         lines += ["", f"|w{standing} suggestions|n are waiting. "

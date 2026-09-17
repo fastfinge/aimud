@@ -285,6 +285,12 @@ def seed(world_root):
     """
     if not world_root:
         return []
+    # And the times of day, which every world has because every world has a
+    # clock. Once, with their own mark, so a world that renamed night keeps
+    # its own word. See world/clock.py.
+    from world import clock
+
+    clock.seed_periods(world_root)
     held = int(getattr(world_root.db, VERSION_ATTR, 0) or 0)
     if getattr(world_root.db, SEEDED, False) and held >= VERSION:
         return []

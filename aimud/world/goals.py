@@ -23,7 +23,12 @@ a verb can require of the world is also something a goal can ask for.
 #: Condition types understood here. Anything else is discarded on the way in,
 #: so a model inventing a condition cannot produce a quest nobody can finish.
 CONDITION_TYPES = ("state", "holds", "worn", "trait", "placed", "in_room",
-                   "exists", "gone", "delivered")
+                   "exists", "gone", "delivered", "not_holds", "not_worn",
+                   "not_placed", "not_in_room", "any", "all")
+
+#: The two that hold other conditions rather than asking something themselves:
+#: {"type": "any", "of": [...]}. See world/conditions.py.
+COMBINATOR_TYPES = ("any", "all")
 
 #: How somebody refers to themselves. A want written in the first person and
 #: then formalised comes back with one of these where a name would go.
@@ -152,6 +157,18 @@ def sanitise(conditions, owner=None):
             continue
         if ctype not in CONDITION_TYPES:
             continue
+        if ctype in COMBINATOR_TYPES:
+            # Every branch through the same door, and a branch that does not
+            # survive it spoils the node: an `any` missing a way through is
+            # harder to finish than the one that was written.
+            given = raw.get("of")
+            of = ([] if isinstance(given, str) or hasattr(given, "keys")
+                  else list(given or []))
+            members = sanitise(of, owner)
+            if members and len(members) == len(of):
+                clean.append({"type": ctype, "of": members}
+                             if len(members) > 1 else members[0])
+            continue
         entry = {"type": ctype}
         for field in ("object", "kind", "room", "to", "trait", "host",
                       "preposition"):
@@ -163,7 +180,7 @@ def sanitise(conditions, owner=None):
 
                 entry[field] = [str(s).lower().strip()
                                 for s in listed(raw[field]) if s]
-        for field in ("min", "max"):
+        for field in ("min", "max", "below", "above"):
             if raw.get(field) is not None:
                 try:
                     entry[field] = float(raw[field])
@@ -417,10 +434,27 @@ def schema(ctx=None):
         from world import traits
 
         known_traits = sorted(traits.vocabulary(world_root))
+    leaf = _leaf_schema(relations, tb, known_traits,
+                        [t for t in CONDITION_TYPES
+                         if t not in COMBINATOR_TYPES])
+    shape = {"type": "object",
+             "properties": dict(leaf["properties"]),
+             "required": ["type"]}
+    shape["properties"]["type"] = dict(
+        shape["properties"]["type"], enum=list(CONDITION_TYPES))
+    # One level of "or", over plain conditions, as `conditions.schema` offers.
+    shape["properties"]["of"] = {
+        "type": "array", "items": leaf, "minItems": 2,
+        "description": "any or all: the conditions it joins"}
+    return shape
+
+
+def _leaf_schema(relations, tb, known_traits, types):
+    """One goal condition that asks something itself."""
     return {
         "type": "object",
         "properties": {
-            "type": {"type": "string", "enum": list(CONDITION_TYPES),
+            "type": {"type": "string", "enum": list(types),
                      "description": "What must become true"},
             "object": {"type": "string",
                        "description": "The thing, as it is called; a thing "
@@ -443,6 +477,10 @@ def schema(ctx=None):
                                ask="list_traits"),
             "min": {"type": "number", "description": "trait: at least"},
             "max": {"type": "number", "description": "trait: at most"},
+            "below": {"type": "number",
+                      "description": "trait: less than, not equal"},
+            "above": {"type": "number",
+                      "description": "trait: more than, not equal"},
             "is": {"type": "array", "items": {"type": "string"},
                    "description": "state: conditions it must be in"},
             "lacks": {"type": "array", "items": {"type": "string"},

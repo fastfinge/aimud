@@ -372,7 +372,27 @@ def total(character, ignoring=None):
             if not slug:
                 continue
             found[slug] = found.get(slug, 0.0) + amount
+    # And what they are in: a state may be worth something too, set or worked
+    # out, which is how "starving costs 3 strength" lives on `starving`
+    # rather than in every rule that could leave somebody hungry.
+    for _state, granted in _state_sources(character, world_root):
+        for slug, amount in granted.items():
+            slug = traits.resolve(world_root, slug)
+            if not slug:
+                continue
+            found[slug] = found.get(slug, 0.0) + amount
     return found
+
+
+def _state_sources(character, world_root):
+    """[(state, {trait: amount})] for each state this person is in that counts."""
+    from world import verbs
+
+    worth = verbs.state_bonuses(world_root)
+    if not worth:
+        return []
+    held = verbs.implied_states(character, world_root)
+    return [(state, worth[state]) for state in sorted(worth) if state in held]
 
 
 def recompute_room(room, ignoring=None, without=None):
@@ -488,6 +508,10 @@ def sources(character, slug):
         for granted, amount in bonuses(obj).items():
             if traits.resolve(world_root, granted) == slug and amount:
                 found.append((obj.get_display_name(character), amount))
+    for state, granted in _state_sources(character, world_root):
+        for trait, amount in granted.items():
+            if traits.resolve(world_root, trait) == slug and amount:
+                found.append((f"being {state.replace('_', ' ')}", amount))
     return sorted(found)
 
 

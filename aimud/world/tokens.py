@@ -60,7 +60,13 @@ from functools import lru_cache
 #: subject outranks the object, the object outranks everything oblique.
 #: `world.events` ranks participants by it, and a world may never declare a
 #: token under one of these names.
-ROLES = ("actor", "direct", "target", "container", "source", "instrument")
+#:
+#: `cause` is last. It is whoever acted to bring about something a becomes
+#: rule fired for -- "collapses, struck down by {cause}" -- and is oblique in
+#: any sentence it is in. Nobody names one in a command. See
+#: docs/becoming-and-time.md 6.2.
+ROLES = ("actor", "direct", "target", "container", "source", "instrument",
+         "cause")
 
 #: Slot names that mean something before any world says anything.
 RESERVED_SLOTS = frozenset(ROLES + ("self", "user", "viewer", "here", "world",

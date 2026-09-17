@@ -258,7 +258,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
         waiter("looking for " + ", ".join(
             str(parsed["roles"][role]) for role in unbound))
         _promote(caller, room, sponsor, parsed, bound, unbound, resume,
-                 on_message, fuzzy=fuzzy)
+                 on_message, fuzzy=fuzzy, verb=verb, raw=raw)
         return
 
     _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
@@ -279,12 +279,18 @@ def _mechanics(caller, verb, parsed, bound, on_message):
     the curtain", "put out the fire", "give up" -- and those go on through the
     ordinary pipeline. True when one of them took the attempt.
     """
-    from world import clothing, gear, ownership, relations
+    from world import becoming, clothing, gear, ownership, relations
 
-    return bool(clothing.handle(caller, verb, bound, on_message)
-                or gear.handle(caller, verb, bound, on_message)
-                or ownership.handle(caller, verb, parsed, bound, on_message)
-                or relations.handle(caller, verb, parsed, bound, on_message))
+    # What a mechanic changes, the caller changed -- and a becomes rule it sets
+    # off fires once the mechanic has said what it did, not in the middle.
+    with becoming.caused_by(caller):
+        handled = bool(
+            clothing.handle(caller, verb, bound, on_message)
+            or gear.handle(caller, verb, bound, on_message)
+            or ownership.handle(caller, verb, parsed, bound, on_message)
+            or relations.handle(caller, verb, parsed, bound, on_message))
+    becoming.settle(cause=caller)
+    return handled
 
 
 def consequences(caller, verb, bound):
@@ -319,6 +325,10 @@ def consequences(caller, verb, bound):
                                        phase=rulebooks.AFTER):
         done += effects_mod.apply(caller, room, later.get("effects") or [],
                                   bound=bound, world_root=world_root)
+    # And whatever became true because of it, now that it has happened.
+    from world import becoming
+
+    becoming.settle(cause=caller)
     return done
 
 
@@ -443,7 +453,7 @@ def _follow(caller, parsed, on_message):
 
 
 def _promote(caller, room, sponsor, parsed, bound, unbound, resume, on_message,
-             fuzzy=False):
+             fuzzy=False, verb="", raw=""):
     """
     Try to turn an unbound noun into a real object.
 
@@ -501,8 +511,13 @@ def _promote(caller, room, sponsor, parsed, bound, unbound, resume, on_message,
         bound[role] = obj
         resume()
 
+    # Why it is being made, so it fits: who reached for it, what they typed,
+    # and what it is in the sentence. See `item_gen.Wanted`.
+    from world.item_gen import Wanted
+
     conjure(caller, room, sponsor, parsed["roles"][role], ready,
-            lambda message: on_message(message), fuzzy=fuzzy)
+            lambda message: on_message(message), fuzzy=fuzzy,
+            wanted=Wanted(caller, verb=verb, role=role, said=raw))
 
 def _holder(obj, verb):
     """Who has this verb in flight against this object, or None."""
@@ -1021,6 +1036,13 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
     ctx = conditions.context(bound, caller, world_root, verb)
     book = rulebooks.for_attempt(world_root, verb, bound, caller,
                                  verb_rule=rule)
+    # The after rules about this attempt are settled here, where it happens,
+    # and their guards are not tested yet. A guard on an after rule is a
+    # question about how things came out, and until carry-out has run the only
+    # answer available is how they were. See docs/becoming-and-time.md 6.8.
+    afters = rulebooks.for_attempt(world_root, verb, bound, caller,
+                                   verb_rule=rule, phase=rulebooks.AFTER,
+                                   guarded=False)
 
     # INSTEAD. The most specific rule that says this means something else
     # here wins outright, and processing ends. One winner, never a merge:
@@ -1166,14 +1188,21 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             outcome=outcome, effects=list(extra), raw=raw,
             contested=result is not None,
             room_template=events_mod.repair(room_text))
-        # AFTER. What follows from it having worked, gathered before any of
-        # it landed so that nothing an after-rule does can set another one
-        # going. Bounded by the action, which is how consequence happens here
-        # without a tick: launching a ship makes everyone aboard weightless,
-        # and the rule saying so lives on `spacecraft` rather than inside
-        # `launch`.
+        # AFTER. What follows from it having worked. Every after rule's guards
+        # are tested together, against the world as carry-out left it, and
+        # only then does any of them land -- so a guard can ask how things
+        # came out, and still nothing an after rule does can set another one
+        # going. `here` is the room it happened in, wherever carry-out left
+        # the actor. Bounded by the action, which is how consequence happens
+        # here without a tick: launching a ship makes everyone aboard
+        # weightless, and the rule saying so lives on `spacecraft` rather than
+        # inside `launch`.
         if outcome != "failure":
-            for later in [r for r in book if r["phase"] == rulebooks.AFTER]:
+            after_ctx = conditions.context(bound, caller, world_root, verb,
+                                           room=room)
+            following = [later for later in afters
+                         if rulebooks.guards_pass(later, after_ctx)]
+            for later in following:
                 extra += effects_mod.apply(
                     caller, room, later.get("effects") or [],
                     bound=bound, world_root=world_root)
@@ -1270,3 +1299,9 @@ def _remember(caller, event, actor_text):
 def _release(caller, on_message, actor_text, event=None):
     caller.ndb.attempting = None
     on_message(actor_text, event)
+    # After the narration, never before it: the blow is described, and then
+    # the character collapses, even when the narration waited on a model.
+    # See docs/becoming-and-time.md 6.3.
+    from world import becoming
+
+    becoming.settle(cause=caller)

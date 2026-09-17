@@ -31,6 +31,7 @@ here is the layer above it, and exists for three reasons.
 """
 
 import re
+import threading
 
 from evennia.utils import logger
 
@@ -189,7 +190,43 @@ def register(world_root, slug, name="", means="", trait_type=DEFAULT_TRAIT_TYPE,
     vocab[slug] = entry
     world_root.db.trait_vocabulary = vocab
     logger.log_info(f"traits: {world_root.key} learned {slug!r} ({trait_type})")
+    if entry.get("descs"):
+        bands(world_root, slug, entry["descs"])
     return slug
+
+
+def bands(world_root, slug, descs):
+    """
+    A figure's own words for where it stands, as derived states.
+
+    `descs` is the Traits contrib's map from a lower bound to a word --
+    {0: "starving", 10: "hungry", 30: "fed"} -- and a world that writes it has
+    already said what the bands are called. So each band becomes a state that
+    holds while the figure is in it, in an exclusive group named after the
+    figure, and rules ask for `starving` without anybody writing it twice. See
+    docs/becoming-and-time.md 5.7. Answers the states made.
+    """
+    from world import verbs
+
+    try:
+        ordered = sorted((float(bound), str(word))
+                         for bound, word in dict(descs or {}).items())
+    except (TypeError, ValueError):
+        return []
+    made = []
+    for index, (bound, word) in enumerate(ordered):
+        leaf = {"subject": "direct", "trait": slug, "min": bound}
+        if index + 1 < len(ordered):
+            leaf["below"] = ordered[index + 1][0]
+        state = verbs.register_state(
+            world_root, word,
+            means=f"{slug.replace('_', ' ')} from {_round(bound)}"
+                  + (f" to below {_round(leaf['below'])}"
+                     if "below" in leaf else " up"),
+            group=slug, when=[leaf])
+        if state:
+            made.append(state)
+    return made
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +239,49 @@ def _bounds(trait):
     return low, high
 
 
+_OVERLAY = threading.local()
+
+
+class overlaid:
+    """
+    Read these figures for this character as they were, for the length of it.
+
+    A figure that drifts has already moved by the time anybody notices, so the
+    before a becomes rule needs is what the character was last told -- laid
+    over the live figures while the rules are asked, and nowhere else. See
+    `world.becoming.mark`. `values` is {slug: figure}; None or empty does
+    nothing.
+    """
+
+    def __init__(self, character, values):
+        self.key = getattr(character, "id", None)
+        self.values = {_slug(slug): figure
+                       for slug, figure in dict(values or {}).items()}
+
+    def __enter__(self):
+        stack = getattr(_OVERLAY, "stack", None)
+        if stack is None:
+            stack = _OVERLAY.stack = []
+        stack.append((self.key, self.values))
+        return self
+
+    def __exit__(self, *exc):
+        _OVERLAY.stack.pop()
+        return False
+
+
+def _overlaid_value(character, slug):
+    for key, values in reversed(getattr(_OVERLAY, "stack", None) or []):
+        if key == getattr(character, "id", None) and slug in values:
+            return True, values[slug]
+    return False, None
+
+
 def value(character, slug):
     """A character's value for a trait, or None if they do not have it."""
+    found, figure = _overlaid_value(character, _slug(slug))
+    if found:
+        return figure
     if not has_traits(character):
         return None
     trait = character.traits.get(_slug(slug))
@@ -352,6 +430,11 @@ def adjust(character, slug, change=None, set_to=None, rate=None, world_root=None
         # what somebody already has would lose the figure.
         slug = resolve(world_root, slug)
         existing = character.traits.get(slug)
+    # Before anything moves: what the becomes rules about this character say
+    # now, so that what they say afterwards can be told apart from it.
+    from world import becoming
+
+    becoming.mark(character, world_root)
     gained = existing is None
     trait = existing or ensure(character, slug, world_root=world_root)
     if trait is None:
@@ -373,7 +456,60 @@ def adjust(character, slug, change=None, set_to=None, rate=None, world_root=None
     _remember_seen(character, slug, after)
     if announce and (gained or after != before or rate):
         _announce(character, slug, trait, before, after, gained, reason)
+    if gained or after != before:
+        _recount_worth(character, world_root)
+        _ran_out(character, slug, trait, before, after, world_root)
+    if rate is not None:
+        # A figure that has started, stopped or changed its drift has a new
+        # moment at which it will next reach something a rule cares about.
+        from world import becoming
+
+        becoming.arm(character, world_root)
     return slug, before, after
+
+
+def _ran_out(character, slug, trait, before, after, world_root):
+    """
+    A gauge has just reached its lowest. The first time that happens to
+    anybody in a world, the world is asked what it means -- once, and only
+    where somebody pays. See `rule_gen.ask_when_it_runs_out`.
+    """
+    if getattr(trait, "trait_type", "") != "gauge":
+        return
+    low, _high = _bounds(trait)
+    floor = 0.0 if low is None else float(low)
+    try:
+        if float(after) > floor or (before is not None
+                                    and float(before) <= floor):
+            return
+    except (TypeError, ValueError):
+        return
+    try:
+        from world import rule_gen
+
+        rule_gen.ask_when_it_runs_out(character, slug, world_root)
+    except Exception as exc:
+        logger.log_info(f"traits: could not ask what running out of {slug} "
+                        f"means: {exc}")
+
+
+def _recount_worth(character, world_root):
+    """
+    Redo the gear sums when a figure moving may have changed a state worth one.
+
+    A derived state such as `starving` comes and goes with a figure, and if it
+    is worth something -- 3 strength -- the sum has to follow it. Only in a
+    world holding a derived state that is worth something, so everywhere else
+    this is one lookup. `gear.recompute` never moves a figure through here, so
+    this cannot set itself going.
+    """
+    from world import verbs
+
+    worth = verbs.state_bonuses(world_root)
+    if worth and any(verbs.is_derived(world_root, state) for state in worth):
+        from world import gear
+
+        gear.recompute(character)
 
 
 def _set_rate(trait, rate):
@@ -475,10 +611,21 @@ def notice_changes(character):
     if not has_traits(character):
         return []
     seen = _seen(character)
+    figures = [(slug, trait, trait.value, seen.get(slug))
+               for slug, trait in all_of(character)]
+    drifted = {slug: previous for slug, _trait, current, previous in figures
+               if previous is not None and current != previous}
+    if drifted:
+        # It has already moved, so the before a becomes rule needs is what the
+        # character was last told, laid over the live figures. A figure that
+        # drifted on its own was moved by nobody; one that moved because
+        # somebody put a helmet on was moved by them.
+        from world import becoming
+
+        becoming.mark(character, cause=becoming.current_cause(None),
+                      overlay=drifted)
     moved = []
-    for slug, trait in all_of(character):
-        current = trait.value
-        previous = seen.get(slug)
+    for slug, trait, current, previous in figures:
         seen[slug] = current
         if previous is None or current == previous:
             continue
@@ -487,6 +634,11 @@ def notice_changes(character):
                   reason="")
     if moved or len(seen) != len(_seen(character)):
         setattr(character.db, _SEEN, seen)
+    if moved:
+        world_root = _world_root(character)
+        for slug, trait, current, previous in figures:
+            if slug in moved:
+                _ran_out(character, slug, trait, previous, current, world_root)
     return moved
 
 

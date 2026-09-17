@@ -253,7 +253,10 @@ rules every new one has to keep:
 The table, with new names provisional until they are written:
 
 * **Pairs that exist**: `is` and `lacks`; `exists` and `gone`; `unbound: true`
-  and `unbound: false`; `owned_by: nobody` and `owned_by: somebody`.
+  and `unbound: false`. `owned_by: nobody` and `owned_by: somebody` look like a
+  pair and are not one: the complement test found that both say no about a
+  thing that is not there. So their mirror is `not_owned_by`, like any other
+  `owned_by`.
 * **Value flips.** Where a predicate already takes a closed word or a boolean,
   its opposite is a flipped value rather than a new field.
 * **Trait bounds.** `min` and a new exclusive `below` are opposites, as are
@@ -315,15 +318,17 @@ What uses it:
   through `as_goal` and `from_goal`. Goals gain `{"type": "any", "of": [...]}`,
   and `_for_condition` takes the first branch that offers a step. `all`
   flattens into the goal list. The new opposites convert where a character can
-  act on them:
-  * `not_holds`: drop it or give it away;
+  act on them, each with a mechanic as its step:
+  * `not_holds`: drop it;
   * `not_wears`: take it off;
-  * `not_placed`: move it;
-  * `not_in_room`: leave;
-  * `not_owned_by`: give it away.
+  * `not_placed`: take it back;
+  * `not_in_room`: leave by any way out.
 
   `achieves` reads `move_object`, `destroy_object`, `set_owner` and `move_actor`
-  backwards for them. `not_kind` and `not_leads_to` are evaluated but never
+  backwards for them, so a learned verb that does the same is found too.
+  `not_owned_by` is read backwards through `set_owner` but has no step of its
+  own: giving a thing away needs somebody to give it to, and the planner has no
+  business choosing who. `not_kind` and `not_leads_to` are evaluated but never
   planned, which `as_goal` already answers by returning None.
 * **`rulecheck`, `suggest` and `rule_gen`** read `is` and `lacks` directly, in
   about a dozen places. They walk trees now. A state inside an `any` is only one
@@ -332,7 +337,6 @@ What uses it:
   suspend a rule that could still fire. Because there is no `not`, none of them
   has to track polarity: `lacks` and every `not_` predicate already mean
   "forbidden".
-* **The index in 6.4** walks trees.
 * **`conditions.schema`**, the tool parameters a model writes to, offers the
   opposites as ordinary fields and `any` one level deep over plain conditions.
   That needs no recursive schema. The toolbox builds schemas inline with no
@@ -428,7 +432,11 @@ holding. So it is refused at every door:
 A group may hold derived members or written members, never both.
 Exclusivity is enforced when a state is written (`apply_states` clears the rest
 of the group), and a derived member is never written. A mixed group could
-therefore be `fed` and `starving` at once. `register_state` refuses the mix.
+therefore be `fed` and `starving` at once. `register_state` refuses the mix, in
+both directions but not in the same way. A derived state is refused outright,
+since nothing in play depends on it yet. A written state is still registered,
+only outside that group, because refusing it would leave a verb that is
+already running with a word it cannot set.
 Keeping derived members apart is the job of their conditions, and `rulecheck`
 can check that for the common case of bands over one trait (§10).
 
@@ -648,13 +656,17 @@ thing, and seeing every thing is the scan this design refuses.
 were like before it:
 
 * **Before a write**, the first time a subject is marked in a settle, the door
-  evaluates the `when` of the becomes rules that could care about this change,
-  against the subject as it still is. It keeps the answers in the dirty set.
-  "Could care" comes from a per-world index, from what a condition reads (a
-  state's group, a trait, where something is, what someone holds) to the rules
-  that read it. Derived states are expanded, so a rule on `is: starving` is
-  indexed under `hunger`. §7 needs the same index for its thresholds. This is
-  not a scan: it is the rules about one change, for the one thing changing.
+  evaluates the `when` of the becomes rules about that subject, against the
+  subject as it still is. It keeps the answers in the dirty set. This is not a
+  scan: it is the rules about one thing, for the one thing changing.
+
+  The first draft narrowed this further with a per-world index from what a
+  condition reads (a state's group, a trait, where something is) to the rules
+  that read it. Phase 5 left the index out, on purpose. Becomes rules are few,
+  and an index that missed a predicate would make a rule silently never fire,
+  which is a worse failure than asking a handful of extra questions. If
+  measuring ever shows the cost, the index can be added then, with a test that
+  every predicate declares what it reads.
 * **After**, `settle` evaluates the same rules again. A rule fires where the
   answer went from false to true.
 * **Drift** has already happened by the time anyone notices it, so its before
@@ -711,8 +723,10 @@ But a chain must end:
 
 * **A rule fires at most once per subject per settle.**
 * **Settling makes at most four passes.** What is still dirty after the fourth
-  is left for the next checkpoint, logged, and counted, so that `view faults`
-  can name the rules that keep setting each other off. Four, because the longest
+  is dropped, logged, and counted against the rules that fired last, so that
+  `view faults` can name the rules that keep setting each other off. Dropped
+  rather than left for the next checkpoint, because the backstop would make the
+  next checkpoint the next turn of the reactor, and a loop would spin for ever. Four, because the longest
   honest chain anybody has described is three: a blow, a death, a dropped
   lantern that sets the straw alight.
 
@@ -800,8 +814,10 @@ and short of `ratetarget`.
 
 The thresholds that matter are the trait bounds in the `when` of becomes rules
 that could apply to this character. That includes rules that watch a derived
-state, whose definition is expanded (5.2). A per-world index of "trait slug to
-thresholds" is rebuilt when rules or the register change.
+state, whose definition is expanded (5.2), and derived states that are worth
+something to a figure (5.6), since gear has to follow those as well. They are
+worked out when a timer is armed rather than kept in an index, for the reason
+6.4 gives.
 
 For each character with a moving trait, **one** timer (`ndb`, never persistent)
 is armed for the earliest crossing. It is re-armed whenever that character
@@ -914,6 +930,15 @@ step" or "not yet", and at least one is "not yet", does `plan_for` return
   for a week of real time because its mana regenerates at a crawl.
 * A quest deadline still lapses a goal while it waits. `QuestDeadlineScript` does
   not care why the goal is unfinished.
+* A wait belongs to the goal it was for. A character that reaches the goal, or
+  takes up another, is not still waiting on the old one.
+* Waiting for the same thing more than `REWAITS_ALLOWED` times in a row (three)
+  counts as being stuck, so a goal whose conditions never line up is given up
+  in the ordinary way.
+
+**Waiting is not guessing.** When the only thing blocking a verb this world
+already knows is a wait, the planner does not fall back on a verb nobody has
+tried. That would answer "not yet" with "try something else".
 
 **Players get the same answer.** `advise`, behind the goal command, says "Nothing
 to do until morning, in about twenty minutes" rather than "you cannot see how".
@@ -1155,8 +1180,8 @@ It rings in every occupied room of the town at dawn, and in no empty one.
 * **`world/attempt.py`**: in `_with_rule`, after rules are gathered unguarded,
   and their guards are tested together after carry-out, against the attempt's
   room (6.8). `settle` runs after `_release` and at the end of `consequences`.
-* **A new `world/becoming.py`**: the index from what a condition reads to the
-  rules that read it, the dirty set with its befores, `settle`, the place memo,
+* **A new `world/becoming.py`**: the dirty set with its befores, who caused
+  what, `settle`, the place memo,
   the pass limit, the crossing timers and the clock timer. It is one module
   because it is one question: "has anything become true".
 * **A new `world/clock.py`**: the date over `datetime`, setting the year and the
@@ -1192,17 +1217,23 @@ It rings in every occupied room of the town at dawn, and in no empty one.
   * overlapping bands over one trait in one exclusive group;
   * rules that exceed the pass limit;
   * what already matches a becomes rule when it is added (6.4).
-* **`world/suggest.py`**: proposes a becomes rule for a gauge seen at its bound
-  with nothing to say what that means. The evidence is a count, kept like
-  `counters`, of settles that found a character there. It is evidence from this
-  world, as `propose` requires.
+* **`world/suggest.py`**: the plan had it propose a becomes rule for a gauge seen
+  at its bound with nothing to say what that means. Phase 9 does not, on
+  purpose. A proposal is a rule, and nothing but a model can say what running
+  out of a figure means here -- dead, fainted, or nothing at all -- so a
+  proposal would be a guess dressed as evidence. Instead the first time a gauge
+  actually runs out is the evidence, and it asks `rule_gen` the question
+  directly (below).
 * **`world/rule_gen.py`**: `any` one level deep and the opposites in the schema.
   The prompt says combinators are for "or", and `validate` complains about a
   check rule packed into one `all`. The becomes phase and `report` go in the
   schema, prompt and `validate` too, and `validate` refuses a becomes rule that
-  names `cause` without guarding on it being bound. That question is asked when
-  a gauge is registered ("what happens when this runs out?"), never when a verb
-  is attempted.
+  names `cause` without guarding on it being bound. That question ("what
+  happens when this runs out?") is never asked when a verb is attempted. It is
+  asked the first time somebody's gauge in this world really runs out, rather
+  than when the gauge is registered: once per figure, only where somebody pays,
+  and not for a figure a becomes rule already watches. Many gauges never run
+  out, and a question nobody needed answering is a call nobody should pay for.
 * **`commands/rules_subject.py` and `world_subject.py`**: the listing in 8.5 and
   the clock fields.
 * **`world/crossing.py`**: nothing. Things keep no memo, and the place memo is
@@ -1236,7 +1267,7 @@ events.
 **Phase 4: states that carry bonuses.** `gear.total` and `gear.sources`, and
 recompute on state change. Afterwards "starving costs strength" works.
 
-**Phase 5: becomes rules, from direct changes.** The phase, `report`, the index,
+**Phase 5: becomes rules, from direct changes.** The phase, `report`,
 marking and befores at the doors, `settle` at the call sites in 6.3, the pass
 limit, effects without an actor, the `cause` role and its guard, and the
 `view rules` listing. The listing is in
@@ -1244,7 +1275,7 @@ this phase and not a later one, because the open sandbox means a rule that fires
 has to be readable the day it can fire. Afterwards a blow that takes health to 0
 kills.
 
-**Phase 6: predicted crossings.** Rate arithmetic, the threshold index,
+**Phase 6: predicted crossings.** Rate arithmetic, the thresholds,
 per-character timers, waking at puppet and at arrival, and re-arming after a
 reload. Afterwards a poison kills while somebody watches.
 
@@ -1263,7 +1294,7 @@ with both. Afterwards an NPC that wants bread at midnight does something else
 until morning, then goes and buys it.
 
 **Phase 9: authoring and diagnosis.** `rule_gen` writing becomes rules and
-reports, `suggest` proposing them, the new `rulecheck` faults, bands from
+reports when a gauge first runs out, the new `rulecheck` faults, bands from
 `descs`, and the planner following a becomes rule. Afterwards a generated world
 works out what running out of health means, and says when it got it wrong.
 
@@ -1373,11 +1404,10 @@ works out what running out of health means, and says when it got it wrong.
   negates, and it hides at the edges: a missing subject, a missing figure, a list
   of several values. The complement test in 4.6 is the guard, and its fixtures
   have to cover those edges.
-* **The index has to be complete.** A before is only taken for rules the index
-  says could care. A condition that reads something the index does not know
-  about never gets a before, and its rule never fires. Every predicate in
-  `conditions.py` must declare what it reads, and a test should fail for one
-  that does not.
+* **Asking every becomes rule about a changing thing.** Phase 5 has no index
+  (6.4), so every door asks every becomes rule that applies to the thing. That
+  is cheap while becomes rules are few. A world with hundreds of them would want
+  the index, and a soak should say when.
 * **Money, indirectly.** A report is an event, and events wake NPCs. Every
   reaction passes `activity.npc_may_act`, so an NPC with no player nearby spends
   nothing. `worldmode always` lifts that brake, though, and then place rules

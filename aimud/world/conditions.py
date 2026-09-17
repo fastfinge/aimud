@@ -47,7 +47,8 @@ from collections import namedtuple
 
 #: What a condition can be about. The six roles are what a player named, and
 #: the rest are what nobody named but a rule may still mean.
-ROLES = ("actor", "direct", "instrument", "target", "container", "source")
+ROLES = ("actor", "direct", "instrument", "target", "container", "source",
+         "cause")
 
 #: How a subject may be written, beyond a bare role.
 #:
@@ -81,16 +82,37 @@ THING, ROOM, ZONE, NOWHERE = "thing", "room", "zone", "nowhere"
 #: wall ask different things of the same notice. Everything that tests a
 #: condition outside an attempt (a quest, a goal, a `rules` listing) leaves it
 #: empty, and the predicate then asks for reach, which is the safe answer.
-Context = namedtuple("Context", "bound actor world_root action")
-Context.__new__.__defaults__ = (None, None, None, "")
+#:
+#: `room` is where it is being asked, when that is not simply wherever the actor
+#: stands now. An after rule's guards are tested once carry-out has run, and a
+#: carry-out may have moved the actor -- but `here` in a rule about launching
+#: still means the bridge the ship was launched from. Empty for everything else,
+#: and then `here` is the actor's room as it always was.
+Context = namedtuple("Context", "bound actor world_root action room")
+Context.__new__.__defaults__ = (None, None, None, "", None)
 
 
-def context(bound=None, actor=None, world_root=None, action=""):
+def context(bound=None, actor=None, world_root=None, action="", room=None):
     """The world as a condition sees it."""
     if world_root is None and actor is not None:
-        room = getattr(actor, "location", None)
-        world_root = getattr(room.db, "world_root", None) if room else None
-    return Context(dict(bound or {}), actor, world_root, str(action or ""))
+        where = room or getattr(actor, "location", None)
+        world_root = getattr(where.db, "world_root", None) if where else None
+    return Context(dict(bound or {}), actor, world_root, str(action or ""),
+                   room)
+
+
+def _still_here(obj):
+    """
+    The object, or None if it has been deleted since it was bound.
+
+    A carry-out can destroy what the attempt was about, and an after rule is
+    asked about the world afterwards. Evennia leaves the Python object behind
+    with its primary key cleared, so a role bound to a burnt note still holds
+    something, and every predicate would go looking in a row that is gone.
+    """
+    if obj is not None and getattr(obj, "pk", True) is None:
+        return None
+    return obj
 
 
 # ---------------------------------------------------------------------------
@@ -179,11 +201,12 @@ def resolve(subject, ctx):
 
     if isinstance(subject, str):
         if subject == HERE:
-            room = getattr(ctx.actor, "location", None)
+            room = ctx.room or getattr(ctx.actor, "location", None)
             return Subject(ROOM, room, ctx=ctx) if room else Subject(ctx=ctx)
         if subject == WORLD:
             return Subject(WORLD, ctx.world_root, ctx=ctx)
         obj = ctx.actor if subject == "actor" else ctx.bound.get(subject)
+        obj = _still_here(obj)
         return Subject(THING, obj, ctx=ctx) if obj is not None \
             else Subject(ctx=ctx)
 
@@ -255,12 +278,19 @@ def _listed(value):
     return listed(value)
 
 
+#: Every predicate there is, in the order `predicate_of` looks for them.
+PREDICATES = ("is", "lacks", "affords", "kind", "not_kind", "holds",
+              "not_holds", "wears", "not_wears", "owned_by", "not_owned_by",
+              "placed", "not_placed", "trait", "in_room", "not_in_room",
+              "exists", "gone", "able", "reachable_by", "visible_to",
+              "leads_to", "not_leads_to", "never", "unbound", "clock")
+
+
 def predicate_of(condition):
     """Which predicate a condition uses, and what it names."""
-    for name in ("is", "lacks", "affords", "kind", "holds", "wears",
-                 "owned_by", "placed", "trait", "in_room", "exists", "gone",
-                 "able", "reachable_by", "visible_to", "leads_to", "never",
-                 "unbound"):
+    if not hasattr(condition, "keys"):
+        return "", None
+    for name in PREDICATES:
         if name in condition:
             return name, condition[name]
     return "", None
@@ -270,6 +300,478 @@ def evaluate(condition, ctx):
     """Whether this condition holds. The one test everything shares."""
     met, _said = _judge(condition, ctx, WANT)
     return met
+
+
+# ---------------------------------------------------------------------------
+# Joining conditions: `all` and `any`
+# ---------------------------------------------------------------------------
+#
+# A list of conditions already means all of them, and it still does. What
+# could not be said at all was "or": check rules accumulate, so "holding a key
+# or a lockpick" had no form, not even as two rules. So a condition may be a
+# node instead of a leaf -- {"any": [...]} or {"all": [...]} -- with no subject
+# of its own, whose members are conditions or further nodes. `all` exists only
+# to be used inside `any`. See docs/becoming-and-time.md 4.2.
+#
+# There is deliberately no `not`. Every predicate declares its own opposite
+# instead (OPPOSITES, below), and `negate` works a mirror out when something
+# needs one, so nothing that reads a condition ever meets a negation it has to
+# carry the polarity of.
+
+ALL, ANY = "all", "any"
+COMBINATORS = (ALL, ANY)
+
+#: How deep a stored condition may nest, and how many members one node may
+#: hold. Past these a condition has stopped being a fact about the world and
+#: started being a program, which basic-principles.md keeps out of reach.
+MAX_DEPTH = 3
+MAX_MEMBERS = 8
+
+
+def node_of(condition):
+    """
+    (`all` or `any`, its members) for a node, and ("", None) for a leaf.
+
+    Asked of whatever is stored, which comes back from an Evennia attribute as
+    a _SaverDict holding a _SaverList -- a mapping and a sequence, but not a
+    dict or a list -- so neither is tested for by type.
+    """
+    if not hasattr(condition, "keys"):
+        return "", None
+    for kind in COMBINATORS:
+        if kind in condition:
+            members = condition[kind]
+            if isinstance(members, (str, bytes)) or hasattr(members, "keys"):
+                return kind, []
+            try:
+                return kind, list(members)
+            except TypeError:
+                return kind, []
+    return "", None
+
+
+def _tidy(condition):
+    """
+    A condition with its nodes flattened and unwrapped, or None.
+
+    A node of one member is that member; a node inside a node of the same kind
+    is part of it; an empty node, or a leaf that asks nothing, is None. No caps
+    are applied, because `negate` builds its answer through here and a mirror
+    may be a level deeper than what it mirrors.
+    """
+    kind, members = node_of(condition)
+    if not kind:
+        try:
+            leaf = dict(condition)
+        except (TypeError, ValueError):
+            return None
+        return leaf if predicate_of(leaf)[0] else None
+    kept = []
+    for member in members:
+        member = _tidy(member)
+        if member is None:
+            # One member nobody can evaluate spoils the node: dropping it from
+            # an `any` would make the node harder to pass than was written, and
+            # from an `all` easier.
+            return None
+        inner_kind, inner = node_of(member)
+        if inner_kind == kind:
+            kept.extend(inner)
+        else:
+            kept.append(member)
+    if not kept:
+        return None
+    if len(kept) == 1:
+        return kept[0]
+    return {kind: kept}
+
+
+def depth_of(condition):
+    """How many nodes deep a condition goes. A leaf is 0."""
+    kind, members = node_of(condition)
+    if not kind:
+        return 0
+    return 1 + max((depth_of(m) for m in members), default=0)
+
+
+def _widest(condition):
+    """The most members any node in this condition holds."""
+    kind, members = node_of(condition)
+    if not kind:
+        return 0
+    return max([len(members)] + [_widest(m) for m in members])
+
+
+def normalise(condition):
+    """
+    A condition fit to be stored, or None when it is not one.
+
+    Tidied (see `_tidy`) and then held to MAX_DEPTH and MAX_MEMBERS. Refused
+    rather than trimmed: a condition cut down to fit says something other than
+    what was written.
+    """
+    tidy = _tidy(condition)
+    if tidy is None:
+        return None
+    if depth_of(tidy) > MAX_DEPTH or _widest(tidy) > MAX_MEMBERS:
+        return None
+    return tidy
+
+
+def normalise_all(conditions):
+    """
+    A list of conditions fit to be stored, and the ones that were not.
+
+    Returns (kept, refused). A top-level `all` joins the list around it, since
+    that is what the list already means.
+    """
+    kept, refused = [], []
+    for condition in (conditions or []):
+        tidy = normalise(condition)
+        if tidy is None:
+            refused.append(condition)
+            continue
+        kind, members = node_of(tidy)
+        if kind == ALL:
+            kept.extend(members)
+        else:
+            kept.append(tidy)
+    return kept, refused
+
+
+def leaves(condition, optional=False):
+    """
+    Every plain condition inside this one, as (leaf, optional) pairs.
+
+    `optional` is true for a leaf that is only one way of passing -- anything
+    under an `any` of more than one member -- which is what a reader looking
+    for what a rule *demands* has to know. A state inside an `any` is required
+    only if every other branch fails too.
+    """
+    kind, members = node_of(condition)
+    if not kind:
+        if hasattr(condition, "keys"):
+            yield condition, optional
+        return
+    for member in members:
+        yield from leaves(member,
+                          optional or (kind == ANY and len(members) > 1))
+
+
+#: The words a shared opening of several phrases must not end on, so that
+#: "be carrying the key" and "be carrying the lockpick" join as "be carrying
+#: the key or the lockpick" rather than "be carrying the key or lockpick".
+_ARTICLES = frozenset(("a", "an", "the", "some"))
+
+
+def _joined(phrases, word):
+    """
+    Several phrases as one, joined with `word` ("or", "and").
+
+    The opening they share is said once. Read aloud, "be carrying the key or be
+    carrying the lockpick" is a sentence somebody has to hold in their head
+    twice; "be carrying the key or the lockpick" is not.
+    """
+    seen = []
+    for phrase in phrases:
+        phrase = str(phrase or "").strip()
+        if phrase and phrase not in seen:
+            seen.append(phrase)
+    if not seen:
+        return ""
+    if len(seen) == 1:
+        return seen[0]
+    split = [phrase.split() for phrase in seen]
+    common = 0
+    while (all(len(words) > common + 1 for words in split)
+           and len({words[common] for words in split}) == 1):
+        common += 1
+    while common and split[0][common - 1].lower() in _ARTICLES:
+        common -= 1
+    head = " ".join(split[0][:common])
+    tails = [" ".join(words[common:]) for words in split]
+    if len(tails) == 2:
+        body = f"{tails[0]} {word} {tails[1]}"
+    else:
+        body = ", ".join(tails[:-1]) + f", {word} {tails[-1]}"
+    return f"{head} {body}".strip()
+
+
+def _judge_node(kind, members, ctx, mood, depth):
+    """
+    A node, evaluated and said.
+
+    An `all` complains about its first unmet member, exactly as a list of
+    conditions does. An `any` that fails makes one complaint out of what each
+    branch wants -- "You need to be carrying the key or the lockpick." -- and
+    never one per branch, which would read as though every one were required.
+    """
+    if depth > MAX_DEPTH * 2:
+        return False, ""         # a guard, not a limit: `normalise` is that
+    if kind == ALL:
+        judged = [_judge(m, ctx, mood, depth + 1) for m in members]
+        met = all(ok for ok, _said in judged)
+        if mood == UNMET:
+            return met, next((said for ok, said in judged if not ok), "")
+        return met, _joined([said for _ok, said in judged], "and")
+
+    judged = [_judge(m, ctx, WANT, depth + 1) for m in members]
+    met = any(ok for ok, _said in judged)
+    wants = _joined([said for _ok, said in judged], "or")
+    if mood == UNMET:
+        return met, (f"You need to {wants}." if wants and not met else "")
+    return met, wants
+
+
+# ---------------------------------------------------------------------------
+# Whether it will come true with nobody doing anything
+# ---------------------------------------------------------------------------
+
+def eventually(condition, ctx, depth=0):
+    """
+    Real seconds until this condition comes true on its own, or None.
+
+    0 when it already holds. None when nothing but somebody acting will make it
+    true -- a state that is set, something being held, somewhere being gone
+    to -- because nobody can say when that will be. Only two things change
+    with nobody acting, and both can be worked out: the clock, which is
+    periodic, and a figure with a rate, which is linear. See
+    docs/becoming-and-time.md 7.4.
+
+    Closed per predicate, like opposites. An `any` is its soonest member. An
+    `all` is the latest of its members not yet true, which is an estimate --
+    one true now may have stopped by then -- and is why a planner checks again
+    when the time comes rather than trusting this.
+    """
+    if depth > MAX_DEPTH * 2:
+        return None
+    kind, members = node_of(condition)
+    if kind == ANY:
+        found = [eventually(m, ctx, depth + 1) for m in members]
+        found = [seconds for seconds in found if seconds is not None]
+        return min(found) if found else None
+    if kind == ALL:
+        latest = 0.0
+        for member in members:
+            seconds = eventually(member, ctx, depth + 1)
+            if seconds is None:
+                return None
+            latest = max(latest, seconds)
+        return latest
+
+    if evaluate(condition, ctx):
+        return 0.0
+    name, value = predicate_of(condition)
+    if name == "clock":
+        from world import clock
+
+        span = _clock_span(value)
+        if span is None:
+            return None
+        return clock.real_seconds_until(ctx.world_root, span[0])
+    if name == "trait":
+        return _trait_eventually(condition, ctx)
+    if name in ("is", "lacks"):
+        return _derived_eventually(condition, name, value, ctx, depth)
+    return None
+
+
+def _trait_eventually(condition, ctx):
+    """When a moving figure will meet every bound it does not meet yet."""
+    subject = resolve(condition.get("subject"), ctx)
+    if not subject.found or subject.obj is None:
+        return None
+    from world import traits
+
+    trait = (subject.obj.traits.get(traits._slug(condition.get("trait")))
+             if traits.has_traits(subject.obj) else None)
+    if trait is None:
+        return None
+    rate = float(getattr(trait, "rate", 0) or 0)
+    if not rate:
+        return None
+    current = trait.value
+    low, high = traits._bounds(trait)
+    target = getattr(trait, "ratetarget", None)
+    rising_limit = min(x for x in (high, target, float("inf")) if x is not None)
+    falling_limit = max(x for x in (low, target, float("-inf"))
+                        if x is not None)
+    latest = 0.0
+    for bound, figure in (("min", condition.get("min")),
+                          ("max", condition.get("max")),
+                          ("below", condition.get("below")),
+                          ("above", condition.get("above"))):
+        if figure is None:
+            continue
+        figure = float(figure)
+        wants_up = bound in ("min", "above")
+        met = (current >= figure if bound == "min"
+               else current <= figure if bound == "max"
+               else current < figure if bound == "below"
+               else current > figure)
+        if met:
+            continue
+        if wants_up != (rate > 0):
+            return None          # moving the wrong way for this bound
+        if wants_up and figure > rising_limit:
+            return None
+        if not wants_up and figure < falling_limit:
+            return None
+        latest = max(latest, abs(figure - current) / abs(rate))
+    return latest
+
+
+def _derived_eventually(condition, name, value, ctx, depth):
+    """When a derived state will come to hold, or stop holding, on its own."""
+    from world import verbs
+
+    derived = verbs.derived_states(ctx.world_root)
+    slugs = [str(s).lower() for s in _listed(value)]
+    if not slugs or any(slug not in derived for slug in slugs):
+        return None              # a state that is set waits on somebody
+    subject = resolve(condition.get("subject"), ctx)
+    if not subject.found:
+        return None
+    inner = context({"direct": subject.obj},
+                    subject.obj if subject.what == THING else None,
+                    ctx.world_root, room=ctx.room)
+    latest = 0.0
+    for slug in slugs:
+        definition = {ALL: list(derived[slug].get("when") or [])}
+        target = definition if name == "is" else negate(definition)
+        if target is None:
+            return None
+        seconds = eventually(target, inner, depth + 1)
+        if seconds is None:
+            return None
+        latest = max(latest, seconds)
+    return latest
+
+
+# ---------------------------------------------------------------------------
+# Opposites, and working out a mirror
+# ---------------------------------------------------------------------------
+
+#: Every predicate's exact opposite. Exact means two things, and every pair
+#: here keeps both, since the pairs that already existed set the rule:
+#:
+#: * a list flips from "all of these" to "none of these" -- `is: [wet, cold]`
+#:   is both, `lacks: [wet, cold]` is neither;
+#: * a missing subject flips too -- `is` says no about a thing that is not
+#:   there and `lacks` says yes.
+#:
+#: `unbound` and `trait` are their own opposites, with a value flipped: true
+#: for false, and each bound for the exclusive bound on its other side.
+OPPOSITES = {
+    "is": "lacks", "lacks": "is",
+    "holds": "not_holds", "not_holds": "holds",
+    "wears": "not_wears", "not_wears": "wears",
+    "placed": "not_placed", "not_placed": "placed",
+    "in_room": "not_in_room", "not_in_room": "in_room",
+    "kind": "not_kind", "not_kind": "kind",
+    "leads_to": "not_leads_to", "not_leads_to": "leads_to",
+    "owned_by": "not_owned_by", "not_owned_by": "owned_by",
+    "exists": "gone", "gone": "exists",
+    "unbound": "unbound",
+    "trait": "trait",
+    "clock": "clock",
+}
+
+#: The predicates that have no opposite, and why. A decision on the record
+#: rather than a gap: `negate` refuses them, and a test fails for any
+#: predicate that is in neither table.
+UNNEGATABLE = {
+    "affords": "it also asks about placement, and \"cannot be done to it\" is "
+               "a different question from \"nobody said it can\"",
+    "reachable_by": "it answers whether this action may touch a thing, and "
+                    "excuses a role declared visible; the complement of an "
+                    "excuse is not \"out of reach\"",
+    "visible_to": "it answers whether this action may see a thing, and excuses "
+                  "things the same way; darkness is the light trait",
+    "able": "it is waived per action; the opposite of being free to act is "
+            "being in a state that stops you, which is `is` on that state",
+    "never": "its opposite is no condition at all",
+}
+
+#: Predicates whose value is a list meaning "all of these".
+_LISTED = frozenset(("is", "lacks", "holds", "not_holds", "wears",
+                     "not_wears"))
+
+#: The four bounds a trait condition may carry. `min` and `max` include the
+#: figure they name; `below` and `above` do not, which is what makes each the
+#: exact opposite of the one on its other side.
+TRAIT_BOUNDS = ("min", "max", "below", "above")
+_FLIPPED_BOUND = {"min": "below", "below": "min", "max": "above",
+                  "above": "max"}
+
+
+def negate(condition):
+    """
+    The exact opposite of a condition, or None when it has none.
+
+    Worked out, never stored, and never containing a `not`: a leaf becomes its
+    opposite predicate, a list of several values becomes an `any` of their
+    single opposites, and `all` and `any` swap (De Morgan). If any part refuses,
+    the whole negation does. See docs/becoming-and-time.md 4.4.
+    """
+    kind, members = node_of(condition)
+    if kind:
+        flipped = []
+        for member in members:
+            mirror = negate(member)
+            if mirror is None:
+                return None
+            flipped.append(mirror)
+        if not flipped:
+            return None
+        return _tidy({ANY if kind == ALL else ALL: flipped})
+
+    try:
+        condition = dict(condition)
+    except (TypeError, ValueError):
+        return None
+    name, value = predicate_of(condition)
+    if not name or name not in OPPOSITES:
+        return None
+    rest = {key: val for key, val in condition.items()
+            if key != name and key not in TRAIT_BOUNDS}
+
+    if name in _LISTED:
+        values = _listed(value)
+        opposite = OPPOSITES[name]
+        if len(values) <= 1:
+            return dict(rest, **{opposite: list(values)})
+        return {ANY: [dict(rest, **{opposite: [v]}) for v in values]}
+
+    if name in ("exists", "gone"):
+        return dict(rest, **{OPPOSITES[name]: True})
+
+    if name == "unbound":
+        return dict(rest, unbound=not bool(value))
+
+    if name == "clock":
+        # The same dial with its ends swapped: a range includes its start and
+        # not its end, so the two cover the day exactly once between them.
+        # A range that starts where it ends is empty, and has no exact mirror.
+        span = _clock_span(value)
+        if span is None or span[0] == span[1]:
+            return None
+        return dict(rest, clock={"from": span[1], "to": span[0]})
+
+    # `owned_by: nobody` and `owned_by: somebody` look like a pair and are not
+    # one: both say no about a thing that is not there. So even those two are
+    # mirrored by `not_owned_by`, which says yes.
+
+    if name == "trait":
+        bounds = [(bound, condition[bound]) for bound in TRAIT_BOUNDS
+                  if condition.get(bound) is not None]
+        if not bounds:
+            return None          # "has some of it" has no opposite yet
+        parts = [dict(rest, trait=value, **{_FLIPPED_BOUND[bound]: figure})
+                 for bound, figure in bounds]
+        return parts[0] if len(parts) == 1 else {ANY: parts}
+
+    return dict(rest, **{OPPOSITES[name]: value})
 
 
 def sees(looker, obj, world_root=None):
@@ -353,8 +855,11 @@ def unmet(conditions, ctx):
     return ""
 
 
-def _judge(condition, ctx, mood):
+def _judge(condition, ctx, mood, depth=0):
     """One condition, evaluated and said. The single implementation."""
+    kind, members = node_of(condition)
+    if kind:
+        return _judge_node(kind, members, ctx, mood, depth)
     try:
         condition = dict(condition)
     except (TypeError, ValueError):
@@ -375,7 +880,8 @@ def _judge(condition, ctx, mood):
 _SUBJECT_WORDS = {
     "actor": "you", "direct": "what you act on", "instrument": "what you use",
     "target": "what you aim at", "container": "what it goes in",
-    "source": "what it comes from", HERE: "this place", WORLD: "this world",
+    "source": "what it comes from", "cause": "whoever brought it about",
+    HERE: "this place", WORLD: "this world",
 }
 
 
@@ -387,6 +893,10 @@ def _abstractly(condition):
     resolves to, because in this mood nothing resolves: `rules launch` prints
     what launching requires while standing in a field.
     """
+    kind, members = node_of(condition)
+    if kind:
+        return _joined([_abstractly(m) for m in members],
+                       "or" if kind == ANY else "and")
     try:
         condition = dict(condition)
     except (TypeError, ValueError):
@@ -419,39 +929,54 @@ def _abstractly(condition):
         # one. `affords` names a verb, never an adjective made out of one.
         joined = " and ".join(_said(v) for v in _listed(value))
         return f"{subject} {be} something you can {joined}"
-    if name == "kind":
+    if name in ("kind", "not_kind"):
         from world import lexicon
 
-        return f"{subject} {be} a {lexicon.word_of(value)}"
+        negated = " not" if name == "not_kind" else ""
+        return f"{subject} {be}{negated} a {lexicon.word_of(value)}"
     if name == "holds":
         return f"{subject} {be} holding {listed or 'it'}"
+    if name == "not_holds":
+        return f"{subject} {be} not holding {nor or 'it'}"
     if name == "wears":
         return f"{subject} {be} wearing {listed or 'it'}"
-    if name == "owned_by":
+    if name == "not_wears":
+        return f"{subject} {be} not wearing {nor or 'it'}"
+    if name in ("owned_by", "not_owned_by"):
         whose, through = _owner_wanted(value)
+        negated = name == "not_owned_by"
         if whose == NOBODY:
-            return f"{subject} {be} nobody's"
+            return f"{subject} {be} {'somebody' if negated else 'nobody'}'s"
         if whose == SOMEBODY:
-            return f"{subject} {be} somebody's"
+            return f"{subject} {be} {'nobody' if negated else 'somebody'}'s"
         said = _SUBJECT_WORDS.get(whose, whose)
         where = " or in something of theirs" if through else ""
-        return f"{subject} {'belong' if plural else 'belongs'} to {said}{where}"
-    if name == "placed":
+        if negated:
+            doing = "do not belong" if plural else "does not belong"
+        else:
+            doing = "belong" if plural else "belongs"
+        return f"{subject} {doing} to {said}{where}"
+    if name in ("placed", "not_placed"):
+        negated = " not" if name == "not_placed" else ""
         try:
             preposition, host = next(iter(dict(value).items()))
         except (TypeError, ValueError, StopIteration):
-            return f"{subject} {be} somewhere in particular"
-        return f"{subject} {be} {preposition} {host}"
+            return f"{subject} {be}{negated} somewhere in particular"
+        return f"{subject} {be}{negated} {preposition} {host}"
     if name == "trait":
-        low, high = condition.get("min"), condition.get("max")
         label = str(value).replace("_", " ")
-        if low is not None:
-            return f"{subject} {have} {label} of {low} or more"
-        if high is not None:
-            return f"{subject} {have} {label} of {high} or less"
-        return f"{subject} {have} some {label}"
+        worded = {"min": "of {} or more", "max": "of {} or less",
+                  "below": "below {}", "above": "above {}"}
+        bounds = [worded[bound].format(condition[bound])
+                  for bound in TRAIT_BOUNDS
+                  if condition.get(bound) is not None]
+        if not bounds:
+            return f"{subject} {have} some {label}"
+        return f"{subject} {have} {label} {' and '.join(bounds)}"
     if name == "in_room":
         return f"{subject} {be} in {value}"
+    if name == "not_in_room":
+        return f"{subject} {be} not in {value}"
     if name == "exists":
         return f"{subject} exists"
     if name == "gone":
@@ -468,8 +993,18 @@ def _abstractly(condition):
         return f"{who} can see {subject}"
     if name == "leads_to":
         return f"a way leads from {subject} to {value}"
+    if name == "not_leads_to":
+        return f"no way leads from {subject} to {value}"
     if name == "never":
         return str(condition.get("because") or "this cannot be done")
+    if name == "clock":
+        from world import clock
+
+        span = _clock_span(value)
+        if span is None:
+            return ""
+        return (f"it is between {clock.hour_words(span[0])} and "
+                f"{clock.hour_words(span[1])}")
     if name == "unbound":
         return (f"nobody said {subject}" if value
                 else f"somebody said {subject}")
@@ -621,6 +1156,19 @@ def _p_kind(subject, value, condition, ctx, mood):
     return met, f"{_cap(subject.name())} is not a {word}."
 
 
+def _p_not_kind(subject, value, condition, ctx, mood):
+    if not subject.found:
+        return True, ""          # what is not here is not a sword either
+    from world import kinds as kinds_mod
+    from world import lexicon
+
+    met = not kinds_mod.any_is_a(ctx.world_root, subject.kinds(), value)
+    word = lexicon.word_of(value)
+    if mood == WANT:
+        return met, f"find something that is not a {word}"
+    return met, f"{_cap(subject.name())} is a {word}."
+
+
 def _p_holds(subject, value, condition, ctx, mood):
     """
     Whether the subject is carrying something.
@@ -645,6 +1193,23 @@ def _p_holds(subject, value, condition, ctx, mood):
                                  verb="is")
 
 
+def _p_not_holds(subject, value, condition, ctx, mood):
+    """Whether the subject is carrying none of these. The opposite of `holds`."""
+    if not subject.found:
+        return True, ""          # nobody here is holding anything
+    held, names = [], []
+    for wanted in _listed(value):
+        holding, said = _held(subject, wanted, ctx)
+        names.append(said)
+        if holding:
+            held.append(said)
+    if mood == WANT:
+        return not held, f"stop carrying {' or '.join(held or names) or 'it'}"
+    return not held, _plainly(subject,
+                              f"still holding {' and '.join(held) or 'it'}",
+                              ctx, verb="is")
+
+
 def _held(subject, wanted, ctx):
     """(is it held, what to call it) for one thing a `holds` clause names."""
     import re
@@ -666,15 +1231,17 @@ def _held(subject, wanted, ctx):
     return False, f"the {plain}"
 
 
+def _wearing(subject, wanted):
+    """Whether the subject has on something answering to `wanted`."""
+    return any(str(wanted).lower() in str(obj.key).lower() and obj.db.worn
+               for obj in (getattr(subject.obj, "contents", []) or []))
+
+
 def _p_wears(subject, value, condition, ctx, mood):
     if not subject.found:
         return _missing(subject, condition, mood)
-    missing = []
-    for wanted in _listed(value):
-        worn = any(str(wanted).lower() in str(obj.key).lower() and obj.db.worn
-                   for obj in (getattr(subject.obj, "contents", []) or []))
-        if not worn:
-            missing.append(str(wanted))
+    missing = [str(wanted) for wanted in _listed(value)
+               if not _wearing(subject, wanted)]
     listed = " and ".join(missing or [str(v) for v in _listed(value)]) or "it"
     if mood == WANT:
         return not missing, f"be wearing {listed}"
@@ -682,18 +1249,31 @@ def _p_wears(subject, value, condition, ctx, mood):
                                  verb="is")
 
 
-def _p_placed(subject, value, condition, ctx, mood):
+def _p_not_wears(subject, value, condition, ctx, mood):
+    """Whether the subject has on none of these. The opposite of `wears`."""
     if not subject.found:
-        return _missing(subject, condition, mood)
+        return True, ""
+    worn = [str(wanted) for wanted in _listed(value)
+            if _wearing(subject, wanted)]
+    if mood == WANT:
+        named = worn or [str(v) for v in _listed(value)]
+        return not worn, f"take off {' or '.join(named) or 'it'}"
+    return not worn, _plainly(subject,
+                              f"still wearing {' and '.join(worn) or 'it'}",
+                              ctx, verb="is")
+
+
+def _placement(subject, value, ctx):
+    """(preposition, what the host is called, whether it is so), or None."""
     from world import relations
 
     try:
         where = dict(value)
     except (TypeError, ValueError):
-        return True, ""
+        return None
     preposition, host_name = next(iter(where.items()), (None, None))
     if not preposition:
-        return True, ""
+        return None
     host = resolve(host_name, ctx)
     if not host.found:
         host_obj = _find(str(host_name), "", ctx)
@@ -701,43 +1281,125 @@ def _p_placed(subject, value, condition, ctx, mood):
         host_obj = host.obj
     met = relations.test(subject.obj, preposition, host_obj)
     called = host.name() if host.found else str(host_name)
+    return preposition, called, met
+
+
+def _p_placed(subject, value, condition, ctx, mood):
+    if not subject.found:
+        return _missing(subject, condition, mood)
+    found = _placement(subject, value, ctx)
+    if found is None:
+        return True, ""
+    preposition, called, met = found
     if mood == WANT:
         return met, f"get {subject.name()} {preposition} {called}"
     return met, (f"{_cap(subject.name())} is not {preposition} {called}.")
 
 
-def _p_trait(subject, value, condition, ctx, mood):
+#: How taking a thing away from where it was put reads, by how it was put.
+_AWAY = {"in": "out of", "on": "off", "under": "out from under",
+         "behind": "out from behind"}
+
+
+def _p_not_placed(subject, value, condition, ctx, mood):
+    """Whether the subject is not where it names. The opposite of `placed`."""
     if not subject.found:
-        return _missing(subject, condition, mood)
+        return True, ""
+    found = _placement(subject, value, ctx)
+    if found is None:
+        return True, ""
+    preposition, called, placed = found
+    if mood == WANT:
+        away = _AWAY.get(preposition, "away from")
+        return not placed, f"get {subject.name()} {away} {called}"
+    return not placed, (f"{_cap(subject.name())} is still {preposition} "
+                        f"{called}.")
+
+
+def _trait_met(current, low, high, under, over):
+    """
+    Whether a figure meets a trait condition's bounds.
+
+    `min` and `max` include the figure they name, and `below` and `above` do
+    not. A figure somebody does not have meets no inclusive bound and every
+    exclusive one: a stone golem has no hunger, so it is not starving (`max 10`)
+    and it is not fed either (`min 30`), but "below 10" and "above 30" are both
+    true of it. That asymmetry is exactly what makes `below` the opposite of
+    `min`. With no bounds at all, the question is whether there is any figure.
+    """
+    exclusive = under is not None or over is not None
+    inclusive = low is not None or high is not None
+    if current is None:
+        return exclusive and not inclusive
+    return ((low is None or current >= low)
+            and (high is None or current <= high)
+            and (under is None or current < under)
+            and (over is None or current > over))
+
+
+def _p_trait(subject, value, condition, ctx, mood):
     from world import traits
 
     slug = str(value)
     low, high = condition.get("min"), condition.get("max")
+    under, over = condition.get("below"), condition.get("above")
+    if not subject.found:
+        # Nobody is here to have the figure, which is the missing figure asked
+        # of nobody: met exactly when a missing figure would be.
+        if _trait_met(None, low, high, under, over):
+            return True, ""
+        return _missing(subject, condition, mood)
     current = traits.value(subject.obj, slug)
-    met = current is not None
-    if met and low is not None:
-        met = current >= low
-    if met and high is not None:
-        met = current <= high
+    met = _trait_met(current, low, high, under, over)
     label = slug.replace("_", " ")
     if mood == WANT:
         if low is not None:
             return met, f"get {label} to {traits._round(low)}"
         if high is not None:
             return met, f"get {label} down to {traits._round(high)}"
+        if under is not None:
+            return met, f"get {label} below {traits._round(under)}"
+        if over is not None:
+            return met, f"get {label} above {traits._round(over)}"
         return met, f"have some {label}"
-    return met, traits.meets(subject.obj, {slug: {"min": low, "max": high}}) \
-        or f"{_cap(subject.name())} has no {label}."
+    if met:
+        return True, ""
+    if low is not None or high is not None or (under is None and over is None):
+        said = traits.meets(subject.obj, {slug: {"min": low, "max": high}})
+        if said:
+            return False, said
+        if current is None:
+            return False, f"{_cap(subject.name())} has no {label}."
+    whose = "Your" if subject.is_actor() else f"{_cap(subject.name())}'s"
+    if under is not None and current is not None and current >= under:
+        return False, (f"{whose} {label} is not below "
+                       f"{traits._round(under)} ({traits._round(current)}).")
+    if over is not None and current is not None and current <= over:
+        return False, (f"{whose} {label} is not above "
+                       f"{traits._round(over)} ({traits._round(current)}).")
+    return False, f"{_cap(subject.name())} has no {label}."
+
+
+def _room_title_of(subject, ctx):
+    who = subject.obj if subject.found else ctx.actor
+    here = getattr(who, "location", None)
+    return (here.db.room_title or here.key) if here is not None else ""
 
 
 def _p_in_room(subject, value, condition, ctx, mood):
-    who = subject.obj if subject.found else ctx.actor
-    here = getattr(who, "location", None)
-    title = (here.db.room_title or here.key) if here is not None else ""
+    title = _room_title_of(subject, ctx)
     met = bool(value) and str(value).lower() in str(title).lower()
     if mood == WANT:
         return met, f"be in {value}"
     return met, f"You are not in {value}."
+
+
+def _p_not_in_room(subject, value, condition, ctx, mood):
+    title = _room_title_of(subject, ctx)
+    met = not (bool(value) and str(value).lower() in str(title).lower())
+    if mood == WANT:
+        return met, f"leave {value}"
+    return met, f"You are still in {value}."
 
 
 def _p_exists(subject, value, condition, ctx, mood):
@@ -818,6 +1480,43 @@ def _p_owned_by(subject, value, condition, ctx, mood):
     if mood == WANT:
         return met, f"own {_in_a_sentence(subject, ctx)}"
     return met, f"{_cap(subject.name())} is not {whose}."
+
+
+def _p_not_owned_by(subject, value, condition, ctx, mood):
+    """
+    Whose the subject is not. The opposite of `owned_by`.
+
+    Not the actor's means nobody's or somebody else's, and a thing that is not
+    here is nobody's in particular. With nobody to be the owner there is
+    nothing to be true, exactly as `owned_by` answers.
+    """
+    from world import ownership
+
+    if not subject.found:
+        return True, ""
+    wanted, through = _owner_wanted(value)
+    if wanted == SOMEBODY:
+        met = ownership.claimable(subject.obj)
+        if mood == WANT:
+            return met, f"leave {_in_a_sentence(subject, ctx)} unclaimed"
+        held = ownership.owner_name(subject.obj) or "somebody"
+        return met, f"{_cap(subject.name())} belongs to {held}."
+    if wanted == NOBODY:
+        met = not ownership.claimable(subject.obj)
+        if mood == WANT:
+            return met, f"see {_in_a_sentence(subject, ctx)} owned"
+        return met, f"{_cap(subject.name())} belongs to nobody."
+
+    owner = ctx.actor if wanted == "actor" else ctx.bound.get(wanted)
+    if owner is None:
+        return True, ""
+    owns = (ownership.owns_through_containers(owner, subject.obj) if through
+            else ownership.owns(owner, subject.obj))
+    whose = "yours" if owner is ctx.actor else \
+        f"{owner.get_display_name(ctx.actor)}'s"
+    if mood == WANT:
+        return not owns, f"part with {_in_a_sentence(subject, ctx)}"
+    return not owns, f"{_cap(subject.name())} is {whose}."
 
 
 def _owner_wanted(value):
@@ -958,6 +1657,58 @@ def _p_leads_to(subject, value, condition, ctx, mood):
     return met, f"Nothing here leads to {value}."
 
 
+def _p_not_leads_to(subject, value, condition, ctx, mood):
+    """No way out of this place reaches the room named. See `_p_leads_to`."""
+    wanted = str(value or "").strip().lower()
+    if not wanted:
+        return True, ""
+    room = subject.obj if subject.what in (ROOM, THING) else None
+    if room is None:
+        room = getattr(ctx.actor, "location", None)
+    if room is None:
+        return True, ""          # nowhere, and nowhere leads nowhere
+    met = not any(
+        str(name or "").strip().lower() == wanted
+        for exit_obj in room.exits
+        if getattr(exit_obj, "destination", None) is not None
+        for name in (exit_obj.destination.db.room_title,
+                     exit_obj.destination.key))
+    if mood == WANT:
+        return met, f"close the way to {value}"
+    return met, f"A way from here still leads to {value}."
+
+
+def _clock_span(value):
+    """(from, to) hours from a clock condition's value, or None."""
+    try:
+        span = dict(value)
+        return float(span["from"]) % 24, float(span["to"]) % 24
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _p_clock(subject, value, condition, ctx, mood):
+    """
+    Whether it is between two hours on this world's dial.
+
+    Asked of the world rather than of any thing: every world has a clock, and
+    it is the real one until the world says otherwise. Nothing achieves it --
+    no verb makes it night -- so a planner waits for it instead. See
+    world/clock.py.
+    """
+    from world import clock
+
+    span = _clock_span(value)
+    if span is None:
+        return True, ""          # nothing asked is nothing to refuse
+    met = clock.in_range(clock.hour(ctx.world_root), *span)
+    said = (f"between {clock.hour_words(span[0])} and "
+            f"{clock.hour_words(span[1])}")
+    if mood == WANT:
+        return met, f"wait until it is {said}"
+    return met, f"It must be {said}."
+
+
 def _p_never(subject, value, condition, ctx, mood):
     """
     A condition that cannot be met, carrying its own reason.
@@ -1062,20 +1813,28 @@ _PREDICATES = {
     "is": _p_is,
     "visible_to": _p_visible,
     "leads_to": _p_leads_to,
+    "not_leads_to": _p_not_leads_to,
     "lacks": _p_lacks,
     "affords": _p_affords,
     "kind": _p_kind,
+    "not_kind": _p_not_kind,
     "holds": _p_holds,
+    "not_holds": _p_not_holds,
     "wears": _p_wears,
+    "not_wears": _p_not_wears,
     "owned_by": _p_owned_by,
+    "not_owned_by": _p_not_owned_by,
     "placed": _p_placed,
+    "not_placed": _p_not_placed,
     "trait": _p_trait,
     "in_room": _p_in_room,
+    "not_in_room": _p_not_in_room,
     "exists": _p_exists,
     "gone": _p_gone,
     "able": _p_able,
     "reachable_by": _p_reachable,
     "never": _p_never,
+    "clock": _p_clock,
     "unbound": _p_unbound,
 }
 
@@ -1127,12 +1886,58 @@ def achieves(effect, condition):
     effect nobody can read backwards is not a cheap effect, it is a hole in
     the planner.
     """
+    kind, members = node_of(condition)
+    if kind:
+        # An `any` is met by meeting any branch, and an `all` is helped by
+        # helping any member: "that would help" is all this ever says.
+        return any(achieves(effect, member) for member in members)
     try:
         etype = str(effect.get("type") or "")
         condition = dict(condition)
-    except AttributeError:
+    except (AttributeError, TypeError, ValueError):
         return False
     name, value = predicate_of(condition)
+
+    if name == "not_holds":
+        # Put down, handed over, put somewhere, or gone.
+        if etype == "move_object":
+            return str(effect.get("to") or "") not in ("", "actor")
+        return etype == "destroy_object"
+
+    if name == "not_wears":
+        if etype == "move_object":
+            return str(effect.get("to") or "") not in ("", "actor")
+        return etype == "destroy_object"
+
+    if name == "not_placed":
+        if etype == "destroy_object":
+            return True
+        if etype != "move_object":
+            return False
+        try:
+            preposition = next(iter(dict(value)))
+        except (TypeError, ValueError, StopIteration):
+            return False
+        going = str(effect.get("to") or "")
+        return (going in ("actor", "room")
+                or str(effect.get("preposition") or "") != preposition)
+
+    if name == "not_in_room" and etype == "move_actor":
+        named = str(effect.get("to") or "").strip().lower()
+        if named:
+            return named != str(value or "").strip().lower()
+        return True
+
+    if name == "not_owned_by" and etype == "set_owner":
+        whose, _through = _owner_wanted(value)
+        going_to = str(effect.get("to") or "")
+        if not going_to:
+            return False
+        if whose == SOMEBODY:
+            return going_to == NOBODY
+        if whose == NOBODY:
+            return going_to != NOBODY
+        return going_to != whose
 
     if name == "is" and etype == "set_state":
         wanted = {str(s).lower() for s in _listed(value)}
@@ -1200,6 +2005,7 @@ def achieves(effect, condition):
         if str(effect.get("trait") or "") != str(value):
             return False
         low, high = condition.get("min"), condition.get("max")
+        under, over = condition.get("below"), condition.get("above")
         # Set outright: the question is whether where it lands is where the
         # goal wanted it.
         if effect.get("set_to") is not None:
@@ -1207,8 +2013,7 @@ def achieves(effect, condition):
                 target = float(effect["set_to"])
             except (TypeError, ValueError):
                 return False
-            return ((low is None or target >= low)
-                    and (high is None or target <= high))
+            return _trait_met(target, low, high, under, over)
         # Otherwise, which way the goal wants it to move against which way
         # this moves it. A rate counts: an effect that starts something
         # draining is how a goal about a falling figure is met, just not at
@@ -1220,9 +2025,9 @@ def achieves(effect, condition):
                 amount = float(amount)
             except (TypeError, ValueError):
                 continue
-            if amount > 0 and low is not None:
+            if amount > 0 and (low is not None or over is not None):
                 return True
-            if amount < 0 and high is not None:
+            if amount < 0 and (high is not None or under is not None):
                 return True
         return False
 
@@ -1319,12 +2124,25 @@ def from_goal(condition):
     subject = {"named": name} if name else ({"of_kind": kind} if kind else
                                             "actor")
 
+    if ctype in COMBINATORS:
+        members = []
+        for member in (condition.get("of") or []):
+            parts = from_goal(member)
+            if not parts:
+                return []        # a branch nobody can test spoils the node
+            members.append(parts[0] if len(parts) == 1 else {ALL: parts})
+        joined = _tidy({ctype: members}) if members else None
+        return [joined] if joined is not None else []
+
     if ctype == "in_room":
         return [{"subject": "actor", "in_room": condition.get("room", "")}]
 
+    if ctype == "not_in_room":
+        return [{"subject": "actor", "not_in_room": condition.get("room", "")}]
+
     if ctype == "trait":
         entry = {"subject": "actor", "trait": condition.get("trait", "")}
-        for edge in ("min", "max"):
+        for edge in TRAIT_BOUNDS:
             if condition.get(edge) is not None:
                 entry[edge] = condition[edge]
         return [entry]
@@ -1336,10 +2154,16 @@ def from_goal(condition):
                 out.append({"subject": subject, clause: condition[clause]})
         return out
 
-    if ctype == "placed":
+    if ctype in ("placed", "not_placed"):
         preposition = condition.get("preposition") or "in"
         return [{"subject": subject,
-                 "placed": {preposition: condition.get("host", "")}}]
+                 ctype: {preposition: condition.get("host", "")}}]
+
+    if ctype == "not_holds":
+        return [{"subject": "actor", "not_holds": [name or kind]}]
+
+    if ctype == "not_worn":
+        return [{"subject": "actor", "not_wears": [name or kind]}]
 
     if ctype == "delivered":
         # Being inside the recipient is exactly what `holds` asks, from the
@@ -1392,6 +2216,19 @@ def as_goal(condition, bound=None, actor=None):
     except (TypeError, ValueError):
         return None
 
+    node, members = node_of(condition)
+    if node:
+        # A branch with no goal form is dropped rather than spoiling the node.
+        # The planner needs only one way forward, and a branch it cannot act
+        # on is a branch it would never have taken.
+        converted = [goal for goal in (as_goal(m, bound, actor)
+                                       for m in members) if goal is not None]
+        if not converted:
+            return None
+        if len(converted) == 1:
+            return converted[0]
+        return {"type": node, "of": converted}
+
     name = _goal_subject_name(condition.get("subject"), bound, actor)
     if name is None:
         return None
@@ -1401,31 +2238,31 @@ def as_goal(condition, bound=None, actor=None):
         listed = [str(s) for s in _listed(value) if s]
         return {"type": "state", "object": name, predicate: listed} \
             if listed else None
-    if predicate == "holds":
+    goal_types = {"holds": "holds", "wears": "worn",
+                  "not_holds": "not_holds", "not_wears": "not_worn"}
+    if predicate in goal_types:
         wanted = [str(s) for s in _listed(value) if s]
-        return {"type": "holds", "object": wanted[0]} if wanted else None
-    if predicate == "wears":
-        wanted = [str(s) for s in _listed(value) if s]
-        return {"type": "worn", "object": wanted[0]} if wanted else None
+        return ({"type": goal_types[predicate], "object": wanted[0]}
+                if wanted else None)
     if predicate == "trait":
         entry = {"type": "trait", "trait": str(value)}
-        for edge in ("min", "max"):
+        for edge in TRAIT_BOUNDS:
             if condition.get(edge) is not None:
                 entry[edge] = condition[edge]
         return entry
-    if predicate == "in_room":
-        return {"type": "in_room", "room": str(value)}
+    if predicate in ("in_room", "not_in_room"):
+        return {"type": predicate, "room": str(value)}
     if predicate == "exists":
         return {"type": "exists", "object": name} if bool(value) else None
     if predicate == "gone":
         return {"type": "gone", "object": name} if bool(value) else None
-    if predicate == "placed":
+    if predicate in ("placed", "not_placed"):
         try:
             where = dict(value)
         except (TypeError, ValueError):
             return None
         for preposition, host in where.items():
-            return {"type": "placed", "object": name,
+            return {"type": predicate, "object": name,
                     "preposition": str(preposition), "host": str(host)}
     return None
 
@@ -1487,6 +2324,23 @@ def schema(ctx=None):
         return {"type": "array", "items": {"type": "string"},
                 "description": what}
 
+    leaf = _leaf_schema(names, known_traits, tb)
+    properties = dict(leaf["properties"])
+    # One level of "or", over plain conditions and nothing deeper. A model is
+    # offered no `all` and no nesting: a list of conditions already means all
+    # of them, and a recursive schema is one some providers will not take.
+    properties["any"] = {
+        "type": "array", "items": leaf, "minItems": 2,
+        "maxItems": MAX_MEMBERS,
+        "description": "Instead of a subject and a predicate: conditions of "
+                       "which any one will do"}
+    # Nothing is required at this level: a plain condition needs its subject
+    # and an `any` has none, and `normalise` is what holds either to its shape.
+    return {"type": "object", "properties": properties, "required": []}
+
+
+def _leaf_schema(names, known_traits, tb):
+    """One plain condition: a subject and one predicate."""
     return {
         "type": "object",
         "properties": {
@@ -1498,16 +2352,26 @@ def schema(ctx=None):
             "lacks": names("states it must not be in"),
             "affords": names("what must be doable to it"),
             "holds": names("what the subject must be carrying"),
+            "not_holds": names("what the subject must not be carrying"),
             "wears": names("what the subject must have on"),
+            "not_wears": names("what the subject must not have on"),
             "kind": {"description": "a sort of thing it must be"},
+            "not_kind": {"description": "a sort of thing it must not be"},
             "owned_by": {"description": "'actor', a participant, 'nobody' or "
                                         "'somebody'"},
+            "not_owned_by": {"description": "whose it must not be"},
             "placed": {"description": "where it must be put"},
+            "not_placed": {"description": "where it must not be"},
             "trait": tb.choice(known_traits, "a figure it must reach",
                                ask="list_traits"),
             "min": {"type": "number", "description": "with trait: at least"},
             "max": {"type": "number", "description": "with trait: at most"},
+            "below": {"type": "number",
+                      "description": "with trait: less than, not equal"},
+            "above": {"type": "number",
+                      "description": "with trait: more than, not equal"},
             "in_room": {"description": "a room it must be in"},
+            "not_in_room": {"description": "a room it must not be in"},
             "exists": {"type": "boolean", "description": "it must exist"},
             "gone": {"type": "boolean", "description": "it must be gone"},
             "able": {"type": "string", "enum": sorted(GATES),
@@ -1515,10 +2379,20 @@ def schema(ctx=None):
             "reachable_by": {"description": "who must be able to reach it"},
             "visible_to": {"description": "who must be able to see it"},
             "leads_to": {"description": "where a way out must lead"},
+            "not_leads_to": {"description": "where no way out may lead"},
             "never": {"type": "boolean",
                       "description": "never true: a rule nothing can pass"},
             "unbound": {"type": "boolean",
                         "description": "nobody named one"},
+            "clock": {"type": "object",
+                      "properties": {
+                          "from": {"type": "number",
+                                   "description": "hour it starts, 0 to 24"},
+                          "to": {"type": "number",
+                                 "description": "hour it ends, not included"}},
+                      "description": "with subject world: the time of day "
+                                     "it must be, and it may wrap past "
+                                     "midnight"},
         },
         "required": ["subject"],
     }

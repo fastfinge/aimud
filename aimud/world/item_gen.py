@@ -128,14 +128,158 @@ def _world_and_room(room, facet):
             f"Room:\n{_room_context(room)}")
 
 
+#: How each role reads when saying what a thing is wanted as. The roles are
+#: the ones a verb binds, as `world.conditions` names them.
+_WANTED_AS = {
+    "direct": "the thing acted on",
+    "instrument": "the thing used to do it",
+    "target": "what it is aimed at, or given to",
+    "container": "what something goes in or on",
+    "source": "what something comes from",
+}
+
+
+class Wanted:
+    """
+    Why a thing is being made: who reached for it, doing what, and as what.
+
+    A generator told only "a note" makes whatever a note usually is. Told that
+    somebody typed "burn the note with the candle", that the note is the thing
+    being burned, and what this world already says burning does, it makes a
+    note that can be burned -- and the next rule that asks whether it is
+    flammable finds it is. The same facts `cause` carries for a rule: who acted,
+    and what they did. Nothing here is invented; every line is read off the
+    attempt, the rulebook, or the character.
+    """
+
+    __slots__ = ("actor", "verb", "role", "said", "made_by", "why")
+
+    def __init__(self, actor=None, verb="", role="direct", said="",
+                 made_by="", why=""):
+        self.actor = actor
+        self.verb = str(verb or "").strip().lower()
+        self.role = str(role or "direct")
+        self.said = str(said or "").strip()
+        # A thing a rule makes: the rule's name, and what its writer said the
+        # thing is made for. See `rule_gen.flesh_out`.
+        self.made_by = str(made_by or "").strip()
+        self.why = str(why or "").strip()
+
+    def block(self, world_root=None, brief=False):
+        """
+        The why, as lines for a prompt, ending in a blank line; "" for nothing.
+
+        `brief` is for deciding whether the thing could be there at all, which
+        wants who and what and not what the world's rules say about the verb.
+        """
+        lines = []
+        if self.made_by:
+            return self._made_block(world_root, brief)
+        who = self._who()
+        if self.said:
+            # Typed words, quoted and never read as instructions. See
+            # docs/archived/tokens-and-phrases.md 4.5.
+            lines.append(f'{who} tried: "{self.said}".')
+        elif self.verb:
+            lines.append(f"{who} tried to {self.verb} it.")
+        if self.verb:
+            wanted_as = _WANTED_AS.get(self.role, "part of what they did")
+            meaning = self._meaning(world_root)
+            lines.append(f"It is wanted as {wanted_as} when they "
+                         f"{self.verb}{meaning}.")
+        if not brief:
+            lines += self._rules(world_root)
+            lines += self._purpose(world_root)
+        if not lines:
+            return ""
+        lines.append("Make it fit that: what they are doing with it should "
+                     "be something it can plausibly take part in.")
+        return "Why it is wanted:\n" + "\n".join(lines) + "\n\n"
+
+    def _made_block(self, world_root, brief):
+        """Why, for a thing one of this world's rules makes whenever it fires."""
+        when = (f", whenever somebody manages to {self.verb}" if self.verb
+                else ", whenever what it watches for becomes true")
+        lines = [f"It is made by this world's rule \"{self.made_by}\"{when}."]
+        if self.verb:
+            meaning = self._meaning(world_root)
+            if meaning:
+                lines.append(f"{self.verb}{meaning}.")
+        if self.why:
+            lines.append(f"It is made for this: {self.why}.")
+        if not brief:
+            lines += self._rules(world_root)
+        lines.append("The same thing is made every time the rule fires, so "
+                     "make the one that fits every time, not one occasion.")
+        return "Why it is wanted:\n" + "\n".join(lines) + "\n\n"
+
+    def _who(self):
+        actor = self.actor
+        if actor is None:
+            return "Somebody"
+        try:
+            name = actor.get_display_name(actor)
+        except AttributeError:
+            name = str(getattr(actor, "key", "") or "Somebody")
+        if getattr(actor.db, "is_npc", False):
+            return f"{name}, a character in this world,"
+        return f"{name}, a player,"
+
+    def _meaning(self, world_root):
+        from world import actions
+
+        declared = actions.spec(world_root, self.verb) or {}
+        means = str(declared.get("means") or "").strip()
+        return f" ({means})" if means else ""
+
+    def _rules(self, world_root):
+        """What this world already says about the verb, by its rules' names."""
+        from world import rulebooks, standard_rules
+
+        if world_root is None or not self.verb:
+            return []
+        named = [rule.get("name") for rule in rulebooks.all_rules(world_root)
+                 if rule.get("action") == self.verb
+                 and rule.get("listed", True) and rule.get("name")
+                 and not standard_rules.is_standard(rule)
+                 and rule.get("phase") in (rulebooks.CHECK,
+                                           rulebooks.CARRY_OUT)]
+        if not named:
+            return []
+        return [f"This world already says of {self.verb}: "
+                + "; ".join(named[:4]) + "."]
+
+    def _purpose(self, world_root):
+        """What a character reaching for it is working towards, if anything."""
+        actor = self.actor
+        if actor is None or not getattr(actor.db, "is_npc", False):
+            return []
+        from world import goals, quests
+
+        lines = []
+        goal = list(actor.db.goal or [])
+        if goal:
+            lines.append(f"They are working towards: "
+                         f"{goals.describe(goal)}.")
+        quest = quests.current(actor)
+        if quest:
+            lines.append(f"They took this on for {quest['giver']}.")
+        return lines
+
+
 # ---------------------------------------------------------------------------
 # Public async API
 # ---------------------------------------------------------------------------
 
-def validate_object_existence(sponsor, room, object_name, on_valid, on_invalid, on_error):
+def validate_object_existence(sponsor, room, object_name, on_valid, on_invalid,
+                              on_error, wanted=None):
     """
     Async. Ask the validation model whether object_name could exist in room.
     Calls on_valid(reason) or on_invalid(reason) or on_error(msg) in the main thread.
+
+    `wanted` says who reached for it and what they were doing (see `Wanted`),
+    which is part of whether it could be there: a rope somebody wants to climb
+    down is a different question from a rope somebody wants to look at.
     """
     model = sponsor.model_for("validation")
     try:
@@ -150,6 +294,7 @@ def validate_object_existence(sponsor, room, object_name, on_valid, on_invalid, 
             "role": "user",
             "content": (
                 f"{_world_and_room(room, 'validation')}\n\n"
+                f"{_why(wanted, room, brief=True)}"
                 f"Could '{object_name}' plausibly exist in this room?"
             ),
         },
@@ -192,11 +337,36 @@ def validate_object_takeable(sponsor, room, obj, on_valid, on_invalid, on_error)
             on_valid, on_invalid, on_error, room)
 
 
-def generate_item(sponsor, room, object_name, on_success, on_error):
+def _why(wanted, room, brief=False, world_root=None):
+    """A `Wanted` as prompt lines, or "" when nobody said why."""
+    if wanted is None:
+        return ""
+    if world_root is None:
+        world_root = room.db.world_root if room else None
+    try:
+        return wanted.block(world_root, brief=brief)
+    except Exception as exc:
+        # Why is context, never a reason to fail making the thing.
+        from evennia.utils import logger
+
+        logger.log_info(f"item_gen: could not say why an item is wanted: {exc}")
+        return ""
+
+
+def ask_for_item(sponsor, object_name, on_spec, on_error, room=None,
+                 world_root=None, wanted=None):
     """
-    Async. Ask the item model to create object_name and spawn it in room.
-    The created object has db.ai_takeable already set from the model response.
-    Calls on_success(item_obj) or on_error(msg) in the main thread.
+    Async. What `object_name` would be, as a spec, without making it.
+
+    on_spec(spec) is given what `make_item` answered -- name, description,
+    kind, affordances, holds, states and the rest -- with any word lists it
+    declared already registered, so the description's choices can be made the
+    moment a thing is built from it. The one question of what a thing is,
+    asked the same way whether the answer is made at once (`generate_item`)
+    or kept in a rule and made every time it fires (`rule_gen.flesh_out`).
+
+    `room` is where somebody reached for it, when they did. A rule's thing is
+    made wherever the rule fires, so it is asked about with the world alone.
     """
     model = sponsor.model_for("items")
     try:
@@ -205,16 +375,29 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
         on_error(str(e))
         return
 
-    from world import affordances as af, gear, lexicon, verbs
+    from world import affordances as af, gear, lexicon, lore, verbs
 
     from world import kinds, lookups, token_lists
     from world import toolbox as tb
+
+    if world_root is None:
+        world_root = room.db.world_root if room else None
+    if room is not None:
+        setting = _world_and_room(room, "items")
+    else:
+        setting = (f"World: {lore.description(world_root)}\n\n"
+                   f"{lore.guidance_block(world_root, 'items')}").rstrip()
+    if wanted is not None and wanted.made_by:
+        asking = f"Generate the item this rule makes: '{object_name}'"
+    elif wanted is not None:
+        asking = f"Generate the item they reached for: '{object_name}'"
+    else:
+        asking = f"Generate the item the player is examining: '{object_name}'"
 
     # Which sense, or what an invented noun hangs under, is in the tool's
     # schema now: an enum of the senses for a word whose senses disagree, and
     # an open field with the anchors for one no dictionary knows. The prompt
     # only says that it is being asked.
-    world_root = room.db.world_root if room else None
     messages = [
         {"role": "system",
          "content": _ITEM_SYSTEM_PROMPT.replace(
@@ -224,13 +407,14 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
         {
             "role": "user",
             "content": (
-                f"{_world_and_room(room, 'items')}\n\n"
+                f"{setting}\n\n"
                 f"{gear.prompt_block(world_root)}"
                 f"{token_lists.TOOL_PROMPT}\n"
                 f"{_sense_note(object_name)}"
                 f"{_state_hints(world_root, [lexicon.head_noun(object_name)])}"
                 f"{_plural_note(object_name)}"
-                f"Generate the item the player is examining: '{object_name}'"
+                f"{_why(wanted, room, world_root=world_root)}"
+                f"{asking}"
             ),
         },
     ]
@@ -241,25 +425,47 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
     def _done(data):
         try:
             data = dict(data or {})
-            name = str(data.get("name") or object_name).strip()
-            description = str(data.get("description", "")).strip()
-            takeable = bool(data.get("takeable", True))
-
-            from world import clothing
-
+            data["name"] = str(data.get("name") or object_name).strip()
+            data["description"] = str(data.get("description", "")).strip()
+            data["takeable"] = bool(data.get("takeable", True))
             # Lists first, so that the description's choices can be made the
             # moment the thing exists.
-            token_lists.declare(world_root, data.get("new_token_lists"))
+            token_lists.declare(world_root, data.pop("new_token_lists", None))
+        except Exception as exc:
+            on_error(str(exc))
+            return
+        on_spec(data)
 
+    # Rounds out, the last item sent is used as it stands: a thing the player
+    # reached for and got is better than an error, and the registers still
+    # fold whatever near-duplicates it carries.
+    llm.converse(sponsor, model, messages, box, on_done=_done,
+                 on_error=on_error,
+                 on_exhausted=lambda last: _done(last) if last
+                 else on_error("no item came back"),
+                 rounds=ITEM_ROUNDS)
+
+
+def generate_item(sponsor, room, object_name, on_success, on_error,
+                  wanted=None):
+    """
+    Async. Ask the item model to create object_name and spawn it in room.
+    The created object has db.ai_takeable already set from the model response.
+    Calls on_success(item_obj) or on_error(msg) in the main thread.
+
+    `wanted` is why it is being made -- see `Wanted` -- so that what is made
+    fits what somebody is doing with it.
+    """
+    def _made(data):
+        try:
+            from world import clothing
+
+            name = data["name"]
             # Built through the clothing layer so that anything the model
             # called wearable really can be put on. A coat found in a
             # wardrobe is the same kind of thing as a coat a character was
             # born in, and nothing here has to know which.
-            item = clothing.create(
-                {**dict(data), "name": name, "description": description,
-                 "takeable": takeable},
-                location=room,
-            )
+            item = clothing.create(data, location=room)
             if item is None:
                 raise ValueError("the model named no item")
             # Answer to the words that asked for it, not only to the name it
@@ -274,21 +480,16 @@ def generate_item(sponsor, room, object_name, on_success, on_error):
         except Exception as exc:
             on_error(str(exc))
 
-    # Rounds out, the last item sent is made as it stands: a thing the player
-    # reached for and got is better than an error, and the registers still
-    # fold whatever near-duplicates it carries.
-    llm.converse(sponsor, model, messages, box, on_done=_done,
-                 on_error=on_error,
-                 on_exhausted=lambda last: _done(last) if last
-                 else on_error("no item came back"),
-                 rounds=ITEM_ROUNDS)
+    ask_for_item(sponsor, object_name, _made, on_error, room=room,
+                 wanted=wanted)
 
 
 # ---------------------------------------------------------------------------
 # The one way a thing comes into being
 # ---------------------------------------------------------------------------
 
-def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False):
+def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False,
+            wanted=None):
     """
     Async. Settle what `phrase` names, making it real if nothing answers to it.
 
@@ -315,6 +516,9 @@ def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False):
     `fuzzy` loosens the first question, and is for characters rather than
     players: an NPC names things from memory in its own words and there is
     nobody to put a disambiguation to, so a near miss is good enough.
+
+    `wanted` is why it is being reached for, and goes to both the question of
+    whether it could be here and the making of it. See `Wanted`.
     """
     from commands.look_take_cmds import _acquire_gen_lock, _release_gen_lock
     from world.naming import instead_of_creating
@@ -343,7 +547,8 @@ def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False):
         on_refused(f"|rCould not resolve {phrase}: {err}|n")
 
     def on_valid(_reason):
-        generate_item(sponsor, room, phrase, on_success=made, on_error=failed)
+        generate_item(sponsor, room, phrase, on_success=made, on_error=failed,
+                      wanted=wanted)
 
     def on_invalid(_reason):
         release()
@@ -354,7 +559,7 @@ def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False):
         on_refused(f"|rError: {err}|n")
 
     validate_object_existence(sponsor, room, phrase, on_valid, on_invalid,
-                              on_error)
+                              on_error, wanted=wanted)
 
 
 # ---------------------------------------------------------------------------

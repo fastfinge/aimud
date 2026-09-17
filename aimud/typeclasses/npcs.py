@@ -307,6 +307,10 @@ class NPC(ObjectParent, DefaultObject):
         # Anything that drifted since the last turn reaches this character's
         # working memory now, in time to be part of what it does next.
         traits.notice_changes(self)
+        from world import becoming
+
+        becoming.settle()
+        becoming.arm(self)
 
         sponsor = self._sponsor(room)
         if not sponsor.answers:
@@ -354,6 +358,14 @@ class NPC(ObjectParent, DefaultObject):
         clear_on_move(self, room.db.world_root if room else None)
         if active_players_in(self.location):
             note_player_nearby(self)
+
+        # Whatever became true by arriving. Does nothing mid-attempt: an NPC
+        # walked by an effect is settled when the attempt ends.
+        from world import becoming
+
+        becoming.settle()
+        becoming.arrived(self)
+        becoming.arm(self)
 
     def at_object_receive(self, moved_obj, source_location, move_type="move", **kwargs):
         """React when a player gives this NPC an object."""
@@ -905,12 +917,27 @@ class NPC(ObjectParent, DefaultObject):
             self.db.goal = []
             self.db.goal_stalls = 0
             self.db.goal_from_quest = None
+            self.db.goal_waiting = None
             return False
 
-        action, rule_key, condition = plan_step(self, world_root)
+        # Waiting for something that will come true on its own: the shop to
+        # open, mana to return. Until it is due the character does whatever it
+        # would with no goal at all; when it is due it looks again rather than
+        # trusting the estimate. See docs/becoming-and-time.md 7.4.
+        if self._still_waiting():
+            return False
+
+        from world.planner import next_move
+
+        move = next_move(self, world_root, goal)
+        action, rule_key, condition = move.action, move.key, move.condition
+        if not action and move.wait is not None and self._wait_for(move):
+            return False
         if not action:
+            self.db.goal_waiting = None
             self._give_up_eventually(goal, world_root)
             return False
+        self.db.goal_waiting = None
 
         from world.worldgen import canonical_direction
 
@@ -958,6 +985,62 @@ class NPC(ObjectParent, DefaultObject):
         # to run before the rule existed, let alone did anything -- and every
         # newly learned rule collected a failure it had not earned.
         self._attempt_verb(action, room, on_done=_judge)
+        return True
+
+    #: How many times one character may wait for the same thing, find it still
+    #: not true, and wait again, before that counts as being stuck. A goal
+    #: whose conditions never line up would otherwise wait for ever.
+    REWAITS_ALLOWED = 3
+
+    def _still_waiting(self):
+        """
+        True while a wait is not yet due. When it falls due it is cleared, the
+        character notices, and the planner is asked again.
+        """
+        import time as _time
+
+        from world import clock
+
+        waiting = self.db.goal_waiting
+        if not waiting:
+            return False
+        try:
+            due = float(waiting.get("until") or 0)
+            wanted = list(waiting.get("goal") or [])
+        except (AttributeError, TypeError, ValueError):
+            self.db.goal_waiting = None
+            return False
+        if wanted != list(self.db.goal or []):
+            # A wait belongs to the goal it was for. A character that has
+            # taken up something else is not still waiting on the old one.
+            self.db.goal_waiting = None
+            return False
+        if clock._real_now() < due:
+            return True
+        self._add_to_history("action", self.key,
+                             f"the wait is over: {waiting.get('said') or 'time'}")
+        self.db.goal_waiting = dict(waiting, until=0)
+        return False
+
+    def _wait_for(self, move):
+        """
+        Start waiting for what the planner says will come true on its own.
+        True when the wait is kept; False when this is the same wait come round
+        too often, which is then left to count as being stuck.
+        """
+        from world import becoming, clock
+
+        previous = dict(self.db.goal_waiting or {})
+        same = previous.get("waiting_on") == move.waiting_on
+        waits = int(previous.get("waits") or 0) + 1 if same else 1
+        if waits > self.REWAITS_ALLOWED:
+            self.db.goal_waiting = None
+            return False
+        self.db.goal_waiting = {"until": clock._real_now() + float(move.wait),
+                                "waiting_on": move.waiting_on,
+                                "said": move.said, "waits": waits,
+                                "goal": list(self.db.goal or [])}
+        becoming.arm(self)
         return True
 
     def _give_up_eventually(self, goal, world_root):

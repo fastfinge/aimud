@@ -139,6 +139,22 @@ class ObjectParent:
         relations.displace(self)
         gear.release(self, dropper)
 
+    def at_pre_move(self, destination, **kwargs):
+        """
+        About to go somewhere: note it for the becomes rules, while it is still
+        where it was.
+
+        Where a thing is, what somebody holds, and what a room holds are all
+        conditions, so the thing moving, what it is leaving and what it is
+        going into are each marked. Before the move, because the before is what
+        a rule said while the thing was still here. See world/becoming.py.
+        """
+        from world import becoming
+
+        for changing in (self, self.location, destination):
+            becoming.mark(changing)
+        return super().at_pre_move(destination, **kwargs)
+
     def at_post_move(self, source_location, move_type="move", **kwargs):
         """
         A thing went somewhere: write where, as the world's history.

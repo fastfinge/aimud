@@ -390,7 +390,7 @@ class TheMechanicsGetTheirSayTwice(Naming):
         made = []
 
         def conjure(caller, room, account, phrase, on_ready, on_refused,
-                    fuzzy=False):
+                    fuzzy=False, wanted=None):
             coins = self.thing("Coins")
             made.append(coins)
             on_ready(coins, True)
@@ -571,7 +571,7 @@ class NobodyIsEverConjured(Naming):
         said, asked = [], []
 
         def conjure(caller, room, sponsor, phrase, on_ready, on_refused,
-                    fuzzy=False):
+                    fuzzy=False, wanted=None):
             asked.append(phrase)
             on_refused("(nothing was made)")
 

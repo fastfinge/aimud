@@ -20,6 +20,7 @@ that wetting a burning thing puts it out.
 """
 
 import re
+import threading
 
 from evennia.utils import logger
 
@@ -1044,6 +1045,266 @@ def vocabulary(world_root):
     return dict(world_root.db.state_vocabulary or {}) if world_root else {}
 
 
+# ---------------------------------------------------------------------------
+# States that are worked out rather than written
+# ---------------------------------------------------------------------------
+#
+# A state in the register may carry a `when`: the conditions under which it
+# holds. It is never written onto anything. `implied_states` works it out, as
+# it already works out that a character nothing has killed is alive. So
+# "starving" is defined once, as hunger at 10 or less, and every rule, goal and
+# refusal that cares asks `is: ["starving"]` and never mentions the number.
+#
+#   A state persists until something changes it. A derived state holds exactly
+#   while its conditions do. A trait modifier persists only while its source
+#   does.
+#
+# Death is not derived, because it is sticky: healing a corpse to 1 health
+# should not raise it. See docs/becoming-and-time.md §5.
+
+#: How many derived states deep a definition may reach: "exhausted" meaning
+#: "tired and starving" is two. Past this, a derived state is simply not true,
+#: which is a guard rather than a limit -- `register_state` refuses a cycle.
+MAX_DERIVED_DEPTH = 3
+
+_DERIVING = threading.local()
+
+
+def _definition(entry):
+    """A register entry's `when`, as a list, or [] for a written state."""
+    try:
+        when = entry.get("when")
+    except AttributeError:
+        return []
+    return list(when) if when else []
+
+
+def derived_states(world_root):
+    """{slug: entry} for every state this world works out rather than writes."""
+    return {slug: entry for slug, entry in vocabulary(world_root).items()
+            if _definition(entry)}
+
+
+def is_derived(world_root, slug):
+    """True for a state that is worked out, and so can never be set."""
+    entry = vocabulary(world_root).get(str(slug or "").lower().strip())
+    return bool(entry) and bool(_definition(entry))
+
+
+def derived_holds(obj, world_root, only=None):
+    """
+    The derived states true of `obj` now, of those named in `only` or of all.
+
+    A definition is asked about the thing whose state it is: `direct` is the
+    thing, and so is `actor` when the thing is a person, so a definition reads
+    the same written either way.
+    """
+    found = set()
+    if obj is None or world_root is None:
+        return found
+    derived = derived_states(world_root)
+    if only is not None:
+        derived = {slug: entry for slug, entry in derived.items()
+                   if slug in only}
+    if not derived:
+        return found
+    depth = getattr(_DERIVING, "depth", 0)
+    if depth >= MAX_DERIVED_DEPTH:
+        return found
+
+    from world import conditions
+    from world.quests import is_person
+
+    ctx = conditions.context({"direct": obj},
+                             obj if is_person(obj) else None, world_root)
+    _DERIVING.depth = depth + 1
+    try:
+        for slug, entry in derived.items():
+            if not _about_this(entry, obj, world_root):
+                continue
+            if all(conditions.evaluate(c, ctx) for c in _definition(entry)):
+                found.add(slug)
+    finally:
+        _DERIVING.depth = depth
+    return found
+
+
+# ---------------------------------------------------------------------------
+# States that are worth something to a person's figures
+# ---------------------------------------------------------------------------
+
+def _clean_bonuses(bonuses):
+    """{trait slug: amount}, with anything that is not a number left out."""
+    clean = {}
+    try:
+        items = dict(bonuses or {}).items()
+    except (TypeError, ValueError):
+        return clean
+    for trait, amount in items:
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            continue
+        name = str(trait or "").strip().lower()
+        if name and amount:
+            clean[name] = amount
+    return clean
+
+
+def set_bonuses(world_root, slug, bonuses):
+    """
+    Say what being in a state is worth to a person's figures.
+
+    Kept on the state's register entry, the same shape an item's
+    `trait_bonuses` has, and summed by `gear.total` from scratch like the
+    rest: "starving costs 3 strength" is said once, on `starving`, and taking
+    away the hunger takes away the cost with no accounting kept anywhere.
+    An empty map takes the bonuses away. Returns the map as stored.
+    """
+    vocab = vocabulary(world_root)
+    if not world_root or slug not in vocab:
+        return {}
+    entry = dict(vocab[slug] or {})
+    clean = _clean_bonuses(bonuses)
+    if clean:
+        entry["bonuses"] = clean
+    else:
+        entry.pop("bonuses", None)
+    vocab[slug] = entry
+    world_root.db.state_vocabulary = vocab
+    return clean
+
+
+def state_bonuses(world_root):
+    """{state: {trait: amount}} for every state that is worth something."""
+    found = {}
+    for slug, entry in vocabulary(world_root).items():
+        try:
+            clean = _clean_bonuses(entry.get("bonuses"))
+        except AttributeError:
+            continue
+        if clean:
+            found[slug] = clean
+    return found
+
+
+#: What a derived state may be restricted to being about. Night is a state of
+#: the world, and a definition that only asks about the world would otherwise
+#: be true of every lamp and chair in it: "It is night" under every look.
+DERIVED_OF = ("world",)
+
+
+def _about_this(entry, obj, world_root):
+    """Whether a derived state's `of` lets it be true of `obj` at all."""
+    try:
+        of = str(entry.get("of") or "")
+    except AttributeError:
+        return True
+    if of == "world":
+        return world_root is not None and obj is not None             and getattr(obj, "id", None) == getattr(world_root, "id", None)
+    return True
+
+
+def _worded_definition(definition):
+    """A derived state's definition as it reads, with nothing to evaluate."""
+    from world import conditions
+
+    return " and ".join(said for said in (conditions.describe(c)
+                                         for c in definition) if said)
+
+
+def _refers_to(entry, derived):
+    """The derived states a definition asks about by name."""
+    from world import conditions
+    from world.model_json import listed
+
+    named = set()
+    for top in _definition(entry):
+        for leaf, _optional in conditions.leaves(top):
+            for field in ("is", "lacks"):
+                named |= {str(s).lower() for s in listed(leaf.get(field))
+                          if str(s).lower() in derived}
+    return named
+
+
+def _makes_a_cycle(vocab, slug):
+    """Whether `slug`'s definition reaches back to `slug` through others."""
+    derived = {s: e for s, e in vocab.items() if _definition(e)}
+    seen, waiting = set(), list(_refers_to(derived.get(slug), derived))
+    while waiting:
+        name = waiting.pop()
+        if name == slug:
+            return True
+        if name in seen:
+            continue
+        seen.add(name)
+        waiting.extend(_refers_to(derived.get(name), derived))
+    return False
+
+
+def _derive(world_root, slug, when, means="", group=None, of=None):
+    """
+    Register a state that is worked out from `when`. Returns the slug, or "".
+
+    Refused, with the reason logged, when the definition asks nothing, when
+    the word is already a written state, when it would make a cycle, and when
+    its group already holds written members: exclusivity is enforced when a
+    state is written, and a derived one never is, so a mixed group could be
+    `fed` and `starving` at once.
+    """
+    from world import conditions
+    from world import vocabulary as _vocabulary
+    from world.model_json import listed
+
+    kept, refused = conditions.normalise_all(listed(when))
+    if refused or not kept:
+        logger.log_info(f"states: {slug!r} not derived: its definition asks "
+                        f"nothing that can be tested")
+        return ""
+
+    vocab = vocabulary(world_root)
+    existing = vocab.get(slug)
+    if existing is None:
+        for other, entry in vocab.items():
+            if not _similar(slug, other):
+                continue
+            if _definition(entry):
+                return other     # another spelling of a derived state
+            logger.log_info(f"states: {slug!r} not derived: {other!r} is "
+                            f"already a state that is set, not worked out")
+            return ""
+    elif not _definition(existing):
+        logger.log_info(f"states: {slug!r} not derived: it is already a state "
+                        f"that is set, not worked out")
+        return ""
+
+    if not _vocabulary.permit(world_root, slug, "state"):
+        return ""
+
+    if group:
+        group = register_group(world_root, group)
+        written = {member for member in group_members(world_root, group)
+                   if member != slug and not is_derived(world_root, member)}
+        if written:
+            logger.log_info(
+                f"states: {slug!r} not derived: group {group!r} already holds "
+                f"states that are set ({', '.join(sorted(written))})")
+            return ""
+
+    entry = {"means": str(means or (existing or {}).get("means") or ""),
+             "conflicts": [], "group": group or "", "when": kept}
+    if of in DERIVED_OF:
+        entry["of"] = of
+    trial = dict(vocab)
+    trial[slug] = entry
+    if _makes_a_cycle(trial, slug):
+        logger.log_info(f"states: {slug!r} not derived: its definition leads "
+                        f"back to itself")
+        return ""
+    world_root.db.state_vocabulary = trial
+    return slug
+
+
 def _similar(a, b):
     """Crude overlap test, to fold 'soaked' into an existing 'wet'."""
     a, b = a.lower(), b.lower()
@@ -1219,16 +1480,24 @@ def blocked(character, gate, world_root=None):
 
     Cheap enough to ask on every movement and every line of dialogue: a set
     intersection against the states already on the object, and a dict lookup
-    per group. Nothing here reads the world unless a state is actually held.
+    per group.
+
+    A derived state stops somebody too when its group says so, and is worked
+    out for this only: nothing derived is evaluated unless its group gates
+    this very thing, so a world whose derived states gate nothing asks nothing
+    it did not ask before.
     """
     if character is None or gate not in GATES:
         return ""
     held = states(character)
-    if not held:
-        return ""
     if world_root is None:
         room = getattr(character, "location", None)
         world_root = getattr(getattr(room, "db", None), "world_root", None)
+    gating = _derived_gating(world_root, gate)
+    if gating:
+        held = held | derived_holds(character, world_root, only=gating)
+    if not held:
+        return ""
     known = groups(world_root)
     for slug in sorted(held):
         group = group_of(world_root, slug)
@@ -1241,6 +1510,24 @@ def blocked(character, gate, world_root=None):
         except AttributeError:
             continue
     return ""
+
+
+def _derived_gating(world_root, gate):
+    """The derived states whose group stops its holder doing `gate`."""
+    derived = derived_states(world_root)
+    if not derived:
+        return set()
+    known = groups(world_root)
+    found = set()
+    for slug, entry in derived.items():
+        try:
+            group = entry.get("group") or ""
+        except AttributeError:
+            continue
+        rules = known.get(group) or STATE_GROUPS.get(group) or {}
+        if group and rules.get(gate):
+            found.add(slug)
+    return found
 
 
 def refuse(character, gate, world_root=None):
@@ -1510,13 +1797,21 @@ def _slug_state(word):
 
 def register_state(world_root, slug, means="", conflicts=(), group=None,
                    ends_on_move=None, prevents_acting=None,
-                   prevents_moving=None, prevents_speaking=None):
+                   prevents_moving=None, prevents_speaking=None, when=None,
+                   bonuses=None, of=None):
     """
     Add a state to the world's vocabulary, or fold it onto an existing one.
 
     Returns the slug actually in use, which may not be the one asked for:
     keeping the vocabulary small is what stops a world accumulating damp,
     moist, soaked and wet as four unrelated conditions.
+
+    `when` makes it a derived state: worked out from those conditions and
+    never written. See `_derive` for what that refuses.
+
+    `bonuses` is what being in it is worth to a person's figures --
+    {"strength": -3} -- summed by `gear` beside what they carry. See
+    `set_bonuses`.
     """
     if not world_root or not slug:
         return slug
@@ -1527,10 +1822,17 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
     # its vocabulary, none of which anything could mean or ever unset.
     if len(slug) < 2:
         return ""
+    if when is not None:
+        slug = _derive(world_root, slug, when, means, group, of)
+        if slug and bonuses is not None:
+            set_bonuses(world_root, slug, bonuses)
+        return slug
 
     vocab = vocabulary(world_root)
     for existing in vocab:
         if _similar(slug, existing):
+            if bonuses is not None:
+                set_bonuses(world_root, existing, bonuses)
             return existing
 
     # The same guard traits keep, from the other side. See `world.vocabulary`.
@@ -1577,12 +1879,24 @@ def register_state(world_root, slug, means="", conflicts=(), group=None,
         if outside:
             group = register_group(world_root, outside)
 
+    if group and any(is_derived(world_root, member)
+                     for member in group_members(world_root, group)
+                     if member != slug):
+        # A group holds derived members or written ones, never both: a written
+        # member's exclusivity is enforced when it is set and a derived one is
+        # never set. The state is still registered, just not into that group.
+        logger.log_info(f"states: {slug!r} kept out of group {group!r}, whose "
+                        f"members are worked out rather than set")
+        group = ""
+
     vocab[slug] = {
         "means": means,
         "conflicts": [c for c in (conflicts or []) if c],
         "group": group or "",
     }
     world_root.db.state_vocabulary = vocab
+    if bonuses is not None:
+        set_bonuses(world_root, slug, bonuses)
     return slug
 
 
@@ -1616,6 +1930,10 @@ def implied_states(obj, world_root=None):
         room = obj if getattr(obj, "location", None) is None             else getattr(obj, "location", None)
         world_root = getattr(getattr(room, "db", None), "world_root", None)
 
+    # Worked out before the defaults, so a derived member of a group with a
+    # default is enough to keep the default from being implied beside it.
+    now |= derived_holds(obj, world_root)
+
     # The built-ins as well as the register, because a world that has never
     # registered `life_status` still has characters in it, and the seeds are
     # exactly the groups no world should have to discover for itself.
@@ -1645,8 +1963,15 @@ def condition(obj, looker=None):
     words the thing now answers to: a bottle that reads "It is empty" can be
     taken with "get empty bottle", and one that read "It is drained dry"
     could not. What you are shown and what you can type stay the same words.
+
+    Derived states are said as well, unlike group defaults. "It is alive"
+    under every character is noise; "You are starving" is exactly what a
+    player needs to be told.
     """
-    current = sorted(states(obj))
+    room = obj if getattr(obj, "location", None) is None \
+        else getattr(obj, "location", None)
+    world_root = getattr(getattr(room, "db", None), "world_root", None)
+    current = sorted(states(obj) | derived_holds(obj, world_root))
     if not current:
         return ""
     from evennia.utils.utils import iter_to_str
@@ -1733,14 +2058,29 @@ def apply_states(obj, add=(), remove=(), world_root=None, announce=True):
     """
     from world.model_json import listed
 
+    # Before anything is written: what the becomes rules about this thing say
+    # now, so what they say afterwards can be told apart. See world/becoming.
+    from world import becoming
+
+    becoming.mark(obj, world_root)
+
     current = states(obj)
     before = set(current)
+    # A derived state is worked out, never written: setting one would make it
+    # true twice over for two reasons, and clearing one would leave its
+    # definition still holding. So it is refused at the door every write comes
+    # through, and said so where somebody can find it.
+    derived = set(derived_states(world_root)) if world_root else set()
 
     # Through `listed`, because this is the innermost door every state comes
     # through: an effect written "add": "sharpened" rather than ["sharpened"]
     # was read a letter at a time and each letter registered as a condition of
     # its own. See `model_json.listed`.
     for slug in listed(remove):
+        if slug in derived:
+            logger.log_info(f"states: not clearing {slug!r} on {obj}: it is "
+                            f"worked out, not set")
+            continue
         current.discard(slug)
     for slug in listed(add):
         # Registered on the way in, so that every caller gets the same
@@ -1750,6 +2090,10 @@ def apply_states(obj, add=(), remove=(), world_root=None, announce=True):
         # is why `effects.py` registering first as well costs nothing.
         slug = register_state(world_root, str(slug)) if world_root else slug
         if not slug:
+            continue
+        if slug in derived:
+            logger.log_info(f"states: not setting {slug!r} on {obj}: it is "
+                            f"worked out, not set")
             continue
         vocab = vocabulary(world_root)
         for conflict in vocab.get(slug, {}).get("conflicts", []):
@@ -1765,6 +2109,17 @@ def apply_states(obj, add=(), remove=(), world_root=None, announce=True):
     refresh_state_aliases(obj)
     if announce:
         announce_states(obj, before, set(current), world_root)
+    # A state that is worth something to a person's figures changes the sum
+    # the moment it is set or ended. Only when one of those actually changed,
+    # so the ordinary case costs one lookup.
+    changed = before ^ set(current)
+    if changed and world_root is not None and changed & set(
+            state_bonuses(world_root)):
+        from world import gear
+        from world.quests import is_person
+
+        if is_person(obj):
+            gear.recompute(obj)
     return obj.db.states
 
 
@@ -2069,9 +2424,19 @@ def lookup_tools():
     from world import kinds as kinds_mod
     from world import toolbox as tb
 
+    def worked_out(info):
+        """How a derived state is worked out, or "" for one that is set."""
+        definition = _definition(info)
+        if not definition:
+            return ""
+        return _worded_definition(definition)
+
     def line(world_root, slug, info):
+        how = worked_out(info)
         return (f"{slug}: {info.get('means', '')} "
-                f"(group: {group_of(world_root, slug) or 'none'})")
+                f"(group: {group_of(world_root, slug) or 'none'})"
+                + (f" -- worked out, never set: holds when {how}"
+                   if how else ""))
 
     def listing(ctx, args):
         vocab = vocabulary(ctx.world_root)
@@ -2090,6 +2455,10 @@ def lookup_tools():
         if info is None and not group:
             return f"This world has no state called {slug}."
         said = [f"{slug}: {(info or {}).get('means', '(not said)')}"]
+        how = worked_out(info or {})
+        if how:
+            said.append(f"worked out, never set by any effect: holds when "
+                        f"{how}")
         if (info or {}).get("conflicts"):
             said.append(f"cancels: {', '.join(info['conflicts'])}")
         if group:

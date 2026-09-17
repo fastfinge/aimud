@@ -15,6 +15,8 @@ the end; a single step that does not achieve what it promised is noticed
 immediately, and the rule that promised it is set aside.
 """
 
+import threading
+
 from evennia.utils import logger
 
 from world import goals, verbs
@@ -274,6 +276,40 @@ def _for_condition(actor, world_root, condition, depth=0):
     ctype = condition.get("type")
     name = condition.get("object", "")
 
+    if ctype in ("any", "all"):
+        # An `any` is advanced by advancing whichever branch offers a step,
+        # tried in the order written. An `all` by its first unmet member that
+        # does, which is what a goal's own list of conditions already gets.
+        for member in (condition.get("of") or []):
+            if ctype == "all" and goals._test(member, actor, world_root)[0]:
+                continue
+            action, key = _for_condition(actor, world_root, member, depth)
+            if action:
+                return action, key
+        return None, None
+
+    if ctype in ("not_holds", "not_worn", "not_placed"):
+        # Letting go is a mechanic, never a learned verb, so there is no rule
+        # to blame: put it down, take it off, or take it out.
+        obj = _bind(actor, name) if name else None
+        if obj is None:
+            return None, None
+        if ctype == "not_holds" and obj.location is actor:
+            return f"drop {obj.key}", None
+        if ctype == "not_worn" and obj.location is actor and obj.db.worn:
+            return f"remove {obj.key}", None
+        if ctype == "not_placed" and obj.location is not actor:
+            return f"get {obj.key}", None
+        return None, None
+
+    if ctype == "not_in_room":
+        # Any way out will do. The goal is to be elsewhere, not somewhere.
+        here = actor.location
+        for obj in (here.contents if here is not None else []):
+            if getattr(obj, "destination", None) not in (None, here):
+                return obj.key, None
+        return None, None
+
     if not name and condition.get("kind"):
         # A want may name a sort of thing rather than one thing -- "a cake",
         # not "the chocolate cake". Testing whether it is met knows that;
@@ -375,11 +411,80 @@ def _for_condition(actor, world_root, condition, depth=0):
 
     if ctype in ("state", "gone"):
         obj = _bind(actor, name)
+        if obj is None and name and name.lower() == str(actor.key).lower():
+            obj = actor          # a want about oneself: "stop being starving"
         if obj is None:
             step = _step_towards_object(actor, name)
             return (step, None) if step else (None, None)
+        if ctype == "state":
+            derived, rest = _derived_wants(world_root, condition)
+            if derived:
+                step, key = _towards_derived(actor, world_root, obj, derived,
+                                             depth)
+                if step or not rest:
+                    return step, key
+                condition = rest
         return _verb_for(actor, world_root, condition, obj, depth)
 
+    return None, None
+
+
+def _derived_wants(world_root, condition):
+    """
+    The derived states a state goal names, and the goal without them.
+
+    Returns ([(slug, wanted), ...], rest) where `wanted` is True for `is` and
+    False for `lacks`, and `rest` is the same goal holding only what can be
+    set, or None when nothing is left.
+    """
+    from world.model_json import listed
+
+    known = verbs.derived_states(world_root)
+    if not known:
+        return [], condition
+    found, rest = [], dict(condition)
+    for field, wanted in (("is", True), ("lacks", False)):
+        values = [str(s).lower() for s in listed(condition.get(field))]
+        found += [(slug, wanted) for slug in values if slug in known]
+        kept = [slug for slug in values if slug not in known]
+        if kept:
+            rest[field] = kept
+        else:
+            rest.pop(field, None)
+    if not (rest.get("is") or rest.get("lacks")):
+        rest = None
+    return found, rest
+
+
+def _towards_derived(actor, world_root, obj, derived, depth):
+    """
+    A step towards a state that is worked out rather than set.
+
+    No verb can set one, so the question is never "what verb makes it
+    starving" -- which would send the planner guessing at words for ever --
+    but "what would make its definition true", or false for `lacks`. The
+    definition is asked about `obj`, as `implied_states` asks it, and read
+    back into the goal shape the rest of the planner speaks. See
+    docs/becoming-and-time.md 5.8.
+    """
+    from world import conditions
+    from world.quests import is_person
+
+    if depth >= MAX_SUBGOALS:
+        return None, None
+    known = verbs.derived_states(world_root)
+    person = obj if is_person(obj) else actor
+    for slug, wanted in derived:
+        definition = {"all": list(known[slug].get("when") or [])}
+        target = definition if wanted else conditions.negate(definition)
+        if target is None:
+            continue             # a definition nobody can negate: no step
+        goal = conditions.as_goal(target, {"direct": obj}, person)
+        if goal is None:
+            continue
+        step, key = _for_condition(actor, world_root, goal, depth + 1)
+        if step:
+            return step, key
     return None, None
 
 
@@ -583,6 +688,7 @@ def _verb_for(actor, world_root, condition, obj, depth=0):
 
     if depth >= MAX_SUBGOALS:
         return None, None
+    waits_before = len(getattr(_WAITS, "found", None) or [])
     for _action, key, unmet in blocked:
         for wanted in unmet:
             step, blame = _towards(actor, world_root, wanted, bound, depth + 1)
@@ -592,6 +698,19 @@ def _verb_for(actor, world_root, condition, obj, depth=0):
                 # powered, the rule that says what powering does is the one that
                 # promised something it did not deliver.
                 return step, blame or key
+    if len(getattr(_WAITS, "found", None) or []) > waits_before:
+        # A verb this world knows is only waiting on the clock or a figure
+        # that is on its way. Guessing at a word nobody has tried would be
+        # answering "not yet" with "try something else".
+        return None, None
+
+    # Nothing a verb does sets it directly -- but a becomes rule may: a thing
+    # is dead once its health falls to 0, so wanting it dead is wanting its
+    # health down. One step deep, and before guessing at an untried word,
+    # because this is something the world already knows.
+    step, key = _towards_becoming(actor, world_root, condition, obj, depth)
+    if step:
+        return step, key
 
     # Nothing this world knows would do it. A word it has never been taught
     # might, and trying one is how it finds out.
@@ -602,6 +721,49 @@ def _verb_for(actor, world_root, condition, obj, depth=0):
     if depth == 0:
         for verb in untried_verbs(world_root, condition):
             return f"{verb} {obj.key}", None
+    return None, None
+
+
+def _towards_becoming(actor, world_root, condition, obj, depth):
+    """
+    A step towards a state some becomes rule brings about.
+
+    A goal `is: dead` is met by a rule that adds `dead` when health falls to 0,
+    so the rule's `when` -- about `obj`, and without anything it asks of the
+    cause -- is the subgoal. The same for `lacks` and a rule that removes the
+    state. See docs/becoming-and-time.md §10.
+    """
+    from world import becoming, conditions
+    from world.model_json import listed
+    from world.quests import is_person
+
+    if depth >= MAX_SUBGOALS or world_root is None:
+        return None, None
+    wanted_on = {str(s).lower() for s in listed(condition.get("is"))}
+    wanted_off = {str(s).lower() for s in listed(condition.get("lacks"))}
+    if not (wanted_on or wanted_off):
+        return None, None
+    person = obj if is_person(obj) else actor
+    for rule in becoming.rules(world_root):
+        adds, removes = set(), set()
+        for effect in rule.get("effects") or []:
+            if str(effect.get("type") or "") != "set_state":
+                continue
+            if str(effect.get("role") or effect.get("name_role")
+                   or "direct") != "direct":
+                continue
+            adds |= {str(s).lower() for s in listed(effect.get("add"))}
+            removes |= {str(s).lower() for s in listed(effect.get("remove"))}
+        if not ((wanted_on & adds) or (wanted_off & removes)):
+            continue
+        target = {"all": [becoming._without_cause(c)
+                          for c in (rule.get("when") or [])]}
+        goal = conditions.as_goal(target, {"direct": obj}, person)
+        if goal is None:
+            continue
+        step, key = _for_condition(actor, world_root, goal, depth + 1)
+        if step:
+            return step, key
     return None, None
 
 
@@ -617,9 +779,16 @@ def _towards(actor, world_root, condition, bound, depth):
     from world import conditions
 
     wanted = conditions.as_goal(condition, bound, actor)
-    if wanted is None:
-        return None, None
-    return _for_condition(actor, world_root, wanted, depth)
+    step, key = (_for_condition(actor, world_root, wanted, depth)
+                 if wanted is not None else (None, None))
+    if not step:
+        # No step, but perhaps no step is needed: a shop that refuses at night
+        # will not refuse in the morning. Asked of the condition as the check
+        # rule wrote it, before a condition about the world is lost to having
+        # no goal form at all. See `next_move`.
+        ctx = conditions.context(bound, actor, world_root)
+        _note_not_yet(conditions.eventually(condition, ctx), condition, ctx)
+    return step, key
 
 
 def _candidates(actor, world_root, condition, obj, outcome):
@@ -714,17 +883,103 @@ def plan_for(actor, world_root, goal):
     handed to a player as a suggestion: it is a command, not an instruction to
     some inner machinery.
     """
+    move = next_move(actor, world_root, goal)
+    return move.action, move.key, move.condition
+
+
+#: The longest wait worth keeping a want alive for, in real seconds. Past it,
+#: something that will come true on its own counts as no step at all: an NPC
+#: should not hold on to a want for a week because its mana returns at a crawl.
+MAX_WAIT = 3600
+
+_WAITS = threading.local()
+
+
+class Move:
+    """
+    What to do next about a goal: a step, or a wait, or neither.
+
+    `action`, `key` and `condition` are the step, as `plan_for` has always
+    answered. `wait` is set instead when no step can be taken and something
+    the goal needs will come true on its own: the seconds until it does, and
+    `waiting_on` is the condition and `said` what it is, as a want.
+    """
+
+    __slots__ = ("action", "key", "condition", "wait", "waiting_on", "said")
+
+    def __init__(self, action=None, key=None, condition=None, wait=None,
+                 waiting_on=None, said=""):
+        self.action = action
+        self.key = key
+        self.condition = condition
+        self.wait = wait
+        self.waiting_on = waiting_on
+        self.said = said
+
+
+def _note_not_yet(seconds, condition, ctx):
+    """Keep a wait the planner found, if it is one worth keeping."""
+    found = getattr(_WAITS, "found", None)
+    if found is None or seconds is None or seconds > MAX_WAIT:
+        return
+    from world import conditions
+
+    found.append((float(seconds), dict(condition),
+                  conditions.describe(condition, ctx, conditions.WANT)))
+
+
+def next_move(actor, world_root, goal):
+    """
+    The next step towards `goal`, or how long until one is worth taking.
+
+    Every unmet condition is tried for a step, in order, as `plan_for` always
+    did. One with no step may still be one that will come true on its own --
+    the clock, or a figure with a rate -- and that is "not yet" rather than
+    "no". Only when every unmet condition is one or the other, and at least one
+    is "not yet", does this answer with a wait, the soonest there is. See
+    docs/becoming-and-time.md 7.4.
+    """
+    from world import conditions
+
     goal = list(goal or [])
     if not goal or actor.location is None:
-        return None, None, None
+        return Move()
 
-    for condition, (met, _text) in zip(goal, goals.progress(goal, actor, world_root)):
-        if met:
-            continue
-        action, key = _for_condition(actor, world_root, condition)
-        if action:
-            return action, key, dict(condition)
-    return None, None, None
+    _WAITS.found = []
+    try:
+        for condition, (met, _text) in zip(
+                goal, goals.progress(goal, actor, world_root)):
+            if met:
+                continue
+            action, key = _for_condition(actor, world_root, condition)
+            if action:
+                return Move(action, key, dict(condition))
+            ctx = conditions.context(None, actor, world_root)
+            parts = conditions.from_goal(condition)
+            if parts:
+                _note_not_yet(conditions.eventually({"all": parts}, ctx),
+                              {"all": parts}, ctx)
+        found = sorted(_WAITS.found, key=lambda entry: entry[0])
+    finally:
+        _WAITS.found = None
+    if not found:
+        return Move()
+    seconds, waiting_on, said = found[0]
+    return Move(wait=seconds, waiting_on=waiting_on, said=said)
+
+
+def about(seconds):
+    """A wait as somebody would say it: "a minute", "about twenty minutes"."""
+    seconds = max(float(seconds or 0), 0.0)
+    if seconds < 90:
+        return "a minute or so"
+    minutes = seconds / 60
+    if minutes < 55:
+        return f"about {int(round(minutes))} minutes"
+    hours = minutes / 60
+    if hours < 1.5:
+        return "about an hour"
+    return f"about {int(round(hours))} hours"
 
 
 def plan_step(actor, world_root):
@@ -747,7 +1002,13 @@ def advise(actor, world_root, goal):
     if goals.satisfied(goal, actor, world_root):
         return None, "You have done it."
 
-    action, _key, condition = plan_for(actor, world_root, goal)
+    move = next_move(actor, world_root, goal)
+    action, condition = move.action, move.condition
+    if not action and move.wait is not None:
+        # Not no, only not yet: the planner's answer to a player is the same
+        # one it gives a character, which waits and does something else.
+        return None, (f"Nothing to do yet: {move.said or 'wait'}. That should "
+                      f"be in {about(move.wait)}.")
     if action:
         _met, text = goals._test(condition, actor, world_root)
         # Say so when the step is a word nobody has tried. The planner will
@@ -780,6 +1041,7 @@ def advise(actor, world_root, goal):
 #: Why the planner can find nothing to do about a condition. What each one
 #: means for somebody else is in `blocker`; what the world can do about each
 #: is docs/generator-tool-loops.md §5.1.
+WAITING = "waiting"
 MISSING_THING = "missing_thing"
 MISSING_ROOM = "missing_room"
 NO_RULE = "no_rule"
@@ -809,6 +1071,10 @@ def blocker(actor, world_root, condition):
     action, _key = _for_condition(actor, world_root, condition)
     if action:
         return None, ""
+    move = next_move(actor, world_root, [condition])
+    if move.wait is not None:
+        # Nothing is missing: it will come true on its own. See `next_move`.
+        return WAITING, about(move.wait)
 
     ctype = str(condition.get("type") or "")
     if ctype == "in_room":
