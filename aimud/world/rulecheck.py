@@ -127,16 +127,21 @@ def as_verb_rule(rule):
     point of separating them -- so a rulebook rule contributes to one side of
     the ledger or the other, and the scan adds them up across the book.
     """
-    requires = {}
-    for condition in (rule.get("conditions") or []):
-        if not hasattr(condition, "get"):
-            continue
-        subject = str(condition.get("subject") or "direct")
-        entry = requires.setdefault(subject, {"is": [], "lacks": []})
-        for field in ("is", "lacks"):
-            from world.model_json import listed
+    from world import conditions as conditions_mod
+    from world.model_json import listed
 
-            entry[field] += [str(s) for s in listed(condition.get(field))]
+    requires = {}
+    for top in (rule.get("conditions") or []):
+        # Only what the rule demands. A state inside an `any` is one way of
+        # passing among several, and counting it as required would call a
+        # rule dead that another branch lets through.
+        for condition, optional in conditions_mod.leaves(top):
+            if optional or not hasattr(condition, "get"):
+                continue
+            subject = str(condition.get("subject") or "direct")
+            entry = requires.setdefault(subject, {"is": [], "lacks": []})
+            for field in ("is", "lacks"):
+                entry[field] += [str(s) for s in listed(condition.get(field))]
     return {"valid": True,
             "requires": requires,
             "effects": rule.get("effects") or [],
@@ -390,19 +395,47 @@ def self_defeating(rules):
         made = produced.get(rule.get("action")) or set()
         if not made:
             continue
-        wanted = set()
+        clash = set()
         for condition in (rule.get("conditions") or []):
-            try:
-                from world.model_json import listed
-
-                wanted |= {str(v).lower() for v in listed(condition.get("is"))}
-            except AttributeError:
-                continue
-        clash = sorted(wanted & made)
+            clash |= dead_states(condition, made)
+        clash = sorted(clash)
         if clash:
             found.append((str(rule_id), str(rule.get("action") or ""), clash,
                           str(rule.get("name") or "")))
     return found
+
+
+def dead_states(condition, made):
+    """
+    The states that make this condition impossible, given what its verb makes.
+
+    A check condition demanding a state its own carry-out adds can never pass.
+    For a plain condition that is the `is` states among `made`. Through a
+    node: an `all` is dead when any member is, and an `any` only when every
+    branch is -- a rule with one live way through is not dead, and suspending
+    it would take away a verb that works.
+
+    Returns a set of state slugs, empty when the condition can pass.
+    """
+    from world import conditions as conditions_mod
+    from world.model_json import listed
+
+    made = {str(s).lower() for s in (made or ())}
+    kind, members = conditions_mod.node_of(condition)
+    if kind == conditions_mod.ALL:
+        found = set()
+        for member in members:
+            found |= dead_states(member, made)
+        return found
+    if kind == conditions_mod.ANY:
+        branches = [dead_states(member, made) for member in members]
+        if branches and all(branches):
+            return set().union(*branches)
+        return set()
+    try:
+        return {str(v).lower() for v in listed(condition.get("is"))} & made
+    except AttributeError:
+        return set()
 
 
 def ungrounded(kind_specs):

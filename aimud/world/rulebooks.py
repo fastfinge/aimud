@@ -126,6 +126,17 @@ def add(world_root, rule):
                               if k in blank()})
     record["phase"] = record["phase"] if record["phase"] in PHASES else CHECK
     record["scope"] = _clean_scope(record.get("scope"))
+    # Nodes tidied and held to their caps on the way in, whoever wrote the
+    # rule. A condition that cannot be stored is dropped and logged rather
+    # than kept to evaluate as nothing for ever.
+    from world import conditions
+
+    for field in ("conditions", "when"):
+        kept, refused = conditions.normalise_all(record.get(field))
+        if refused:
+            logger.log_info(f"rules: dropped {len(refused)} unusable "
+                            f"{field} from a rule: {refused!r}")
+        record[field] = kept
     if record["action"]:
         from world import verbs
 

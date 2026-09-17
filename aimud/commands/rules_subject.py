@@ -572,7 +572,7 @@ def _effect_rule(root, rule):
     mark = f"|x({where}, standard)|n" if standard else f"|x({where})|n"
     out = []
     for condition in (rule.get("conditions") or []):
-        out.append(f"    {conditions.describe(condition)} {mark}")
+        out += condition_lines(condition, "    ", suffix=f" {mark}")
     for effect in rulecheck.effects_of(rule):
         out.append(f"    {effects_mod.say(effect)} {mark}")
     if not out:
@@ -581,8 +581,30 @@ def _effect_rule(root, rule):
     # verb gathers the same ones, so they are not printed.
     if not standard:
         for guard in (rule.get("when") or []):
-            out.append(f"      |xonly when {conditions.describe(guard)}|n")
+            out += condition_lines(guard, "      ", lead="|xonly when ",
+                                   suffix="|n")
     return out
+
+
+def condition_lines(condition, indent, lead="", suffix=""):
+    """
+    One condition as the lines of a listing.
+
+    A plain condition is one line. An `any` or an `all` is a heading and then
+    a line per member, indented under it, because this is read aloud at least
+    as often as it is looked at, and "any of these" followed by a short list
+    is easier to follow by ear than one long sentence joined by "or".
+    """
+    from world import conditions
+
+    kind, members = conditions.node_of(condition)
+    if not kind:
+        return [f"{indent}{lead}{conditions.describe(condition)}{suffix}"]
+    heading = "any one of these" if kind == conditions.ANY else "all of these"
+    lines = [f"{indent}{lead}{heading}:{suffix}"]
+    for member in members:
+        lines += condition_lines(member, indent + "  ")
+    return lines
 
 
 VIEW_EFFECTS = menus.Form(

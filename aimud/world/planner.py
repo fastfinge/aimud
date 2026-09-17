@@ -274,6 +274,40 @@ def _for_condition(actor, world_root, condition, depth=0):
     ctype = condition.get("type")
     name = condition.get("object", "")
 
+    if ctype in ("any", "all"):
+        # An `any` is advanced by advancing whichever branch offers a step,
+        # tried in the order written. An `all` by its first unmet member that
+        # does, which is what a goal's own list of conditions already gets.
+        for member in (condition.get("of") or []):
+            if ctype == "all" and goals._test(member, actor, world_root)[0]:
+                continue
+            action, key = _for_condition(actor, world_root, member, depth)
+            if action:
+                return action, key
+        return None, None
+
+    if ctype in ("not_holds", "not_worn", "not_placed"):
+        # Letting go is a mechanic, never a learned verb, so there is no rule
+        # to blame: put it down, take it off, or take it out.
+        obj = _bind(actor, name) if name else None
+        if obj is None:
+            return None, None
+        if ctype == "not_holds" and obj.location is actor:
+            return f"drop {obj.key}", None
+        if ctype == "not_worn" and obj.location is actor and obj.db.worn:
+            return f"remove {obj.key}", None
+        if ctype == "not_placed" and obj.location is not actor:
+            return f"get {obj.key}", None
+        return None, None
+
+    if ctype == "not_in_room":
+        # Any way out will do. The goal is to be elsewhere, not somewhere.
+        here = actor.location
+        for obj in (here.contents if here is not None else []):
+            if getattr(obj, "destination", None) not in (None, here):
+                return obj.key, None
+        return None, None
+
     if not name and condition.get("kind"):
         # A want may name a sort of thing rather than one thing -- "a cake",
         # not "the chocolate cake". Testing whether it is met knows that;

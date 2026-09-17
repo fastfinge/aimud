@@ -241,6 +241,12 @@ def validate(reply, offered, action, world_root=None):
         if phase == rulebooks.CHECK and not conds:
             complaints.append("a check rule that checks nothing")
             continue
+        if phase == rulebooks.CHECK and _packed(entry.get("conditions"),
+                                                conditions):
+            complaints.append(
+                "a check rule packed into one all -- write one check rule per "
+                "requirement, and keep any and all for saying \"or\"")
+            continue
         dead = _self_defeating(conds, produced)
         if phase == rulebooks.CHECK and dead:
             complaints.append(
@@ -322,18 +328,22 @@ def _self_defeating(conds, produced):
     """
     if not produced:
         return []
-    wanted = set()
+    from world import rulecheck
+
+    dead = set()
     for condition in (conds or []):
-        try:
-            wanted |= {str(s).lower()
-                       for s in model_json.listed(condition.get("is"))}
-        except AttributeError:
-            continue
-    return sorted(wanted & produced)
+        dead |= rulecheck.dead_states(condition, produced)
+    return sorted(dead)
 
 
 def _clean_conditions(given, conditions):
-    """Conditions that name a predicate this game can actually test."""
+    """
+    Conditions that name a predicate this game can actually test.
+
+    Through `conditions.normalise_all`, so an `any` is held to the same depth
+    and width as anything else stored, and an `all` at the top joins the list
+    it is in, since that is what the list already means.
+    """
     kept, complaints = [], []
     for entry in (given or []):
         try:
@@ -341,12 +351,34 @@ def _clean_conditions(given, conditions):
         except (TypeError, ValueError):
             complaints.append("a condition that was not an object")
             continue
-        name, _value = conditions.predicate_of(entry)
-        if not name:
-            complaints.append(f"a condition asking nothing: {entry}")
+        tidy, refused = conditions.normalise_all([entry])
+        if refused:
+            if conditions.node_of(entry)[0]:
+                complaints.append(
+                    f"an any or all that is empty, holds a condition asking "
+                    f"nothing, or nests more than {conditions.MAX_DEPTH} deep: "
+                    f"{entry}")
+            else:
+                complaints.append(f"a condition asking nothing: {entry}")
             continue
-        kept.append(entry)
+        kept.extend(tidy)
     return kept, complaints
+
+
+def _packed(given, conditions):
+    """
+    True when a check rule's only condition is an `all`.
+
+    Combinators are for "or". A check rule keeps one requirement to a rule so
+    that a refusal names exactly what is missing and `view rules` shows a line
+    per requirement, and packing them into one `all` loses both.
+    """
+    try:
+        given = list(given or [])
+    except TypeError:
+        return False
+    return (len(given) == 1
+            and conditions.node_of(given[0])[0] == conditions.ALL)
 
 
 def _clean_effects(given):
@@ -475,6 +507,20 @@ check rule it says what must hold before the verb may happen at all:
   {"subject": {"zone": true}, "lacks": ["port_closed"]}
   {"subject": "direct", "unbound": true}            nobody named one
 Subjects are the roles, "actor", "here", {"enclosure": kind} or {"zone": true}.
+
+Every predicate that has an opposite says it with its own word, never "not":
+"lacks" for "is", and "not_holds", "not_wears", "not_kind", "not_placed",
+"not_in_room", "not_owned_by" and "not_leads_to" for the rest. For a figure,
+"below" and "above" are less than and more than, where "min" and "max" include
+the number itself.
+
+When more than one thing would do, say so with "any", which takes the place of
+a subject and a predicate:
+  {"any": [{"subject": "actor", "holds": ["key"]},
+           {"subject": "actor", "holds": ["lockpick"]}]}
+"any" is for "or" and nothing else. A list of conditions already means all of
+them, so a check rule with two requirements is two check rules, never one rule
+wrapped around both.
 """
 
 _EFFECTS = """An effect is one of:

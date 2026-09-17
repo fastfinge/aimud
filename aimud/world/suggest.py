@@ -315,10 +315,16 @@ def from_pairs(world_root):
         scope, cited = _where_state_is_set(world_root, stuck)
         if scope is None:
             continue
+        from world import conditions as conditions_mod
+
+        # Every rule that would take the state as a way through, whether it
+        # demands it or offers it as one branch of an `any`: both are evidence
+        # that something ought to be able to bring it about.
         wanted = sum(1 for rule in _world_rules(world_root)
-                     for condition in (rule.get("conditions") or [])
+                     for top in (rule.get("conditions") or [])
+                     for leaf, _optional in conditions_mod.leaves(top)
                      if missing in [str(s).lower() for s in
-                                    model_json.listed(condition.get("is"))])
+                                    model_json.listed(leaf.get("is"))])
         made.append(propose(
             world_root,
             rulebooks.blank(

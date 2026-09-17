@@ -253,7 +253,10 @@ rules every new one has to keep:
 The table, with new names provisional until they are written:
 
 * **Pairs that exist**: `is` and `lacks`; `exists` and `gone`; `unbound: true`
-  and `unbound: false`; `owned_by: nobody` and `owned_by: somebody`.
+  and `unbound: false`. `owned_by: nobody` and `owned_by: somebody` look like a
+  pair and are not one: the complement test found that both say no about a
+  thing that is not there. So their mirror is `not_owned_by`, like any other
+  `owned_by`.
 * **Value flips.** Where a predicate already takes a closed word or a boolean,
   its opposite is a flipped value rather than a new field.
 * **Trait bounds.** `min` and a new exclusive `below` are opposites, as are
@@ -315,15 +318,17 @@ What uses it:
   through `as_goal` and `from_goal`. Goals gain `{"type": "any", "of": [...]}`,
   and `_for_condition` takes the first branch that offers a step. `all`
   flattens into the goal list. The new opposites convert where a character can
-  act on them:
-  * `not_holds`: drop it or give it away;
+  act on them, each with a mechanic as its step:
+  * `not_holds`: drop it;
   * `not_wears`: take it off;
-  * `not_placed`: move it;
-  * `not_in_room`: leave;
-  * `not_owned_by`: give it away.
+  * `not_placed`: take it back;
+  * `not_in_room`: leave by any way out.
 
   `achieves` reads `move_object`, `destroy_object`, `set_owner` and `move_actor`
-  backwards for them. `not_kind` and `not_leads_to` are evaluated but never
+  backwards for them, so a learned verb that does the same is found too.
+  `not_owned_by` is read backwards through `set_owner` but has no step of its
+  own: giving a thing away needs somebody to give it to, and the planner has no
+  business choosing who. `not_kind` and `not_leads_to` are evaluated but never
   planned, which `as_goal` already answers by returning None.
 * **`rulecheck`, `suggest` and `rule_gen`** read `is` and `lacks` directly, in
   about a dozen places. They walk trees now. A state inside an `any` is only one
