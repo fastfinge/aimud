@@ -223,7 +223,11 @@ class ShowingTheRoll(GameTest):
         written into it would be somebody else's roll for ever.
         """
         self.forced()
-        stored = dict(self.obj1.db.ai_commands or {}).get("force") or {}
+        from world import verbs
+
+        stored = dict(self.obj1.db.ai_commands or {}).get(
+            verbs.rule_key("force", {"direct": self.obj1})) or {}
+        self.assertTrue(stored, "nothing was cached, so nothing was tested")
         for entry in dict(stored).values():
             self.assertNotIn("against 12", dict(entry).get("actor", ""))
 

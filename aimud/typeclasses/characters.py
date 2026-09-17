@@ -265,13 +265,15 @@ class Character(ObjectParent, DefaultCharacter):
 
         # Where the character has been is part of what they know. Named and in
         # the past tense, never "I": a memory is searched by the names in it.
+        # The name this world knows them by, which is the one anybody here
+        # will search for -- not the account name underneath it.
         from world.memory import remember
 
         where = room.db.room_title or room.key
         came_from = source_location.db.room_title or source_location.key if source_location else None
         remember(
             self,
-            f"{self.key} arrived in {where}" + (f" from {came_from}" if came_from else ""),
+            f"{self.get_display_name(self)} arrived in {where}" + (f" from {came_from}" if came_from else ""),
             kind="moved",
             importance=0.3,
         )

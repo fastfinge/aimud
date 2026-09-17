@@ -17,7 +17,7 @@ lights it for everyone rather than claiming to.
 
 from evennia.utils import logger
 
-from world import checks
+from world import checks, choosing
 from world import effects as effects_mod
 from world import counters, verb_gen, verbs
 from world import events as events_mod
@@ -73,11 +73,29 @@ def _cached_narration(bound, verb, outcome="success", actor=None):
     and were often about the room they were produced in, which is the problem
     this system exists to fix. They are ignored, so the first use of a verb
     regenerates text that travels with the object instead.
+
+    Kept per shape of sentence too, for the reason `verbs.rule_key` is: the
+    bottle someone drank is `{direct}` and the bottle someone drank from is
+    `{source}`, and a line written for one rendered "tilts {direct} back" for
+    the other. Entries filed under the bare verb, before that, are still read
+    -- but only one that fits: whatever it is filed under, a room line with a
+    placeholder for nobody here, or with somebody's name written out, is a
+    line nobody should be shown, and is written again instead.
     """
     anchor = _anchor(bound, actor)
     if anchor is None:
         return None
-    entry = (anchor.db.ai_commands or {}).get(verb)
+    cache = anchor.db.ai_commands or {}
+    for key in dict.fromkeys([verbs.rule_key(verb, bound), verb]):
+        found = _narration_in(cache.get(key), outcome)
+        if found is not None and not verb_gen.narration_complaints(
+                {"room": found["room"]}, bound, actor):
+            return found
+    return None
+
+
+def _narration_in(entry, outcome):
+    """One outcome's {actor, room} out of a stored entry, or None."""
     if entry is None:
         return None
     # Attributes come back as Evennia _SaverDict, which is a MutableMapping
@@ -108,13 +126,14 @@ def _store_narration(bound, verb, outcome, entry, actor=None):
     if anchor is None:
         return
     cache = dict(anchor.db.ai_commands or {})
+    key = verbs.rule_key(verb, bound)
 
     # Only entries already keyed by outcome are carried over. A single old
     # entry cannot be told apart from the outcome it described, so it is let
     # go and written again on the next success rather than filed under a
     # result it may never have been about.
     by_outcome = {}
-    existing = cache.get(verb)
+    existing = cache.get(key)
     try:
         items = list(existing.items())
     except AttributeError:
@@ -124,7 +143,7 @@ def _store_narration(bound, verb, outcome, entry, actor=None):
             by_outcome[name] = dict(value)
 
     by_outcome[outcome] = entry
-    cache[verb] = by_outcome
+    cache[key] = by_outcome
     anchor.db.ai_commands = cache
 
 
@@ -153,9 +172,12 @@ def _anchor(bound, actor=None):
 
 
 def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
-            allow_promote=True, fuzzy=False, on_stage=None):
+            allow_promote=True, fuzzy=False, on_stage=None, chosen=None):
     """
     Try to perform `raw` as a verb.
+
+    chosen is {role: thing} for a role somebody has already said which of
+    several things they meant. See `verbs.bind_all`.
 
     on_message(actor_text, event) delivers the result. The event is None when
     nothing was visible from outside -- a refusal, or reading a letter alone
@@ -215,14 +237,31 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
         return
 
     bound, unbound, questions = verbs.bind_all(
-        caller, parsed["roles"], fuzzy=fuzzy, verb=verb)
+        caller, parsed["roles"], fuzzy=fuzzy, verb=verb, chosen=chosen)
 
     if questions:
         # Several things here answer to a word that was used, and picking one
         # would be acting on a stranger. Asked rather than guessed, and the
         # attempt stops: nothing is promoted, nothing is conjured, and no
         # model is paid to narrate an action nobody has settled the object of.
-        on_message(questions[0][1])
+        #
+        # Asked as a menu where somebody is there to choose, and choosing is
+        # the same attempt again with that role settled -- so "drink soju",
+        # answered "2", drinks the second soju rather than leaving the player
+        # to type the whole thing out again. One question at a time: a second
+        # ambiguous role is asked when the attempt comes back round.
+        role, asked, several = questions[0]
+
+        def again(obj):
+            attempt(caller, raw, sponsor, on_message,
+                    allow_effects=allow_effects, on_wait=on_wait,
+                    allow_promote=allow_promote, fuzzy=fuzzy,
+                    on_stage=on_stage, chosen={**(chosen or {}), role: obj})
+
+        word = verbs.plain(str(parsed["roles"].get(role) or "")) or "one"
+        if not choosing.which(caller, word, several, again,
+                              on_unasked=on_message):
+            on_message(asked)
         return
     waiter = _once(on_wait, on_stage)
 
@@ -402,9 +441,13 @@ def _in_turn(caller, sponsor, spread, on_message, allow_effects, on_wait,
         if obj.pk is None:
             step(remaining[1:])      # consumed by an earlier step
             return
+        # Which thing this step is about is already known, so it is handed
+        # over rather than looked up by name again -- and never asked about:
+        # "eat all" is not a question about which of the sojus.
         attempt(caller, command, sponsor, collected,
                 allow_effects=allow_effects, on_wait=told,
-                allow_promote=False, fuzzy=fuzzy, on_stage=on_stage)
+                allow_promote=False, fuzzy=fuzzy, on_stage=on_stage,
+                chosen={"direct": obj})
 
     step(list(spread))
 
@@ -1059,9 +1102,19 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         if again is not None and redirects < MAX_REDIRECTS:
             wanted = _redirect(again, bound, caller, world_root)
             if wanted is not None:
+                action = str(again.get("action") or verb)
+                # The mechanics first, as for anything typed. A world where
+                # offering a coin means giving it has sent the attempt to the
+                # giving mechanic's verb, and skipping the mechanic gave away
+                # the owning by the after rule while the coin stayed in the
+                # giver's hand. No sentence to read the roles back out of:
+                # the redirect has already bound them.
+                if _mechanics(caller, action, {"verb": action, "roles": {}},
+                              wanted, release):
+                    return
                 _with_bindings(
                     caller, room, sponsor, raw,
-                    str(again.get("action") or verb), wanted,
+                    action, wanted,
                     lambda actor_text, event=None: release(actor_text, event),
                     allow_effects, waiter, redirects + 1)
                 return

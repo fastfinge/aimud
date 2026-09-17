@@ -261,6 +261,67 @@ class TheOtherThreeQuestions(_Datapad):
             {"room": "{actor} wakes the {direct}."}, {"direct": self.pad},
             self.char1), [])
 
+    def test_a_world_name_written_out_is_sent_back_too(self):
+        """
+        The account name is not the only name a player can be written out by.
+        The one this world knows them by is the one a narrator is shown.
+        """
+        from world.verb_gen import narration_complaints
+
+        self.char1.set_world_name(self.root, "Samuel")
+        said = narration_complaints(
+            {"room": "{actor} $pconj(hand) Samuel {direct}."},
+            {"direct": self.pad}, self.char1)
+        self.assertTrue(any("Samuel" in line for line in said), said)
+
+    def test_the_narrator_is_told_the_world_name_not_the_account(self):
+        from world.verb_gen import _describe_objects, _placeholder_block
+
+        self.char1.set_world_name(self.root, "Samuel")
+        told = (_describe_objects({"target": self.char1}, self.char1)
+                + _placeholder_block({"target": self.char1}, self.char1))
+        self.assertIn("Samuel", told)
+        self.assertNotIn(self.char1.key, told)
+
+
+@tag("world")
+class ReplayingANarration(_Datapad):
+    """What is written once about a thing, and when it may be read again."""
+
+    ENTRY = {"actor": "You tilt it back.",
+             "room": "{actor} $pconj(tilt) {direct} back."}
+
+    def test_a_line_written_for_one_shape_is_not_read_for_another(self):
+        """Drinking the bottle and drinking from it name it in different slots."""
+        from world import attempt as attempt_mod
+
+        attempt_mod._store_narration({"direct": self.pad}, "drink", "success",
+                                     dict(self.ENTRY), self.char1)
+        self.assertIsNone(attempt_mod._cached_narration(
+            {"source": self.pad}, "drink", "success", self.char1))
+        self.assertEqual(attempt_mod._cached_narration(
+            {"direct": self.pad}, "drink", "success", self.char1)["room"],
+            self.ENTRY["room"])
+
+    def test_an_old_entry_under_the_bare_verb_is_read_only_where_it_fits(self):
+        from world import attempt as attempt_mod
+
+        self.pad.db.ai_commands = {"drink": {"success": dict(self.ENTRY)}}
+        self.assertIsNone(attempt_mod._cached_narration(
+            {"source": self.pad}, "drink", "success", self.char1))
+        self.assertIsNotNone(attempt_mod._cached_narration(
+            {"direct": self.pad}, "drink", "success", self.char1))
+
+    def test_nor_one_that_writes_somebody_out_by_name(self):
+        from world import attempt as attempt_mod
+
+        self.char1.set_world_name(self.root, "Samuel")
+        self.char1.db.ai_commands = {"pull": {"success": {
+            "actor": "You haul.", "room": f"{{actor}} $pconj(haul) a tipsy "
+                                          f"{self.char1.key} forward."}}}
+        self.assertIsNone(attempt_mod._cached_narration(
+            {"direct": self.char1}, "pull", "success", self.pad))
+
     def test_the_whole_road_on_finish_tools(self):
         """A verb nobody has settled, from declaration to narration."""
         from world import attempt as attempt_mod

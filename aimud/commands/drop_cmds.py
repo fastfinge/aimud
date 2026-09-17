@@ -86,6 +86,16 @@ class CmdAIDrop(_DefaultDrop):
         if one_of_several is not None:
             self._drop_one(one_of_several)
             return
+        # Several differently named things in your hands answering to the
+        # name is a question, and choosing one drops it. Before the pronoun
+        # and name binding below, which takes the oldest.
+        from world import choosing
+
+        several = verbs.choices(self.caller, self.args, where=(self.caller,))
+        if several and choosing.which(self.caller, verbs.plain(self.args),
+                                      several, self._drop_one,
+                                      session=self.session):
+            return
         # And "drop it" is a pronoun, which Evennia's command reads as a name
         # and answers "You aren't carrying it." -- the thing it is carrying
         # being a pipe, which is exactly what was just picked up. Resolved

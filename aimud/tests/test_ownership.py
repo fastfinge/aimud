@@ -339,6 +339,23 @@ class Giving(GameCommandTest):
                              lambda *args, **kwargs: None)
         self.assertFalse(handled)
 
+    def test_a_giving_arrived_at_by_a_redirect_moves_it_too(self):
+        """
+        "Offer the coin to her" means giving it, in a world that says so. The
+        owning and the thing go together whichever way the giving arrived.
+        """
+        from world import actions, rulebooks
+
+        actions.declare(self.room1, "offer", applies_to=[
+            {"role": "direct", "access": "carried"},
+            {"role": "target", "access": "visible"}])
+        rulebooks.add(self.room1, rulebooks.blank(
+            action="offer", phase=rulebooks.INSTEAD, name="offering is giving",
+            effects=[{"type": "try", "action": "give", "roles": {}}]))
+        self.attempt(f"offer coin to {self.char2.key}")
+        self.assertTrue(ownership.owns(self.char2, self.coin))
+        self.assertEqual(self.coin.location, self.char2)
+
 
 @tag("world")
 class TheCommand(GameCommandTest):

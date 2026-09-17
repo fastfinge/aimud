@@ -148,7 +148,22 @@ def _states_of_kinds(world_root, bound):
     return seen
 
 
-def _placeholder_block(bound):
+def _called(obj, actor):
+    """
+    What the actor knows this participant as.
+
+    The display name and not the key. A player's key is their account name,
+    and a world where they go by another name was being told the account name
+    here -- so a narrator wrote "a tipsy fastfinge" into a line everybody read
+    in a world where he is Samuel.
+    """
+    try:
+        return obj.get_display_name(actor)
+    except AttributeError:
+        return str(getattr(obj, "key", obj))
+
+
+def _placeholder_block(bound, actor=None):
     """
     The placeholders this narration may use, and what each one stands for.
 
@@ -161,7 +176,7 @@ def _placeholder_block(bound):
     for role, obj in sorted(bound.items()):
         if obj is None:
             continue
-        lines.append(f"{{{role}}} — {getattr(obj, 'key', obj)}")
+        lines.append(f"{{{role}}} — {_called(obj, actor)}")
     return ("Placeholders for the \"room\" line (use these, never the names):\n  "
             + "\n  ".join(lines) + "\n\n")
 
@@ -181,7 +196,8 @@ def _describe_objects(bound, actor):
     for role, obj in sorted(bound.items()):
         marks = ", ".join(sorted(verbs.affordances(obj))) or "no special properties"
         condition = ", ".join(sorted(verbs.states(obj))) or "nothing notable"
-        entry = (f"{role}: {obj.key} — {tokens.text_of(obj) or '(no description)'}\n"
+        entry = (f"{role}: {_called(obj, actor)} — "
+                 f"{tokens.text_of(obj) or '(no description)'}\n"
                  f"    properties: {marks}\n    currently: {condition}")
 
         where = relations.context_line(obj, actor)
@@ -328,7 +344,7 @@ def narrate(sponsor, verb, bound, actor, raw, on_success, on_error, result=None)
             "content": (
                 f"Action: '{raw}' (verb: {verb})\n\n"
                 f"Things involved:\n{_describe_objects(bound, actor)}\n\n"
-                f"{_placeholder_block(bound)}"
+                f"{_placeholder_block(bound, actor)}"
                 + (f"Outcome: {hint}\n\n" if hint else "")
                 + "Narrate the result."
             ),
@@ -462,10 +478,17 @@ def narration_complaints(args, bound, actor):
                           "are " + _placeholders(bound))
         named = []
         for obj in [actor, *(bound or {}).values()]:
-            key = str(getattr(obj, "key", "") or "")
-            if key and re.search(rf"(?<!\w){re.escape(key)}(?!\w)", room,
-                                 re.IGNORECASE):
-                named.append(key)
+            if obj is None:
+                continue
+            # The key and the name this world knows them by, which differ for
+            # a player with a world name -- and either, written out, is shown
+            # to people who know that person by the other.
+            for name in dict.fromkeys(
+                    [str(getattr(obj, "key", "") or ""), _called(obj, actor)]):
+                if name and name not in named and re.search(
+                        rf"(?<!\w){re.escape(name)}(?!\w)", room,
+                        re.IGNORECASE):
+                    named.append(name)
         if named:
             said.append("the room line names " + ", ".join(named)
                         + "; write the placeholder instead")

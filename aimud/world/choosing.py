@@ -1,20 +1,21 @@
 """
 Putting a question to somebody, when the game cannot decide for them.
 
-There is exactly one of these today -- "Which her? Jessica or Britney?" -- and
-three more are wanted: a rule that offers a menu and gets the answer back,
-disambiguation as a proper menu rather than a prompt, and MXP's clickable
-lists built from a world's own verbs. They are one mechanism, and the point of
-this module existing before any of them do is that the first one should not be
-written somewhere a menu cannot later replace.
+Two of these today -- "Which her? Jessica or Britney?", and a name that
+several things here answer to -- and two more are wanted: a rule that offers
+a menu and gets the answer back, and MXP's clickable lists built from a
+world's own verbs. They are one mechanism, and the point of this module
+existing before most of them do is that none should be written somewhere a
+menu cannot later replace.
 
 **Asked with a callback, it is a menu.** `ask` with `on_chosen` puts the
 options up through `world.menus`, the same engine every other choice in the
 game uses, so `b`, `q`, `?` and the numbers work the way they do everywhere,
 and choosing one calls `on_chosen` with it. Without a callback, or with nobody
 connected to be shown a menu, it says the question and the options, and the
-player answers by typing what they meant -- which is what the two callers
-today still want, because they answer by the player typing the command again.
+player answers by typing what they meant. `which` is the same for things
+rather than words, and is what the attempt pipeline and the take, drop and
+look commands use: choosing carries on with the command that asked.
 
 The contract is deliberately narrow so that both versions can honour it:
 `ask` never blocks, never returns an answer, and tells the caller only whether
@@ -63,6 +64,42 @@ def ask(caller, asked, options, on_chosen=None, session=None):
     menus.open_menu(caller, choice_form(asked, options, on_chosen),
                     session=session)
     return True
+
+
+def which(caller, asked, objects, on_chosen, on_unasked=None, session=None):
+    """
+    Ask which of several things was meant, and go on with the one chosen.
+
+    `ask` for things rather than for words: the menu shows what `caller` calls
+    each one, and `on_chosen` is handed the thing itself. With nobody
+    connected to choose -- an NPC, above all -- the question is handed to
+    `on_unasked` instead when there is one, so it lands wherever that caller
+    reads what an attempt came to; a character told the choices in its next
+    prompt can name the one it meant.
+
+    Things that go by the same name are one choice, and the oldest of them is
+    the one taken: three plain tuning forks are not a question anybody can
+    answer. True when a question was put, False when there was none to put.
+    """
+    named = {}
+    for obj in sorted((o for o in objects or () if o is not None),
+                      key=lambda o: o.id):
+        named.setdefault(obj.get_display_name(caller), obj)
+    if len(named) < 2:
+        return False
+
+    from world import menus
+
+    runner = menus.account_of(caller) or caller
+    if not menus.interactive(runner):
+        said = question(asked, list(named))
+        if on_unasked is not None:
+            on_unasked(said)
+        else:
+            caller.msg(said)
+        return True
+    return ask(caller, asked, list(named),
+               on_chosen=lambda name: on_chosen(named[name]), session=session)
 
 
 def choice_form(asked, options, on_chosen):

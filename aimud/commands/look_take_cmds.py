@@ -272,6 +272,18 @@ class CmdAILook(_DefaultLook):
         from world import verbs
 
         named = verbs.parse(f"look {query}")["roles"].get("direct") or query
+
+        # Several differently named things answering is a question, and
+        # choosing one looks at it.
+        from world import choosing
+
+        several = verbs.choices(caller, named)
+        if several and choosing.which(
+                caller, verbs.plain(named), several,
+                lambda chosen: self._look_at(caller, chosen, query, root),
+                session=self.session):
+            return
+
         obj = _counted(caller, named)
         multiple = False
         if obj is None:
@@ -312,13 +324,22 @@ class CmdAILook(_DefaultLook):
             return
         self._attempt(caller, f"look {query}")
 
-    def _attempt(self, caller, raw):
+    def _look_at(self, caller, obj, query, root):
+        """Look at one thing already chosen, the way a found one is looked at."""
+        if root is None:
+            caller.msg(obj.return_appearance(caller))
+            obj.at_desc(looker=caller)
+            return
+        self._attempt(caller, f"look {query}", chosen={"direct": obj})
+
+    def _attempt(self, caller, raw, chosen=None):
         """Hand the look to the rulebooks, and say whatever they answer."""
         from world import attempt as attempt_mod
 
         attempt_mod.attempt(caller, raw, _sponsor_for(caller),
                             on_message=lambda actor_text, room_text=None:
-                                caller.msg(actor_text) if actor_text else None)
+                                caller.msg(actor_text) if actor_text else None,
+                            chosen=chosen)
 
     def _ai_look(self, caller, query):
         room = caller.location
@@ -453,6 +474,18 @@ class CmdAIGet(_DefaultGet):
                 return
             for obj in takeable:
                 self._take_existing(caller, obj, room)
+            return
+
+        # Several differently named things answering is a question, and
+        # choosing one takes it. Before the pronoun and the plain search below,
+        # both of which take the oldest.
+        from world import choosing
+
+        several = verbs.choices(caller, query, where=(room,))
+        if several and choosing.which(
+                caller, verbs.plain(query), several,
+                lambda chosen: self._take_existing(caller, chosen, room),
+                session=self.session):
             return
 
         obj = _counted(caller, query)

@@ -364,6 +364,50 @@ def _matches(caller, phrase, location):
     return found
 
 
+def choices(caller, phrase, where=None):
+    """
+    The things a plain name could mean, when it could mean more than one.
+
+    [] when the name is not in doubt, which is most of the time: one thing
+    answers, or nothing does, or everything that answers goes by the same name
+    -- three plain tuning forks are interchangeable, and `bind` taking the
+    oldest is still the right answer to those. Otherwise every match, for
+    whoever is asking to put to the person who typed it.
+
+    Searched where `bind` searches and in the same order, the first place
+    anything answers winning: "read my letter" still means the one being
+    carried, and only two letters in the same hand are a question. `where`
+    narrows that for a command that only reaches one of them -- taking reaches
+    the room, dropping reaches your hands.
+
+    Counts, pronouns, possessives, yourself and the room are not names and are
+    never asked about here; each has its own answer, or its own question.
+    """
+    text = plain(phrase)
+    if not text or text in SELF_WORDS or text in HERE_WORDS:
+        return []
+    if ordinal(phrase)[0]:
+        return []
+    read = nounphrase.read(phrase, _world_of(caller))
+    if read.pronoun or read.possessor is not None:
+        return []
+    places = where if where is not None else (
+        caller, getattr(caller, "location", None))
+    for location in places:
+        if location is None:
+            continue
+        result = caller.search(phrase, location=location, quiet=True)
+        if hasattr(result, "return_appearance"):
+            result = [result]
+        found = [obj for obj in (result or ())
+                 if obj is not None and obj is not caller
+                 and getattr(obj, "destination", None) is None]
+        if found:
+            names = {obj.get_display_name(caller) for obj in found}
+            return sorted(found, key=lambda o: o.id) if len(names) > 1 else []
+    return []
+
+
 def candidates(caller, phrase):
     """
     Everything in reach that a noun phrase could mean, in counting order.
@@ -540,6 +584,12 @@ def bind(caller, phrase, fuzzy=False, verb=""):
     them and taking the oldest every time is how "get the second wrench" picks
     up the first wrench twice.
 
+    And unless somebody can be asked. Whatever a player or a character types
+    goes through `choices` first -- in `bind_all`, and in the commands that
+    bind for themselves -- and several differently named things answering is
+    put to them as a question. What reaches the oldest-first rule here is
+    identical things, and the callers with nobody to ask.
+
     With `fuzzy`, a name only resembling the phrase will do. That is for NPCs,
     who name things from memory in their own words: better they wipe the
     chalkboard that is already there than hang a blackboard next to it.
@@ -600,7 +650,7 @@ def bind(caller, phrase, fuzzy=False, verb=""):
     )
 
 
-def bind_all(caller, roles, fuzzy=False, verb=""):
+def bind_all(caller, roles, fuzzy=False, verb="", chosen=None):
     """
     Bind every role. Returns (bound, unbound, questions).
 
@@ -611,18 +661,29 @@ def bind_all(caller, roles, fuzzy=False, verb=""):
     A question is different and is not the caller's decision. It means several
     things here answer to a word somebody used and the game has no business
     picking one -- so the role is neither bound nor available for promoting,
-    and whoever typed it gets asked. See `world.choosing`.
-    """
-    from world import referents
+    and whoever typed it gets asked. See `world.choosing`. Each question is
+    (role, what to say, the things it could be), and the things are empty
+    where there is nothing to choose from but words.
 
+    `chosen` is {role: thing} for a question already answered, which is how
+    an attempt that asked comes back round: that role is what was picked, and
+    nothing is searched for it again.
+    """
+    from world import choosing, referents
+
+    chosen = dict(chosen or {})
     bound, unbound, questions = {}, [], []
     world_root = _world_of(caller)
     for role, phrase in roles.items():
+        if chosen.get(role) is not None:
+            bound[role] = chosen[role]
+            continue
         read = nounphrase.read(phrase, world_root)
         if read.pronoun:
             obj, asked = resolve_pronoun(caller, read.pronoun, verb)
             if asked:
-                questions.append((role, asked))
+                questions.append((role, asked, pronoun_candidates(
+                    caller, read.pronoun, verb)))
                 continue
         elif read.possessor is not None:
             # "Which her?" is the same question whether the word stood in for
@@ -631,9 +692,20 @@ def bind_all(caller, roles, fuzzy=False, verb=""):
 
             obj, asked = ownership.whose(caller, read)
             if asked:
-                questions.append((role, asked))
+                questions.append((role, asked, []))
                 continue
         else:
+            # Several things answering to a name used to mean the oldest of
+            # them, silently -- so "drink the soju" with a peach soju and a
+            # grapefruit one drank whichever was made first, every time.
+            # Asked now, the same as a pronoun is.
+            several = choices(caller, phrase)
+            if several:
+                questions.append((role, choosing.question(
+                    plain(phrase), list(dict.fromkeys(
+                        obj.get_display_name(caller) for obj in several))),
+                    several))
+                continue
             obj = bind(caller, phrase, fuzzy=fuzzy, verb=verb)
         if obj is None:
             unbound.append(role)
