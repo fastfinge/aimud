@@ -341,7 +341,13 @@ What uses it:
   opposites as ordinary fields and `any` one level deep over plain conditions.
   That needs no recursive schema. The toolbox builds schemas inline with no
   `$ref`, and support for recursive schemas varies by provider. Stored conditions
-  may still nest three deep, for when menus can build them.
+  may still nest three deep, for when menus can build them. The members of
+  `any` are open objects described in words, not a copy of the plain condition.
+  With the copy, `file_rules` nested lists of spelled-out objects three deep
+  (rules, conditions, `any`). Google took that when the model chose its own
+  tool, but refused it as "an invalid argument" when the call named the tool,
+  which the last round of every loop does. `normalise` checks each member
+  either way.
 * **`view rules`** prints a node as a group, one member to a line. That reads
   better aloud than one long sentence joined by "or".
 

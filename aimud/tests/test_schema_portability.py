@@ -37,6 +37,21 @@ def _enums(schema, path=""):
             yield from _enums(value, f"{path}[{index}]")
 
 
+def _object_arrays(schema):
+    """
+    How deep arrays of spelled-out objects nest in a schema: 1 for a list of
+    rules, 2 for a list of rules each with a list of conditions.
+    """
+    if isinstance(schema, dict):
+        items = schema.get("items")
+        own = 1 if isinstance(items, dict) and items.get("properties") else 0
+        return own + max([0] + [_object_arrays(value)
+                                for value in schema.values()])
+    if isinstance(schema, list):
+        return max([0] + [_object_arrays(value) for value in schema])
+    return 0
+
+
 @tag("unit")
 class WhatIsDroppedOnTheWayOut(SimpleTestCase):
 
@@ -110,6 +125,7 @@ class EveryToolTheGameOffers(GameTest):
             quest_gen.quest_tool(),
             quest_gen.goal_tool(self.npc),
             rule_gen.rules_tool("power", offered, []),
+            rule_gen.becoming_tool(),
             verb_gen.narration_tool({"direct": self.obj1}, self.char1),
             suggest.verdicts_tool([{"id": "r1"}]),
             fact_gen.facts_tool(),
@@ -128,6 +144,21 @@ class EveryToolTheGameOffers(GameTest):
                     self.assertTrue(
                         str(member).strip(),
                         f"{tool.name}: {where} offers an empty member")
+
+    def test_no_list_of_objects_three_deep(self):
+        """
+        Google refuses a call that names the tool it must use -- the last round
+        of every loop -- when that tool's schema nests lists of spelled-out
+        objects three deep, and calls it "an invalid argument". The same schema
+        goes through when the model is left to choose. Learning a verb failed
+        on its last round for a morning, once conditions offered `any` with a
+        whole condition repeated inside it: rules, then conditions, then `any`.
+        """
+        ctx = tb.ToolContext(world_root=self.root, room=self.root,
+                             actor=self.char1, bound={"direct": self.obj1})
+        for tool in self.tools():
+            depth = _object_arrays(tool.schema(ctx))
+            self.assertLessEqual(depth, 2, f"{tool.name} nests {depth} deep")
 
     def test_an_npcs_own_tools_too(self):
         """

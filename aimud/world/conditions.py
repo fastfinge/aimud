@@ -2329,9 +2329,19 @@ def schema(ctx=None):
     # One level of "or", over plain conditions and nothing deeper. A model is
     # offered no `all` and no nesting: a list of conditions already means all
     # of them, and a recursive schema is one some providers will not take.
+    #
+    # The members are open objects, described rather than spelled out. With
+    # the leaf repeated inside, Google refused every call that named the tool
+    # the reply had to use -- the last round of every rule loop -- as "an
+    # invalid argument", while taking the same schema when the choice was left
+    # to the model. `normalise` holds each member to a condition's shape
+    # either way.
     properties["any"] = {
-        "type": "array", "items": leaf, "minItems": 2,
-        "maxItems": MAX_MEMBERS,
+        "type": "array",
+        "items": {"type": "object",
+                  "description": "a plain condition: a subject and one "
+                                 "predicate, as above"},
+        "minItems": 2, "maxItems": MAX_MEMBERS,
         "description": "Instead of a subject and a predicate: conditions of "
                        "which any one will do"}
     # Nothing is required at this level: a plain condition needs its subject
