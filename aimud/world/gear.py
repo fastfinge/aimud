@@ -37,9 +37,11 @@ from evennia.utils import logger
 #: carried -- anywhere about the person. For charms and burdens only: a thing
 #:            that works from inside a pack is the exception, not the rule,
 #:            and left to itself it lets somebody carry six of them.
-#: present -- lying in the same room, and doing it for everybody there. A fire
-#:            warms whoever is by it, whoever lit it and whoever walked in
-#:            afterwards, and stops the moment they leave. This is the one
+#: present -- in the same room, and doing it for everybody there: lying about,
+#:            or in the hands of anybody standing in it. A fire warms whoever
+#:            is by it, whoever lit it and whoever walked in afterwards, and
+#:            stops the moment they leave. A candle does the same whether it
+#:            stands on the table or somebody picks it up. This is the one
 #:            condition that is not about a person's belongings at all, which
 #:            is why a room may carry bonuses of its own: a forge is warm
 #:            whether or not anything in it is.
@@ -111,10 +113,11 @@ def prompt_block(world_root):
         "  wielded — held in a hand. Weapons, tools, a raised lantern.\n"
         "  carried — merely about the person. Charms only; prefer the others,\n"
         "            or somebody will carry six of them at once.\n"
-        "  present — lying in the room, and doing it for everybody there. A\n"
-        "            fire, a stove, a lamp on a table, a draughty window. This\n"
-        "            is the one that works on people who never touched it, and\n"
-        "            it stops the moment they leave the room.\n"
+        "  present — in the room, and doing it for everybody there, whether\n"
+        "            it lies about or somebody carries it. A fire, a stove, a\n"
+        "            candle, a draughty window. This is the one that works on\n"
+        "            people who never touched it, and it stops the moment they\n"
+        "            leave the room.\n"
         "An item given trait_bonuses and no bonus_when is judged by its own\n"
         "affordances, so a wearable thing counts when worn and a wieldable one\n"
         "when held.\n\n"
@@ -215,9 +218,16 @@ def applies(obj, character):
     where = condition(obj)
     if where == "present":
         # Not a belonging at all: it works for everybody in the room with it,
-        # and the room itself is allowed to be such a thing.
+        # and the room itself is allowed to be such a thing. So is a candle in
+        # somebody's hand -- picking it up does not put it out for the rest of
+        # the room, nor for the person holding it.
         room = getattr(character, "location", None)
-        return obj is room or (room is not None and obj.location is room)
+        if room is None:
+            return False
+        holder = obj.location
+        return (obj is room or holder is room
+                or (holder is not None and holder.location is room
+                    and is_person(holder)))
 
     if obj.location is not character:
         return False
@@ -301,7 +311,41 @@ def release(obj, character=None):
     if obj is not None and obj.db.wielded:
         obj.attributes.remove("wielded")
     if character is not None:
-        recompute(character, ignoring=obj)
+        # Only discounted while it is still on them. Dropping and giving call
+        # this once the thing has gone, and a candle set down on the floor is
+        # still lighting the room -- ignoring it there put the light out a
+        # moment after the room had counted it.
+        still_held = obj is not None and obj.location is character
+        recompute(character, ignoring=obj if still_held else None)
+
+
+def recount_around(holder, item=None):
+    """
+    Redo the sums that `item` coming into or going out of `holder` changed.
+
+    Called once the move is over, from both ends of it, so the sums are only
+    ever done on where things really are. Done while a thing was halfway out
+    of the door, a candle being picked up was discounted by the room it was
+    leaving and counted again by the hand it arrived in, and whoever held it
+    was told their light fell and rose over one move.
+
+    A room is everybody in it. A person is themselves -- unless the thing is
+    one that works for the whole room, in which case it is the whole room,
+    because a candle taken out of a pack lights everybody standing there.
+    """
+    if holder is None:
+        return
+    from evennia.objects.objects import DefaultRoom
+
+    if isinstance(holder, DefaultRoom):
+        recompute_room(holder)
+        return
+    room = getattr(holder, "location", None)
+    if (item is not None and room is not None and is_person(holder)
+            and condition(item) == "present" and bonuses(item)):
+        recompute_room(room)
+        return
+    recompute(holder)
 
 
 def handle(caller, verb, bound, on_message):
@@ -350,21 +394,40 @@ def _deliver(on_message, outcome):
 # Working out what it all adds up to
 # ---------------------------------------------------------------------------
 
+def is_person(obj):
+    """Whether something carries things about with it: a character or an NPC."""
+    from world.quests import is_person as person
+
+    return obj is not None and person(obj)
+
+
+def _around(character):
+    """
+    Everything that could be worth something to this character.
+
+    What they carry, and then what is simply here. A room contributes as a
+    thing in its own right -- a forge is warm on its own account -- and so does
+    anything lying in it, or in the hands of anybody standing in it, that says
+    it works for whoever is present.
+    """
+    room = getattr(character, "location", None)
+    found = list(character.contents)
+    if room is not None:
+        found.append(room)
+        for obj in room.contents:
+            found.append(obj)
+            if obj is not character and is_person(obj):
+                found.extend(obj.contents)
+    return found
+
+
 def total(character, ignoring=None):
     """{slug: amount} every piece of gear on this character is worth."""
     from world import traits
 
     world_root = traits._world_root(character)
     found = {}
-    # What they carry, and then what is simply here. A room contributes as a
-    # thing in its own right -- a forge is warm on its own account -- and so
-    # does anything lying in it that says it works for whoever is present.
-    room = getattr(character, "location", None)
-    sources = list(character.contents)
-    if room is not None:
-        sources.append(room)
-        sources.extend(room.contents)
-    for obj in sources:
+    for obj in _around(character):
         if obj is ignoring or obj is character or not applies(obj, character):
             continue
         for slug, amount in bonuses(obj).items():
@@ -395,7 +458,7 @@ def _state_sources(character, world_root):
     return [(state, worth[state]) for state in sorted(worth) if state in held]
 
 
-def recompute_room(room, ignoring=None, without=None):
+def recompute_room(room, ignoring=None):
     """
     Redo the sums for everybody standing here.
 
@@ -408,26 +471,16 @@ def recompute_room(room, ignoring=None, without=None):
     while it stays changed. A room where nothing happens costs nothing, which
     is the same bargain the rest of the game makes.
 
-    Two things can be on their way out, and they are not the same thing:
-
-    * `ignoring` is a **person** who is leaving, and need not be recounted
-      because they are about to be recounted where they arrive.
-    * `without` is an **item** that is leaving, and must not be counted at all
-      -- Evennia announces a departure before it happens, so a lamp being
-      carried out of a cellar is still in `contents` when we are told it is
-      going. Counting it would leave everybody lit by a lamp that has gone.
-
-    Getting those two confused is how the first version of this went wrong:
-    passing the lamp as `ignoring` skipped nobody, because a lamp is not a
-    person, and recounted everybody by the light of it.
+    `ignoring` is a **person** who is leaving, and need not be recounted
+    because they are about to be recounted where they arrive. There is no
+    item to discount: moves are recounted once they are over (see
+    `recount_around`), when a lamp carried out is no longer here to count.
     """
-    from world.quests import is_person
-
     if room is None:
         return
     for obj in list(room.contents):
         if obj is not ignoring and is_person(obj):
-            recompute(obj, ignoring=without)
+            recompute(obj)
 
 
 def recompute(character, ignoring=None):
@@ -496,13 +549,8 @@ def sources(character, slug):
 
     world_root = traits._world_root(character)
     slug = traits.resolve(world_root, slug)
-    room = getattr(character, "location", None)
-    looking = list(character.contents)
-    if room is not None:
-        looking.append(room)
-        looking.extend(room.contents)
     found = []
-    for obj in looking:
+    for obj in _around(character):
         if obj is character or not applies(obj, character):
             continue
         for granted, amount in bonuses(obj).items():

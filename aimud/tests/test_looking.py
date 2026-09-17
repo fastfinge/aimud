@@ -751,19 +751,8 @@ class CarryingALampAbout(Looking):
         self.thing.move_to(self.room1, quiet=True)
         self.assertFalse(self.sees(self.other))
 
-    def test_a_carried_lamp_lights_its_carrier_and_nobody_else(self):
-        """
-        The boundary, asserted rather than wished away. `bonus_when: present`
-        means *lying* in the room -- `gear.applies` tests `obj.location is
-        room` -- so a lamp in somebody's hand is not present, and `carried` or
-        `wielded` lights the person holding it and only them.
-
-        A lamp carried into a cellar therefore lights the carrier while their
-        companions stand in the dark, which is wrong about lamps and right about
-        what the three conditions mean. Widening `present` to reach into
-        people's hands would change what every charm and burden does, so it
-        waits for a world that actually wants it.
-        """
+    def test_a_carried_charm_counts_for_its_carrier_and_nobody_else(self):
+        """`carried` is about the person, however lit the thing is."""
         self.thing.db.bonus_when = "carried"
         self.thing.move_to(self.room1, quiet=True)
         self.assertFalse(self.sees(self.char1))
@@ -771,8 +760,55 @@ class CarryingALampAbout(Looking):
 
         self.thing.move_to(self.char1, quiet=True)
         self.assertTrue(self.sees(self.char1))
-        self.assertFalse(self.sees(self.other),
-                         "a lamp in a hand is not lying in the room")
+        self.assertFalse(self.sees(self.other))
+
+    def test_a_lamp_in_a_hand_still_lights_the_room(self):
+        """
+        `present` once meant *lying* in the room, so a lit candle picked up
+        lit nobody at all -- the person holding it included -- and a generated
+        candle is `present` because a candle lights the room.
+        """
+        self.thing.move_to(self.char1, quiet=True)
+        self.assertTrue(self.sees(self.char1))
+        self.assertTrue(self.sees(self.other))
+
+    def test_carrying_it_out_takes_the_light_with_it(self):
+        self.thing.move_to(self.char1, quiet=True)
+        self.char1.move_to(self.room1, quiet=True)
+        self.assertFalse(self.sees(self.other))
+
+    def test_and_carrying_it_in_lights_whoever_is_there(self):
+        self.other.move_to(self.room1, quiet=True)
+        self.thing.move_to(self.char1, quiet=True)
+        self.char1.move_to(self.room1, quiet=True)
+        from world import conditions
+
+        self.assertTrue(conditions.sees(self.other, self.room1, self.root))
+
+    def test_picking_it_up_and_putting_it_down_never_flickers(self):
+        """
+        Reported as "my light goes up for a second, then back down": the sums
+        were done while the candle was halfway through each move, and dropping
+        it ignored it after it had landed on the floor.
+        """
+        told = []
+        original = self.char1.msg
+
+        def msg(text=None, **kwargs):
+            told.append(str(text))
+            return original(text, **kwargs)
+
+        self.char1.msg = msg
+        gear.recompute(self.char1)
+        for raw in ("get lantern", "drop lantern"):
+            with immediately(), replying(finishing(narrate={
+                    "actor": "should not be asked",
+                    "room": "should not be asked"})):
+                attempt_mod.attempt(self.char1, raw, FakeSponsor(),
+                                    on_message=lambda a, r=None: None)
+            self.assertTrue(self.sees(self.char1), raw)
+        self.assertEqual(self.thing.location, self.room2)
+        self.assertFalse([line for line in told if "Light" in line], told)
 
     def test_putting_it_out_darkens_the_room_without_moving_it(self):
         self.assertTrue(self.sees(self.other))
