@@ -11,30 +11,6 @@ with a location in the game world (like Characters, Rooms, Exits).
 from evennia.objects.objects import DefaultObject
 
 
-def _recount_a_place(host, gear, leaving=None):
-    """
-    Redo the sums for everybody in `host`, when `host` is somewhere to stand.
-
-    `gear.recompute` answers for one person, and a room is not a person: it has
-    no traits of its own, so calling it on a room returns at the first line and
-    nothing happens. Which was fine while a room was only ever a backdrop, and
-    stopped being fine the moment a room could be worth something to whoever was
-    in it -- carrying a lit lamp into a cellar lit it for the carrier and left
-    everybody else standing there in the dark.
-
-    The state half of this was already covered: putting a lamp out calls
-    `recompute_room` from the `set_state` effect. This is the other half, where
-    nothing changed about the lamp and everything changed about where it is.
-    """
-    from evennia.objects.objects import DefaultRoom
-
-    if isinstance(host, DefaultRoom):
-        # `without`, not `ignoring`: the thing on its way out is an item to
-        # discount, not a person to skip. Evennia says so before it happens, so
-        # the lamp is still standing in the room when we are told it is going.
-        gear.recompute_room(host, without=leaving)
-
-
 class ObjectParent:
     """
     This is a mixin that can be used to override *all* entities inheriting at
@@ -176,6 +152,14 @@ class ObjectParent:
         See `memory.note_whereabouts`.
         """
         super().at_post_move(source_location, move_type=move_type, **kwargs)
+        # What it was worth where it came from, now that it is gone. The end it
+        # arrived at is counted by `at_object_receive`; a person who moved
+        # counts both ends in their own `at_post_move`. Before the teleport
+        # return, because contents sent home stop counting all the same.
+        from world import gear
+
+        if not gear.is_person(self):
+            gear.recount_around(source_location, self)
         if move_type == "teleport" or source_location is None:
             return
         from world import memory, relations, tokens
@@ -197,23 +181,23 @@ class ObjectParent:
         super().at_object_receive(moved_obj, source_location, **kwargs)
         from world import gear
 
-        gear.recompute(self)
-        _recount_a_place(self, gear)
+        # A room recounts everybody in it: a lamp carried into a cellar lights
+        # the people already standing there, not only its carrier.
+        gear.recount_around(self, moved_obj)
 
     def at_object_leave(self, moved_obj, target_location, **kwargs):
         """
-        Something is going. Stop counting it before it does.
+        Something is going: it is out of anybody's hand.
 
-        Evennia announces a departure before it happens, so the item is still
-        in `contents` when we are told -- hence `ignoring`, rather than a
-        recount that would still find what is halfway out the door.
+        Nothing is recounted here. Evennia announces a departure before it
+        happens, and a sum done now has to guess where the thing is going --
+        a candle picked up is leaving the floor and staying in the room. The
+        thing's own `at_post_move` recounts where it was once it is not.
         """
         super().at_object_leave(moved_obj, target_location, **kwargs)
         from world import gear
 
         gear.release(moved_obj)
-        gear.recompute(self, ignoring=moved_obj)
-        _recount_a_place(self, gear, leaving=moved_obj)
 
 
 class Object(ObjectParent, DefaultObject):
