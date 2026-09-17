@@ -868,6 +868,12 @@ def _apply_one(actor, room, effect, bound, world_root):
             add.append(verbs.register_state(world_root, str(slug)))
         for slug in listed(effect.get("remove")):
             remove.append(str(slug).lower().strip())
+        # Nor recorded as history: a derived state is worked out, and
+        # `apply_states` refuses to write one, so noting it here would leave
+        # memory saying something happened that did not.
+        derived = set(verbs.derived_states(world_root))
+        add = [slug for slug in add if slug not in derived]
+        remove = [slug for slug in remove if slug not in derived]
         from world import kinds
 
         from world import gear

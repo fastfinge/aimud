@@ -256,6 +256,13 @@ def validate(reply, offered, action, world_root=None):
         if phase in (rulebooks.CARRY_OUT, rulebooks.AFTER) and not effects:
             complaints.append(f"a {phase} rule that changes nothing")
             continue
+        written = _derived_written(effects, world_root)
+        if written:
+            complaints.append(
+                f"{', '.join(written)} is worked out from other conditions, "
+                f"so no effect can set or clear it -- change what it is worked "
+                f"out from instead")
+            continue
 
         # Through `checks.clean`, so that a contest nothing can roll leaves the
         # verb deterministic -- which is what it was before the rule existed --
@@ -363,6 +370,23 @@ def _clean_conditions(given, conditions):
             continue
         kept.extend(tidy)
     return kept, complaints
+
+
+def _derived_written(effects, world_root):
+    """The derived states a list of effects tries to set or clear."""
+    from world import verbs
+
+    derived = set(verbs.derived_states(world_root)) if world_root else set()
+    if not derived:
+        return []
+    found = set()
+    for effect in effects or []:
+        if str(effect.get("type") or "") != "set_state":
+            continue
+        for field in ("add", "remove"):
+            found |= {str(s).lower() for s in model_json.listed(
+                effect.get(field))} & derived
+    return sorted(found)
 
 
 def _packed(given, conditions):

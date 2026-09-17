@@ -433,7 +433,11 @@ holding. So it is refused at every door:
 A group may hold derived members or written members, never both.
 Exclusivity is enforced when a state is written (`apply_states` clears the rest
 of the group), and a derived member is never written. A mixed group could
-therefore be `fed` and `starving` at once. `register_state` refuses the mix.
+therefore be `fed` and `starving` at once. `register_state` refuses the mix, in
+both directions but not in the same way. A derived state is refused outright,
+since nothing in play depends on it yet. A written state is still registered,
+only outside that group, because refusing it would leave a verb that is
+already running with a word it cannot set.
 Keeping derived members apart is the job of their conditions, and `rulecheck`
 can check that for the common case of bands over one trait (§10).
 

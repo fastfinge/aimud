@@ -194,6 +194,11 @@ def scan(registers):
     refusals = {kind: [] for kind in REFUSAL_KINDS}
     inert, accepted, contested = [], 0, 0
     by_verb = {}
+    # Worked out rather than set, so never "settable by nothing": nothing is
+    # meant to set them. A rule that tries to is the fault.
+    derived = {slug for slug, entry in vocabulary.items()
+               if hasattr(entry, "get") and entry.get("when")}
+    writes_derived = []
 
     for key, rule in sorted(rules.items()):
         if not rule.get("valid", True):
@@ -210,6 +215,10 @@ def scan(registers):
             if effect.get("type") == "set_state":
                 added |= _states(effect, "add")
                 removed |= _states(effect, "remove")
+                hits = (_states(effect, "add")
+                        | _states(effect, "remove")) & derived
+                if hits:
+                    writes_derived.append((key, sorted(hits)))
         wanted |= _required(rule, "is")
         forbidden |= _required(rule, "lacks")
         if key in learned:
@@ -233,8 +242,8 @@ def scan(registers):
     # still a word nobody wrote a rule about.
     undone = removed | _cancelled(added, vocabulary, groups)
 
-    one_way = added - undone
-    unsettable = wanted - added
+    one_way = added - undone - derived
+    unsettable = wanted - added - derived
     touched = added | removed | wanted | forbidden
 
     return {
@@ -245,6 +254,7 @@ def scan(registers):
         "self_defeating": self_defeating(registers.get("rules") or {}),
         "after_self_defeating": after_self_defeating(
             registers.get("rules") or {}),
+        "writes_derived": sorted(writes_derived),
         "ungrounded": ungrounded(registers.get("kind_specs") or {}),
         "inert": sorted(inert),
         "refusals": {kind: sorted(verbs) for kind, verbs in refusals.items()},
@@ -596,6 +606,13 @@ def report(findings, name=""):
             f"{len(dead)} after rules follow only when their own verb has not "
             f"done what it just did, so they can never fire, over "
             f"{len(verbs)} verbs: {_listed(verbs)}.")
+    if findings.get("writes_derived"):
+        slugs = sorted({slug for _key, found in findings["writes_derived"]
+                        for slug in found})
+        trouble.append(
+            f"{len(findings['writes_derived'])} rules try to set or clear a "
+            f"condition that is worked out from others, which does nothing: "
+            f"{_listed(slugs)}.")
     if findings.get("ungrounded"):
         trouble.append(
             f"{len(findings['ungrounded'])} kinds have nothing above them in "

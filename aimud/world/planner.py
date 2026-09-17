@@ -409,11 +409,80 @@ def _for_condition(actor, world_root, condition, depth=0):
 
     if ctype in ("state", "gone"):
         obj = _bind(actor, name)
+        if obj is None and name and name.lower() == str(actor.key).lower():
+            obj = actor          # a want about oneself: "stop being starving"
         if obj is None:
             step = _step_towards_object(actor, name)
             return (step, None) if step else (None, None)
+        if ctype == "state":
+            derived, rest = _derived_wants(world_root, condition)
+            if derived:
+                step, key = _towards_derived(actor, world_root, obj, derived,
+                                             depth)
+                if step or not rest:
+                    return step, key
+                condition = rest
         return _verb_for(actor, world_root, condition, obj, depth)
 
+    return None, None
+
+
+def _derived_wants(world_root, condition):
+    """
+    The derived states a state goal names, and the goal without them.
+
+    Returns ([(slug, wanted), ...], rest) where `wanted` is True for `is` and
+    False for `lacks`, and `rest` is the same goal holding only what can be
+    set, or None when nothing is left.
+    """
+    from world.model_json import listed
+
+    known = verbs.derived_states(world_root)
+    if not known:
+        return [], condition
+    found, rest = [], dict(condition)
+    for field, wanted in (("is", True), ("lacks", False)):
+        values = [str(s).lower() for s in listed(condition.get(field))]
+        found += [(slug, wanted) for slug in values if slug in known]
+        kept = [slug for slug in values if slug not in known]
+        if kept:
+            rest[field] = kept
+        else:
+            rest.pop(field, None)
+    if not (rest.get("is") or rest.get("lacks")):
+        rest = None
+    return found, rest
+
+
+def _towards_derived(actor, world_root, obj, derived, depth):
+    """
+    A step towards a state that is worked out rather than set.
+
+    No verb can set one, so the question is never "what verb makes it
+    starving" -- which would send the planner guessing at words for ever --
+    but "what would make its definition true", or false for `lacks`. The
+    definition is asked about `obj`, as `implied_states` asks it, and read
+    back into the goal shape the rest of the planner speaks. See
+    docs/becoming-and-time.md 5.8.
+    """
+    from world import conditions
+    from world.quests import is_person
+
+    if depth >= MAX_SUBGOALS:
+        return None, None
+    known = verbs.derived_states(world_root)
+    person = obj if is_person(obj) else actor
+    for slug, wanted in derived:
+        definition = {"all": list(known[slug].get("when") or [])}
+        target = definition if wanted else conditions.negate(definition)
+        if target is None:
+            continue             # a definition nobody can negate: no step
+        goal = conditions.as_goal(target, {"direct": obj}, person)
+        if goal is None:
+            continue
+        step, key = _for_condition(actor, world_root, goal, depth + 1)
+        if step:
+            return step, key
     return None, None
 
 
