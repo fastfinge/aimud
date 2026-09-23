@@ -1398,6 +1398,17 @@ def _placement(subject, value, ctx):
     preposition, host_name = next(iter(where.items()), (None, None))
     if not preposition:
         return None
+    if host_name is True or host_name == "":
+        # "Under anything at all", which is what a rule about being covered
+        # wants: a shirt may not come off while *something* is over it, and
+        # naming which garment would make the rule about that garment.
+        from world import relations
+
+        at = relations.host_of(subject.obj) if subject.obj is not None else None
+        met = at is not None and relations.preposition_of(subject.obj) == preposition
+        called = (at.get_numbered_name(1, None, return_string=True)
+                  if at is not None else "anything")
+        return preposition, called, met
     host = resolve(host_name, ctx)
     if not host.found:
         host_obj = _find(str(host_name), "", ctx)

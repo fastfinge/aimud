@@ -754,3 +754,62 @@ and `gear.wield` takes a style.
 That leaves the four mechanics with no bespoke storage between them except
 `db.covered_by`, which is a pointer to an object rather than a fact about one —
 a different kind of thing, and the one shape a state cannot hold.
+
+---
+
+## 11. Under is not inside
+
+`db.covered_by` survived §10 because a state cannot point at an object. The
+question that finished it was somebody else's: *if I put the table on the rug,
+the rug is now under the table — and the rug cannot be on the table while the
+table is on the rug.*
+
+Both halves turned out to be about something larger. `world.relations` stored
+**every** preposition as containment — `obj.move_to(host)` — and that is right
+for two of the four and plainly wrong for the other two:
+
+```
+put coin under rug   ->  coin.location is rug
+take rug             ->  the coin goes into your inventory, inside the rug
+                         the floor has neither
+```
+
+A coin under a rug is not in the rug. Neither is a key behind a painting in
+the painting. `in` and `on` earn containment — a thing in a box or on a tray
+travels with it, is hidden when the box is shut, and needs no bookkeeping
+because Evennia's containment does all of it — but `under` and `behind` say
+where a thing is in a room rather than what holds it.
+
+So `relations.BESIDE` is a pointer: both things stay where they are, one
+pointing at the other. Three things follow.
+
+**Covering is placement.** "The shirt is under the coat" is the same word, said
+of two things that share a wearer rather than a floor. That was impossible
+while `under` meant containment — §2.1 was right that the shirt must not sit
+inside the coat, and wrong to conclude that covering therefore was not
+placement. `db.covered_by` and the `covered` state are both gone; `relations`
+keeps the one fact, and "you cannot take off what is covered" is
+`{"not_placed": {"under": true}}` — which needed `placed` to learn a wildcard
+host, since the rule is about being under *something* and naming the garment
+would make it a rule about that garment.
+
+**Cleanup is a lapse, not a hook.** A thing is under another because they are
+in the same place, so `host_of` answers None the moment they part — burn the
+rug, pocket it, shut it in a chest, and the coin is a coin on the floor again.
+No door needs unpicking because there is no door this misses. Nothing is
+narrated: what to say when a coin comes to light is a rule's business.
+
+**The other side can be spoken.** Only the guest ever carried the word, so
+`relation_of(rug)` said the rug was nowhere in particular while a table stood
+on it. `INVERSE` and `relations.standing` give it the sentence.
+
+The cycle was already refused, by `_holds` — but in the only words it had:
+"that would have to go inside itself", which names containment to somebody who
+said "on". It now says which way round things already are.
+
+One consequence worth watching in play: a coin under a rug is in the room's
+own contents now, so it would read twice — loosely among what you see, and
+again under the rug. `Room.filter_visible` drops what another thing already
+accounts for. That hook rather than the listing, because "is this one of the
+things shown" is exactly what it answers, and everything that lists a room
+asks it.

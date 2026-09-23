@@ -34,6 +34,38 @@ from evennia.utils import iter_to_str
 #: may have to choose between correctly.
 PREPOSITIONS = ("in", "on", "under", "behind")
 
+#: Which of them mean the thing is *inside* the other, and which mean it is
+#: merely beside it.
+#:
+#: This distinction was missing and the module was the poorer for it. Every
+#: preposition was stored the same way -- `obj.move_to(host)` -- which is
+#: right for two of the four and plainly wrong for the other two. A coin under
+#: a rug was kept *inside* the rug, so picking the rug up carried the coin off
+#: in your inventory and left the floor with neither. A key behind a painting
+#: was inside the painting.
+#:
+#: Containment earns its keep for `in` and `on`: a thing in a box or on a tray
+#: travels with it, is hidden when the box is shut, and needs no bookkeeping
+#: because Evennia's own containment does all of it. Neither is true of `under`
+#: or `behind`, which say where a thing is in a room rather than what is
+#: holding it -- so those are a pointer from one thing to another, and both
+#: stay exactly where they were.
+#:
+#: What this buys beyond the coin: **covering is now placement.** "The shirt is
+#: under the coat" is the same word, said of two things that share a wearer
+#: rather than a floor, and `world.clothing` keeps no relation of its own.
+CONTAINED = ("in", "on")
+BESIDE = ("under", "behind")
+
+#: Where a pointer relation keeps what it points at.
+HOST_ATTR = "relation_to"
+
+#: The other side of each relation, so a thing can say where it stands as well
+#: as what is standing at it. Put the table on the rug and the rug is under the
+#: table; nothing could say so before, because only the guest carried the word.
+INVERSE = {"in": "holding", "on": "under", "under": "over",
+           "behind": "in front of"}
+
 #: Where things go is now a fact about a kind rather than an affordance --
 #: see `world.kinds.PLACEMENT` and the note in `accepts` below. "under" and
 #: "behind" ask nothing of the host: everything has an underneath.
@@ -92,11 +124,25 @@ def preposition_of(obj):
 
 def host_of(obj):
     """
-    What this thing is in or on, or None when it is loose in a room.
+    What this thing is in, on, under or behind; None when it is loose.
 
     A carried object has a person for a location, which is inventory rather
     than placement, so that answers None too.
+
+    A pointer relation **lapses when the two part company**, and that is the
+    whole of its cleanup. A coin under a rug is under it because they are in
+    the same place; carry the rug off, burn it, or put it in a chest, and the
+    coin is simply a coin on the floor again. Answered here rather than
+    unpicked by a hook at every door a thing can leave by, because there is no
+    door this does not cover -- and nothing is narrated, because what to say
+    about a coin coming to light is a rule's business and not a mechanic's.
     """
+    pointed = getattr(obj.db, HOST_ATTR, None) if obj is not None else None
+    if pointed is not None:
+        if (getattr(pointed, "pk", None) is not None
+                and pointed.location is obj.location):
+            return pointed
+        return None
     where = getattr(obj, "location", None)
     return where if _is_thing(where) else None
 
@@ -142,14 +188,38 @@ def accepts(host, preposition):
 
 
 def contents(host, preposition=None):
-    """What is at `host`, optionally only what is there in one particular way."""
+    """
+    What is at `host`, optionally only what is there in one particular way.
+
+    Two places to look, because there are two ways to be at something: inside
+    it, and beside it pointing at it. The second is bounded by whatever holds
+    them both -- a room's floor, or a wearer -- so it is a scan of siblings
+    rather than a search.
+    """
+    if host is None:
+        return []
     found = []
-    for obj in (host.contents if host is not None else []):
+    for obj in host.contents:
         if not _is_thing(obj):
             continue
+        if getattr(obj.db, HOST_ATTR, None) is not None:
+            continue          # inside it by accident of storage, not by placement
+        if preposition is None or preposition_of(obj) == preposition:
+            found.append(obj)
+    for obj in beside(host):
         if preposition is None or preposition_of(obj) == preposition:
             found.append(obj)
     return found
+
+
+def beside(host):
+    """The things in the same place as `host` that point at it."""
+    where = getattr(host, "location", None)
+    if where is None:
+        return []
+    return [obj for obj in where.contents
+            if obj is not host and _is_thing(obj)
+            and getattr(obj.db, HOST_ATTR, None) is host]
 
 
 def place(obj, host, preposition=DEFAULT, quiet=True):
@@ -168,20 +238,70 @@ def place(obj, host, preposition=DEFAULT, quiet=True):
         return False, "There is nothing to do that with."
     if obj is host:
         return False, "That cannot hold itself."
-    if _holds(obj, host):
-        # Putting the box inside the bag it already contains would take both
-        # of them out of the world.
-        return False, "That would have to go inside itself."
+    circular = _circular(obj, host)
+    if circular:
+        return False, circular
 
     ok, why = accepts(host, preposition)
     if not ok:
         return False, why
 
+    said = (f"{obj.get_numbered_name(1, None, return_string=True)} is "
+            f"{preposition} "
+            f"{host.get_numbered_name(1, None, return_string=True)}.")
+
+    if preposition in BESIDE:
+        # Beside it, not inside it. Moved to wherever the host is, so that
+        # putting a coin under a rug you are holding puts the coin down --
+        # and then pointed at it.
+        where = getattr(host, "location", None)
+        if where is None:
+            return False, "That will not go there."
+        if obj.location is not where and not obj.move_to(
+                where, quiet=quiet, move_type="place"):
+            return False, "That will not go there."
+        setattr(obj.db, HOST_ATTR, host)
+        obj.db.relation = preposition
+        return True, said
+
     if not obj.move_to(host, quiet=quiet, move_type="place"):
         return False, "That will not go there."
+    obj.attributes.remove(HOST_ATTR)
     obj.db.relation = preposition
-    return True, (f"{obj.get_numbered_name(1, None, return_string=True)} is "
-                  f"{preposition} {host.get_numbered_name(1, None, return_string=True)}.")
+    return True, said
+
+
+def _circular(obj, host):
+    """
+    Why this would put something at itself, or "".
+
+    Two ways round now, and the words matter. Containment answers the old way:
+    a box may not go inside the bag it holds. A pointer answers the new one,
+    and it is the case somebody actually meets -- the table is on the rug, and
+    somebody tries to put the rug on the table.
+
+    Said as what it is rather than as "that would have to go inside itself",
+    which was the only refusal available before and named containment in a
+    sentence where the player had said "on".
+    """
+    seen, where = set(), host
+    while where is not None and id(where) not in seen:
+        seen.add(id(where))
+        if where is obj:
+            # Say which way round it already is, when that is knowable. "The
+            # table is already on the rug" is what somebody trying to put the
+            # rug on the table needs to hear; "that would have to go inside
+            # itself" was all that could be said, and it named containment in
+            # a sentence where they had said "on".
+            preposition, at = relation_of(host)
+            if at is obj and preposition:
+                these = host.get_numbered_name(1, None, return_string=True)
+                those = obj.get_numbered_name(1, None, return_string=True)
+                return f"{these.capitalize()} is already {preposition} {those}."
+            return "That would have to go inside itself."
+        where = host_of(where)
+    return "" if not _holds(obj, host) else \
+        "That would have to go inside itself."
 
 
 def _holds(container, obj, depth=0):
@@ -204,8 +324,12 @@ def displace(obj):
     and is now in somebody's hand is not on anything, and leaving the note
     behind would have it read as "on" the next person who took it.
     """
-    if obj is not None and obj.db.relation:
+    if obj is None:
+        return
+    if obj.db.relation:
         obj.db.relation = None
+    if getattr(obj.db, HOST_ATTR, None) is not None:
+        obj.attributes.remove(HOST_ATTR)
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +465,29 @@ def context_line(obj, looker=None):
     if host is None:
         return ""
     return f"{preposition} {host.get_numbered_name(1, looker, return_string=True)}"
+
+
+def standing(obj, looker=None):
+    """
+    Where a thing stands, said from its own side: "under the table".
+
+    The other half of `context_line`, and the thing that could not be said at
+    all. Put the table on the rug and the relation was written on the table
+    alone, so the rug knew nothing: looking at it said "On it: a table", which
+    is the same fact told from the wrong end, and `relation_of(rug)` answered
+    that the rug was nowhere in particular.
+
+    Only the first, because a thing has one place to stand and several things
+    may be at it. What is *at* a thing is `describe`.
+    """
+    for preposition in PREPOSITIONS:
+        for other in contents(obj, preposition):
+            said = INVERSE.get(preposition)
+            if not said:
+                continue
+            return (f"{said} "
+                    f"{other.get_numbered_name(1, looker, return_string=True)}")
+    return ""
 
 
 def _event(caller, verb, roles, template):

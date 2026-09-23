@@ -76,7 +76,7 @@ AUTOCOVER = {
 #: wants. Kept under its old name for the callers that read it.
 WEARSTYLE_MAXLENGTH = 50
 
-#: That a thing is on, and that something else is over it.
+#: That a thing is on.
 #:
 #: **States, not attributes of their own**, and that is the point rather than
 #: a tidying. `db.worn` was a slot in the database that only this module knew
@@ -95,18 +95,18 @@ WEARSTYLE_MAXLENGTH = 50
 #: world whose state register filled up with a phrase per scarf would have
 #: lost what the register is for.
 WORN = "worn"
-COVERED = "covered"
 
-#: Which garment is doing the covering.
+#: How one garment sits under another. `world.relations`' own word, because
+#: covering turned out to *be* placement and not a thing beside it.
 #:
-#: A pointer rather than a state, because it answers a different question from
-#: the state beside it: `covered` is the fact, and this is the detail. Written
-#: in `_cover` and `_uncover` and nowhere else, so there is one writer for the
-#: pair and they cannot drift.
-#:
-#: The wear style used to sit beside it as `db.wearstyle` and does not any
-#: more: it is `verbs.style_of(garment, WORN)`, which every ruleset can reach.
-COVERED_BY_ATTR = "covered_by"
+#: It could not be while every preposition was stored as containment: putting
+#: the shirt under the coat would have put the shirt inside the coat, and a
+#: coat given away would have taken the shirt with it. `under` is a pointer
+#: now -- see `relations.BESIDE` -- and the two garments stay where they are,
+#: both on the wearer, with one pointing at the other. So `db.covered_by` is
+#: gone, along with the `covered` state that was the fact beside the pointer:
+#: there is one fact now and `relations` keeps it.
+UNDER = "under"
 
 
 def is_worn(obj):
@@ -118,14 +118,17 @@ def is_worn(obj):
 
 def is_covered(obj):
     """Whether something else is over this."""
-    from world import verbs
-
-    return obj is not None and COVERED in verbs.states(obj)
+    return covering_of(obj) is not None
 
 
 def covering_of(obj):
     """What is covering this, or None."""
-    return getattr(obj.db, COVERED_BY_ATTR, None) or None
+    from world import relations
+
+    if obj is None:
+        return None
+    preposition, host = relations.relation_of(obj)
+    return host if preposition == UNDER else None
 
 
 def wearstyle_of(obj):
@@ -223,21 +226,17 @@ def _wear(character, garment, wearstyle=True):
 
 
 def _cover(garment, covering, root=None):
-    """Put one garment under another: the fact and the detail together."""
-    from world import verbs
+    """Put one garment under another. One fact, kept by `world.relations`."""
+    from world import relations
 
-    setattr(garment.db, COVERED_BY_ATTR, covering)
-    verbs.apply_states(garment, add=[COVERED],
-                       world_root=root or _root_of(garment), announce=False)
+    relations.place(garment, covering, UNDER)
 
 
 def _uncover(garment, root=None):
     """And take it back out from under."""
-    from world import verbs
+    from world import relations
 
-    setattr(garment.db, COVERED_BY_ATTR, None)
-    verbs.apply_states(garment, remove=[COVERED],
-                       world_root=root or _root_of(garment), announce=False)
+    relations.displace(garment)
 
 
 def _unwear(character, garment):

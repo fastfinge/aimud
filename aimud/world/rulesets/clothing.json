@@ -1,7 +1,7 @@
 {
   "name": "clothing",
   "title": "Clothing",
-  "version": 2,
+  "version": 3,
   "default": true,
   "means": "Characters can wear things, and what they have on shows in how they look.",
   "requires": ["default"],
@@ -10,8 +10,7 @@
   "affordances": ["wear"],
 
   "conditions": [
-    {"group": "wornness", "exclusive": true, "states": ["worn"]},
-    {"group": "covering", "exclusive": true, "states": ["covered"]}
+    {"group": "wornness", "exclusive": true, "states": ["worn"]}
   ],
 
   "actions": [
@@ -68,7 +67,7 @@
       "scope": {"world": true},
       "about": "direct",
       "when": [{"subject": "direct", "unbound": false}],
-      "conditions": [{"subject": "direct", "lacks": ["covered"]}]
+      "conditions": [{"subject": "direct", "not_placed": {"under": true}}]
     },
     {
       "name": "there is a limit to what you can get on at once",

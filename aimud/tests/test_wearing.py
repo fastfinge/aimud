@@ -273,7 +273,15 @@ class BeingWornIsAState(GameCommandTest):
 
 @tag("world")
 class Covering(GameCommandTest):
-    """Covering is a state too, and what it refuses is a rule."""
+    """
+    Covering is placement, and what it refuses is a rule.
+
+    It could not be placement while every preposition was containment: the
+    shirt would have gone *inside* the coat, and a coat given away would have
+    taken the shirt with it. `under` is a pointer now -- see `test_beside` --
+    so both garments stay on the wearer with one pointing at the other, and
+    `world.clothing` keeps no relation of its own.
+    """
 
     loose_objects = 2
 
@@ -323,3 +331,23 @@ class Covering(GameCommandTest):
         clothing.put_on(self.char1, self.obj2)
         clothing.take_off(self.char1, self.obj2)
         self.assertFalse(clothing.is_covered(self.obj1))
+
+    def test_it_is_kept_by_relations_and_not_by_clothing(self):
+        """One fact, in the module whose word `under` is."""
+        from world import relations
+
+        clothing.put_on(self.char1, self.obj1)
+        clothing.put_on(self.char1, self.obj2)
+        self.assertEqual(relations.relation_of(self.obj1),
+                         ("under", self.obj2))
+
+    def test_and_both_garments_stay_on_the_wearer(self):
+        """
+        Which is why this had to wait for `under` to stop being containment:
+        inside the coat, the shirt would have gone with it to anybody the
+        coat was handed to.
+        """
+        clothing.put_on(self.char1, self.obj1)
+        clothing.put_on(self.char1, self.obj2)
+        self.assertIs(self.obj1.location, self.char1)
+        self.assertIs(self.obj2.location, self.char1)
