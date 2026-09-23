@@ -173,7 +173,7 @@ def _protected(obj, room):
     return isinstance(obj, DefaultCharacter)
 
 
-def apply(actor, room, effects, bound=None, world_root=None):
+def apply(actor, room, effects, bound=None, world_root=None, found=None):
     """
     Apply a list of effect dicts. Main thread only.
 
@@ -181,8 +181,15 @@ def apply(actor, room, effects, bound=None, world_root=None):
     be told about.  Effects that cannot be applied are skipped rather than
     aborting the rest -- a half-understood verb should still do the parts it
     got right.
+
+    `found` is what this rule's own conditions matched, filed under the names
+    they were told to file it under; see `conditions.Context`. Empty for every
+    caller with no conditions behind it, and then an effect naming a set finds
+    nothing and does nothing, which is what an effect on nobody has always
+    done.
     """
     bound = bound or {}
+    found = {} if found is None else found
     announcements = []
 
     # Whatever these change was brought about by whoever is acting, unless a
@@ -192,7 +199,8 @@ def apply(actor, room, effects, bound=None, world_root=None):
     with becoming.caused_by(actor):
         for effect in effects or []:
             try:
-                line = _apply_one(actor, room, effect, bound, world_root)
+                line = _apply_one(actor, room, effect, bound, world_root,
+                                  found)
             except Exception as exc:
                 logger.log_info(f"verb effect failed ({effect!r}): {exc}")
                 continue
@@ -229,19 +237,69 @@ def _everyone_in(room, actor, role):
     return found
 
 
-def _resolve_many(effect, key, bound, room, actor):
+def _destroy_one(obj, room, world_root):
+    """
+    Take one thing out of the world for good; answer what it was called.
+
+    Its own function because `destroy_object` may now be given several things
+    at once, and the bookkeeping each one needs -- who owned it, that it
+    happened, what it was worth to whoever held it -- is the same for the
+    first as for the fourth.
+    """
+    if _protected(obj, room):
+        return ""
+    label = obj.get_numbered_name(1, None, return_string=True)
+    holder = obj.location
+    # Whose it was, closed rather than erased. The object is about to stop
+    # existing and its attributes with it, but what was recorded of it
+    # outlives both -- which is what lets somebody ask after a sword that
+    # was theirs and is not there. See world.ownership.forget.
+    from world import ownership
+
+    ownership.forget(obj)
+    # And that it is gone, as the world's history. Before the deletion,
+    # while the world can still be found from where the thing is.
+    from world import memory
+
+    memory.note_destroyed(obj, world_root)
+    obj.delete()
+    # A shattered shield protects nobody. Deletion is not a move, so the
+    # hooks that keep gear honest do not fire for it.
+    from world import gear
+
+    gear.recompute(holder)
+    return label
+
+
+def _resolve_many(effect, key, bound, room, actor, found=None, crowds=True):
     """
     Everyone or everything an effect refers to, as a list.
 
     One element for the ordinary case, so callers that used to handle a single
     object handle both by looping. A role naming nobody present gives an empty
     list, and an effect on nobody is simply an effect that does nothing.
+
+    There are two sorts of plural here and they are not the same claim:
+
+    * A **found set** -- a name a condition of this same rule filed what it
+      matched under. These are particular things the rule has already counted
+      and been satisfied by, so any effect may name one: consuming the two
+      lumps of coal a recipe just checked for is the whole point of having
+      them, and no second search can disagree with the first.
+    * A **crowd** -- `everyone` or `others`, worked out afresh from the room.
+      Still confined to `set_state` and `set_trait` by the note above.
+
+    `crowds` is how an effect says it will take the first and not the second.
+    A found set is looked for first either way: a rule that named its own set
+    means that set, whatever else the word might have meant.
     """
     role = effect.get(key + "_role") or effect.get("role")
-    if role in PLURAL_ROLES:
+    if role and found and role in found:
+        return [obj for obj in (found.get(role) or []) if obj is not None]
+    if crowds and role in PLURAL_ROLES:
         return _everyone_in(room, actor, role)
-    found = _resolve(effect, key, bound, room, actor)
-    return [found] if found is not None else []
+    one = _resolve(effect, key, bound, room, actor)
+    return [one] if one is not None else []
 
 
 def _and_then(labels):
@@ -620,7 +678,7 @@ def speaks_for_itself(effects):
     return False
 
 
-def _apply_one(actor, room, effect, bound, world_root):
+def _apply_one(actor, room, effect, bound, world_root, found=None):
     from world import verbs
 
     etype = str(effect.get("type", "")).strip()
@@ -694,30 +752,19 @@ def _apply_one(actor, room, effect, bound, world_root):
         return None
 
     if etype == "destroy_object":
-        obj = _resolve(effect, "name", bound, room, actor)
-        if _protected(obj, room):
+        # Every one of them, which for everything but a found set is exactly
+        # one. A recipe consumes the things its own check counted, and says so
+        # in one sentence. `crowds=False`: "destroy everybody here" is still
+        # not something a verb may say in a line.
+        labels = [
+            _destroy_one(obj, room, world_root)
+            for obj in _resolve_many(effect, "name", bound, room, actor,
+                                     found, crowds=False)]
+        said = _and_then([label for label in labels if label])
+        if not said:
             return None
-        label = obj.get_numbered_name(1, None, return_string=True)
-        holder = obj.location
-        # Whose it was, closed rather than erased. The object is about to stop
-        # existing and its attributes with it, but what was recorded of it
-        # outlives both -- which is what lets somebody ask after a sword that
-        # was theirs and is not there. See world.ownership.forget.
-        from world import ownership
-
-        ownership.forget(obj)
-        # And that it is gone, as the world's history. Before the deletion,
-        # while the world can still be found from where the thing is.
-        from world import memory
-
-        memory.note_destroyed(obj, world_root)
-        obj.delete()
-        # A shattered shield protects nobody. Deletion is not a move, so the
-        # hooks that keep gear honest do not fire for it.
-        from world import gear
-
-        gear.recompute(holder)
-        return f"{label.capitalize()} is gone."
+        return f"{said[0].upper()}{said[1:]} " \
+               f"{'are' if len([l for l in labels if l]) > 1 else 'is'} gone."
 
     if etype == "set_owner":
         # Whose a thing is, which is a fact about it and not a thing anybody
@@ -745,11 +792,12 @@ def _apply_one(actor, room, effect, bound, world_root):
         return None
 
     if etype == "move_object":
-        obj = _resolve(effect, "name", bound, room, actor)
-        if obj is None or _protected(obj, room):
-            return None
-        return _put(obj, str(effect.get("to", "room")).strip(), effect,
-                    bound, room, actor, world_root)
+        where = str(effect.get("to", "room")).strip()
+        moved = [_put(obj, where, effect, bound, room, actor, world_root)
+                 for obj in _resolve_many(effect, "name", bound, room, actor,
+                                          found, crowds=False)
+                 if not _protected(obj, room)]
+        return " ".join(line for line in moved if line) or None
 
     if etype == "move_contents":
         # What "loot" needs, and "empty", "unpack", "tip out" and "rob" with
@@ -856,7 +904,8 @@ def _apply_one(actor, room, effect, bound, world_root):
         slug = str(effect.get("trait", "")).strip()
         if not slug:
             return None
-        for who in (_resolve_many(effect, "name", bound, room, actor)
+        for who in (_resolve_many(effect, "name", bound, room, actor,
+                                  found)
                     or [actor]):
             if not traits.has_traits(who):
                 continue
@@ -874,7 +923,7 @@ def _apply_one(actor, room, effect, bound, world_root):
     if etype == "set_state":
         # A list, because a role may name the room's whole company: lighting a
         # fire makes the wood burn and everybody standing by it warm.
-        targets = _resolve_many(effect, "name", bound, room, actor)
+        targets = _resolve_many(effect, "name", bound, room, actor, found)
         if not targets:
             return None
         from world.model_json import listed

@@ -88,17 +88,30 @@ THING, ROOM, ZONE, NOWHERE = "thing", "room", "zone", "nowhere"
 #: carry-out may have moved the actor -- but `here` in a rule about launching
 #: still means the bridge the ship was launched from. Empty for everything else,
 #: and then `here` is the actor's room as it always was.
-Context = namedtuple("Context", "bound actor world_root action room")
-Context.__new__.__defaults__ = (None, None, None, "", None)
+#: `found` is what the conditions themselves found, filed under the names they
+#: were told to file it under -- `{"fuel": [<coal>, <coal>]}`. It is the one
+#: field a condition *writes*, and the reason it exists is that a condition can
+#: find things and an effect could only name a role somebody typed: the check
+#: knew which two lumps of coal it had counted, and the carry-out that was to
+#: consume them had no way to ask.
+#:
+#: Deliberately not `bound`. A plural entry there would reach `verbs.rule_key`,
+#: `_anchor` and `events.Event(roles=...)`, none of which expect a list, and a
+#: narration cache key built from one would be wrong for the life of the world.
+#: Shared by reference rather than copied, unlike `bound`, because the whole
+#: point is that what the check phase writes the carry-out phase reads.
+Context = namedtuple("Context", "bound actor world_root action room found")
+Context.__new__.__defaults__ = (None, None, None, "", None, None)
 
 
-def context(bound=None, actor=None, world_root=None, action="", room=None):
+def context(bound=None, actor=None, world_root=None, action="", room=None,
+            found=None):
     """The world as a condition sees it."""
     if world_root is None and actor is not None:
         where = room or getattr(actor, "location", None)
         world_root = getattr(where.db, "world_root", None) if where else None
     return Context(dict(bound or {}), actor, world_root, str(action or ""),
-                   room)
+                   room, {} if found is None else found)
 
 
 def _still_here(obj):
@@ -1231,19 +1244,32 @@ def _worn(subject):
     return [obj for obj in _carried(subject) if getattr(obj.db, "worn", False)]
 
 
-def _count_up(subject, value, ctx, pool):
+def _count_up(subject, value, ctx, pool, file_under=False):
     """
     ([(spec, what was found)], could it all be read) for a quantified clause.
 
     The one place `holds`, `not_holds`, `wears` and `not_wears` differ is which
     things they count and which way round they read the answer. Everything
     before that is shared, so it is done once.
+
+    `file_under` is for the two that read the right way round to act on. A spec
+    with an `as` files what it matched into `ctx.found`, so the effects of the
+    same rule can name those very things -- the two lumps of coal this rule
+    counted, and not two others found again by a second search that might
+    answer differently. Only `holds` and `wears` file: what `not_holds` finds
+    is what must *not* be there, and there is nothing to act on in that.
     """
     from world import quantity
 
     specs, ok = quantity.read_all(value, roles=ROLES)
     things = pool(subject)
-    return [(spec, quantity.matching(things, spec, ctx)) for spec in specs], ok
+    counted = []
+    for spec in specs:
+        got = quantity.matching(things, spec, ctx)
+        if file_under and spec.get("as") and ctx.found is not None:
+            ctx.found[spec["as"]] = list(got)
+        counted.append((spec, got))
+    return counted, ok
 
 
 def _unreadable(mood):
@@ -1279,7 +1305,7 @@ def _p_holds(subject, value, condition, ctx, mood):
 
     if not subject.found:
         return _missing(subject, condition, mood)
-    counted, ok = _count_up(subject, value, ctx, _carried)
+    counted, ok = _count_up(subject, value, ctx, _carried, file_under=True)
     if not ok:
         return _unreadable(mood)
     short = [quantity.shortfall(found, spec, ctx)
@@ -1320,7 +1346,7 @@ def _p_wears(subject, value, condition, ctx, mood):
 
     if not subject.found:
         return _missing(subject, condition, mood)
-    counted, ok = _count_up(subject, value, ctx, _worn)
+    counted, ok = _count_up(subject, value, ctx, _worn, file_under=True)
     if not ok:
         return _unreadable(mood)
     short = [quantity.shortfall(found, spec, ctx)

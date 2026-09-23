@@ -1076,7 +1076,14 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
     for obj in list((bound or {}).values()):
         verbs.adopt_named_states(obj, world_root)
 
-    ctx = conditions.context(bound, caller, world_root, verb)
+    # What the conditions of this attempt find, shared by every phase of
+    # it. A check rule that counts out two lumps of coal files them here,
+    # and the carry-out that consumes them names the same two rather than
+    # searching again -- a second search can answer differently, and a
+    # recipe that checks one pair and burns another is the bug this
+    # closes. One dict per attempt, so nothing leaks between two.
+    found = {}
+    ctx = conditions.context(bound, caller, world_root, verb, found=found)
     book = rulebooks.for_attempt(world_root, verb, bound, caller,
                                  verb_rule=rule)
     # The after rules about this attempt are settled here, where it happens,
@@ -1119,7 +1126,8 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                     allow_effects, waiter, redirects + 1)
                 return
         extra = effects_mod.apply(caller, room, aside.get("effects") or [],
-                                  bound=bound, world_root=world_root)
+                                  bound=bound, world_root=world_root,
+                                  found=found)
         counters.note(world_root, verb, bound, caller, counters.DONE)
         release(aside.get("name") or "",
                 events_mod.Event(actor=caller, room=room, verb=verb,
@@ -1222,7 +1230,7 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             and not (allow_effects is not None and _hits_everyone(e))
         ]
         extra = effects_mod.apply(caller, room, allowed, bound=bound,
-                                  world_root=world_root)
+                                  world_root=world_root, found=found)
         if speaks:
             # The effects produced the words, and they are an answer to
             # whoever acted rather than an announcement to the room: a look is
@@ -1251,14 +1259,25 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         # weightless, and the rule saying so lives on `spacecraft` rather than
         # inside `launch`.
         if outcome != "failure":
-            after_ctx = conditions.context(bound, caller, world_root, verb,
-                                           room=room)
-            following = [later for later in afters
-                         if rulebooks.guards_pass(later, after_ctx)]
-            for later in following:
+            # Each after rule keeps its own findings, and that is not the same
+            # decision as when its guards run. The guards still all run first,
+            # together, against the world as carry-out left it -- what differs
+            # is only that a set one rule's guard filed under "fuel" cannot be
+            # read by another rule that happens to use the same word. They are
+            # different rules, written by different people at different times,
+            # and a name is local to the rule that named it.
+            following = []
+            for later in afters:
+                mine = dict(found)
+                if rulebooks.guards_pass(
+                        later, conditions.context(bound, caller, world_root,
+                                                  verb, room=room,
+                                                  found=mine)):
+                    following.append((later, mine))
+            for later, mine in following:
                 extra += effects_mod.apply(
                     caller, room, later.get("effects") or [],
-                    bound=bound, world_root=world_root)
+                    bound=bound, world_root=world_root, found=mine)
 
         _remember(caller, event, actor_text)
         # A contested attempt that came out badly is still a thing that
