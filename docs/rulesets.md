@@ -608,24 +608,47 @@ figure, the rule joining it to dying, and the way back — and that is what the
 ruleset holds. `death.json` declares the group as well, so the dependency is
 written down; registering it again is a fold and a no-op.
 
-### `db.worn` is still an attribute, not a state
+### `worn` and `covered` are states
 
-§2 and §5.3 both said a worn flag should become a state in a `wornness` group,
-and §2.1 said covering should be one too. Neither was done, and the reason is
-worth recording rather than leaving as an unexplained gap.
+Done, after an argument worth recording because the first attempt got the
+reasoning wrong.
 
-What the conversion would buy is visibility in `show_state` and settability by
-`set_state`. What it does *not* buy is anything the condition language needs:
-`wears` and `not_wears` read `db.worn` directly, so the counted wardrobe limits
-in `clothing.json` work exactly as designed without it. What it costs is
-eighteen call sites across `gear`, `npc_gen`, `ownership`, `planner`,
-`quest_gen`, `effects` and the drop commands, plus a migration on every world
-in play that has anything worn in it.
+The case for leaving `db.worn` alone was that the conversion buys visibility
+and settability and costs eighteen call sites plus a migration, while `wears`
+and `not_wears` read the attribute directly — so the counted wardrobe limits
+work either way. That weighed the wrong thing. **`db.worn` was storage no other
+ruleset could have had.** Nothing could write a rule against it, `condition`
+did not print it, `set_state` could not reach it, and a ruleset wanting its own
+idea of being dressed had no way in. Every other fact about a thing in this
+game is a state — lit, open, burning, dead — and clothes had a private slot.
+That is a reason on its own, and it does not depend on any particular use for
+it.
 
-So it was left, and the things that actually mattered were taken: the typeclass
-and the hardcoded limits. Making `worn` a state is a separable change that can
-be made later on its own merits, and `set_state` being able to dress somebody
-while bypassing the limit rules is an argument against rather than for.
+So `worn` and `covered` are states, registered by `clothing.json` like any
+ruleset's vocabulary, which means a world without clothing has neither word.
+`clothing.is_worn` / `is_covered` are the readers, and the eighteen call sites
+now go through them.
+
+Three things fell out of it:
+
+* **"You cannot take off what is covered" is a rule**, not a line inside
+  `take_off`, because `covered` is now testable. A world where a cloak slips
+  off over everything suspends it.
+* **The wear style is not a state.** "Tied loosely around her waist" is text
+  about one garment, not a condition anything could test, and a state register
+  filling up with a phrase per scarf would have lost what the register is for.
+  It lives in `db.wearstyle`; `db.covered_by` likewise stays a pointer, because
+  `covered` is the fact and *which garment* is the detail. Both are written in
+  `_wear` and `_unwear` and nowhere else.
+* **A ruleset's `conditions` section gained `states`.** `apply_states`
+  registers a slug it has never seen, which is the right default and the wrong
+  thing to rely on here: with nobody having said which group `worn` belongs to,
+  `register_state` folds it onto whatever looks similar and may hand back a
+  different word. A ruleset that means one particular word says so when it is
+  seeded.
+
+`examine coat` now reads "It is worn", as it reads "It is lit" for a lamp. That
+is the treatment every other state gets and it was not there before.
 
 ### Clothing and wielding ship switched **on**
 

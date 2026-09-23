@@ -232,7 +232,9 @@ def applies(obj, character):
     if obj.location is not character:
         return False
     if where == "worn":
-        return bool(obj.db.worn)
+        from world import clothing
+
+        return clothing.is_worn(obj)
     if where == "wielded":
         return bool(obj.db.wielded)
     return True
@@ -269,13 +271,15 @@ def _event(character, verb, obj, template, **roles):
 
 def wield(character, obj):
     """Take something in hand. Returns (ok, actor_text, event)."""
+    from world import clothing
+
     name = obj.get_display_name(character)
 
     if obj.location is not character:
         return False, f"You are not carrying {name}.", None
     if obj.db.wielded:
         return False, f"You are already wielding {name}.", None
-    if obj.db.worn:
+    if clothing.is_worn(obj):
         return False, f"You would have to take {name} off first.", None
 
     in_hand = wielded(character)

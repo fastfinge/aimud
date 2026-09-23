@@ -1241,7 +1241,9 @@ def _carried(subject):
 
 
 def _worn(subject):
-    return [obj for obj in _carried(subject) if getattr(obj.db, "worn", False)]
+    from world import clothing
+
+    return [obj for obj in _carried(subject) if clothing.is_worn(obj)]
 
 
 def _count_up(subject, value, ctx, pool, file_under=False):

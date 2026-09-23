@@ -547,7 +547,19 @@ def _apply(world_root, doc, decided):
         if not hasattr(entry, "keys"):
             continue
         entry = dict(entry)
-        verbs.register_group(world_root, entry.pop("group", ""), **entry)
+        members = entry.pop("states", None) or []
+        group = verbs.register_group(world_root, entry.pop("group", ""),
+                                     **entry)
+        # And the states that belong to it, by name.
+        #
+        # `apply_states` registers a slug it has never seen on the way in,
+        # which is the right default and the wrong thing to rely on here: with
+        # nobody having said which group `worn` is in, `register_state` folds
+        # it onto whatever it finds similar, and may hand back a different
+        # slug than the one asked for. A ruleset that means one particular
+        # word says so, once, when it is seeded.
+        for slug in members:
+            verbs.register_state(world_root, str(slug), group=group)
 
     for entry in doc.get("kinds") or []:
         if not hasattr(entry, "keys"):

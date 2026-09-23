@@ -15,7 +15,7 @@ rulesets ship switched on. The point of the switch is that a world can say no.
 from django.test import SimpleTestCase, tag
 
 from tests.base import GameTest
-from world import mechanics, rulesets
+from world import clothing, mechanics, rulesets
 
 
 class TheTable(SimpleTestCase):
@@ -97,7 +97,7 @@ class SwitchingOneOff(GameTest):
             {"direct": self.obj1},
             lambda actor_text, event=None: said.append(actor_text))
         self.assertTrue(took)
-        self.assertTrue(self.obj1.db.worn)
+        self.assertTrue(clothing.is_worn(self.obj1))
 
     def test_and_hands_it_on_when_it_is_off(self):
         """
@@ -111,4 +111,4 @@ class SwitchingOneOff(GameTest):
             {"direct": self.obj1},
             lambda actor_text, event=None: said.append(actor_text))
         self.assertFalse(took)
-        self.assertFalse(self.obj1.db.worn)
+        self.assertFalse(clothing.is_worn(self.obj1))

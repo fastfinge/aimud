@@ -800,6 +800,8 @@ def _apply_one(actor, room, effect, bound, world_root, found=None):
         return " ".join(line for line in moved if line) or None
 
     if etype == "move_contents":
+        from world import clothing
+
         # What "loot" needs, and "empty", "unpack", "tip out" and "rob" with
         # it. Three times over two worlds a model was asked what looting a
         # crate does and answered, in as many words, that it could not say:
@@ -818,7 +820,8 @@ def _apply_one(actor, room, effect, bound, world_root, found=None):
         # takes what it carries and leaves its clothes where they are. A verb
         # that strips somebody is a different rule saying a different thing.
         holding = [obj for obj in holding
-                   if not obj.db.worn and not _protected(obj, room)]
+                   if not clothing.is_worn(obj)
+                   and not _protected(obj, room)]
         if not holding:
             return None
 

@@ -291,6 +291,8 @@ def _for_condition(actor, world_root, condition, depth=0):
     with preconditions of its own -- walking somewhere and picking something up
     are mechanics, and a mechanic has no rulebook to be refused by.
     """
+    from world import clothing
+
     ctype = condition.get("type")
     name = condition.get("object", "")
 
@@ -314,7 +316,8 @@ def _for_condition(actor, world_root, condition, depth=0):
             return None, None
         if ctype == "not_holds" and obj.location is actor:
             return f"drop {obj.key}", None
-        if ctype == "not_worn" and obj.location is actor and obj.db.worn:
+        if (ctype == "not_worn" and obj.location is actor
+                and clothing.is_worn(obj)):
             return f"remove {obj.key}", None
         if ctype == "not_placed" and obj.location is not actor:
             return f"get {obj.key}", None
@@ -382,7 +385,7 @@ def _for_condition(actor, world_root, condition, depth=0):
             if obj.location is actor.location:
                 return f"get {obj.key}", None
             return (_step_towards_object(actor, name), None)
-        if not obj.db.worn:
+        if not clothing.is_worn(obj):
             return f"wear {obj.key}", None
         return None, None
 

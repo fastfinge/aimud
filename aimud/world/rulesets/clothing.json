@@ -9,6 +9,11 @@
   "mechanics": ["clothing"],
   "affordances": ["wear"],
 
+  "conditions": [
+    {"group": "wornness", "exclusive": true, "states": ["worn"]},
+    {"group": "covering", "exclusive": true, "states": ["covered"]}
+  ],
+
   "actions": [
     {
       "action": "wear",
@@ -55,6 +60,15 @@
         {"subject": "actor",
          "not_wears": {"of_kind": "shoe.n.01", "count": 1}}
       ]
+    },
+    {
+      "name": "you cannot take off what is covered",
+      "phase": "check",
+      "action": "remove",
+      "scope": {"world": true},
+      "about": "direct",
+      "when": [{"subject": "direct", "unbound": false}],
+      "conditions": [{"subject": "direct", "lacks": ["covered"]}]
     },
     {
       "name": "there is a limit to what you can get on at once",

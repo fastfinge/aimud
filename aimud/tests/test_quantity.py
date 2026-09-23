@@ -15,7 +15,7 @@ from django.test import SimpleTestCase, tag
 
 from tests.base import GameTest
 from world import conditions as C
-from world import quantity
+from world import quantity, verbs
 
 
 class ReadingASpec(SimpleTestCase):
@@ -131,7 +131,7 @@ class Counting(GameTest):
         if kind:
             obj.db.kinds = [kind]
         if worn:
-            obj.db.worn = True
+            verbs.apply_states(obj, add=["worn"], world_root=self.root)
         return obj
 
     # -- counting ---------------------------------------------------------

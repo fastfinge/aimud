@@ -40,12 +40,12 @@ def _find_carried(caller, query, worn=None):
         found = referents.recall(caller, spoken)
         if found is None or found.location is not caller:
             return None
-        if worn is not None and bool(found.db.worn) != worn:
+        if worn is not None and clothing.is_worn(found) != worn:
             return None
         return found
 
     candidates = [obj for obj in caller.contents
-                  if worn is None or bool(obj.db.worn) == worn]
+                  if worn is None or clothing.is_worn(obj) == worn]
     if not candidates:
         return None
     found = caller.search(text, candidates=candidates, quiet=True)

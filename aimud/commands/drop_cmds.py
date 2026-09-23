@@ -43,7 +43,8 @@ def _undress(character):
         reachable = [garment
                      for garment in clothing.worn_by(character,
                                                      exclude_covered=False)
-                     if not garment.db.covered_by and garment.id not in stuck]
+                     if not clothing.is_covered(garment)
+                     and garment.id not in stuck]
         if not reachable:
             return
         for garment in reachable:

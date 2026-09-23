@@ -71,6 +71,61 @@ AUTOCOVER = {
 #: How long a wear style may be: "tied loosely around her waist".
 WEARSTYLE_MAXLENGTH = 50
 
+#: That a thing is on, and that something else is over it.
+#:
+#: **States, not attributes of their own**, and that is the point rather than
+#: a tidying. `db.worn` was a slot in the database that only this module knew
+#: about: nothing could write a rule against it, `condition` did not print it,
+#: `set_state` could not reach it, and a ruleset that wanted its own idea of
+#: being worn had no way in. Every other fact about a thing in this game is a
+#: state -- lit, open, burning, dead -- and clothes had special storage that
+#: no other ruleset could have had.
+#:
+#: They are registered by `world/rulesets/clothing.json`, like any ruleset's
+#: vocabulary, so a world without clothing has neither.
+#:
+#: The wear *style* is not a state and is stored beside it. "Tied loosely
+#: around her waist" is a piece of text about one garment, not a condition
+#: anything could test; a state is a word from a closed vocabulary, and a
+#: world whose state register filled up with a phrase per scarf would have
+#: lost what the register is for.
+WORN = "worn"
+COVERED = "covered"
+
+#: Where the style lives, and which garment is doing the covering.
+#:
+#: `covered_by` stays a pointer because it answers a different question from
+#: the state beside it: `covered` is the fact, and this is the detail. Both
+#: are written in `_wear` and `_unwear` and nowhere else, so there is one
+#: writer for the pair and they cannot drift.
+WEARSTYLE_ATTR = "wearstyle"
+COVERED_BY_ATTR = "covered_by"
+
+
+def is_worn(obj):
+    """Whether this is on somebody."""
+    from world import verbs
+
+    return obj is not None and WORN in verbs.states(obj)
+
+
+def is_covered(obj):
+    """Whether something else is over this."""
+    from world import verbs
+
+    return obj is not None and COVERED in verbs.states(obj)
+
+
+def covering_of(obj):
+    """What is covering this, or None."""
+    return getattr(obj.db, COVERED_BY_ATTR, None) or None
+
+
+def wearstyle_of(obj):
+    """How this is being worn, as text, or "" for plainly."""
+    style = getattr(obj.db, WEARSTYLE_ATTR, "") or ""
+    return str(style) if isinstance(style, str) else ""
+
 #: The verbs this module owns. An attempt at one of these never reaches a
 #: model, so long as it is really about clothes.
 VERBS = ("wear", "remove", "cover", "uncover")
@@ -93,7 +148,7 @@ def is_garment(obj):
     """
     if obj is None:
         return False
-    if getattr(obj.db, "worn", False):
+    if is_worn(obj):
         return True
     from world import verbs
 
@@ -120,7 +175,7 @@ def worn_by(character, exclude_covered=True):
         return []
     return ordered(
         obj for obj in character.contents
-        if obj.db.worn and not (exclude_covered and obj.db.covered_by))
+        if is_worn(obj) and not (exclude_covered and is_covered(obj)))
 
 
 def single_type_count(garments, kind):
@@ -140,29 +195,53 @@ def _wear(character, garment, wearstyle=True):
     `becoming.mark` before anything changes, because what somebody is wearing
     is a fact a rule may watch: see `world/becoming.py`.
     """
-    from world import becoming
+    from world import becoming, verbs
 
     becoming.mark(character)
-    garment.db.worn = wearstyle
+    root = _root_of(character)
+    setattr(garment.db, WEARSTYLE_ATTR,
+            wearstyle if isinstance(wearstyle, str) else "")
+    verbs.apply_states(garment, add=[WORN], world_root=root, announce=False)
     hides = AUTOCOVER.get(str(garment.db.clothing_type or ""), ())
     covered = [other for other in worn_by(character, exclude_covered=False)
                if other is not garment
                and str(other.db.clothing_type or "") in hides]
     for other in covered:
-        other.db.covered_by = garment
+        _cover(other, garment, root)
     return covered
+
+
+def _cover(garment, covering, root=None):
+    """Put one garment under another: the fact and the detail together."""
+    from world import verbs
+
+    setattr(garment.db, COVERED_BY_ATTR, covering)
+    verbs.apply_states(garment, add=[COVERED],
+                       world_root=root or _root_of(garment), announce=False)
+
+
+def _uncover(garment, root=None):
+    """And take it back out from under."""
+    from world import verbs
+
+    setattr(garment.db, COVERED_BY_ATTR, None)
+    verbs.apply_states(garment, remove=[COVERED],
+                       world_root=root or _root_of(garment), announce=False)
 
 
 def _unwear(character, garment):
     """Take it off, revealing whatever it hid. Answers with what it revealed."""
-    from world import becoming
+    from world import becoming, verbs
 
     becoming.mark(character)
-    garment.db.worn = False
+    root = _root_of(character)
+    setattr(garment.db, WEARSTYLE_ATTR, "")
+    verbs.apply_states(garment, remove=[WORN], world_root=root,
+                       announce=False)
     revealed = []
     for other in character.contents:
-        if other.db.covered_by is garment:
-            other.db.covered_by = False
+        if covering_of(other) is garment:
+            _uncover(other, root)
             revealed.append(other)
     return revealed
 
@@ -183,10 +262,10 @@ def leaving(garment, destination):
     because there is no garment class any more -- wearability is an affordance
     and any object may have it. See `is_garment`.
     """
-    if not getattr(garment.db, "covered_by", None) in (None, False):
+    if covering_of(garment) is not None:
         return False
     wearer = garment.location
-    if garment.db.worn and wearer is not None and wearer is not destination:
+    if is_worn(garment) and wearer is not None and wearer is not destination:
         _unwear(wearer, garment)
         _revalue(wearer)
     return True
@@ -216,8 +295,8 @@ def item_name(obj, looker=None):
 def _garment_name(garment, looker=None):
     """A garment as it reads in a sentence, wear style and all."""
     name = item_name(garment, looker)
-    style = garment.db.worn
-    return f"{name} {style}" if isinstance(style, str) and style else name
+    style = wearstyle_of(garment)
+    return f"{name} {style}" if style else name
 
 
 def describe_outfit(character, looker=None):
@@ -248,7 +327,7 @@ def carried_by(character):
     if character is None:
         return []
     return [obj for obj in character.contents
-            if not obj.db.worn and getattr(obj, "destination", None) is None]
+            if not is_worn(obj) and getattr(obj, "destination", None) is None]
 
 
 def own_appearance(character, base_desc):
@@ -396,7 +475,7 @@ def put_on(character, garment, wearstyle=True):
         return _refuse("That is not something you can wear.")
     if garment.location is not character:
         return _refuse("You would have to be holding that first.")
-    if garment.db.worn:
+    if is_worn(garment):
         return _refuse(f"You are already wearing "
                        f"{item_name(garment, character)}.")
 
@@ -420,13 +499,22 @@ def put_on(character, garment, wearstyle=True):
 
 
 def take_off(character, garment):
-    """Remove a worn garment. Returns (removed, wearer text, room text)."""
-    if not is_garment(garment) or not garment.db.worn:
+    """
+    Remove a worn garment. Returns (removed, wearer text, room text).
+
+    What may be taken off is a rule, for the reason the wardrobe limits are:
+    "you cannot take off what is covered" is true of most worlds and not of
+    all, and a world where a cloak slips off over everything says so by
+    suspending one rule. Asked through `attempt.permitted`, as `put_on` asks.
+    """
+    from world import attempt
+
+    if not is_garment(garment) or not is_worn(garment):
         return _refuse("You are not wearing that.")
-    if covering := garment.db.covered_by:
-        return _refuse(f"You would have to take off "
-                       f"{item_name(covering, character)} "
-                       f"first.")
+
+    refused = attempt.permitted(character, "remove", {"direct": garment})
+    if refused:
+        return _refuse(refused)
 
     label = _garment_name(garment, character)
     revealed = _unwear(character, garment)
@@ -442,20 +530,20 @@ def take_off(character, garment):
 
 def cover_with(character, garment, covering):
     """Hide one worn garment under another. Returns (ok, wearer text, room text)."""
-    if not is_garment(garment) or not garment.db.worn:
+    if not is_garment(garment) or not is_worn(garment):
         return _refuse("You are not wearing that.")
     if not is_garment(covering):
         return _refuse("You cannot cover anything with that.")
     if garment is covering:
         return _refuse("That would cover nothing.")
-    if garment.db.covered_by:
+    if is_covered(garment):
         return _refuse("That is covered up already.")
 
-    if not covering.db.worn:
+    if not is_worn(covering):
         worn_ok, actor_text, event = put_on(character, covering)
         if not worn_ok:
             return False, actor_text, event
-    garment.db.covered_by = covering
+    _cover(garment, covering)
 
     label = _garment_name(garment, character)
     over = _garment_name(covering, character)
@@ -467,9 +555,9 @@ def cover_with(character, garment, covering):
 
 def uncover(character, garment):
     """Reveal a covered garment. Returns (ok, wearer text, room text)."""
-    if not is_garment(garment) or not garment.db.covered_by:
+    if not is_garment(garment) or not is_covered(garment):
         return _refuse("That is not covered by anything.")
-    garment.db.covered_by = False
+    _uncover(garment)
     label = _garment_name(garment, character)
     return (True, f"You uncover {label}.",
             _event(character, "uncover", garment,
@@ -497,7 +585,7 @@ def handle(caller, verb, bound, on_message):
     if verb in ("wear", "remove"):
         if not wearable(garment):
             return False
-        if verb == "remove" and not garment.db.worn:
+        if verb == "remove" and not is_worn(garment):
             # A garment being put away rather than taken off; that is a move,
             # and the world may have its own idea of what removing it means.
             return False
@@ -512,7 +600,7 @@ def handle(caller, verb, bound, on_message):
         _deliver(on_message, cover_with(caller, garment, covering))
         return True
 
-    if not is_garment(garment) or not garment.db.covered_by:
+    if not is_garment(garment) or not is_covered(garment):
         return False
     _deliver(on_message, uncover(caller, garment))
     return True

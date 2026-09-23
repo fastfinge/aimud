@@ -50,7 +50,7 @@ class Wearing(GameCommandTest):
 
         said = self.call(CmdWear(), "coat")
         self.assertIn("put on", said)
-        self.assertTrue(self.coat.db.worn)
+        self.assertTrue(clothing.is_worn(self.coat))
 
     def test_and_a_refusal_is_a_sentence(self):
         """
@@ -64,7 +64,7 @@ class Wearing(GameCommandTest):
         self.coat.db.kinds = []
         said = self.call(CmdWear(), "coat")
         self.assertTrue(said.strip())
-        self.assertFalse(self.coat.db.worn)
+        self.assertFalse(clothing.is_worn(self.coat))
 
     def test_taking_it_off_works(self):
         from commands.clothing_cmds import CmdRemove, CmdWear
@@ -72,7 +72,7 @@ class Wearing(GameCommandTest):
         self.call(CmdWear(), "coat")
         said = self.call(CmdRemove(), "coat")
         self.assertTrue(said.strip())
-        self.assertFalse(self.coat.db.worn)
+        self.assertFalse(clothing.is_worn(self.coat))
 
     def test_and_being_refused_the_removal_says_so(self):
         from commands.clothing_cmds import CmdRemove
@@ -94,7 +94,7 @@ class Wearing(GameCommandTest):
         self.call(CmdWear(), "coat")
         said = self.call(CmdRemove(), "it")
         self.assertNotIn("not wearing", said)
-        self.assertFalse(self.coat.db.worn)
+        self.assertFalse(clothing.is_worn(self.coat))
 
     def test_a_pronoun_meaning_nothing_is_refused_plainly(self):
         from commands.clothing_cmds import CmdWear
@@ -194,3 +194,132 @@ class HowMuchYouMayWear(GameCommandTest):
         worn, said, _event = clothing.put_on(self.char1, loose)
         self.assertFalse(worn)
         self.assertIn("holding", said)
+
+
+@tag("world")
+class BeingWornIsAState(GameCommandTest):
+    """
+    The point of the conversion, which is not tidiness.
+
+    `db.worn` was a slot in the database that only `world.clothing` knew
+    about. Nothing could write a rule against it, `condition` did not print
+    it, `set_state` could not reach it, and a ruleset that wanted its own idea
+    of being dressed had no way in -- so clothes had storage no other ruleset
+    could have had. Every other fact about a thing here is a state.
+    """
+
+    loose_objects = 1
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.room1.db.world_root = self.root
+        self.room1.db.is_world_root = True
+        from world import rulesets
+
+        rulesets.seed(self.root)
+        self.coat = self.obj1
+        self.coat.key = "coat"
+        self.coat.db.affordances = {"wear": True}
+        self.coat.db.clothing_type = "top"
+        self.coat.move_to(self.char1, quiet=True)
+
+    def test_wearing_it_puts_it_in_that_state(self):
+        from world import verbs
+
+        clothing.put_on(self.char1, self.coat)
+        self.assertIn("worn", verbs.states(self.coat))
+
+    def test_and_taking_it_off_takes_it_out(self):
+        from world import verbs
+
+        clothing.put_on(self.char1, self.coat)
+        clothing.take_off(self.char1, self.coat)
+        self.assertNotIn("worn", verbs.states(self.coat))
+
+    def test_a_rule_can_ask_about_it_like_any_other_state(self):
+        """Which nothing could do while it was an attribute of its own."""
+        from world import conditions as C
+
+        clothing.put_on(self.char1, self.coat)
+        ctx = C.context({"direct": self.coat}, self.char1, self.root)
+        self.assertTrue(
+            C.evaluate({"subject": "direct", "is": ["worn"]}, ctx))
+        self.assertTrue(
+            C.evaluate({"subject": "actor", "wears": ["coat"]}, ctx))
+
+    def test_the_states_come_from_the_ruleset(self):
+        """
+        A world without clothing has neither word, which is what makes this
+        a ruleset's vocabulary rather than the engine's.
+        """
+        from world import rulesets, verbs
+
+        self.assertEqual(verbs.group_of(self.root, "worn"), "wornness")
+        self.assertIn("worn", rulesets.get("clothing")["conditions"][0]["states"])
+
+    def test_the_wear_style_is_not_a_state(self):
+        """
+        "Tied loosely around her waist" is text about one garment, not a
+        condition anything could test. A state register filling up with a
+        phrase per scarf would have lost what the register is for.
+        """
+        from world import verbs
+
+        clothing.put_on(self.char1, self.coat, wearstyle="slung over a arm")
+        self.assertEqual(verbs.states(self.coat), {"worn"})
+        self.assertIn("slung", clothing.wearstyle_of(self.coat))
+
+
+@tag("world")
+class Covering(GameCommandTest):
+    """Covering is a state too, and what it refuses is a rule."""
+
+    loose_objects = 2
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.room1.db.world_root = self.root
+        self.room1.db.is_world_root = True
+        from world import rulesets
+
+        rulesets.seed(self.root)
+        for obj, kind in ((self.obj1, "undershirt"), (self.obj2, "top")):
+            obj.db.affordances = {"wear": True}
+            obj.db.clothing_type = kind
+            obj.move_to(self.char1, quiet=True)
+        self.obj1.key, self.obj2.key = "shirt", "coat"
+
+    def test_putting_a_coat_over_a_shirt_covers_it(self):
+        clothing.put_on(self.char1, self.obj1)
+        clothing.put_on(self.char1, self.obj2)
+        self.assertTrue(clothing.is_covered(self.obj1))
+        self.assertIs(clothing.covering_of(self.obj1), self.obj2)
+
+    def test_and_you_cannot_take_the_shirt_off_first(self):
+        """
+        A rule now, not a line inside `take_off` -- so a world where a cloak
+        slips off over everything says so by suspending it.
+        """
+        clothing.put_on(self.char1, self.obj1)
+        clothing.put_on(self.char1, self.obj2)
+        off, said, _event = clothing.take_off(self.char1, self.obj1)
+        self.assertFalse(off, said)
+
+    def test_and_a_world_that_suspends_that_rule_may(self):
+        from world import rulebooks
+
+        clothing.put_on(self.char1, self.obj1)
+        clothing.put_on(self.char1, self.obj2)
+        rule = next(r for r in rulebooks.all_rules(self.root)
+                    if r["name"] == "you cannot take off what is covered")
+        rulebooks.set_listed(self.root, rule["id"], False)
+        off, said, _event = clothing.take_off(self.char1, self.obj1)
+        self.assertTrue(off, said)
+
+    def test_taking_the_coat_off_uncovers_the_shirt(self):
+        clothing.put_on(self.char1, self.obj1)
+        clothing.put_on(self.char1, self.obj2)
+        clothing.take_off(self.char1, self.obj2)
+        self.assertFalse(clothing.is_covered(self.obj1))

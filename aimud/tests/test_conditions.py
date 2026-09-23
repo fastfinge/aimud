@@ -91,7 +91,7 @@ class Predicates(GameTest):
         self.obj1.move_to(self.char1, quiet=True)
         self.assertFalse(
             C.evaluate({"subject": "actor", "wears": ["Obj"]}, self.ctx))
-        self.obj1.db.worn = True
+        verbs.apply_states(self.obj1, add=["worn"], world_root=self.root)
         self.assertTrue(
             C.evaluate({"subject": "actor", "wears": ["Obj"]}, self.ctx))
 
