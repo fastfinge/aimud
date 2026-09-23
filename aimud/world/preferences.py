@@ -1015,6 +1015,39 @@ def listing(ctx):
     return "\n".join(lines)
 
 
+_SETTING_WORDS = None
+
+
+def setting_words():
+    """
+    Every word `settings` answers to after its own name, whoever is asking.
+
+    Context-free on purpose. The parser wants this before there is a caller to
+    build a context for, and a word that means a setting for one player has to
+    mean it for everybody: otherwise `set mode` would change hands as somebody
+    walked into a world they had made. Read off the register rather than
+    written out, so a setting added tomorrow is in it. See
+    `commands.settings_cmds.CmdSettings.claims_input`.
+    """
+    global _SETTING_WORDS
+    if _SETTING_WORDS is not None:
+        return _SETTING_WORDS
+
+    found = {"list"}
+    for key, _label, _scope, form, _about, _visible in GROUPS:
+        found.add(key)
+        if not callable(form.items):
+            for item in form.items:
+                found.update(item.names())
+    # The one group whose entries are built per caller. They are the same
+    # entries every time -- what varies is whether there is a world to show
+    # them for -- so asking for them with no context is safe.
+    for item in _you_here_items(None):
+        found.update(item.names())
+    _SETTING_WORDS = frozenset(found)
+    return _SETTING_WORDS
+
+
 def static_fields():
     """(group key, field) for every setting whose description needs no context."""
     for key, _label, _scope, form, _about, _visible in GROUPS:

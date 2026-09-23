@@ -28,6 +28,10 @@ class CmdScore(Command):
       score
       score <trait>
 
+    |wscore|n is the short way to type |wview score|n: everything after either
+    works the same, so |wview score light|n and |wscore light|n are one trait
+    either way.
+
     Shows each of your traits, what it currently stands at, and the word this
     world uses for standing there. Anything changing on its own -- a poison
     working through you, a skill coming back with rest -- says so. On its own

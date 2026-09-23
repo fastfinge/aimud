@@ -24,11 +24,13 @@ class Staff(CmdSet):
 
     def at_cmdset_creation(self):
         from commands.look_take_cmds import CmdAILook
+        from commands.settings_cmds import CmdSettings
 
         self.add(CmdOpen())
         self.add(CmdExamine())
         self.add(CmdForce())
         self.add(CmdAILook())
+        self.add(CmdSettings())
 
 
 class Parsing(GameTest):
@@ -58,6 +60,17 @@ class InsideAWorld(Parsing):
 
     def test_the_games_own_commands_need_no_prefix(self):
         self.assertEqual(self.matched("look lantern"), ["look"])
+
+    def test_set_before_a_setting_is_the_settings_command(self):
+        for raw in ("set", "set busy 30", "set general"):
+            self.assertEqual(self.matched(raw), ["settings"], raw)
+
+    def test_set_before_anything_else_is_left_for_the_world(self):
+        for raw in ("set the table", "set a trap"):
+            self.assertEqual(self.matched(raw), [], raw)
+
+    def test_the_long_spellings_are_always_the_command(self):
+        self.assertEqual(self.matched("settings the table"), ["settings"])
 
     def test_an_account_caller_is_placed_by_what_it_puppets(self):
         account = mock.Mock(spec=["puppet"])

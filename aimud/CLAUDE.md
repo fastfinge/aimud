@@ -102,7 +102,7 @@ All in-game entities are Python classes that inherit from Evennia defaults. The 
 - `command.py` — base `Command` class; all game commands subclass this
 - `default_cmdsets.py` — four cmdset classes (`CharacterCmdSet`, `AccountCmdSet`, `UnloggedinCmdSet`, `SessionCmdSet`) that wrap Evennia defaults; add/override commands in `at_cmdset_creation()`
 - `verbs.py` — the eight verb commands: `create`, `edit`, `delete`, `reset`, `view`, `import`, `export`, `enter`. Each only finds a subject and hands over the rest of the line.
-- `subjects.py` — the subject registry, and helpers every subject shares (`require_world`, `require_owner`, `answered`, `asking`). `SUBJECT_MODULES` lists the modules that define subjects: `world_subject.py`, `rules_subject.py`, `contents_subject.py`, `upkeep_subject.py`.
+- `subjects.py` — the subject registry, and helpers every subject shares (`require_world`, `require_owner`, `answered`, `asking`). `SUBJECT_MODULES` lists the modules that define subjects: `world_subject.py`, `rules_subject.py`, `contents_subject.py`, `upkeep_subject.py`, `settings_subject.py`, `score_subject.py`.
 - `settings_cmds.py` — `settings`, over the register in `world/preferences.py`.
 
 **Adding something a player makes, changes or reads belongs in a subject, not a

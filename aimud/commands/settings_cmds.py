@@ -22,7 +22,13 @@ class CmdSettings(Command):
       settings <name> default
 
     |wsettings|n is the short way to type |wedit settings|n: everything after
-    either works the same. |wview settings|n is the same as |wsettings list|n.
+    either works the same, so |wsettings mode always|n and |wedit settings mode
+    always|n do the same thing. |wset|n is shorter still.
+
+    |wview settings|n reads them instead of changing them, and takes a name
+    the same way: |wview settings mode|n says what one setting stands at
+    without offering to change it. |wview settings|n on its own is the whole
+    list.
 
     On its own it opens a menu of groups: General, Confirmations, API key and
     address, Models, and, inside a world, You in this world and (if you made
@@ -42,10 +48,30 @@ class CmdSettings(Command):
     """
 
     key = "settings"
-    aliases = ["setting"]
+    aliases = ["setting", "set"]
     locks = "cmd:all()"
     help_category = "Account"
     account_caller = True
+
+    #: Spellings a world may want back. See `claims_input`.
+    GUARDED = ("set",)
+
+    def claims_input(self, cmdname, args):
+        """
+        Whether this input is ours, inside a generated world.
+
+        "set the table" is something a character does, and a world that has
+        learned `set` should get it. So the short spelling is the command's
+        only when it is typed alone or what follows names a setting; the long
+        ones always are, because no world needs the word "settings" and the
+        complaint it gives back is worth more than the word is. The same rule
+        the verb commands follow -- `reset world` is ours, `reset the trap` is
+        the world's. See `server/conf/cmdparser.py`.
+        """
+        if str(cmdname or "").lower() not in self.GUARDED:
+            return True
+        words = str(args or "").split()
+        return not words or words[0].lower() in preferences.setting_words()
 
     def func(self):
         ctx = menus.Context(self.caller, session=self.session)

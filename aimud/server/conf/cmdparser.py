@@ -25,6 +25,8 @@ command change meaning as a world learns.
 **The verb commands follow a rule of their own.** `create`, `reset`, `view`
 and the rest take input in a world only when it names one of their subjects,
 or nothing: `reset world` is the command and `reset the trap` is the world's.
+Any command may follow the same rule by defining `claims_input`, which is how
+`set busy 30` reaches the settings while `set the table` reaches the world.
 See `claims`.
 
 **Which commands.** Those defined in Evennia's building, admin and system
@@ -79,15 +81,22 @@ def claims(match):
     typed alone or followed by one of their subjects -- `reset world` -- and
     anything else is left for the world: `reset the trap`, `view the mural`.
     The subjects come from `commands.subjects`, which a world cannot add to,
-    so what a command claims never changes as a world learns. Every other
-    command claims whatever it matched. docs/commands-and-settings.md §2.
-    """
-    verb = getattr(match[2], "verb", "")
-    if not verb:
-        return True
-    from commands import subjects
+    so what a command claims never changes as a world learns.
 
-    return subjects.claims(verb, match[1])
+    Any other command may decide the same question for itself by defining
+    `claims_input(cmdname, args)`, which is how `set` stays available to a
+    world that wants it for "set the table" while `set busy 30` is still the
+    settings command. One that says nothing claims whatever it matched.
+    docs/commands-and-settings.md §2.
+    """
+    command = match[2]
+    verb = getattr(command, "verb", "")
+    if verb:
+        from commands import subjects
+
+        return subjects.claims(verb, match[1])
+    own = getattr(command, "claims_input", None)
+    return True if own is None else bool(own(match[0], match[1]))
 
 
 def is_staff(command):

@@ -472,9 +472,10 @@ Beyond that:
 
 | Command | What it does |
 |---|---|
-| `settings` / `edit settings` | Every preference in one menu: still-working notices, confirmations, your API key and address, models, and inside a world your name, looks and pronouns there, and (for its creator) how the world runs. |
+| `settings` / `set` / `edit settings` | Every preference in one menu: still-working notices, confirmations, your API key and address, models, and inside a world your name, looks and pronouns there, and (for its creator) how the world runs. |
 | `settings list` / `view settings` | Every setting at once, with what it is set to and the name to type. |
-| `settings <name> [<value> \| default]` | One setting: `settings busy 30`, `settings apikey <key>`, `settings models dialogue temperature 0.9`. `help <name>` explains any of them. |
+| `settings <name> [<value> \| default]` | One setting: `settings busy 30`, `set mode always`, `settings models dialogue temperature 0.9`. `edit settings <name> <value>` is the same line spelled out. `help <name>` explains any of them. |
+| `view settings [<name>]` | The same settings read rather than changed: `view settings mode` is one of them, `view settings general` one group. |
 
 ### World
 
@@ -519,7 +520,7 @@ the next word is one of their subjects: `reset world` resets the world, while
 | `follow <person>` / `follow` | Travel with somebody, or stop. |
 | `pose <action>` / `emote` | Emote. |
 | `remember <question>` / `recall` | Ask your own memory something. On its own, asks what you want to remember. |
-| `score [trait]` / `traits` / `sheet` | Your traits, what they stand at, and what is lending you the difference. On its own, offers each trait by number. |
+| `score [trait]` / `view score [trait]` / `traits` / `sheet` | Your traits, what they stand at, and what is lending you the difference. On its own, offers each trait by number. |
 | `wear` / `remove` / `cover <worn> with <item>` / `uncover` / `inventory` | Clothing. `don` and `doff` also work. |
 | `wield <thing>` / `unwield <thing>` | Take something in hand, or lower it. Two hands, so a sword and a shield. |
 | `quests` / `quests hint` / `quests accept \| decline \| abandon` | Errands. `quest` also works. On its own, shows the list and offers whichever of the others apply. Abandoning asks first. |

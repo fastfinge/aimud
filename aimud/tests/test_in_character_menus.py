@@ -151,6 +151,53 @@ class Score(_Menus):
 
 
 @tag("world")
+class ScoreAsASubject(_Menus):
+    """`view score` is `score`, and `view score <trait>` is `score <trait>`."""
+
+    def _one_trait(self):
+        trait = mock.Mock(value=12, max=None, rate=0)
+        trait.name = "Composure"
+        return mock.patch("world.traits.all_of",
+                          return_value=[("composure", trait)]), \
+            mock.patch("world.traits.vocabulary", return_value={}), \
+            mock.patch("world.traits._worded", return_value=""), \
+            mock.patch("world.gear.describe", return_value="")
+
+    def _view(self, args):
+        from commands.verbs import CmdView
+
+        command = CmdView()
+        command.caller = self.char1
+        command.args = args
+        command.session = None
+        command.parse()
+        command.func()
+        return self.heard[-1] if self.heard else ""
+
+    def test_view_score_shows_the_whole_score(self):
+        for patcher in self._one_trait():
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.assertIn("|wComposure|n: 12", self._view("score"))
+
+    def test_view_score_takes_a_trait_the_way_score_does(self):
+        for patcher in self._one_trait():
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        said = self._view("score composure")
+        self.assertIn("|wComposure|n: 12", said)
+        # One trait, not the menu of all of them.
+        self.assertNotIn("One of them:", said)
+
+    def test_view_offers_it(self):
+        from commands import subjects
+
+        keys = [item.key for item in
+                subjects.verb_form("view").items_for(menus.Context(self.char1))]
+        self.assertIn("score", keys)
+
+
+@tag("world")
 class NameAndPronouns(_Menus):
     accounts = True
 

@@ -346,6 +346,35 @@ class SettingsAsASubject(_Settings):
 
         self.assertIn("Still-working notices", self.call(CmdView(), "settings"))
 
+    def test_the_whole_line_is_forwarded_word_for_word(self):
+        """`edit settings <name> <value>` is `settings <name> <value>`."""
+        from commands.verbs import CmdEdit
+
+        self.call(CmdEdit(), "settings pagesize 25")
+        self.assertEqual(menus.page_size(self.account), 25)
+        self.call(CmdEdit(), "settings pagesize default")
+        self.assertEqual(menus.page_size(self.account), menus.PAGE_SIZE)
+
+    def test_view_settings_takes_a_name_like_view_effects_does(self):
+        from commands.verbs import CmdView
+
+        said = self.call(CmdView(), "settings busy")
+        self.assertIn("Still-working notices", said)
+        self.assertIn("settings busy", said)
+
+    def test_view_settings_takes_a_group_name_too(self):
+        from commands.verbs import CmdView
+
+        said = self.call(CmdView(), "settings general")
+        self.assertIn("Still-working notices", said)
+        self.assertIn("Choices per page", said)
+
+    def test_view_settings_says_so_when_there_is_no_such_setting(self):
+        from commands.verbs import CmdView
+
+        self.assertIn("no setting called", self.call(CmdView(),
+                                                     "settings frobnicate"))
+
     def test_edit_and_view_both_offer_it(self):
         from commands import subjects
 
@@ -354,6 +383,40 @@ class SettingsAsASubject(_Settings):
             keys = [item.key for item in
                     subjects.verb_form(verb).items_for(ctx)]
             self.assertIn("settings", keys, verb)
+
+
+@tag("world")
+class SetIsTheShortSpelling(_Settings):
+    """`set` reaches the settings, without taking the word from a world."""
+
+    def test_it_changes_a_setting(self):
+        command = CmdSettings()
+        command.cmdname = "set"
+        self.assertIn("25 choices at a time",
+                      self.call(command, "pagesize 25", cmdstring="set"))
+        self.assertEqual(menus.page_size(self.account), 25)
+
+    def test_typed_alone_or_before_a_setting_it_is_ours(self):
+        command = CmdSettings()
+        for args in ("", "list", "pagesize", "pagesize 25", "general",
+                     "mode always"):
+            self.assertTrue(command.claims_input("set", args), args)
+
+    def test_before_anything_else_it_is_left_for_the_world(self):
+        command = CmdSettings()
+        for args in ("the table", "a trap", "the dial to three"):
+            self.assertFalse(command.claims_input("set", args), args)
+
+    def test_the_long_spellings_always_claim_what_they_matched(self):
+        command = CmdSettings()
+        for name in ("settings", "setting"):
+            self.assertTrue(command.claims_input(name, "the table"), name)
+
+    def test_every_setting_is_a_word_it_answers_to(self):
+        words = preferences.setting_words()
+        for group, field in preferences.static_fields():
+            self.assertIn(field.key, words, field.key)
+            self.assertIn(group, words, group)
 
 
 @tag("world")
