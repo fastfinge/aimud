@@ -3,15 +3,15 @@ AI-powered fallback for unrecognized commands in AI worlds.
 
 Flow:
   0. Bare directional input ("north", "n", "ne", "up", ...) that matched no exit
-     is refused outright.  The validator is not consulted: a direction the room
-     has no exit for is impossible by definition, not a matter of judgement.
+     is refused outright.  Nothing is asked: a direction the room has no exit
+     for is impossible by definition, not a matter of judgement.
   1. Player types an unrecognized command.
   2. Cache check (object → room → player). Cache entries are dicts:
        {"response": str, "effects": list, "repeatable": bool}
      - Non-repeatable hit: show response only (effects already applied once).
      - Repeatable hit: show response AND re-apply effects (e.g. brew another potion).
-  3. On miss: validate with the validator model, then generate with the commands
-     model. Show the response, apply effects, cache the entry.
+  3. On miss: generate with the commands model. Show the response, apply
+     effects, cache the entry.
 
 Cache storage keys:
   object  — obj.db.ai_commands[cmd_verb]

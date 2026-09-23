@@ -9,6 +9,10 @@ a generator can be called without a world or an account behind it.
 And, for code that offers tools, a way to write the tool calls a model would
 send back (`tool_call`, `tool_reply`), and a clock a test can move by hand.
 
+`deciding` is `replying`'s sibling for the decision model, which is asked
+through the same door and answers a different shape -- numbers rather than
+anything said. See `world.decisions`.
+
 The door is `world.llm.fetch`. Without a running reactor a `deferToThread`
 callback never fires -- so a test that drove a generator through one would pass
 having asserted nothing, which is the worst way for a test to behave.
@@ -124,6 +128,65 @@ def replying(*answers, tools=None):
 
     with mock.patch.object(llm, "call", fake_call), \
             mock.patch.object(llm, "ask", fake_ask):
+        yield Recorder()
+
+
+@contextlib.contextmanager
+def deciding(*answers):
+    """
+    Answer as the decision model would, from a script rather than the network.
+
+    The sibling of `replying` for `world.decisions`, and the same contract:
+    one argument per call, used in order, the last repeated. An `Exception` is
+    raised instead of answered, for a test about the error path.
+
+    Each answer is written the way a test means it and expanded here:
+
+    * a `dict` of {question name: number} becomes the `noul` shape the service
+      sends back, which is the form almost every test wants;
+    * a `dict` already carrying typed answers is sent as it stands, for a test
+      about a `choice` or a `score`, or about a reply that is malformed;
+    * a bare number answers whatever single question was asked, so a test with
+      one question need not name it.
+
+    Records what was asked: `recorder.state(0)` and `recorder.questions(0)`,
+    which between them are everything there is to assert about a decision --
+    what the model was told, and what it was asked about it.
+    """
+    scripted = list(answers) or [{}]
+    asked = []      # (state, questions) for each call, in order
+
+    def fake_decide(sponsor, model, state, questions,
+                    timeout=llm.DECIDE_TIMEOUT):
+        asked.append((state, questions))
+        answer = scripted[min(len(asked) - 1, len(scripted) - 1)]
+        if isinstance(answer, Exception):
+            raise answer
+        if isinstance(answer, (int, float)) and not isinstance(answer, bool):
+            answer = {name: answer for name in questions}
+        return {name: value if isinstance(value, dict)
+                else {"type": "noul", "noul": float(value)}
+                for name, value in (answer or {}).items()}
+
+    class Recorder:
+        @property
+        def count(self):
+            return len(asked)
+
+        def state(self, index=0):
+            """What the model was told, as the caller gave it."""
+            return asked[index][0]
+
+        def questions(self, index=0):
+            """What it was asked, as the caller gave it."""
+            return asked[index][1]
+
+        def told(self, index=0):
+            """Everything in one call's state, as a single string."""
+            return "\n".join(str(value)
+                             for value in (asked[index][0] or {}).values())
+
+    with mock.patch.object(llm, "decide", fake_decide):
         yield Recorder()
 
 

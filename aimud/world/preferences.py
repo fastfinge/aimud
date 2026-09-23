@@ -39,8 +39,17 @@ ACCOUNT = "account"
 CHARACTER_IN_WORLD = "character_in_world"
 WORLD = "world"
 
-#: Every job the game asks a model to do, in the order the models menu lists
-#: them. Moved here from the old models menu, which was its only reader.
+#: Every job the game asks a *chat* model to do, in the order the models menu
+#: lists them. Moved here from the old models menu, which was its only reader.
+#:
+#: There was a "validation" entry, for deciding whether a thing could be in a
+#: room and whether it could be picked up. Those go to a decision model now
+#: (`world.decisions`), which is pinned rather than chosen: its thresholds are
+#: calibrated against one version, and there is no other model whose
+#: probabilities would mean the same thing. Listing it here would offer a
+#: choice that changed nothing, so it is not listed. The world's *rules* text
+#: is still called validation and is still a thing a player writes -- that is
+#: `lore.FACETS`, and it feeds what the decision model is told.
 JOBS = [
     ("default", "Default model when no function-specific model is set"),
     ("rooms", "Room descriptions and world planning"),
@@ -51,7 +60,6 @@ JOBS = [
     ("dialogue", "NPC dialogue generation"),
     ("memory", "Answering the remember command"),
     ("quests", "Turning an NPC's request into a checkable quest"),
-    ("validation", "Player input validation"),
     ("commands", "Command and object behavior creation"),
     ("menus", "Filling in a menu field for you, when you type ~"),
 ]

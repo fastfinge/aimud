@@ -1,30 +1,30 @@
 """
 AI-powered item validation and generation.
 
-Two models are used (configured separately under `settings models`):
-  validation — decides whether an object/action makes sense
-  items       — creates the object with name, description, and takeability
+Two kinds of model are used. Whether a thing could be here, and whether it can
+be picked up, go to the decision model in `world.decisions` -- they are single
+bits and it answers those without generating anything. Making the thing, once
+it may exist, is a generation and goes to the `items` chat model (configured
+under `settings models`).
+
+The two validators still hand a `reason` to their callbacks. It is usually
+empty now, because a decision model writes no prose and every caller was
+already throwing the sentence away. What survives is the one reason the game
+knows itself rather than asking for: a thing refused for being part of
+somebody can say so, which is a better answer than "you don't see any".
 """
 
-from world import llm
+from world import decisions, llm
 
-
-_EXISTENCE_SYSTEM_PROMPT = """You are a game master for a text MUD deciding if an object could plausibly exist in a room.
-Answer by calling judge_existence.
-Be permissive — if it's plausible for the world and room, say valid.
-Deny only clear impossibilities (e.g. a spaceship in a medieval dungeon).
-
-One thing is never valid however plausible it sounds: part of a living body.
-A hand, a shoulder, hair, a wing, an antenna belongs to whoever has it and is
-not a separate object, so answer invalid — otherwise it is built and left
-lying on the floor. This is about bodies only: part of a made thing (a door
-handle, a table leg, a page of a book) is fine, and so is a part that has
-plainly been cut free — a severed hand, a mounted stag's head, a bone."""
-
-_TAKEABILITY_SYSTEM_PROMPT = """You are a game master deciding if a player can pick up an object in a MUD.
-Answer by calling judge_takeable.
-Fixed features (walls, doors, floor, built-in or very heavy furniture) cannot be taken.
-Portable items (weapons, tools, books, loose objects) can be taken."""
+#: Why a thing was refused, when the refusal is one the game understands well
+#: enough to explain. A whole sentence, ready to show, because the game writes
+#: it rather than asking for it -- a decision model returns numbers and no
+#: prose, so there is nothing here that came from a model.
+#:
+#: There is exactly one so far, and it earns saying: "you don't see any
+#: shoulder here" is a lie about a shoulder plainly attached to somebody
+#: standing in the room, and a player told it has no way to learn the rule.
+PART_OF_SOMEBODY = "That is part of somebody, not a thing lying about."
 
 _ITEM_SYSTEM_PROMPT = """You generate items for a text-based MUD.
 Answer by calling make_item.
@@ -274,67 +274,85 @@ class Wanted:
 def validate_object_existence(sponsor, room, object_name, on_valid, on_invalid,
                               on_error, wanted=None):
     """
-    Async. Ask the validation model whether object_name could exist in room.
+    Async. Ask the decision model whether object_name could exist in room.
     Calls on_valid(reason) or on_invalid(reason) or on_error(msg) in the main thread.
 
     `wanted` says who reached for it and what they were doing (see `Wanted`),
     which is part of whether it could be there: a rope somebody wants to climb
     down is a different question from a rope somebody wants to look at.
+
+    Two questions rather than one, and both in the one request. The body-part
+    rule is not a caveat on plausibility -- it applies "however plausible it
+    sounds" -- so asking it as a condition on the same answer made it compete
+    for attention with everything else in a paragraph. Asked separately it
+    gets a number of its own, and the rule is enforced here in code where it
+    can be read.
     """
-    model = sponsor.model_for("validation")
-    try:
-        sponsor.key()          # refuse early rather than mid-prompt
-    except ValueError as e:
-        on_error(str(e))
-        return
+    state = {"world_and_room": _world_and_room(room, "validation"),
+             "thing_asked_for": object_name}
+    why = _why(wanted, room, brief=True).strip()
+    if why:
+        state["why_it_is_wanted"] = why
 
-    messages = [
-        {"role": "system", "content": _EXISTENCE_SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                f"{_world_and_room(room, 'validation')}\n\n"
-                f"{_why(wanted, room, brief=True)}"
-                f"Could '{object_name}' plausibly exist in this room?"
-            ),
-        },
-    ]
-    _judged(sponsor, model, messages, "judge_existence",
-            f"Say whether '{object_name}' could plausibly exist in this room.",
-            on_valid, on_invalid, on_error, room)
+    questions = {
+        "could_exist": decisions.noul(
+            f"Could '{object_name}' plausibly exist in this room?",
+            "It is plausible for this world and this room. Be permissive.",
+            "It is a clear impossibility here, like a spaceship in a "
+            "medieval dungeon."),
+        "is_body_part": decisions.noul(
+            f"Is '{object_name}' part of a living body?",
+            "A hand, a shoulder, hair, a wing, an antenna -- something that "
+            "belongs to whoever has it rather than being a separate object.",
+            "Part of a made thing, like a door handle, a table leg or a page "
+            "of a book; or a part plainly cut free, like a severed hand, a "
+            "mounted stag's head or a bone."),
+    }
+
+    def answered(answers):
+        body = decisions.certainty(answers, "is_body_part")
+        exists = decisions.certainty(answers, "could_exist")
+        if body >= decisions.DENY_BODY_PART:
+            on_invalid(PART_OF_SOMEBODY)
+        elif exists >= decisions.ALLOW_EXISTENCE:
+            on_valid("")
+        else:
+            on_invalid("")
+
+    decisions.ask(sponsor, state, questions,
+                  on_answers=answered, on_error=on_error)
 
 
-def validate_object_takeable(sponsor, room, obj, on_valid, on_invalid, on_error):
+def validate_object_takeable(sponsor, room, obj, on_valid, on_invalid,
+                             on_error):
     """
-    Async. Ask the validation model whether obj can be picked up.
+    Async. Ask the decision model whether obj can be picked up.
     Calls on_valid(reason) or on_invalid(reason) or on_error(msg) in the main thread.
     """
-    model = sponsor.model_for("validation")
-    try:
-        sponsor.key()          # refuse early rather than mid-prompt
-    except ValueError as e:
-        on_error(str(e))
-        return
-
     from world import tokens
 
     obj_name = obj.db.room_title or obj.key
-    obj_desc = tokens.text_of(obj)
+    state = {"world_and_room": _world_and_room(room, "validation"),
+             "object": obj_name,
+             "description": tokens.text_of(obj)}
 
-    messages = [
-        {"role": "system", "content": _TAKEABILITY_SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                f"{_world_and_room(room, 'validation')}\n\n"
-                f"Object: {obj_name}\n{obj_desc}\n\n"
-                f"Can the player pick up '{obj_name}'?"
-            ),
-        },
-    ]
-    _judged(sponsor, model, messages, "judge_takeable",
-            f"Say whether a player can pick up '{obj_name}'.",
-            on_valid, on_invalid, on_error, room)
+    questions = {
+        "takeable": decisions.noul(
+            f"Can the player pick up '{obj_name}'?",
+            "A portable item -- a weapon, a tool, a book, a loose object.",
+            "A fixed feature -- a wall, a door, the floor, or built-in or "
+            "very heavy furniture."),
+    }
+
+    def answered(answers):
+        takeable = decisions.certainty(answers, "takeable")
+        if takeable >= decisions.ALLOW_TAKEABLE:
+            on_valid("")
+        else:
+            on_invalid("")
+
+    decisions.ask(sponsor, state, questions,
+                  on_answers=answered, on_error=on_error)
 
 
 def _why(wanted, room, brief=False, world_root=None):
@@ -566,9 +584,12 @@ def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False,
 # The finish tools (docs/generator-tool-loops.md §4.2)
 # ---------------------------------------------------------------------------
 
-#: Rounds each may take (§10.3). The judgements are a yes or no a player waits
-#: on; an item is a little more, and a player waits on it too.
-JUDGING_ROUNDS = 4
+#: Rounds an item may take (§10.3), with a player waiting on it.
+#:
+#: There was a `JUDGING_ROUNDS` beside this, for the two yes-or-no loops. A
+#: decision model cannot fail to answer -- there is no round that comes back
+#: empty and no reply that is not a number -- so neither the budget nor the
+#: `on_exhausted` path it existed for has anything left to do.
 ITEM_ROUNDS = 6
 
 #: The lookups offered while making an item: the registers its prompt used to
@@ -580,41 +601,6 @@ ITEM_LOOKUPS = ("list_states", "list_state_groups", "list_traits",
 
 def _listed(value):
     return list(value) if isinstance(value, (list, tuple)) else []
-
-
-def _judged(sponsor, model, messages, tool_name, question, on_valid,
-            on_invalid, on_error, room):
-    """
-    A yes or no through a finish tool: `judge_existence` or `judge_takeable`.
-
-    Rounds out is an error, as a reply that was not JSON used to be. There is
-    no answer to take as it stands, and guessing one would either conjure a
-    thing nobody allowed or refuse one nobody refused.
-    """
-    from world import toolbox as tb
-
-    world_root = room.db.world_root if room is not None else None
-    box = tb.Toolbox([tb.Tool(
-        tool_name, question,
-        tb.params({"valid": {"type": "boolean",
-                             "description": "The answer"},
-                   "reason": {"type": "string",
-                              "description": "One sentence"}}, ["valid"]),
-        lambda ctx, args, answer: answer(tb.accept(args)), finishes=True)],
-        tb.ToolContext(world_root=world_root, room=room, sponsor=sponsor,
-                       job="validation"))
-
-    def done(data):
-        reason = str(data.get("reason") or "")
-        if data.get("valid"):
-            on_valid(reason)
-        else:
-            on_invalid(reason)
-
-    llm.converse(sponsor, model, messages, box, on_done=done,
-                 on_error=on_error,
-                 on_exhausted=lambda _last: on_error("no answer came back"),
-                 rounds=JUDGING_ROUNDS)
 
 
 def _needs_anchor(word):
