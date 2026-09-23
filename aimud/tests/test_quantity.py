@@ -182,10 +182,16 @@ class Counting(GameTest):
 
     # -- wearing ----------------------------------------------------------
 
-    def test_a_wardrobe_limit_of_one_hat(self):
+    def test_fewer_than_this_many_worn(self):
         """
-        "No more than one hat" is `not_wears` with a count of two: fewer than
-        two hats, which is true of somebody wearing one.
+        `not_wears` with a count of two is "fewer than two hats", which is
+        true of somebody wearing one and false of somebody wearing two.
+
+        Worth being careful about where this is used as a *limit*, and the
+        clothing ruleset got it wrong first time round. A check rule runs
+        before the thing it guards, so "you may wear only one hat" is `count:
+        1` -- be wearing fewer than one hat *before* putting one on -- and
+        `count: 2` would let the second one through and refuse the third.
         """
         limit = {"subject": "actor",
                  "not_wears": {"of_kind": "hat.n.01", "count": 2}}

@@ -20,9 +20,9 @@ from commands.look_take_cmds import CmdAIGet, CmdAILook
 # The contrib's inventory is kept as it stands: it is the one clothing command
 # with nothing for this game to decide, and it already separates what is worn
 # from what is merely carried.
-from evennia.contrib.game_systems.clothing.clothing import CmdInventory
 
-from commands.clothing_cmds import CmdCover, CmdRemove, CmdUncover, CmdWear
+from commands.clothing_cmds import (CmdCover, CmdInventory, CmdRemove,
+                                   CmdUncover, CmdWear)
 from commands.drop_cmds import CmdAIDrop
 from commands.follow_cmds import CmdFollow
 from commands.give_cmds import CmdAIGive

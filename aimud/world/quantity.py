@@ -46,14 +46,26 @@ import re
 
 from world import english
 
-#: The most of anything one clause may ask for.
+#: The most of anything one clause may name.
 #:
-#: `bulk.LIMIT`, deliberately, and for its reason rather than by coincidence:
-#: past about here a player has stopped meaning a number and started meaning
-#: "too many". A clause over the ceiling is refused rather than trimmed, the
-#: way `conditions.normalise` refuses a condition too deep to store -- a
+#: A guard against nonsense rather than a statement about play, which is the
+#: distinction the first version of this got wrong. It was `bulk.LIMIT` -- 12
+#: -- borrowed along with its argument, that past about there a player has
+#: stopped meaning a number and started meaning "too many". That argument is
+#: about how many model calls `eat all` may cost in a storeroom, and it does
+#: not transfer: counting is done against a pool that is already in hand, so
+#: the work is bounded by somebody's inventory whatever the number says.
+#:
+#: The wardrobe limit caught it. "No more than twenty things at once" is a
+#: perfectly ordinary rule and the ceiling refused to store it.
+#:
+#: Fifty, then: comfortably above any limit or requirement anybody has wanted
+#: -- a wardrobe's cap, a merchant's stock, a recipe's tally -- and still low
+#: enough that a rule naming it has plainly stopped being a fact about the
+#: world. A clause over the ceiling is refused rather than trimmed, the way
+#: `conditions.normalise` refuses a condition too deep to store: a
 #: requirement cut down to fit asks for something other than what was written.
-MAX_COUNT = 12
+MAX_COUNT = 50
 
 #: The fields a spec is stored with. `role` and the two `of_` fields are three
 #: ways of saying which things count, and exactly one of them is ever set.

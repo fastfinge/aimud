@@ -197,3 +197,32 @@ class CmdUncover(Command):
             return
 
         _announce(caller, *clothing.uncover(caller, garment)[1:])
+
+
+class CmdInventory(Command):
+    """
+    What you are carrying and what you have on.
+
+    Usage:
+      inventory
+
+    Ours rather than the clothing contrib's, which is the last thing this
+    game used from it. The contrib's version built its own two-part listing
+    and knew nothing about wear styles or about `item_name`, which is what
+    keeps "a hobnailed boots" from happening; `world.clothing.inventory_line`
+    already said the same thing correctly for NPC and quest prompts, and one
+    account of what somebody has on is one more than two.
+    """
+
+    key = "inventory"
+    aliases = ["inv", "i"]
+    locks = "cmd:all()"
+    help_category = "General"
+    arg_regex = r"$"
+
+    def func(self):
+        said = clothing.inventory_line(self.caller, self.caller)
+        if not said:
+            self.caller.msg("You are not carrying or wearing anything.")
+            return
+        self.caller.msg(f"You are {said}.")

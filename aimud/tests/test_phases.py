@@ -331,8 +331,11 @@ class WhenTheStandardRulesThemselvesChange(RunningTheAttempt):
         standard_rules.seed(self.root)
         _a_version_behind(self.root)
         self.assertTrue(standard_rules.seed(self.root))
+        # The default ruleset's own, not every ruleset's: a world gets
+        # clothing and wielding by default too, and `is_standard` is true of
+        # anything a world came with rather than learned.
         standing = [r for r in R.all_rules(self.root)
-                    if standard_rules.is_standard(r)]
+                    if rulesets.from_ruleset(r, rulesets.DEFAULT)]
         wanted = len(rulesets.get(rulesets.DEFAULT)["rules"])
         self.assertEqual(len(standing), wanted,
                          "the old copies should have gone, not doubled up")

@@ -125,3 +125,72 @@ class GearWield(GameCommandTest):
         from world import events
 
         events.show(actor_text, event, self.char1)
+
+@tag("world")
+class HowMuchYouMayWear(GameCommandTest):
+    """
+    The limits, which are rules now rather than constants in a contrib.
+
+    "One hat" and "no more than twenty things" say what sort of world this is
+    -- one world's guard is buried under six coats and another's has a rule
+    against hats indoors -- so they are check rules a world can read and
+    change, asked through `attempt.permitted` the way `ownership` and
+    `relations` already ask.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.room1.db.world_root = self.root
+        self.room1.db.is_world_root = True
+        from world import rulesets
+
+        rulesets.seed(self.root)
+
+    def hat(self, key="felt hat"):
+        from evennia import create_object
+
+        hat = create_object("typeclasses.objects.Object", key=key,
+                            location=self.char1)
+        hat.db.kinds = ["hat.n.01"]
+        hat.db.affordances = {"wear": True}
+        hat.db.clothing_type = "hat"
+        return hat
+
+    def test_one_hat_goes_on(self):
+        worn, said, _event = clothing.put_on(self.char1, self.hat())
+        self.assertTrue(worn, said)
+
+    def test_a_second_hat_is_refused_by_the_rule(self):
+        clothing.put_on(self.char1, self.hat("straw hat"))
+        worn, said, _event = clothing.put_on(self.char1, self.hat("felt hat"))
+        self.assertFalse(worn)
+        self.assertIn("hat", said.lower())
+
+    def test_and_a_world_that_suspends_the_rule_may_wear_both(self):
+        """
+        Which is the whole point of the limits being rules: a world says
+        otherwise by suspending one, and nothing has to be patched.
+        """
+        from world import rulebooks
+
+        rule = next(r for r in rulebooks.all_rules(self.root)
+                    if r["name"] == "you may wear only one hat")
+        rulebooks.set_listed(self.root, rule["id"], False)
+        clothing.put_on(self.char1, self.hat("straw hat"))
+        worn, said, _event = clothing.put_on(self.char1, self.hat("felt hat"))
+        self.assertTrue(worn, said)
+
+    def test_the_refusals_that_are_the_mechanic_stay_in_the_mechanic(self):
+        """
+        A thing you are not holding, or already have on, is not a limit
+        anybody would want to change.
+        """
+        from evennia import create_object
+
+        loose = create_object("typeclasses.objects.Object", key="cloak",
+                              location=self.room1)
+        loose.db.affordances = {"wear": True}
+        worn, said, _event = clothing.put_on(self.char1, loose)
+        self.assertFalse(worn)
+        self.assertIn("holding", said)

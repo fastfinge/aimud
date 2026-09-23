@@ -1,9 +1,26 @@
 """
 Wearing things.
 
-Evennia's clothing contrib provides the mechanism -- worn flags, covering, how
-many hats one head will take. This module is the game's own layer over it, and
-exists for three reasons the contrib does not cover.
+This was a layer over Evennia's clothing contrib and is now the whole of it.
+What the contrib supplied came to seven names -- three limits, a typeclass,
+and two helpers of a dozen lines -- against seven hundred lines here, and two
+of the seven were actively in the way.
+
+**The typeclass was the tail wagging the dog.** A garment was an instance of
+`ContribClothing`, but an item the generators called wearable was not one
+unless something had thought to build it as one, so `as_garment` performed a
+`swap_typeclass` on a live object the first time anybody tried to put a coat
+on. A boolean stored in a class hierarchy, converted in flight. Wearability is
+an affordance, and the affordance was there all along.
+
+**The limits were decisions dressed as constants.** "One hat" and "no more
+than twenty things" say what sort of world this is -- one world's guard is
+buried under six coats and another's has a rule against hats indoors -- and
+they are check rules now, in `world/rulesets/clothing.json`, where a world can
+read them and change them. `put_on` asks through `attempt.permitted`, the same
+door `ownership` and `relations` already use.
+
+The three reasons this module existed have not changed.
 
 * One path for everyone. A player types `wear coat` and an NPC decides to put
   its coat on; both end up in `put_on` here, so an NPC is dressed by the same
@@ -21,16 +38,7 @@ exists for three reasons the contrib does not cover.
   rewriting your description to say so.
 """
 
-from evennia.contrib.game_systems.clothing.clothing import (
-    CLOTHING_OVERALL_LIMIT,
-    CLOTHING_TYPE_LIMIT,
-    CLOTHING_TYPE_ORDER,
-    WEARSTYLE_MAXLENGTH,
-    ContribClothing,
-    get_worn_clothes,
-    single_type_count,
-)
-from evennia.utils import inherits_from, iter_to_str
+from evennia.utils import iter_to_str
 
 #: The affordance that makes an item a garment. Every generator that can
 #: produce an object offers it, so a coat found in a wardrobe is as wearable
@@ -41,10 +49,27 @@ from evennia.utils import inherits_from, iter_to_str
 #: namespaces that could not see each other.
 WEARABLE = "wear"
 
-#: The kinds of garment the contrib knows how to order and limit. Given to the
-#: models so what they invent lands in a slot the game understands; anything
-#: else is kept as untyped clothing, which simply wears without limit.
-GARMENT_TYPES = tuple(CLOTHING_TYPE_ORDER)
+#: The order garments read in, outermost first. Anything untyped, or of a type
+#: not named here, comes last.
+#:
+#: The contrib's list, kept because it is a good one and because the worlds in
+#: play have `clothing_type` written on their garments from it. Ours now, so
+#: it can grow a hood and a cloak without waiting on anybody.
+GARMENT_TYPES = ("hat", "jewelry", "top", "undershirt", "gloves", "fullbody",
+                 "bottom", "underpants", "socks", "shoes", "accessory")
+
+#: What putting one thing on hides, when the thing hidden is already on. Worn
+#: the other way round -- underpants over trousers -- nothing is covered, and
+#: that is not a bug.
+AUTOCOVER = {
+    "top": ("undershirt",),
+    "bottom": ("underpants",),
+    "fullbody": ("undershirt", "underpants"),
+    "shoes": ("socks",),
+}
+
+#: How long a wear style may be: "tied loosely around her waist".
+WEARSTYLE_MAXLENGTH = 50
 
 #: The verbs this module owns. An attempt at one of these never reaches a
 #: model, so long as it is really about clothes.
@@ -52,66 +77,119 @@ VERBS = ("wear", "remove", "cover", "uncover")
 
 
 def is_garment(obj):
-    """True for something that already knows how to be worn."""
-    return obj is not None and inherits_from(obj, ContribClothing)
-
-
-def wearable(obj):
     """
-    True for anything that ought to be wearable, garment or not yet.
+    True for something that can be worn.
 
-    Affordances are the world's own word for what can be done with a thing,
-    and an item the generators called wearable is a garment whether or not it
-    was built as one -- so this is what decides whether the clothing verbs
-    take an attempt over.
+    Asked of the thing's affordances, which is the world's own word for what
+    can be done with it. It used to be asked of the thing's *typeclass*, and
+    that was the tail wagging the dog: an item the generators called wearable
+    was not a `Garment` unless something had thought to build it as one, so
+    `as_garment` swapped the typeclass of a live object the first time anybody
+    tried to put it on. A boolean stored on a class hierarchy, converted in
+    flight. The affordance was there all along and says the same thing.
+
+    Something already worn counts whatever it affords, because it plainly is
+    being worn and refusing to take it off would be worse than untidy.
     """
     if obj is None:
         return False
+    if getattr(obj.db, "worn", False):
+        return True
     from world import verbs
 
-    return is_garment(obj) or WEARABLE in verbs.affordances(obj)
+    return WEARABLE in verbs.affordances(obj)
 
 
-def as_garment(obj):
-    """
-    The same object, able to be worn, or None if it never could be.
-
-    An item may be wearable by its affordances and still be a plain object:
-    everything made before clothes existed is, and so is anything a generator
-    marked wearable as an afterthought. Rather than refuse to put a coat on,
-    the coat is made into a garment here, keeping its name, description and
-    everything else. It happens once, the first time anyone tries.
-    """
-    if is_garment(obj):
-        return obj
-    if not wearable(obj):
-        return None
-    from typeclasses.clothing import Garment
-
-    obj.swap_typeclass(Garment, clean_attributes=False, run_start_hooks=None)
-    return obj
+#: The old name, kept because it reads better at several call sites: "is this
+#: a garment" and "could this be worn" were two questions while a garment was
+#: a typeclass, and are one question now.
+wearable = is_garment
 
 
-def typeclass_for(affordances):
-    """
-    The typeclass an item with these affordances should be created as.
-
-    Called wherever the world makes an object -- room contents, a fixture
-    reached for, an effect that conjures something -- so wearability is
-    decided once, from what the item is, rather than by each generator.
-    """
-    from typeclasses.clothing import Garment
-    from typeclasses.objects import Object
-
-    wanted = {str(a).lower().strip() for a in (affordances or [])}
-    return Garment if WEARABLE in wanted else Object
+def ordered(garments):
+    """Garments in the order they should be read, outermost first."""
+    order = {name: index for index, name in enumerate(GARMENT_TYPES)}
+    return sorted(garments,
+                  key=lambda g: order.get(str(g.db.clothing_type or ""),
+                                          len(order)))
 
 
 def worn_by(character, exclude_covered=True):
     """The garments a character has on, outermost kind first."""
     if character is None:
         return []
-    return get_worn_clothes(character, exclude_covered=exclude_covered)
+    return ordered(
+        obj for obj in character.contents
+        if obj.db.worn and not (exclude_covered and obj.db.covered_by))
+
+
+def single_type_count(garments, kind):
+    """How many of these are that sort of garment."""
+    return sum(1 for obj in garments
+               if str(obj.db.clothing_type or "") == kind)
+
+
+def _wear(character, garment, wearstyle=True):
+    """
+    Put it on, and hide whatever it covers. Answers with what it covered.
+
+    Was the contrib's `ContribClothing.wear`, minus its room announcement --
+    which named the garment without its article and would have been a second
+    voice beside the one `put_on` already raises.
+
+    `becoming.mark` before anything changes, because what somebody is wearing
+    is a fact a rule may watch: see `world/becoming.py`.
+    """
+    from world import becoming
+
+    becoming.mark(character)
+    garment.db.worn = wearstyle
+    hides = AUTOCOVER.get(str(garment.db.clothing_type or ""), ())
+    covered = [other for other in worn_by(character, exclude_covered=False)
+               if other is not garment
+               and str(other.db.clothing_type or "") in hides]
+    for other in covered:
+        other.db.covered_by = garment
+    return covered
+
+
+def _unwear(character, garment):
+    """Take it off, revealing whatever it hid. Answers with what it revealed."""
+    from world import becoming
+
+    becoming.mark(character)
+    garment.db.worn = False
+    revealed = []
+    for other in character.contents:
+        if other.db.covered_by is garment:
+            other.db.covered_by = False
+            revealed.append(other)
+    return revealed
+
+
+def leaving(garment, destination):
+    """
+    Take a garment off before it leaves the person wearing it.
+
+    Giving away or dropping something you have on is an ordinary thing to do,
+    and every path that moves an object goes through `at_pre_move`. Without
+    this, a garment handed to somebody else would still be listed as worn by
+    the person who no longer has it.
+
+    Answers False to refuse the move, which is what a covered garment gets:
+    you cannot hand somebody the shirt under your coat.
+
+    On `typeclasses.objects.ObjectParent` rather than on a garment class,
+    because there is no garment class any more -- wearability is an affordance
+    and any object may have it. See `is_garment`.
+    """
+    if not getattr(garment.db, "covered_by", None) in (None, False):
+        return False
+    wearer = garment.location
+    if garment.db.worn and wearer is not None and wearer is not destination:
+        _unwear(wearer, garment)
+        _revalue(wearer)
+    return True
 
 
 #: Endings that only look plural. A dress is one thing; boots are two.
@@ -300,11 +378,21 @@ def put_on(character, garment, wearstyle=True):
     """
     Wear a garment. Returns (worn, what the wearer is told, what the room sees).
 
-    Every limit the contrib defines is checked here rather than in a command,
-    so an NPC dressing itself cannot end up in four hats.
+    The refusals that are about wearing anything at all stay here, because
+    they are what the mechanic *is*: a thing you are not holding, or already
+    have on, is not a limit anybody would want to change.
+
+    **How much you may wear is not one of those.** "One hat" and "no more than
+    twenty things" were constants in the contrib, and they are a decision
+    about what sort of world this is: one world's guard is buried under six
+    coats and another's has a rule against hats indoors. So they are check
+    rules now, in `world/rulesets/clothing.json`, and asked here through
+    `attempt.permitted` -- the same door `ownership` and `relations` already
+    use to let a rule refuse something a mechanic is about to do.
     """
-    garment = as_garment(garment)
-    if garment is None:
+    from world import attempt
+
+    if not is_garment(garment):
         return _refuse("That is not something you can wear.")
     if garment.location is not character:
         return _refuse("You would have to be holding that first.")
@@ -312,26 +400,17 @@ def put_on(character, garment, wearstyle=True):
         return _refuse(f"You are already wearing "
                        f"{item_name(garment, character)}.")
 
-    already = worn_by(character, exclude_covered=False)
-    if CLOTHING_OVERALL_LIMIT and len(already) >= CLOTHING_OVERALL_LIMIT:
-        return _refuse("You cannot wear any more than you already have on.")
-
-    kind = garment.db.clothing_type
-    limit = CLOTHING_TYPE_LIMIT.get(kind) if kind else None
-    if limit is not None and single_type_count(already, kind) >= limit:
-        return _refuse(f"You are already wearing all the {kind} you can.")
+    refused = attempt.permitted(character, "wear", {"direct": garment})
+    if refused:
+        return _refuse(refused)
 
     if isinstance(wearstyle, str):
         wearstyle = wearstyle.strip()[:WEARSTYLE_MAXLENGTH] or True
 
-    # quiet: the contrib's own announcement names the garment without its
-    # article, and the room should hear one voice for this whether a player or
-    # a character put the coat on.
-    garment.wear(character, wearstyle, quiet=True)
+    covered = _wear(character, garment, wearstyle)
     _revalue(character)
 
     label = _garment_name(garment, character)
-    covered = [g for g in character.contents if g.db.covered_by is garment]
     tail = f", covering {iter_to_str([_garment_name(g, character) for g in covered])}" \
         if covered else ""
     return (True, f"You put on {label}{tail}.",
@@ -350,8 +429,7 @@ def take_off(character, garment):
                        f"first.")
 
     label = _garment_name(garment, character)
-    revealed = [g for g in character.contents if g.db.covered_by is garment]
-    garment.remove(character, quiet=True)
+    revealed = _unwear(character, garment)
     _revalue(character)
 
     tail = f", revealing {iter_to_str([_garment_name(g, character) for g in revealed])}" \
@@ -366,8 +444,7 @@ def cover_with(character, garment, covering):
     """Hide one worn garment under another. Returns (ok, wearer text, room text)."""
     if not is_garment(garment) or not garment.db.worn:
         return _refuse("You are not wearing that.")
-    covering = as_garment(covering)
-    if covering is None:
+    if not is_garment(covering):
         return _refuse("You cannot cover anything with that.")
     if garment is covering:
         return _refuse("That would cover nothing.")
@@ -520,7 +597,8 @@ def create(spec, location, worn_on=None):
         granted = af.merge(granted, {WEARABLE: True})
 
     afforded = sorted(af.afforded(granted))
-    obj = create_object(typeclass_for(afforded), key=name, location=location)
+    obj = create_object("typeclasses.objects.Object", key=name,
+                        location=location)
     obj.db.desc = str(spec.get("description", "")).strip()
     obj.db.is_ai_item = True
     # Whether a thing can be picked up is a fact about its sort -- tables are

@@ -348,10 +348,19 @@ class NothingChangedForADefaultWorld(GameTest):
         self.assertEqual(wanted - got, set())
 
     def test_marked_the_way_they_were_marked(self):
+        """
+        The default ruleset's own rules keep the mark they always had.
+        Other rulesets a world gets by default -- clothing, wielding -- carry
+        their own, which is what `from_ruleset(rule, name)` is for; what must
+        not change is what `rules` and `item_gen` see when they ask whether a
+        rule is one the world came with.
+        """
         standard_rules.seed(self.root)
+        wanted = {r["name"] for r in rulesets.get(rulesets.DEFAULT)["rules"]}
         for rule in R.all_rules(self.root):
-            self.assertEqual(rule["source"], rulesets.STANDARD)
-            self.assertTrue(standard_rules.is_standard(rule))
+            self.assertTrue(standard_rules.is_standard(rule), rule["name"])
+            if rule["name"] in wanted:
+                self.assertEqual(rule["source"], rulesets.STANDARD)
 
     def test_and_the_one_that_ships_suspended_still_does(self):
         standard_rules.seed(self.root)
