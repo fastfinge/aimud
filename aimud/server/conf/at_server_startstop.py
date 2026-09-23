@@ -66,6 +66,13 @@ def at_server_start():
             f"came before one bank per world; clearing them up"
         )
 
+    # Before anything can sleep: mnemosyne summarises on a local CPU model
+    # unless told otherwise, which cost one live server 5.7 CPU-hours in an
+    # afternoon without finishing. See world.summaries.
+    from world.summaries import install as route_summaries
+
+    route_summaries()
+
     # Load the memory backend off the reactor now, rather than making the
     # first remembered event wait seconds for the embedding stack to import.
     warm_up()

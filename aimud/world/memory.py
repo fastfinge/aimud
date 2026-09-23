@@ -722,12 +722,27 @@ def _close_quietly(instance):
         pass
 
 
-def _consolidate_sync(banks, force=False):
-    """Sleep these banks. Returns {bank: result}. Must run in a thread."""
+def _consolidate_sync(banks, force=False, payers=None):
+    """
+    Sleep these banks. Returns {bank: result}. Must run in a thread.
+
+    `payers` is {bank: (sponsor, model)}, resolved by the caller on the main
+    thread because a sponsor reaches the database. Summarising goes through
+    the game's own model (`world.summaries`), and the pair says whose key pays
+    for the bank being slept -- named around each one rather than passed,
+    because mnemosyne calls the summariser from inside itself. A bank with no
+    payer is still slept: everything sleep does besides summarising, it does
+    without a model.
+    """
+    from world import summaries
+
+    payers = payers or {}
+
     def _run(backend):
         done = {}
         for bank in banks:
             instance = None
+            sponsor, model = payers.get(bank) or (None, None)
             try:
                 # Each bank is its own SQLite file, so sleeping one says
                 # nothing about the others: every character has to be slept in
@@ -735,7 +750,8 @@ def _consolidate_sync(banks, force=False):
                 # a character whose last event predates the cutoff would
                 # otherwise be skipped for having no "current" session.
                 instance = backend.Mnemosyne(bank=bank)
-                done[bank] = instance.sleep_all_sessions(force=force)
+                with summaries.paying_for(sponsor, model):
+                    done[bank] = instance.sleep_all_sessions(force=force)
             except Exception as exc:
                 logger.log_info(f"memory: could not sleep {bank!r}: {exc}")
             finally:
@@ -765,6 +781,12 @@ def consolidate(force=False, on_done=None):
     stranded = set(orphaned_banks())
     banks = [name for name in _bank_names() if name not in stranded]
 
+    # Who pays for each bank's summaries, worked out here because this is the
+    # main thread and a sponsor reads the database. See `world.summaries`.
+    from world import summaries
+
+    payers = summaries.payers_for(banks)
+
     def _finished(result):
         slept = sum(
             1 for outcome in result.values()
@@ -777,7 +799,7 @@ def consolidate(force=False, on_done=None):
         if on_done:
             on_done(result)
 
-    threads.deferToThread(_consolidate_sync, banks, force).addCallbacks(
+    threads.deferToThread(_consolidate_sync, banks, force, payers).addCallbacks(
         _finished, _swallow)
 
 
@@ -794,6 +816,14 @@ def consolidate(force=False, on_done=None):
 # eighty times the cost of a plain write, and what it produced was the model's
 # own working-out rather than any fact. So the work is done here instead, in
 # batches, out of hours, against the model the game is already configured with.
+#
+# Sleep now goes the same way, and did not for a long time -- which is what
+# this note should have led to and did not. Summarising was still on the local
+# model, and cost one live server 9.5 CPU-hours in an afternoon without
+# finishing while a player waited four minutes for a room. It is routed
+# through mnemosyne's host-backend hook rather than replaced, because the rest
+# of what sleep does -- marking rows consolidated, exempting them from
+# retention -- is bookkeeping only it can do. See `world.summaries`.
 #
 # The results are written back as ordinary memories rather than into
 # mnemosyne's facts table. They are then recalled by exactly the machinery
