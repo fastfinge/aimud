@@ -365,7 +365,10 @@ def _tidy(condition):
             leaf = dict(condition)
         except (TypeError, ValueError):
             return None
-        return leaf if predicate_of(leaf)[0] else None
+        name, value = predicate_of(leaf)
+        if not name:
+            return None
+        return leaf if _readable(name, value) else None
     kept = []
     for member in members:
         member = _tidy(member)
@@ -384,6 +387,29 @@ def _tidy(condition):
     if len(kept) == 1:
         return kept[0]
     return {kind: kept}
+
+
+#: The predicates whose value says how many of what sort. See `world.quantity`.
+QUANTIFIED = frozenset(("holds", "not_holds", "wears", "not_wears"))
+
+
+def _readable(name, value):
+    """
+    Whether a leaf says something this game can actually test.
+
+    Only the quantified predicates can fail this, and only by naming a count
+    that is nonsense or over the ceiling, or a spec with nothing in it to
+    match on. Refused here rather than at evaluation, for the reason
+    `normalise` refuses a condition too deep to store: a requirement that
+    cannot be read is a check that will not check, and the cheapest place to
+    find that out is before it is written down.
+    """
+    if name not in QUANTIFIED:
+        return True
+    from world import quantity
+
+    specs, ok = quantity.read_all(value, roles=ROLES)
+    return ok and bool(specs)
 
 
 def depth_of(condition):
@@ -662,6 +688,15 @@ def _derived_eventually(condition, name, value, ctx, depth):
 #:
 #: `unbound` and `trait` are their own opposites, with a value flipped: true
 #: for false, and each bound for the exclusive bound on its other side.
+#:
+#: The quantified four need no special case here, and that is the whole reason
+#: `world.quantity` reads `holds` as "at least this many" and `not_holds` as
+#: "fewer than this many" rather than as "any" and "none". Read that way a
+#: count mirrors by being carried across unchanged -- "at least two" flips to
+#: "fewer than two" -- and the uncounted pair still means "it" and "none of
+#: them", because one and fewer-than-one are exactly those. Had the count been
+#: bolted onto a predicate meaning "any", every count would have needed a
+#: fifth predicate to be the opposite of.
 OPPOSITES = {
     "is": "lacks", "lacks": "is",
     "holds": "not_holds", "not_holds": "holds",
@@ -1013,12 +1048,26 @@ def _abstractly(condition):
 
 def _said(value):
     """
-    One word of a clause, as it should be read.
+    One item of a clause, as it should be read.
 
     A clause may name a role rather than a thing -- "to throw it you must be
     holding `direct`" -- and the role is machinery, not something a player
     would recognise. Said as what it means instead.
+
+    It may also be a quantified spec, which is a mapping and would otherwise
+    be read out as its repr. Named with no world in front of it, which is what
+    this mood is: "two lumps of coal" is as true in a `rules` listing as it is
+    standing in the forge.
     """
+    if hasattr(value, "keys"):
+        from world import quantity
+
+        spec = quantity.read(value, roles=ROLES)
+        if spec is None:
+            return ""
+        if spec["role"]:
+            return _SUBJECT_WORDS.get(spec["role"], spec["role"])
+        return quantity.said(spec)
     word = str(value)
     if word in ROLES:
         return _SUBJECT_WORDS.get(word, word)
@@ -1169,40 +1218,96 @@ def _p_not_kind(subject, value, condition, ctx, mood):
     return met, f"{_cap(subject.name())} is a {word}."
 
 
+#: The pool each quantified predicate counts over, by predicate name.
+#:
+#: Where to look is a fact about the predicate and not about the description,
+#: which is why `world.quantity` refuses to decide it. Carrying is everything
+#: about the person, a worn coat included; wearing is the ones actually on.
+def _carried(subject):
+    return list(getattr(subject.obj, "contents", []) or [])
+
+
+def _worn(subject):
+    return [obj for obj in _carried(subject) if getattr(obj.db, "worn", False)]
+
+
+def _count_up(subject, value, ctx, pool):
+    """
+    ([(spec, what was found)], could it all be read) for a quantified clause.
+
+    The one place `holds`, `not_holds`, `wears` and `not_wears` differ is which
+    things they count and which way round they read the answer. Everything
+    before that is shared, so it is done once.
+    """
+    from world import quantity
+
+    specs, ok = quantity.read_all(value, roles=ROLES)
+    things = pool(subject)
+    return [(spec, quantity.matching(things, spec, ctx)) for spec in specs], ok
+
+
+def _unreadable(mood):
+    """
+    What an unreadable clause says. Refused, whichever way it was written.
+
+    A clause nobody can read is not evidence either way, and both a `holds`
+    that cannot be checked and a `not_holds` that cannot be checked have to
+    fail closed: a check rule is the thing standing between an action and the
+    world, and one that gives up quietly lets the action through. Stored
+    conditions are held to this at `_tidy`, so reaching here means a clause
+    that was written before the field existed or by something bypassing it.
+    """
+    said = "be able to say what is wanted here"
+    if mood == WANT:
+        return False, said
+    return False, "That rule asks for something this game cannot read."
+
+
 def _p_holds(subject, value, condition, ctx, mood):
     """
-    Whether the subject is carrying something.
+    Whether the subject is carrying enough of what is named.
 
     Says what it wants whether or not it has it: a quest listing shows every
     condition, ticked or not, and a met one printing nothing leaves a blank
     line where "be carrying the brass key" belongs.
+
+    A count that is partly met says what is still wanted -- "one more apple" --
+    rather than restating the whole requirement, because somebody holding two
+    of three needs to know what to do next.
     """
+    from world import quantity
+
     if not subject.found:
         return _missing(subject, condition, mood)
-    missing = []
-    names = []
-    for wanted in _listed(value):
-        held, said = _held(subject, wanted, ctx)
-        names.append(said)
-        if not held:
-            missing.append(said)
-    listed = " and ".join(missing or names) or "it"
+    counted, ok = _count_up(subject, value, ctx, _carried)
+    if not ok:
+        return _unreadable(mood)
+    short = [quantity.shortfall(found, spec, ctx)
+             for spec, found in counted if not quantity.enough(found, spec)]
+    names = [quantity.said(spec, ctx) for spec, _found in counted]
+    listed = " and ".join(short or names) or "it"
     if mood == WANT:
-        return not missing, f"be carrying {listed}"
-    return not missing, _plainly(subject, f"not holding {listed}", ctx,
-                                 verb="is")
+        return not short, f"be carrying {listed}"
+    return not short, _plainly(subject, f"not holding {listed}", ctx,
+                               verb="is")
 
 
 def _p_not_holds(subject, value, condition, ctx, mood):
-    """Whether the subject is carrying none of these. The opposite of `holds`."""
+    """
+    Whether the subject is carrying fewer than that many. The opposite of
+    `holds`, and exactly its opposite: uncounted it means none, which is what
+    "fewer than one" is, so the pair mirrors with no special case.
+    """
+    from world import quantity
+
     if not subject.found:
         return True, ""          # nobody here is holding anything
-    held, names = [], []
-    for wanted in _listed(value):
-        holding, said = _held(subject, wanted, ctx)
-        names.append(said)
-        if holding:
-            held.append(said)
+    counted, ok = _count_up(subject, value, ctx, _carried)
+    if not ok:
+        return _unreadable(mood)
+    held = [quantity.said(spec, ctx)
+            for spec, found in counted if quantity.enough(found, spec)]
+    names = [quantity.said(spec, ctx) for spec, _found in counted]
     if mood == WANT:
         return not held, f"stop carrying {' or '.join(held or names) or 'it'}"
     return not held, _plainly(subject,
@@ -1210,53 +1315,44 @@ def _p_not_holds(subject, value, condition, ctx, mood):
                               ctx, verb="is")
 
 
-def _held(subject, wanted, ctx):
-    """(is it held, what to call it) for one thing a `holds` clause names."""
-    import re
-
-    carrier = subject.obj
-    named = str(wanted).strip().lower()
-    # A rule usually means another role -- "to throw it you must be holding
-    # it" is about whatever is being thrown, which has no name until somebody
-    # throws something. Read literally it asks for an object called "direct".
-    role = ctx.bound.get(named) if named in ROLES else None
-    if role is not None:
-        found = getattr(carrier, "contents", []) or []
-        return role in found, Subject(THING, role, ctx=ctx).name()
-    plain = re.sub(r"^(?:an?|the|some)\s+", "", str(wanted).strip(),
-                   flags=re.IGNORECASE)
-    for obj in (getattr(carrier, "contents", []) or []):
-        if plain.lower() in str(obj.key).lower():
-            return True, f"the {plain}"
-    return False, f"the {plain}"
-
-
-def _wearing(subject, wanted):
-    """Whether the subject has on something answering to `wanted`."""
-    return any(str(wanted).lower() in str(obj.key).lower() and obj.db.worn
-               for obj in (getattr(subject.obj, "contents", []) or []))
-
-
 def _p_wears(subject, value, condition, ctx, mood):
+    from world import quantity
+
     if not subject.found:
         return _missing(subject, condition, mood)
-    missing = [str(wanted) for wanted in _listed(value)
-               if not _wearing(subject, wanted)]
-    listed = " and ".join(missing or [str(v) for v in _listed(value)]) or "it"
+    counted, ok = _count_up(subject, value, ctx, _worn)
+    if not ok:
+        return _unreadable(mood)
+    short = [quantity.shortfall(found, spec, ctx)
+             for spec, found in counted if not quantity.enough(found, spec)]
+    names = [quantity.said(spec, ctx) for spec, _found in counted]
+    listed = " and ".join(short or names) or "it"
     if mood == WANT:
-        return not missing, f"be wearing {listed}"
-    return not missing, _plainly(subject, f"not wearing {listed}", ctx,
-                                 verb="is")
+        return not short, f"be wearing {listed}"
+    return not short, _plainly(subject, f"not wearing {listed}", ctx,
+                               verb="is")
 
 
 def _p_not_wears(subject, value, condition, ctx, mood):
-    """Whether the subject has on none of these. The opposite of `wears`."""
+    """
+    Whether the subject has on fewer than that many. The opposite of `wears`.
+
+    The counted form is what a wardrobe limit is written with: "you may wear
+    no more than one hat" is `not_wears` with a count of two, which reads as
+    "fewer than two hats" and is true of somebody wearing one.
+    """
+    from world import quantity
+
     if not subject.found:
         return True, ""
-    worn = [str(wanted) for wanted in _listed(value)
-            if _wearing(subject, wanted)]
+    counted, ok = _count_up(subject, value, ctx, _worn)
+    if not ok:
+        return _unreadable(mood)
+    worn = [quantity.said(spec, ctx)
+            for spec, found in counted if quantity.enough(found, spec)]
+    names = [quantity.said(spec, ctx) for spec, _found in counted]
     if mood == WANT:
-        named = worn or [str(v) for v in _listed(value)]
+        named = worn or names
         return not worn, f"take off {' or '.join(named) or 'it'}"
     return not worn, _plainly(subject,
                               f"still wearing {' and '.join(worn) or 'it'}",
