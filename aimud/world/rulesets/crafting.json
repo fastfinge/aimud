@@ -1,0 +1,62 @@
+{
+  "name": "crafting",
+  "title": "Crafting",
+  "version": 1,
+  "default": false,
+  "means": "Things can be made out of other things, by rules this world writes for itself.",
+  "requires": ["default"],
+  "conflicts": [],
+
+  "affordances": ["combine"],
+
+  "actions": [
+    {
+      "action": "combine",
+      "means": "to put two things together and see what they make",
+      "applies_to": [
+        {"role": "direct", "access": "carried"},
+        {"role": "instrument", "access": "carried"}
+      ]
+    },
+    {
+      "action": "make",
+      "means": "to produce something out of what you are carrying",
+      "applies_to": [
+        {"role": "direct", "access": "visible", "optional": true},
+        {"role": "source", "access": "carried", "optional": true},
+        {"role": "instrument", "access": "touchable", "optional": true}
+      ]
+    }
+  ],
+
+  "verbs": [
+    {"word": "mix", "means": "combine"},
+    {"word": "blend", "means": "combine"},
+    {"word": "join", "means": "combine"},
+    {"word": "craft", "means": "make"},
+    {"word": "forge", "means": "make"},
+    {"word": "brew", "means": "make"},
+    {"word": "assemble", "means": "make"}
+  ],
+
+  "rules": [
+    {
+      "name": "you can only combine things that go together",
+      "phase": "check",
+      "action": "combine",
+      "scope": {"world": true},
+      "about": "direct",
+      "when": [{"subject": "direct", "unbound": false}],
+      "conditions": [{"subject": "direct", "affords": ["combine"]}]
+    },
+    {
+      "name": "and only with something that goes together",
+      "phase": "check",
+      "action": "combine",
+      "scope": {"world": true},
+      "about": "instrument",
+      "when": [{"subject": "instrument", "unbound": false}],
+      "conditions": [{"subject": "instrument", "affords": ["combine"]}]
+    }
+  ]
+}

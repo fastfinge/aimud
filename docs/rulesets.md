@@ -541,3 +541,138 @@ Permadeath was a tenth and is not being built — see §5.5.
 * **No per-ruleset storage.** Rules go in `db.rules` with the rest, marked by
   `source`, for the reason `rulebooks.py` gives for one store rather than five.
 * **No count in `bulk`.** §3.2.
+
+---
+
+## 9. What was actually built, and where it differs
+
+Written after the fact, against `3f99cfb` and what follows it. Steps 1–9 are
+done; step 10 was a soak, and permadeath was declined in §5.5 before any of it
+started. Everything below is a place where building it taught us something the
+plan had wrong.
+
+### The counting work found three bugs the plan did not predict
+
+All three fail by doing nothing, which is why none of them had been noticed.
+
+* **`conditions.as_goal` put a clause's value through `str()`.** A check rule
+  refusing for want of two lumps of coal handed the planner a goal for an
+  object called `"{'of_kind': 'coal.n.01', 'count': 2}"`. It would never find
+  one, blame the rule for not delivering, and after `FAILURES_ALLOWED` tries
+  stop planning with that rule at all.
+* **`conditions.from_goal` put a goal's *kind* into `holds` as a name**, where
+  it was matched as a substring of what things are called. `"cake.n.01"`
+  appears in nothing anybody calls a cake, so a goal for *a* cake could never
+  be met by any cake. This predates counting entirely; nobody saw it because a
+  quest that names the cake works, and that is what quests mostly do.
+* **`model_json.listed` tested for a mapping by type.** An Evennia attribute
+  hands a stored mapping back as a `_SaverDict`, which is not a `dict`, so a
+  spec read from the database fell through to the sequence case and came apart
+  into its keys — the same failure that function exists to stop, one level up.
+  It could not happen while every listed value was a word.
+
+The trap §7 predicted — a counted goal looping — was real and worse than
+predicted: `goals._world_objects` looks in the actor's own hands first, so
+somebody wanting three apples and holding one was handed back the apple they
+were already holding, found no step that would get it, and gave the want up.
+`find_of_kind` takes a `skip` now. `tests/test_counted_goals.py` was checked
+by reverting the fix and watching it fail, rather than assumed.
+
+### `in_room` does not take a count, and `MAX_COUNT` is not `bulk.LIMIT`
+
+§3.2 listed `in_room` among the predicates to give counting. It is about the
+*room's title*, not its contents, so there is nothing to count; `holds`,
+`not_holds`, `wears` and `not_wears` are the four.
+
+§3.3 said the ceiling should be `bulk`'s. That borrowed `bulk.LIMIT`'s number
+*and* its argument, and the argument does not transfer: `bulk`'s twelve is
+about how many model calls `eat all` may cost in a storeroom, while counting
+runs against a pool already in hand. It refused to store "no more than twenty
+things at once", which is an ordinary rule. Fifty now, as a guard against
+nonsense rather than a claim about play.
+
+### A becomes rule's trigger is its `when`
+
+`world.becoming` reads `when` and nothing else. The death ruleset's first
+draft used `conditions`, was filed, was gathered, and never fired. The
+validator refuses that now — the symptom is a rule that works in the wrong way
+rather than not at all, which is the hardest sort to see.
+
+### `life_status` stays in `verbs.STATE_GROUPS`
+
+§5.4 said the death ruleset should own it. It does not. An unused state group
+is inert and costs nothing; removing it from the seeds would mean a world that
+invents `dead` *without* the ruleset gets a state that looks like death and
+stops nobody acting. The genuinely optional part of death is the health
+figure, the rule joining it to dying, and the way back — and that is what the
+ruleset holds. `death.json` declares the group as well, so the dependency is
+written down; registering it again is a fold and a no-op.
+
+### `db.worn` is still an attribute, not a state
+
+§2 and §5.3 both said a worn flag should become a state in a `wornness` group,
+and §2.1 said covering should be one too. Neither was done, and the reason is
+worth recording rather than leaving as an unexplained gap.
+
+What the conversion would buy is visibility in `show_state` and settability by
+`set_state`. What it does *not* buy is anything the condition language needs:
+`wears` and `not_wears` read `db.worn` directly, so the counted wardrobe limits
+in `clothing.json` work exactly as designed without it. What it costs is
+eighteen call sites across `gear`, `npc_gen`, `ownership`, `planner`,
+`quest_gen`, `effects` and the drop commands, plus a migration on every world
+in play that has anything worn in it.
+
+So it was left, and the things that actually mattered were taken: the typeclass
+and the hardcoded limits. Making `worn` a state is a separable change that can
+be made later on its own merits, and `set_state` being able to dress somebody
+while bypassing the limit rules is an argument against rather than for.
+
+### Clothing and wielding ship switched **on**
+
+§5.3 and §6 read as though clothing becomes opt-in. It is opt-*out*:
+`clothing.json` and `wielding.json` are `default: true`. On is the status quo —
+a world made before rulesets existed had them, and `reset world` must not take
+them away. What rulesets buy here is the ability to say no, not a change of
+default.
+
+### Two things `seed` needed that the plan did not mention
+
+* A world's `rules suspend` decisions are carried across an **edition** and not
+  across a fresh install. Without that, putting back a ruleset that had been
+  taken away brought it back switched off, because `forget` unlists everything
+  it seeded and `_decisions` read that as a decision.
+* Validation runs in two passes. A document is checked for naming things
+  nothing declares, and what a ruleset's `requires` declares lives in another
+  document — so the cross-document half cannot run until every document is
+  parsed. Written as one pass, it recursed until the stack gave out.
+
+### The limits are a pre-check, so "only one hat" is a count of **one**
+
+A check rule runs before the thing it guards. "You may wear only one hat" is
+`not_wears` with a count of 1 — *be wearing fewer than one before putting one
+on*. Written with 2, as the obvious reading suggests, it lets the second hat
+through and refuses the third. Worth knowing for every limit written this way.
+
+### §1.1 was right, and the test walked into it anyway
+
+The plan argued that `craft <recipe> from <stuff>` is the wrong syntax here,
+because `verbs.bind` binds nouns to things that exist and the thing being made
+does not. The first draft of `tests/test_crafting.py` typed `forge a blade` and
+every recipe test reached for a model to invent a blade. `forge`, naming the
+result not at all and reading what is in hand, is the idiom — and it is the one
+the endless-alchemy world in `future-plans.md` wants.
+
+### What the rulesets actually ship
+
+| | rules | what else |
+|---|---|---|
+| `default` | 8 | 5 action declarations |
+| `clothing` | 4 limits | the `clothing` mechanic, `wear`/`remove` |
+| `wielding` | — | the `wielding` mechanic |
+| `death` | 4 | `health`, `life_status`, `revive`/`heal`, 3 synonyms |
+| `crafting` | 2 | `combine`/`make`, 7 synonyms, the `combine` affordance |
+
+`crafting` ships **no recipes**, which is the whole argument against copying
+the contrib: a recipe is a fact about one world, and belongs with that world's
+other rules where it can be read, replaced, scoped to a room, and proposed by
+`suggest` from what players kept trying.
