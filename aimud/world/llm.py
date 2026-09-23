@@ -44,6 +44,7 @@ import urllib.error
 import urllib.request
 
 from twisted.internet import threads
+from twisted.python.failure import Failure
 
 #: Where the service lives when nobody has chosen otherwise. One constant
 #: rather than six, and now a default rather than the only answer: a sponsor
@@ -264,6 +265,56 @@ def _stopped_insisting(model, name, error):
 
 def _short(error):
     return str(error or type(error).__name__)[:MAX_COMPLAINT]
+
+
+def _callback_failed(what, exc):
+    """One line and a traceback for a callback that raised, never a raise."""
+    try:
+        from evennia.utils import logger
+
+        logger.log_trace(f"llm: a generator's {what} callback raised "
+                         f"({_short(exc)}); the job was ended with an error "
+                         f"so that whatever it held is released")
+    except Exception:
+        pass
+
+
+def _delivered(callback, value, on_error=None, what="answer"):
+    """
+    Hand a finished job to its callback, and turn a raise into an error.
+
+    The bug this closes, found on a live server: a generator's own callback
+    raising left the job with neither an answer nor an error, so everything
+    the caller was holding stayed held. `exits.at_traverse` sets
+    `ndb.generating` before asking and clears it only in its callbacks, so a
+    room that failed this way stranded the door until the next reload -- and
+    the door said "a room is already being generated here" to everybody who
+    tried it afterwards.
+
+    It was invisible as well as broken. The exception reached a Deferred that
+    nothing had an errback on, and Twisted logs that only when the Deferred is
+    garbage-collected, so nothing appeared in the log at all: the reactor was
+    idle, the threadpool was idle, no request was in flight, and a player had
+    been watching "building the way east" for four minutes.
+
+    Every generator already routes `on_error` to something that releases what
+    it holds -- that is what makes this the fix rather than a patch. Two
+    unguarded callbacks in `worldgen` started it, but there are 31 of these
+    handed to `converse` and any of them could do the same, so the seam is
+    where it is caught and not the call sites.
+    """
+    try:
+        return callback(value)
+    except Exception as exc:
+        _callback_failed(what, exc)
+        if on_error is None:
+            return None
+        try:
+            return on_error(f"the answer arrived but could not be used: "
+                            f"{_short(exc)}")
+        except Exception as also:
+            _callback_failed(f"{what}'s own error path", also)
+            return None
 
 
 def _fell_back(model, spare, error):
@@ -514,15 +565,21 @@ def converse(sponsor, model, messages, toolbox, *, on_done, on_error,
              "started": time.monotonic(), "ended": False}
 
     def ended(outcome, value=None, error=None, exhausted=False):
+        # Guarded on the way out, because this is the last place that knows a
+        # job was still owed an answer: once `ended` has run, the `ended` flag
+        # below makes every later attempt a no-op, so a callback that raises
+        # here would leave the caller holding whatever it holds for ever. See
+        # `_delivered`.
         if state["ended"]:
-            return
+            return None
         state["ended"] = True
         _loop_measured(sponsor, model, toolbox, state, outcome, rounds, error)
         if exhausted and on_exhausted is not None:
-            return on_exhausted(state["last"])
+            return _delivered(on_exhausted, state["last"], on_error,
+                              "exhausted")
         if error is not None:
-            return on_error(error)
-        return on_done(value)
+            return _delivered(on_error, error, None, "error")
+        return _delivered(on_done, value, on_error, "done")
 
     def ask():
         choice = None
@@ -690,13 +747,45 @@ def fetch(work, *args, on_success, on_error):
     -- a reply that parsed badly, a generator that threw -- was still paid for,
     and recording only the successes would make the figures quietly wrong in
     exactly the direction nobody would notice.
+
+    A success callback that raises is turned into the failure path rather than
+    being left to a Deferred nothing is watching: see `_delivered` for what
+    that cost. This is the outer net -- `converse` catches its own callers
+    first, and what reaches here is a caller that went through `fetch`
+    directly, or a fault in the loop's own machinery.
     """
-    def _succeeded(result):
-        _write_down_spending()
-        return on_success(result)
+    succeeded, failed = callbacks(on_success, on_error)
+    return threads.deferToThread(work, *args).addCallbacks(succeeded, failed)
 
-    def _failed(failure):
-        _write_down_spending()
-        return on_error(failure)
 
-    return threads.deferToThread(work, *args).addCallbacks(_succeeded, _failed)
+def callbacks(on_success, on_error):
+    """
+    The pair `fetch` hands to a Deferred, on their own so a test can reuse them.
+
+    `tests.support.immediately` replaces `fetch` -- that is the seam, and the
+    whole reason this module exists. But it replaced the callbacks along with
+    the door, and its own pair ran them unguarded, which made the stand-in
+    *safer than the real thing*: the lost-callback bug in `_delivered` could
+    not have been caught by any test in this suite, because under
+    `immediately` a raising callback simply came back out to the test.
+
+    So the door is faked and the callbacks are shared. Anything true of a
+    generator's callbacks in the game is now true of them in a test.
+    """
+    def succeeded(result):
+        _write_down_spending()
+        try:
+            return on_success(result)
+        except Exception as exc:
+            _callback_failed("success", exc)
+            return failed(Failure())
+
+    def failed(failure):
+        _write_down_spending()
+        try:
+            return on_error(failure)
+        except Exception as exc:
+            _callback_failed("failure", exc)
+            return None
+
+    return succeeded, failed

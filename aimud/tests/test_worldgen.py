@@ -14,6 +14,8 @@ before anything looks at it. A test that runs the whole path end to end with
 scripted replies costs nothing and catches every one of them.
 """
 
+from unittest import mock
+
 from django.test import tag
 
 from tests.base import GameTest
@@ -100,3 +102,74 @@ class RecordingWhoMadeIt(GameTest):
     def test_and_stores_an_account_as_it_always_did(self):
         sponsor_mod.claim(self.room1, self.account)
         self.assertEqual(self.room1.db.world_creator, self.account)
+
+
+@tag("world")
+class ADoorThatCouldNotBeBuilt(GameTest):
+    """
+    The invariant a stranded door broke: whatever happens, the way opens again.
+
+    Found live. `exits.at_traverse` sets `ndb.generating` before it asks and
+    clears it only from `on_success` / `on_error`, so a callback that raised
+    left the door saying "a room is already being generated here" to everybody
+    who tried it, for ever -- and nothing was logged, because the exception
+    reached a Deferred nothing had an errback on. The reactor was idle, the
+    threadpool was idle and no request was in flight.
+
+    `llm._delivered` is the fix and `test_converse` holds the mechanism still.
+    This holds the consequence still, which is the part a player notices.
+    """
+
+    accounts = True
+    second_room = True
+
+    def setUp(self):
+        super().setUp()
+        self.account.db.openrouter_api_key = "sk-test"
+        self.room1.db.is_world_root = True
+        self.room1.db.world_root = self.room1
+        self.room1.db.world_description = "A quiet hall."
+
+    def crossing(self, on_success=None):
+        """Build the room beyond an exit, and report (made, failed)."""
+        from world.worldgen import generate_connected_room
+
+        made, failed = [], []
+        with immediately(), replying(finishing(
+                name_room=NAME, describe_room=DESC)):
+            generate_connected_room(
+                sponsor_mod.of_account(self.account),
+                {"description": "a quiet hall"}, self.room1, "east",
+                on_success or made.append, failed.append)
+        return made, failed
+
+    def test_a_fault_between_the_name_and_the_description_is_reported(self):
+        """
+        The seam that actually stranded the door. `generate_connected_room`
+        guards `finish` -- the callback that runs once the description is back
+        -- but not `with_name`, which runs between the two model calls. An
+        exception there had nowhere to go at all.
+
+        `_allowed_exits` stands in for whatever might fail in there; what is
+        being held still is that the caller's `on_error` is reached, because
+        that is what releases the door.
+        """
+        with mock.patch("world.worldgen._allowed_exits",
+                        side_effect=RuntimeError("the exits made no sense")):
+            _made, failed = self.crossing()
+        self.assertEqual(len(failed), 1, "nobody was told, so nothing released")
+        self.assertIn("the exits made no sense", failed[0])
+
+    def test_a_fault_after_the_description_is_reported_as_it_always_was(self):
+        """`finish`'s own try/except, which was there before and still is."""
+        def boom(_room):
+            raise RuntimeError("the door could not be retargeted")
+
+        _made, failed = self.crossing(boom)
+        self.assertEqual(len(failed), 1)
+        self.assertIn("the door could not be retargeted", failed[0])
+
+    def test_and_the_ordinary_crossing_still_works(self):
+        made, failed = self.crossing()
+        self.assertEqual(failed, [])
+        self.assertEqual(len(made), 1)
