@@ -2,12 +2,17 @@
 AI-enhanced look and take (get) commands.
 
 In AI worlds:
-  look <thing>  — if thing doesn't exist, the validator decides whether it
-                  should, then the item model creates it.
+  look <thing>  — if thing doesn't exist, the decision model decides whether
+                  it should, then the item model creates it.
   take/get <thing> — if thing doesn't exist, same as above (then take if
                   takeable).  If thing exists but takeability is unknown, the
-                  validator decides and the result is cached on the object so
-                  the LLM is never asked again.
+                  decision model decides and the result is cached on the
+                  object so nothing is ever asked again.
+
+The two decisions are `world.decisions`, not a chat model: each is one bit,
+and what comes back is a probability compared against a threshold there. The
+`reason` each callback takes is a leftover of when a chat model wrote one, and
+is usually empty -- every handler below already ignored it.
 """
 
 from evennia.commands.default.general import CmdLook as _DefaultLook

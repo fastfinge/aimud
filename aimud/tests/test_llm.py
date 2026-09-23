@@ -507,6 +507,98 @@ class ListingModels(SimpleTestCase):
         self.assertIn("invalid key", str(caught.exception))
 
 
+#: One decision, as the service sends it back.
+DECIDED = {"answers": {"could_exist": {"type": "noul", "noul": 0.93}},
+           "usage": {"input_tokens": 476, "output_tokens": 70,
+                     "cost": 0.000019992}}
+
+
+@tag("unit")
+class DecidingSomething(SimpleTestCase):
+    """
+    `decide` is the other endpoint, and the differences are the point: a
+    different path, no messages, no tools, and no sampling settings.
+    """
+
+    def question(self):
+        return {"could_exist": {"type": "noul", "instructions": "Could it?",
+                                "criteria": {"true": "yes", "false": "no"}}}
+
+    def test_the_answers_come_back_and_nothing_else(self):
+        patch, sent = sending(DECIDED)
+        with patch:
+            answers = llm.decide(SPONSOR, "typesafe/jev-1.13",
+                                 {"room": "a cellar"}, self.question())
+        self.assertEqual(answers["could_exist"]["noul"], 0.93)
+        self.assertEqual(sent["payload"]["state"], {"room": "a cellar"})
+        self.assertEqual(sent["method"], "POST")
+
+    def test_it_is_a_sibling_of_the_chat_path_and_not_under_it(self):
+        """
+        The version segment is swapped, not appended to: `/api/v1/chat/...`
+        against `/api/alpha/decisions`. Getting this wrong is a 404 that looks
+        exactly like a model name nobody recognises.
+        """
+        patch, sent = sending(DECIDED)
+        with patch:
+            llm.decide(SPONSOR, "m", {}, self.question())
+        self.assertEqual(sent["url"], "https://openrouter.ai/api/alpha/decisions")
+
+    def test_the_service_follows_whoever_pays_here_too(self):
+        patch, sent = sending(DECIDED)
+        with patch:
+            llm.decide(FakeSponsor(base_url="https://nano-gpt.com/api/v1"),
+                       "m", {}, self.question())
+        self.assertEqual(sent["url"], "https://nano-gpt.com/api/alpha/decisions")
+
+    def test_a_base_with_no_version_on_it_is_taken_at_its_word(self):
+        patch, sent = sending(DECIDED)
+        with patch:
+            llm.decide(FakeSponsor(base_url="https://gateway.test"),
+                       "m", {}, self.question())
+        self.assertEqual(sent["url"], "https://gateway.test/alpha/decisions")
+
+    def test_no_sampling_settings_are_sent(self):
+        """
+        A decision model generates nothing, so there is no temperature to set.
+        Sent anyway, they are a request the provider can refuse outright.
+        """
+        patch, sent = sending(DECIDED)
+        with patch:
+            llm.decide(FakeSponsor(params={"temperature": 0.9}),
+                       "m", {}, self.question())
+        self.assertEqual(sorted(sent["payload"]),
+                         ["model", "questions", "state"])
+
+    def test_a_reply_with_no_answers_is_explained(self):
+        patch, _sent = sending({"error": {"message": "no credit left"}})
+        with patch, self.assertRaises(llm.LLMError) as caught:
+            llm.decide(SPONSOR, "m", {}, self.question())
+        self.assertIn("no credit left", str(caught.exception))
+
+    def test_answers_that_arrived_empty_are_not_an_answer(self):
+        patch, _sent = sending({"answers": {}})
+        with patch, self.assertRaises(llm.LLMError):
+            llm.decide(SPONSOR, "m", {}, self.question())
+
+    def test_what_it_cost_is_written_down_like_any_other_call(self):
+        """
+        The usage shape differs -- `input_tokens` where a chat reply says
+        `prompt_tokens` -- and `ledger` already reads both, so a decision is
+        counted rather than quietly free.
+        """
+        # Drained first: the queue is module-wide and every other call in this
+        # run leaves its own entry there.
+        while not llm._spending.empty():
+            llm._spending.get_nowait()
+        patch, _sent = sending(DECIDED)
+        with patch:
+            llm.decide(SPONSOR, "m", {}, self.question())
+        _sponsor, _model, usage, seconds = llm._spending.get_nowait()
+        self.assertEqual(usage["input_tokens"], 476)
+        self.assertIsNotNone(seconds)
+
+
 @tag("unit")
 class TheSeamItself(SimpleTestCase):
     """

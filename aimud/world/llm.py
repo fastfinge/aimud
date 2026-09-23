@@ -61,6 +61,22 @@ def _chat_url(base):
 def _models_url(base):
     return f"{str(base or BASE_URL).rstrip('/')}/models"
 
+
+def _decisions_url(base):
+    """
+    Where a decision model is asked, given where the chat models are.
+
+    The decisions endpoint is a sibling of `/v1` rather than a path under it
+    -- `/api/v1/chat/completions` against `/api/alpha/decisions` -- so the
+    version segment is swapped rather than appended to. A base that does not
+    end in one is taken at its word and has the path added, which is what a
+    sponsor pointing somewhere else would want.
+    """
+    base = str(base or BASE_URL).rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-len("/v1")]
+    return f"{base}/alpha/decisions"
+
 #: How long to wait. Two values, because the old copies used two and the
 #: difference is real rather than an oversight: a room description or a set of
 #: remembered facts is a long answer from a model that may be thinking, while a
@@ -71,6 +87,11 @@ SLOW_TIMEOUT = 60
 
 #: Listing the models is neither of those, and is not a generation call at all.
 LIST_TIMEOUT = 15
+
+#: Nor is a decision. A decision model generates nothing and returns a handful
+#: of numbers, so the only thing this has to cover is the round trip -- and
+#: somebody is waiting on it mid-command, which is the half that matters.
+DECIDE_TIMEOUT = 15
 
 #: How much of an error body to keep. These are sentences, not documents, and
 #: whatever is shown has to fit in a line somebody is reading.
@@ -353,6 +374,42 @@ def ask(sponsor, model, messages, timeout=TIMEOUT):
     if text:
         return text
     raise LLMError(_complain(reply) or "the model returned no text")
+
+
+def decide(sponsor, model, state, questions, timeout=DECIDE_TIMEOUT):
+    """
+    Ask a decision model typed questions about `state`, and answer with the
+    answers. Blocking: call it from a thread, or through `fetch`.
+
+    A different endpoint from `call`, because it is a different kind of
+    request: there are no messages, no tools and no sampling settings, and
+    what comes back is a number per question rather than something a model
+    said. See `world.decisions` for what the questions look like and how the
+    numbers are read; this is only the round trip.
+
+    It is here rather than there for the reason the module docstring gives.
+    One place talks to the service, so one thing is faked in a test -- and
+    the URL in particular stays behind this seam, which `test_llm` enforces.
+
+    No fallback, deliberately. `call` has one because a chat model refusing is
+    routine and any other chat model will do; a decision model has no stand-in
+    whose probabilities mean the same thing, and quietly answering from a model
+    whose thresholds were never tuned would be worse than saying nothing.
+    """
+    payload = {"model": model, "state": state, "questions": questions}
+    started = time.monotonic()
+    reply = _request(_decisions_url(sponsor.base_url), sponsor.key(), payload,
+                     timeout)
+    _spent(sponsor, model, reply, time.monotonic() - started)
+    try:
+        answers = reply["answers"]
+    except (KeyError, TypeError) as err:
+        raise LLMError(_complain(reply)
+                       or "the decision service sent back no answers") from err
+    if not isinstance(answers, dict) or not answers:
+        raise LLMError(_complain(reply)
+                       or "the decision service sent back no answers")
+    return answers
 
 
 #: What each service last said about its models, by the URL they were listed

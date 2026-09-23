@@ -11,7 +11,8 @@ next rule that asks something of it finds what it expects. See
 from django.test import tag
 
 from tests.base import GameTest
-from tests.support import FakeSponsor, finishing, immediately, replying
+from tests.support import (FakeSponsor, deciding, finishing, immediately,
+                           replying)
 from world import item_gen
 from world import rulebooks as R
 
@@ -121,13 +122,23 @@ class TheGeneratorIsTold(WhyTest):
         self.assertIs(wanted.actor, self.char1)
 
     def test_so_is_the_question_of_whether_it_could_be_here(self):
+        # The decision model rather than a chat model, so the why arrives as a
+        # key of the state rather than a line of a prompt -- but it still has
+        # to arrive: a rope somebody wants to climb down is a different
+        # question from a rope somebody wants to look at.
         wanted = item_gen.Wanted(self.char1, verb="climb", role="instrument",
                                  said="climb down the rope")
-        with immediately(), replying(finishing(judge_existence={
-                "valid": True, "reason": "a rope hangs here"})) as recorder:
+        with immediately(), deciding({"could_exist": 0.9}) as recorder:
             item_gen.validate_object_existence(
                 FakeSponsor(), self.root, "rope", lambda why: None,
                 lambda why: None, lambda why: None, wanted=wanted)
-        prompt = self.user_prompt(recorder)
-        self.assertIn('"climb down the rope"', prompt)
-        self.assertIn("the thing used to do it", prompt)
+        told = recorder.told(0)
+        self.assertIn('"climb down the rope"', told)
+        self.assertIn("the thing used to do it", told)
+
+    def test_and_is_left_out_when_nobody_said_why(self):
+        with immediately(), deciding({"could_exist": 0.9}) as recorder:
+            item_gen.validate_object_existence(
+                FakeSponsor(), self.root, "rope", lambda why: None,
+                lambda why: None, lambda why: None)
+        self.assertNotIn("why_it_is_wanted", recorder.state(0))

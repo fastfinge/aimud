@@ -2,10 +2,15 @@
 Items on finish tools: the first part of phase 6 of
 docs/generator-tool-loops.md.
 
-Whether a thing could be here, whether it can be picked up, and what it is are
-three tool loops now. What was silently resolved or dropped -- a name carrying
-a condition, a sense that contradicts the thing, a word list nothing keeps, a
-second word for a state the world has -- is sent back to be put right.
+What a thing is, is a tool loop. What was silently resolved or dropped -- a
+name carrying a condition, a sense that contradicts the thing, a word list
+nothing keeps, a second word for a state the world has -- is sent back to be
+put right.
+
+Whether a thing could be here and whether it can be picked up were two more
+loops and are not any longer: each is a single bit, and both now go to the
+decision model in `world.decisions`, where the answer is a probability and
+the judgement is a threshold this file asserts on. `Judging` covers those.
 """
 
 from unittest import mock
@@ -13,9 +18,9 @@ from unittest import mock
 from django.test import tag
 
 from tests.base import GameTest
-from tests.support import (FakeSponsor, finishing, immediately, replying,
-                           tool_call, tool_reply)
-from world import item_gen, token_lists, verbs
+from tests.support import (FakeSponsor, deciding, finishing, immediately,
+                           replying, tool_call, tool_reply)
+from world import item_gen, llm, token_lists, verbs
 
 
 def _offered(recorder, index, name):
@@ -54,39 +59,93 @@ class _Room(GameTest):
 
 @tag("world")
 class Judging(_Room):
+    """
+    The two yes-or-no checks, now put to the decision model.
+
+    What is asserted here is the threshold rather than a boolean, because the
+    threshold is the thing that was previously only a word in a prompt: see
+    `world.decisions`. Each test names the probability it is either side of.
+    """
+
     loose_objects = 1
 
-    def test_whether_a_thing_could_be_here(self):
+    def judge(self, phrase, *answers):
         said = []
-        with immediately(), replying(finishing(judge_existence={
-                "valid": False, "reason": "not in a cellar"})) as recorder:
+        with immediately(), deciding(*answers) as recorder:
             item_gen.validate_object_existence(
-                FakeSponsor(), self.root, "a spaceship",
+                FakeSponsor(), self.root, phrase,
                 on_valid=lambda r: said.append(("valid", r)),
                 on_invalid=lambda r: said.append(("invalid", r)),
                 on_error=self.fail)
-        self.assertEqual(said, [("invalid", "not in a cellar")])
-        self.assertIsNotNone(_offered(recorder, 0, "judge_existence"))
+        return said, recorder
+
+    def test_whether_a_thing_could_be_here(self):
+        said, recorder = self.judge("a spaceship", {"could_exist": 0.02})
+        self.assertEqual([answer for answer, _why in said], ["invalid"])
+        self.assertIn("could_exist", recorder.questions(0))
+        self.assertIn("a spaceship", recorder.told(0))
+
+    def test_the_benefit_of_the_doubt_is_given(self):
+        # Below a half and well above the threshold: the old prompt asked for
+        # this in words ("be permissive"), and now it is the number.
+        said, _ = self.judge("a chipped mug", {"could_exist": 0.3})
+        self.assertEqual([answer for answer, _why in said], ["valid"])
+
+    def test_part_of_a_body_is_refused_however_plausible(self):
+        # Plausible enough to pass the existence threshold twice over, and
+        # refused anyway -- which is the rule the prompt could only ask for.
+        said, _ = self.judge("a shoulder",
+                             {"could_exist": 0.95, "is_body_part": 0.9})
+        self.assertEqual([answer for answer, _why in said][0], "invalid")
+        self.assertIn("part of somebody", said[0][1])
+
+    def test_a_part_cut_free_is_still_a_thing(self):
+        said, _ = self.judge("a severed hand",
+                             {"could_exist": 0.8, "is_body_part": 0.1})
+        self.assertEqual([answer for answer, _why in said], ["valid"])
+
+    def test_both_questions_go_in_the_one_request(self):
+        _said, recorder = self.judge("a lamp", {"could_exist": 0.9})
+        self.assertEqual(recorder.count, 1)
+        self.assertEqual(sorted(recorder.questions(0)),
+                         ["could_exist", "is_body_part"])
 
     def test_whether_it_can_be_picked_up(self):
         said = []
-        with immediately(), replying(finishing(judge_takeable={
-                "valid": True, "reason": "it is loose"})):
+        with immediately(), deciding({"takeable": 0.9}) as recorder:
             item_gen.validate_object_takeable(
                 FakeSponsor(), self.root, self.obj1,
                 on_valid=lambda r: said.append(("valid", r)),
                 on_invalid=lambda r: said.append(("invalid", r)),
                 on_error=self.fail)
-        self.assertEqual(said, [("valid", "it is loose")])
+        self.assertEqual([answer for answer, _why in said], ["valid"])
+        self.assertIn("takeable", recorder.questions(0))
 
-    def test_no_answer_is_an_error_and_not_a_guess(self):
+    def test_an_answer_that_cannot_be_read_refuses_rather_than_conjures(self):
+        # A reply with the question missing, or its number unreadable. Nothing
+        # is made: the threshold is not passed, so the thing is refused.
+        said, _ = self.judge("a lamp", {"could_exist": {"type": "noul"}})
+        self.assertEqual([answer for answer, _why in said], ["invalid"])
+
+    def test_the_service_refusing_is_an_error_and_not_a_guess(self):
         errors = []
-        with immediately(), replying("I think probably yes?"):
+        with immediately(), deciding(llm.LLMError("no credit left")):
             item_gen.validate_object_existence(
                 FakeSponsor(), self.root, "a lamp",
                 on_valid=self.fail, on_invalid=self.fail,
                 on_error=errors.append)
         self.assertEqual(len(errors), 1)
+        self.assertIn("no credit", errors[0])
+
+    def test_a_world_with_nobody_paying_is_told_so_before_asking(self):
+        errors = []
+        with immediately(), deciding() as recorder:
+            item_gen.validate_object_existence(
+                FakeSponsor(key=""), self.root, "a lamp",
+                on_valid=self.fail, on_invalid=self.fail,
+                on_error=errors.append)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(recorder.count, 0)
 
 
 @tag("world")

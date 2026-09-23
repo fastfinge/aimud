@@ -372,7 +372,13 @@ where it is called rarely:
 | `naming` | fast and cheap; called for every new room |
 | `dialogue` | fast and cheap; called for every line an NPC hears |
 | `rooms`, `contents`, `items`, `npcs` | mid-range — this is the prose you read |
-| `commands`, `quests`, `validation` | your most capable model: structured decisions, called rarely, and getting them wrong is what makes a world incoherent |
+| `commands`, `quests` | your most capable model: structured decisions, called rarely, and getting them wrong is what makes a world incoherent |
+
+Validation is not in that list any more and is not a model you choose. Whether
+a thing could be in a room, and whether it can be picked up, are single bits
+rather than generations, and they go to a pinned decision model that answers
+with a probability instead of prose — see `world/decisions.py`. There is
+nothing to set, and it is charged for input tokens only.
 
 ### 3. Make a world
 
@@ -594,7 +600,7 @@ nobody active in it does not think at all**.
 | Try a known verb on a sort of thing nobody has tried it on | 1 | One bit — can this be done to that at all — kept for that whole sort |
 | Try something that sort has already refused | 0 | "You cannot burn the key", for nothing |
 | Lose a fight you have already lost once | 0 | Each outcome is narrated once per thing |
-| Look at something only mentioned in prose | 2 | Plausibility check + creation |
+| Look at something only mentioned in prose | 1 + a decision | The plausibility check is a decision model, not a generation |
 | Take on an errand | 1 | Turning it into something checkable |
 | An NPC acting on its own | 0–1 | Free whenever the planner finds a step |
 | Walking, `score`, `inventory`, `quests`, `view zones`, `help`, `goal` nudges | 0 | No model involved |
