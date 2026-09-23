@@ -485,8 +485,19 @@ def open_a_way(ctx):
 
 
 def _wizard_items(ctx):
+    from commands import rulesets_subject
+
     items = (list(WIZARD_FIELDS) + list(CLOCK_FIELDS)
              + [_guidance_field(f) for f in lore.FACETS])
+    # Which bundles of rules the world is built with. The same form `edit
+    # rulesets` opens, so what is offered here cannot drift from what is
+    # offered there.
+    items.append(menus.Submenu(
+        "rulesets", "Which rulesets this world uses",
+        rulesets_subject.FORM,
+        help="Bundles of rules a world can be built with -- crafting, death, "
+             "and whatever else this server offers. What one requires is "
+             "switched on with it."))
     if ctx.draft.get("mode") == "edit":
         items.append(menus.Action(
             "open", "Open a way on, if the world has nowhere left to go",
@@ -530,9 +541,11 @@ WIZARD = menus.Form(
 
 
 def new_draft(description=""):
+    from world import rulesets
+
     return {"mode": "create", "world_id": None, "description": description,
             "title": "", "player_name": "", "player_description": "",
-            "guidance": {}}
+            "guidance": {}, "rulesets": rulesets.defaults()}
 
 
 def _key_problem(caller):

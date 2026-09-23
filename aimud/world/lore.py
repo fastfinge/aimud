@@ -220,6 +220,15 @@ def store(root, spec):
         root.db.world_guidance = clean_guidance(spec.get("guidance"))
     if spec.get("clock"):
         store_clock(root, spec["clock"])
+    if "rulesets" in spec:
+        # Which bundles of rules this world was built with. Seeded here rather
+        # than left to the first attempt, because a world whose creator chose
+        # crafting should have `combine` from the moment they walk into it --
+        # and because `reset world` rebuilds from a spec, which is the whole
+        # of what makes the choice survive a reset. See world/rulesets.py.
+        from world import rulesets
+
+        rulesets.seed(root, list(spec.get("rulesets") or []))
 
 
 def store_clock(root, wanted):
@@ -278,9 +287,12 @@ def spec_of(root, character=None):
     This is what `edit world` opens and what `reset world` rebuilds from: a
     reset that forgot the guidance would quietly undo half the wizard.
     """
+    from world import rulesets
+
     if root is None:
         return {"title": "", "description": "", "player_name": "",
-                "player_description": "", "guidance": {}}
+                "player_description": "", "guidance": {},
+                "rulesets": rulesets.defaults()}
     return {
         "title": root.db.world_title or "",
         "description": root.db.world_description or "",
@@ -290,6 +302,10 @@ def spec_of(root, character=None):
         # The clock exactly as it is stored, so a reset keeps the date.
         "clock": ({"settings": dict(root.db.clock)} if root.db.clock
                   else {}),
+        # And which rulesets it was built with, so a reset keeps those too --
+        # at their own defaults, since a reset is a world built again rather
+        # than the one that was there carried over.
+        "rulesets": rulesets.chosen(root) or rulesets.defaults(),
     }
 
 

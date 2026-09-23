@@ -265,11 +265,10 @@ class WhatDeathBrings(GameTest):
                          "revive")
 
     def test_and_folds_them_only_for_a_world_that_chose_it(self):
-        other = self.room2 if getattr(self, "room2", None) else None
+        """Asked with no world, the word means nothing in particular."""
         from world import verbs
 
         self.assertEqual(verbs.canonical_verb("resurrect"), "resurrect")
-        self.assertIsNone(other)
 
     def test_a_ruleset_cannot_move_the_engine_underneath_itself(self):
         """
