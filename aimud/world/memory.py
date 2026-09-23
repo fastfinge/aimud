@@ -1828,9 +1828,22 @@ def lookup_tools():
                 return answer(f"Nothing comes to mind about {query}.")
             answer(format_recalled(rows, world_root=ctx.world_root))
 
+        def lost(failure):
+            # The character says the same thing either way, and should: an NPC
+            # mid-conversation cannot tell somebody the database is locked.
+            # But the log can, and nothing else here would -- this goes through
+            # `fetch` rather than `converse`, so there is no loop line to carry
+            # the reason (see `llm._loop_measured`, which exists for exactly
+            # the generators that swallow theirs). Without this, a bank that
+            # will not open is indistinguishable from a character who simply
+            # remembers nothing, for as long as it lasts.
+            logger.log_info(f"memory: could not recall {query!r} for "
+                            f"{getattr(ctx.actor, 'key', '?')}: "
+                            f"{failure.getErrorMessage()}")
+            answer("Nothing comes to mind.")
+
         llm.fetch(recall_rows_sync, where, query, 6,
-                  on_success=found,
-                  on_error=lambda _failure: answer("Nothing comes to mind."))
+                  on_success=found, on_error=lost)
 
     return [tb.Tool(
         "recall",

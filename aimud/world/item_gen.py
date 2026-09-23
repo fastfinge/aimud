@@ -12,6 +12,13 @@ empty now, because a decision model writes no prose and every caller was
 already throwing the sentence away. What survives is the one reason the game
 knows itself rather than asking for: a thing refused for being part of
 somebody can say so, which is a better answer than "you don't see any".
+
+All three places that ask show it. `look` and `get` are in `look_take_cmds`;
+the third is `conjure` below, which is the path every *verb* comes down -- so
+"burn shoulder" is answered the same way "look shoulder" is. `anatomy` gets
+there first for anything with an owner ("Samuel's shoulder" resolves to
+Samuel, and says his name if it cannot), so what reaches the existence check
+is a bare part nobody claimed, and the flat line was all a player got.
 """
 
 from world import decisions, llm
@@ -568,9 +575,16 @@ def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False,
         generate_item(sponsor, room, phrase, on_success=made, on_error=failed,
                       wanted=wanted)
 
-    def on_invalid(_reason):
+    def on_invalid(why):
         release()
-        on_refused(f"You see no {phrase} here.")
+        # The reason instead of the flat line when there is one, as `look` and
+        # `get` do -- see this module's docstring. It matters more here than
+        # there: this is the path every *verb* comes down, so "burn shoulder"
+        # and "push shoulder" are answered as well as "look shoulder". And
+        # `anatomy` has already had its turn, so a phrase reaching this point
+        # named no owner -- there is no "that is Samuel's" to give instead, and
+        # the flat line is all the player would otherwise get.
+        on_refused(why or f"You see no {phrase} here.")
 
     def on_error(err):
         release()

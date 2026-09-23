@@ -214,6 +214,29 @@ class WhatAPlayerIsTold(_Room):
         self.assertIn(item_gen.PART_OF_SOMEBODY, heard)
         self.assertNotIn("You don't see any shoulder here.", heard)
 
+    def test_and_a_player_who_tries_any_verb_on_one(self):
+        """
+        `conjure` is the third place that asks, and the one every verb comes
+        down -- so "burn shoulder" is answered like "look shoulder" and not
+        with the flat line. It was the path left unwired: `look` and `get`
+        were done and this was not.
+        """
+        refused = []
+        with immediately(), deciding({"could_exist": 0.95,
+                                      "is_body_part": 0.9}):
+            item_gen.conjure(self.char1, self.root, FakeSponsor(), "shoulder",
+                             on_ready=lambda obj, made: self.fail("it built one"),
+                             on_refused=refused.append)
+        self.assertEqual(refused, [item_gen.PART_OF_SOMEBODY])
+
+    def test_and_an_ordinary_miss_there_still_reads_as_one(self):
+        refused = []
+        with immediately(), deciding({"could_exist": 0.04}):
+            item_gen.conjure(self.char1, self.root, FakeSponsor(), "spaceship",
+                             on_ready=lambda obj, made: self.fail("it built one"),
+                             on_refused=refused.append)
+        self.assertEqual(refused, ["You see no spaceship here."])
+
 
 @tag("world")
 class MakingAnItem(_Room):
