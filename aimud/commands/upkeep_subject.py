@@ -147,7 +147,9 @@ def tend_memory(caller, what):
 
     if what in ("sleep", "all"):
         caller.msg(f"Consolidating {len(banks)} bank(s) in the background...")
-        memory.consolidate(on_done=lambda result: caller.msg(
+        # Not yielding to players: the player it would yield to is the one who
+        # asked, and they are waiting to be told how many banks were done.
+        memory.consolidate(yield_to_players=False, on_done=lambda result: caller.msg(
             f"Consolidated. "
             f"{sum(1 for r in result.values() if isinstance(r, dict) and r.get('status') != 'no_op')} "
             f"of {len(result)} bank(s) had anything old enough to sleep on."))

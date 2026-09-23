@@ -80,7 +80,13 @@ def at_server_start():
     # Worth doing once a run as well as on the clock: a server restarted more
     # often than the sleep interval would otherwise never consolidate at all,
     # and unconsolidated memories are the ones that get deleted.
-    consolidate()
+    #
+    # It gives way as soon as anybody starts playing, which matters most here
+    # of anywhere: nobody is logged in at this moment, so every check for a
+    # quiet game passes, and the player who logs in ten seconds later is behind
+    # whatever this started. `consolidate` stops between banks for them, and
+    # the banks it did not reach keep until the next pass.
+    consolidate(yield_to_players=True)
 
 
 def _warm_lexicon():

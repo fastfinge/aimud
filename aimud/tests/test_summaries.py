@@ -215,3 +215,125 @@ class WhatMnemosyneIsToldToDo(SimpleTestCase):
         summaries.install()
         self.assertEqual(getattr(first, "name", ""), summaries.BACKEND_NAME)
         self.assertTrue(summaries.installed())
+
+
+@tag("unit")
+class SleepingOneBankAtATime(SimpleTestCase):
+    """
+    How the pass behaves around the lock and around the player.
+
+    Two faults, both measured on a live server. The lock was held for the
+    whole pass -- and every recall and every write in the game takes the same
+    lock, so all memory stalled behind however long every bank took together.
+    And the pass at server start gave way to nobody: it fires when the game is
+    empty, so every check for a quiet moment passes, and the player logging in
+    ten seconds later waited behind it.
+
+    `_consolidate_sync` is driven directly here with a stand-in backend. The
+    real one needs an embedding stack, and none of what is asserted is about
+    mnemosyne -- it is about the loop around it.
+    """
+
+    def setUp(self):
+        from world import memory
+
+        self.memory = memory
+        self.slept = []
+
+    def backend(self):
+        """A mnemosyne stand-in that records which banks were slept."""
+        slept = self.slept
+
+        class Instance:
+            def __init__(self, bank):
+                self.bank = bank
+
+            def sleep_all_sessions(self, force=False):
+                slept.append(self.bank)
+                return {"status": "slept", "bank": self.bank}
+
+            def close(self):
+                pass
+
+        class Backend:
+            Mnemosyne = Instance
+
+        return Backend()
+
+    def run_pass(self, banks, keep_going=None, payers=None):
+        held = []
+
+        def with_backend(action):
+            # Records each turn of the lock, which is the thing under test.
+            held.append("taken")
+            return action(self.backend())
+
+        with mock.patch.object(self.memory, "_with_backend", with_backend):
+            done = self.memory._consolidate_sync(
+                banks, payers=payers, keep_going=keep_going)
+        return done, held
+
+    def test_the_lock_is_taken_once_per_bank_not_once_per_pass(self):
+        banks = ["aimud-world-1", "aimud-world-2", "aimud-world-3"]
+        done, held = self.run_pass(banks)
+        self.assertEqual(self.slept, banks)
+        self.assertEqual(len(held), 3, "the whole pass held the lock at once")
+        self.assertEqual(sorted(done), banks)
+
+    def test_a_pass_stops_when_somebody_starts_playing(self):
+        banks = [f"aimud-world-{n}" for n in range(1, 6)]
+        answers = [True, True, False, True, True]
+
+        done, _held = self.run_pass(banks, keep_going=lambda: answers.pop(0))
+        self.assertEqual(self.slept, banks[:2])
+        self.assertEqual(len(done), 2)
+
+    def test_and_keeps_going_when_nobody_is(self):
+        banks = ["aimud-world-1", "aimud-world-2"]
+        done, _held = self.run_pass(banks, keep_going=lambda: True)
+        self.assertEqual(len(done), 2)
+
+    def test_one_bank_that_will_not_open_does_not_stop_the_rest(self):
+        banks = ["aimud-world-1", "aimud-world-2", "aimud-world-3"]
+        calls = {"n": 0}
+
+        def with_backend(action):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise RuntimeError("that file is locked")
+            return action(self.backend())
+
+        with mock.patch.object(self.memory, "_with_backend", with_backend):
+            done = self.memory._consolidate_sync(banks)
+        self.assertEqual(self.slept, ["aimud-world-1", "aimud-world-3"])
+        self.assertEqual(sorted(done), ["aimud-world-1", "aimud-world-3"])
+
+    def test_each_bank_is_slept_with_its_own_world_paying(self):
+        banks = ["aimud-world-1", "aimud-world-2"]
+        seen = []
+
+        def with_backend(action):
+            return action(self.backend())
+
+        real = summaries.paying_for
+
+        def watching(sponsor, model):
+            seen.append(model)
+            return real(sponsor, model)
+
+        with mock.patch.object(self.memory, "_with_backend", with_backend), \
+                mock.patch.object(summaries, "paying_for", watching):
+            self.memory._consolidate_sync(banks, payers={
+                "aimud-world-1": (FakeSponsor(), "one/model"),
+                "aimud-world-2": (FakeSponsor(), "two/model"),
+            })
+        self.assertEqual(seen, ["one/model", "two/model"])
+
+    def test_a_bank_with_no_payer_is_still_slept(self):
+        """
+        Everything sleep does besides summarising, it does without a model --
+        and what it does includes exempting rows from deletion.
+        """
+        done, _held = self.run_pass(["aimud-world-1"], payers={})
+        self.assertEqual(self.slept, ["aimud-world-1"])
+        self.assertEqual(len(done), 1)
