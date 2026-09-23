@@ -16,6 +16,16 @@ somebody can say so, which is a better answer than "you don't see any".
 
 from world import decisions, llm
 
+#: Why a thing was refused, when the refusal is one the game understands well
+#: enough to explain. A whole sentence, ready to show, because the game writes
+#: it rather than asking for it -- a decision model returns numbers and no
+#: prose, so there is nothing here that came from a model.
+#:
+#: There is exactly one so far, and it earns saying: "you don't see any
+#: shoulder here" is a lie about a shoulder plainly attached to somebody
+#: standing in the room, and a player told it has no way to learn the rule.
+PART_OF_SOMEBODY = "That is part of somebody, not a thing lying about."
+
 _ITEM_SYSTEM_PROMPT = """You generate items for a text-based MUD.
 Answer by calling make_item.
 
@@ -303,7 +313,7 @@ def validate_object_existence(sponsor, room, object_name, on_valid, on_invalid,
         body = decisions.certainty(answers, "is_body_part")
         exists = decisions.certainty(answers, "could_exist")
         if body >= decisions.DENY_BODY_PART:
-            on_invalid("that is part of somebody, not a thing lying about")
+            on_invalid(PART_OF_SOMEBODY)
         elif exists >= decisions.ALLOW_EXISTENCE:
             on_valid("")
         else:

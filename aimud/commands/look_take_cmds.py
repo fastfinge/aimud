@@ -10,9 +10,14 @@ In AI worlds:
                   object so nothing is ever asked again.
 
 The two decisions are `world.decisions`, not a chat model: each is one bit,
-and what comes back is a probability compared against a threshold there. The
-`reason` each callback takes is a leftover of when a chat model wrote one, and
-is usually empty -- every handler below already ignored it.
+and what comes back is a probability compared against a threshold there.
+
+A refusal is usually a number below a threshold, which is no reason to give
+anybody, and `_not_here` says the flat "you don't see any" for it. Where the
+game does understand the refusal it says so instead -- one case so far, a
+thing that is part of a living body, which is worth explaining because the
+flat line is untrue of a shoulder attached to somebody in the room. The
+sentence is `item_gen.PART_OF_SOMEBODY`; nothing here came from a model.
 """
 
 from evennia.commands.default.general import CmdLook as _DefaultLook
@@ -379,10 +384,10 @@ class CmdAILook(_DefaultLook):
                 wanted=wanted,
             )
 
-        def on_invalid(_reason):
+        def on_invalid(why):
             wait.done()
             _release_gen_lock(room, key)
-            caller.msg(f"You don't see any {query} here.")
+            _not_here(caller, query, why)
 
         def on_error(err):
             wait.done()
@@ -415,6 +420,22 @@ def _finish_look(caller, item, room, key):
 def _gen_error(caller, room, key, err):
     _release_gen_lock(room, key)
     caller.msg(f"|rCould not create item: {err}|n")
+
+
+def _not_here(caller, query, why=""):
+    """
+    Say that the thing somebody reached for is not there, and why when known.
+
+    `why` is the game's own sentence for a refusal it understands -- see
+    `item_gen.PART_OF_SOMEBODY`, which is the only one so far. It is shown
+    instead of the flat refusal rather than alongside it: "You don't see any
+    shoulder here. That is part of somebody" says the same thing twice and the
+    first half is the untrue half.
+
+    Empty is the ordinary case and always will be. Most refusals are a
+    probability below a threshold, which is not a reason anybody can be told.
+    """
+    caller.msg(why or f"You don't see any {query} here.")
 
 
 # ---------------------------------------------------------------------------
@@ -572,6 +593,12 @@ class CmdAIGet(_DefaultGet):
         def on_invalid(_reason):
             wait.done()
             remember(False)
+            # Flat, and staying flat even though the existence check now
+            # explains itself. This answer is remembered for the whole kind,
+            # so a reason would be said to the first player to try and to
+            # nobody after -- the cache above answers everyone else with this
+            # line. Better the same words every time than a reason that looks
+            # like it depends on who is asking.
             caller.msg("You can't take that.")
 
         def on_error(err):
@@ -614,10 +641,10 @@ class CmdAIGet(_DefaultGet):
                 wanted=wanted,
             )
 
-        def on_invalid(_reason):
+        def on_invalid(why):
             wait.done()
             _release_gen_lock(room, key)
-            caller.msg(f"You don't see any {query} here.")
+            _not_here(caller, query, why)
 
         def on_error(err):
             wait.done()

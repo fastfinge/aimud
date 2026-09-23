@@ -97,7 +97,12 @@ class Judging(_Room):
         said, _ = self.judge("a shoulder",
                              {"could_exist": 0.95, "is_body_part": 0.9})
         self.assertEqual([answer for answer, _why in said][0], "invalid")
-        self.assertIn("part of somebody", said[0][1])
+        self.assertEqual(said[0][1], item_gen.PART_OF_SOMEBODY)
+
+    def test_an_ordinary_refusal_carries_no_reason_to_give(self):
+        # Nothing to say beyond the flat line: see `WhatAPlayerIsTold`.
+        said, _ = self.judge("a fusion reactor", {"could_exist": 0.04})
+        self.assertEqual(said, [("invalid", "")])
 
     def test_a_part_cut_free_is_still_a_thing(self):
         said, _ = self.judge("a severed hand",
@@ -146,6 +151,68 @@ class Judging(_Room):
                 on_error=errors.append)
         self.assertEqual(len(errors), 1)
         self.assertEqual(recorder.count, 0)
+
+
+@tag("world")
+class WhatAPlayerIsTold(_Room):
+    """
+    The other end of a refusal: the words somebody actually reads.
+
+    A decision model writes no prose, so there is no model answer to relay --
+    which makes the one sentence the game *does* have worth getting to the
+    player rather than dropping, as every handler did while a chat model was
+    writing sentences nobody showed.
+    """
+
+    def said(self, query, why=""):
+        from commands.look_take_cmds import _not_here
+
+        heard = []
+        self.char1.msg = lambda text="", **kwargs: heard.append(str(text))
+        _not_here(self.char1, query, why)
+        return heard
+
+    def test_an_ordinary_refusal_is_the_flat_line(self):
+        # The usual case, and always will be: a probability below a threshold
+        # is not a reason anybody can be told.
+        self.assertEqual(self.said("glass"),
+                         ["You don't see any glass here."])
+
+    def test_a_refusal_the_game_understands_says_so_instead(self):
+        self.assertEqual(self.said("shoulder", item_gen.PART_OF_SOMEBODY),
+                         [item_gen.PART_OF_SOMEBODY])
+
+    def test_and_not_as_well_as(self):
+        """The flat line is the untrue half; saying both says it anyway."""
+        heard = self.said("shoulder", item_gen.PART_OF_SOMEBODY)
+        self.assertNotIn("don't see any", " ".join(heard))
+
+    def test_the_sentence_is_the_games_own_and_reads_as_one(self):
+        # Capitalised and stopped, because nothing downstream tidies it: it is
+        # shown exactly as it leaves `item_gen`.
+        self.assertTrue(item_gen.PART_OF_SOMEBODY[0].isupper())
+        self.assertTrue(item_gen.PART_OF_SOMEBODY.endswith("."))
+
+    def test_and_reaches_a_player_who_looks_for_one(self):
+        """
+        The whole path, because the two halves above meet in one line of
+        `_ai_look` and a test of each half separately would not notice it
+        going missing.
+        """
+        from commands.look_take_cmds import CmdAILook
+
+        self.root.db.world_description = "A damp cellar."
+        heard = []
+        self.char1.msg = lambda text="", **kwargs: heard.append(str(text))
+        # A world nobody pays for refuses before asking anything, which is
+        # right and is not what this test is about.
+        with immediately(), deciding({"could_exist": 0.95,
+                                      "is_body_part": 0.9}), \
+                mock.patch("commands.look_take_cmds._sponsor_for",
+                           return_value=FakeSponsor()):
+            CmdAILook()._ai_look(self.char1, "shoulder")
+        self.assertIn(item_gen.PART_OF_SOMEBODY, heard)
+        self.assertNotIn("You don't see any shoulder here.", heard)
 
 
 @tag("world")
