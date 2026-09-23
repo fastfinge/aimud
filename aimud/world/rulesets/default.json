@@ -1,0 +1,281 @@
+{
+  "name": "default",
+  "title": "The standard rules",
+  "version": 4,
+  "default": true,
+  "means": "What every world knows before it has learned anything: that you must be able to act, reach what you act on, and see what you look at.",
+  "requires": [],
+  "conflicts": [],
+  "actions": [
+    {
+      "action": "look",
+      "means": "to take in what something looks like",
+      "despite": [
+        "acting"
+      ],
+      "applies_to": [
+        {
+          "role": "direct",
+          "access": "visible",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "action": "put",
+      "means": "to set something down somewhere, or whatever else this world means by it",
+      "applies_to": [
+        {
+          "role": "direct",
+          "access": "touchable",
+          "optional": true
+        },
+        {
+          "role": "container",
+          "access": "touchable",
+          "optional": true
+        },
+        {
+          "role": "target",
+          "access": "touchable",
+          "optional": true
+        },
+        {
+          "role": "source",
+          "access": "touchable",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "action": "place",
+      "means": "to set something down somewhere",
+      "applies_to": [
+        {
+          "role": "direct",
+          "access": "touchable",
+          "optional": true
+        },
+        {
+          "role": "container",
+          "access": "touchable",
+          "optional": true
+        },
+        {
+          "role": "target",
+          "access": "touchable",
+          "optional": true
+        },
+        {
+          "role": "source",
+          "access": "touchable",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "action": "insert",
+      "means": "to put something inside something else",
+      "applies_to": [
+        {
+          "role": "direct",
+          "access": "touchable",
+          "optional": true
+        },
+        {
+          "role": "container",
+          "access": "touchable",
+          "optional": true
+        },
+        {
+          "role": "target",
+          "access": "touchable",
+          "optional": true
+        },
+        {
+          "role": "source",
+          "access": "touchable",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "action": "give",
+      "means": "to hand something to somebody, or whatever else this world means by it",
+      "applies_to": [
+        {
+          "role": "direct",
+          "access": "carried",
+          "optional": true
+        },
+        {
+          "role": "target",
+          "access": "visible",
+          "optional": true
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "name": "you must be able to act",
+      "phase": "check",
+      "action": null,
+      "scope": {
+        "world": true
+      },
+      "about": "actor",
+      "conditions": [
+        {
+          "subject": "actor",
+          "able": "acting"
+        }
+      ]
+    },
+    {
+      "name": "you must be able to reach what you act on",
+      "phase": "check",
+      "action": null,
+      "scope": {
+        "world": true
+      },
+      "about": "direct",
+      "when": [
+        {
+          "subject": "direct",
+          "unbound": false
+        }
+      ],
+      "conditions": [
+        {
+          "subject": "direct",
+          "reachable_by": "actor"
+        }
+      ]
+    },
+    {
+      "name": "looking about you means looking at the room",
+      "phase": "instead",
+      "action": "look",
+      "scope": {
+        "world": true
+      },
+      "about": "direct",
+      "when": [
+        {
+          "subject": "direct",
+          "unbound": true
+        }
+      ],
+      "effects": [
+        {
+          "type": "try",
+          "action": "look",
+          "roles": {
+            "direct": "here"
+          }
+        }
+      ]
+    },
+    {
+      "name": "you must be able to see what you look at",
+      "phase": "check",
+      "action": "look",
+      "scope": {
+        "world": true
+      },
+      "about": "direct",
+      "when": [
+        {
+          "subject": "direct",
+          "unbound": false
+        }
+      ],
+      "conditions": [
+        {
+          "subject": "direct",
+          "visible_to": "actor"
+        }
+      ]
+    },
+    {
+      "name": "what looking at a thing shows",
+      "phase": "carry_out",
+      "action": "look",
+      "scope": {
+        "world": true
+      },
+      "about": "direct",
+      "effects": [
+        {
+          "type": "describe",
+          "role": "direct"
+        }
+      ]
+    },
+    {
+      "name": "taking something nobody owns makes it yours",
+      "phase": "after",
+      "action": "get",
+      "scope": {
+        "world": true
+      },
+      "about": "direct",
+      "when": [
+        {
+          "subject": "direct",
+          "owned_by": "nobody"
+        }
+      ],
+      "effects": [
+        {
+          "type": "set_owner",
+          "name_role": "direct",
+          "to": "actor"
+        }
+      ]
+    },
+    {
+      "name": "giving something hands over the owning of it",
+      "phase": "after",
+      "action": "give",
+      "scope": {
+        "world": true
+      },
+      "about": "direct",
+      "effects": [
+        {
+          "type": "set_owner",
+          "name_role": "direct",
+          "to": "target"
+        }
+      ]
+    },
+    {
+      "name": "you may not take what is not yours",
+      "phase": "check",
+      "action": "get",
+      "scope": {
+        "world": true
+      },
+      "about": "direct",
+      "when": [
+        {
+          "subject": "direct",
+          "unbound": false
+        },
+        {
+          "subject": "direct",
+          "owned_by": "somebody"
+        }
+      ],
+      "conditions": [
+        {
+          "subject": "direct",
+          "owned_by": "actor"
+        }
+      ],
+      "listed": false
+    }
+  ]
+}

@@ -205,7 +205,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
     if room is None:
         return
 
-    parsed = verbs.parse(raw)
+    parsed = verbs.parse(raw, getattr(room.db, "world_root", None))
     verb = parsed["verb"]
     if not verb:
         return

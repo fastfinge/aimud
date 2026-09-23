@@ -19,6 +19,23 @@ from tests.support import FakeSponsor, finishing, immediately, replying
 from world import rulebooks as R
 from world import attempt as attempt_mod
 from world import kinds, standard_rules, verb_gen, verbs
+from world import rulesets
+
+
+def _a_version_behind(root):
+    """
+    Put a world one edition behind the default ruleset, so seeding reseeds.
+
+    The lever used to be an integer attribute of its own; a world now records
+    a version per ruleset, so this sets that one back. Kept as a helper rather
+    than spelled out at six call sites, because what it means -- "this world
+    holds last week's copy" -- is the thing each of those tests is about.
+    """
+    from world import rulesets
+
+    holding = rulesets.held(root)
+    holding[rulesets.DEFAULT] = 0
+    setattr(root.db, rulesets.ATTR, holding)
 
 
 @tag("world")
@@ -312,20 +329,19 @@ class WhenTheStandardRulesThemselvesChange(RunningTheAttempt):
 
     def test_a_world_a_version_behind_gets_the_new_ones(self):
         standard_rules.seed(self.root)
-        setattr(self.root.db, standard_rules.VERSION_ATTR,
-                standard_rules.VERSION - 1)
+        _a_version_behind(self.root)
         self.assertTrue(standard_rules.seed(self.root))
         standing = [r for r in R.all_rules(self.root)
                     if standard_rules.is_standard(r)]
-        self.assertEqual(len(standing), len(standard_rules.STANDARD),
+        wanted = len(rulesets.get(rulesets.DEFAULT)["rules"])
+        self.assertEqual(len(standing), wanted,
                          "the old copies should have gone, not doubled up")
 
     def test_and_keeps_what_it_wrote_for_itself(self):
         standard_rules.seed(self.root)
         R.add(self.root, R.blank(action="read", phase=R.CHECK,
                                  name="a rule this world wrote"))
-        setattr(self.root.db, standard_rules.VERSION_ATTR,
-                standard_rules.VERSION - 1)
+        _a_version_behind(self.root)
         standard_rules.seed(self.root)
         self.assertIn("a rule this world wrote",
                       [r["name"] for r in R.all_rules(self.root)])
@@ -339,8 +355,7 @@ class WhenTheStandardRulesThemselvesChange(RunningTheAttempt):
         from world import actions
 
         standard_rules.seed(self.root)
-        setattr(self.root.db, standard_rules.VERSION_ATTR,
-                standard_rules.VERSION - 1)
+        _a_version_behind(self.root)
         actions.declare(self.root, "put", [])          # the stale guess
         store = dict(getattr(self.root.db, actions.ATTR, None) or {})
         store["put"] = dict(store["put"], applies_to=[
@@ -357,7 +372,6 @@ class WhenTheStandardRulesThemselvesChange(RunningTheAttempt):
 
         standard_rules.seed(self.root)
         actions.declare(self.root, "launch", [{"role": "direct"}])
-        setattr(self.root.db, standard_rules.VERSION_ATTR,
-                standard_rules.VERSION - 1)
+        _a_version_behind(self.root)
         standard_rules.seed(self.root)
         self.assertIsNotNone(actions.spec(self.root, "launch"))

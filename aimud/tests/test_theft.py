@@ -20,6 +20,7 @@ from evennia import create_object
 from tests.base import GameCommandTest, GameTest
 from world import conditions as C
 from world import goals, ownership, rulebooks, standard_rules
+from world import rulesets
 
 RULE = "you may not take what is not yours"
 
@@ -31,6 +32,22 @@ def _the_rule(root):
 
 def _restore(root):
     rulebooks.set_listed(root, _the_rule(root)["id"], True)
+
+
+def _a_version_behind(root):
+    """
+    Put a world one edition behind the default ruleset, so seeding reseeds.
+
+    The lever used to be an integer attribute of its own; a world now records
+    a version per ruleset, so this sets that one back. Kept as a helper rather
+    than spelled out at six call sites, because what it means -- "this world
+    holds last week's copy" -- is the thing each of those tests is about.
+    """
+    from world import rulesets
+
+    holding = rulesets.held(root)
+    holding[rulesets.DEFAULT] = 0
+    setattr(root.db, rulesets.ATTR, holding)
 
 
 @tag("world")
@@ -144,8 +161,7 @@ class TheRule(GameCommandTest):
         edition of the standard rules is not a reason to undo that.
         """
         _restore(self.room1)
-        setattr(self.room1.db, standard_rules.VERSION_ATTR,
-                standard_rules.VERSION - 1)
+        _a_version_behind(self.room1)
         standard_rules.seed(self.room1)
         self.assertTrue(_the_rule(self.room1)["listed"])
 
@@ -154,8 +170,7 @@ class TheRule(GameCommandTest):
         reach = next(r for r in rulebooks.all_rules(self.room1)
                      if r["name"] == "you must be able to reach what you act on")
         rulebooks.set_listed(self.room1, reach["id"], False)
-        setattr(self.room1.db, standard_rules.VERSION_ATTR,
-                standard_rules.VERSION - 1)
+        _a_version_behind(self.room1)
         standard_rules.seed(self.room1)
         again = next(r for r in rulebooks.all_rules(self.room1)
                      if r["name"] == reach["name"])

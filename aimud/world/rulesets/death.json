@@ -1,0 +1,95 @@
+{
+  "name": "death",
+  "title": "Death",
+  "version": 1,
+  "default": false,
+  "means": "Characters have health, run out of it, and cannot act once they have.",
+  "requires": ["default"],
+  "conflicts": [],
+
+  "attributes": [
+    {
+      "slug": "health",
+      "name": "Health",
+      "means": "How much harm somebody can still take. At nought they are dead.",
+      "trait_type": "gauge",
+      "base": 20,
+      "min": 0
+    }
+  ],
+
+  "conditions": [
+    {
+      "group": "life_status",
+      "exclusive": true,
+      "default": "alive",
+      "prevents_acting": true,
+      "prevents_moving": true,
+      "prevents_speaking": true
+    }
+  ],
+
+  "actions": [
+    {
+      "action": "revive",
+      "means": "to bring somebody back from the dead",
+      "despite": ["acting", "moving", "speaking"],
+      "applies_to": [{"role": "direct", "access": "touchable"}]
+    },
+    {
+      "action": "heal",
+      "means": "to mend somebody's hurts",
+      "despite": ["acting"],
+      "applies_to": [{"role": "direct", "access": "touchable"}]
+    }
+  ],
+
+  "verbs": [
+    {"word": "resurrect", "means": "revive"},
+    {"word": "revivify", "means": "revive"},
+    {"word": "tend", "means": "heal"}
+  ],
+
+  "rules": [
+    {
+      "name": "no health left is dead",
+      "phase": "becomes",
+      "action": null,
+      "scope": {"kind": "person.n.01"},
+      "about": "direct",
+      "when": [{"subject": "direct", "trait": "health", "max": 0}],
+      "effects": [{"type": "set_state", "role": "direct", "add": ["dead"]}],
+      "report": "{direct} is dead."
+    },
+    {
+      "name": "you must be dead to be revived",
+      "phase": "check",
+      "action": "revive",
+      "scope": {"world": true},
+      "about": "direct",
+      "when": [{"subject": "direct", "unbound": false}],
+      "conditions": [{"subject": "direct", "is": ["dead"]}]
+    },
+    {
+      "name": "reviving somebody gives them their life back",
+      "phase": "carry_out",
+      "action": "revive",
+      "scope": {"world": true},
+      "about": "direct",
+      "effects": [
+        {"type": "set_trait", "role": "direct", "trait": "health",
+         "set_to": 1},
+        {"type": "set_state", "role": "direct", "remove": ["dead"]}
+      ]
+    },
+    {
+      "name": "you cannot heal the dead",
+      "phase": "check",
+      "action": "heal",
+      "scope": {"world": true},
+      "about": "direct",
+      "when": [{"subject": "direct", "unbound": false}],
+      "conditions": [{"subject": "direct", "lacks": ["dead"]}]
+    }
+  ]
+}

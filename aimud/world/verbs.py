@@ -106,7 +106,7 @@ VERB_SYNONYMS = {
 }
 
 
-def canonical_verb(word):
+def canonical_verb(word, world_root=None):
     """
     Fold a verb onto its canonical form.
 
@@ -121,19 +121,41 @@ def canonical_verb(word):
     That second pass is why "wearing" no longer has to be written down.  It
     was never a synonym of "wear"; it is "wear", and a suffix table that knew
     as much would also have to know about "ate".
+
+    A world may fold words of its own, through a ruleset: `forge` means `make`
+    in a world built with crafting and means nothing in particular anywhere
+    else, which is why the table above cannot hold it. Consulted **after** the
+    table and never in front of it. The table is English that is true
+    everywhere, and a ruleset that could move `get` or `look` underneath the
+    engine would be a data file rewriting the game -- the same argument that
+    keeps a seeded state group from being redefined by whatever a model
+    declares later.
     """
     word = word.lower().strip()
     folded = VERB_SYNONYMS.get(word)
     if folded is not None:
         return folded
+    if world_root is not None:
+        from world import rulesets
+
+        folded = rulesets.synonyms(world_root).get(word)
+        if folded is not None:
+            return folded
 
     root = lexicon.lemma(word, "v")
     if root != word:
-        return VERB_SYNONYMS.get(root, root)
+        folded = VERB_SYNONYMS.get(root)
+        if folded is not None:
+            return folded
+        if world_root is not None:
+            from world import rulesets
+
+            return rulesets.synonyms(world_root).get(root, root)
+        return root
     return word
 
 
-def parse(raw):
+def parse(raw, world_root=None):
     """
     Split raw input into a verb, its noun phrases by role, and how it was done.
 
@@ -172,7 +194,7 @@ def parse(raw):
     while len(words) > 1 and lexicon.is_only_adverb(words[0]):
         manner.append(words.pop(0))
 
-    verb = canonical_verb(words[0])
+    verb = canonical_verb(words[0], world_root)
     roles, prepositions = {}, {}
     current_role = "direct"
     current_word = ""
