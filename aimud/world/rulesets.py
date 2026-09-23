@@ -60,7 +60,7 @@ DEFAULT = "default"
 #: The sections a document may have, each the vocabulary one store keeps.
 #: Every one is optional; a ruleset says only what it needs.
 SECTIONS = ("actions", "verbs", "kinds", "affordances", "attributes",
-            "conditions", "rules")
+            "conditions", "rules", "mechanics")
 
 #: Where the rulesets that ship with the game live.
 BUILTIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -246,6 +246,15 @@ def problems(doc, known=None):
             wrong.append(
                 f"{rule.get('name')!r} becomes true on a `when`, not on "
                 f"`conditions`; `world.becoming` never reads those")
+
+    # A ruleset names a mechanic; it never supplies one. Only what ships with
+    # the game may be named, and a name that is not in the table is refused
+    # here rather than silently doing nothing. See `world.mechanics`.
+    from world import mechanics
+
+    for named in doc.get("mechanics") or []:
+        if not mechanics.known(named):
+            wrong.append(f"there is no mechanic called {named!r}")
 
     wrong.extend(_undeclared(doc, known))
     return wrong

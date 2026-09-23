@@ -317,17 +317,21 @@ def _mechanics(caller, verb, parsed, bound, on_message):
     Each `handle` declines anything that is not really its business -- "draw
     the curtain", "put out the fire", "give up" -- and those go on through the
     ordinary pipeline. True when one of them took the attempt.
-    """
-    from world import becoming, clothing, gear, ownership, relations
 
+    **Which of them a world uses is a ruleset's business**, and no longer
+    settled here for everybody: clothing and wielding are decisions a world
+    makes, while where a thing is and whose it is are true wherever objects
+    and people are. See `world.mechanics`.
+    """
+    from world import becoming, mechanics
+
+    room = getattr(caller, "location", None)
+    world_root = getattr(room.db, "world_root", None) if room else None
     # What a mechanic changes, the caller changed -- and a becomes rule it sets
     # off fires once the mechanic has said what it did, not in the middle.
     with becoming.caused_by(caller):
-        handled = bool(
-            clothing.handle(caller, verb, bound, on_message)
-            or gear.handle(caller, verb, bound, on_message)
-            or ownership.handle(caller, verb, parsed, bound, on_message)
-            or relations.handle(caller, verb, parsed, bound, on_message))
+        handled = mechanics.handle(world_root, caller, verb, parsed, bound,
+                                   on_message)
     becoming.settle(cause=caller)
     return handled
 

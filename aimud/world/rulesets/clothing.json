@@ -1,0 +1,11 @@
+{
+  "name": "clothing",
+  "title": "Clothing",
+  "version": 1,
+  "default": true,
+  "means": "Characters can wear things, and what they have on shows in how they look.",
+  "requires": ["default"],
+  "conflicts": [],
+  "mechanics": ["clothing"],
+  "affordances": ["wear"]
+}

@@ -174,7 +174,8 @@ class SeedingAWorld(GameTest):
 
     def test_a_world_gets_the_defaults_when_nobody_says_otherwise(self):
         rulesets.seed(self.root)
-        self.assertEqual(rulesets.chosen(self.root), [rulesets.DEFAULT])
+        self.assertEqual(rulesets.chosen(self.root), rulesets.defaults())
+        self.assertIn(rulesets.DEFAULT, rulesets.chosen(self.root))
         self.assertIn("you must be able to act", self.names())
 
     def test_seeding_twice_adds_nothing(self):
