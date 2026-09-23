@@ -7,7 +7,6 @@ These are plans for things I want to do later maybe. They range from good ideas 
     * post to fediverse accounts from aimud?
     * our characters can be fediverse actors?
 * new action: rules can show player a menu with options to pick and get returned the result chosen
-* disambiguation uses the menu engine (`world/menus.py`) to show players a menu to pick the object they meant or quit. `choosing.ask` already opens one when given `on_chosen`; the two callers that ask "Which her?" still only say the question. The bare in-character commands that choose from what is in reach (`get`, `drop`, `give`, `wear`, `remove`, `cover`, `uncover`, `follow`) wait for this, because their menus have to answer reach and permission the way the attempt pipeline does. See docs/commands-and-settings.md §7.2.
 * MSP (mud sound protocol) allowing associating sounds with actions or room kinds/traits, perhaps generating sounds with
  elevenlabs, or letting world creators provide sounds by url? Needs to intigrate with the webserver so clients supporting MSP can get the sounds. Search and use sounds from freesound.org?
 * gmcp/msdp: sending all the data we have via OOB protocols to mud clients in a standard machine-readable format, so
