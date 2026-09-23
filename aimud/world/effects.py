@@ -417,7 +417,8 @@ def _resolve(effect, key, bound, room, actor):
 VOCABULARY = {
     "set_state": {
         "means": "puts something into a condition, or takes it out of one",
-        "takes": 'role, add: [...], remove: [...]',
+        "takes": 'role, add: [...], remove: [...], '
+                 'styles: {state: how it is in it}',
         "backwards": True, "answers": False,
     },
     "set_trait": {
@@ -946,9 +947,23 @@ def _apply_one(actor, room, effect, bound, world_root, found=None):
 
         from world import gear
 
+        # How a thing is in the state it is being put into: "burning low",
+        # "held point-down". Applied after, because `apply_states` clears the
+        # style of anything it removed and an exclusive group removes as it
+        # adds. Anything naming a state of its own is refused by `set_style`
+        # and leaves the plain state behind, which is the safe outcome.
+        styles = effect.get("styles") or {}
+        try:
+            styles = {str(k): str(v) for k, v in dict(styles).items()}
+        except (TypeError, ValueError):
+            styles = {}
+
         for obj in targets:
             verbs.apply_states(obj, add=add, remove=remove,
                                world_root=world_root)
+            for slug, how in styles.items():
+                if slug in add:
+                    verbs.set_style(obj, slug, how, world_root)
             _note_states(actor, obj, add, remove, world_root)
             # A lamp going out stops lighting whoever holds it, and a fire
             # going out stops warming the room. Only for things whose worth is

@@ -69,6 +69,11 @@ AUTOCOVER = {
 }
 
 #: How long a wear style may be: "tied loosely around her waist".
+#:
+#: `verbs.STYLE_MAXLENGTH` now, because a wear style turned out to be one case
+#: of a general thing: a state may carry a phrase saying how a thing is in it,
+#: and a sword held point-down wants exactly what a coat slung over one arm
+#: wants. Kept under its old name for the callers that read it.
 WEARSTYLE_MAXLENGTH = 50
 
 #: That a thing is on, and that something else is over it.
@@ -92,13 +97,15 @@ WEARSTYLE_MAXLENGTH = 50
 WORN = "worn"
 COVERED = "covered"
 
-#: Where the style lives, and which garment is doing the covering.
+#: Which garment is doing the covering.
 #:
-#: `covered_by` stays a pointer because it answers a different question from
-#: the state beside it: `covered` is the fact, and this is the detail. Both
-#: are written in `_wear` and `_unwear` and nowhere else, so there is one
-#: writer for the pair and they cannot drift.
-WEARSTYLE_ATTR = "wearstyle"
+#: A pointer rather than a state, because it answers a different question from
+#: the state beside it: `covered` is the fact, and this is the detail. Written
+#: in `_cover` and `_uncover` and nowhere else, so there is one writer for the
+#: pair and they cannot drift.
+#:
+#: The wear style used to sit beside it as `db.wearstyle` and does not any
+#: more: it is `verbs.style_of(garment, WORN)`, which every ruleset can reach.
 COVERED_BY_ATTR = "covered_by"
 
 
@@ -123,8 +130,9 @@ def covering_of(obj):
 
 def wearstyle_of(obj):
     """How this is being worn, as text, or "" for plainly."""
-    style = getattr(obj.db, WEARSTYLE_ATTR, "") or ""
-    return str(style) if isinstance(style, str) else ""
+    from world import verbs
+
+    return verbs.style_of(obj, WORN)
 
 #: The verbs this module owns. An attempt at one of these never reaches a
 #: model, so long as it is really about clothes.
@@ -199,9 +207,12 @@ def _wear(character, garment, wearstyle=True):
 
     becoming.mark(character)
     root = _root_of(character)
-    setattr(garment.db, WEARSTYLE_ATTR,
-            wearstyle if isinstance(wearstyle, str) else "")
     verbs.apply_states(garment, add=[WORN], world_root=root, announce=False)
+    # After the state, not before: `apply_states` clears the style of anything
+    # it removes, and a garment being put on may have been taken off in the
+    # same breath by an exclusive group.
+    verbs.set_style(garment, WORN,
+                    wearstyle if isinstance(wearstyle, str) else "", root)
     hides = AUTOCOVER.get(str(garment.db.clothing_type or ""), ())
     covered = [other for other in worn_by(character, exclude_covered=False)
                if other is not garment
@@ -235,7 +246,7 @@ def _unwear(character, garment):
 
     becoming.mark(character)
     root = _root_of(character)
-    setattr(garment.db, WEARSTYLE_ATTR, "")
+    # The style goes with the state, in `apply_states`, and needs no line here.
     verbs.apply_states(garment, remove=[WORN], world_root=root,
                        announce=False)
     revealed = []

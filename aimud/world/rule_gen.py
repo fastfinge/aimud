@@ -569,6 +569,8 @@ there.
 
 _EFFECTS = """An effect is one of:
   {"type": "set_state", "role": "direct", "add": ["powered"], "remove": []}
+  {"type": "set_state", "role": "direct", "add": ["burning"],
+                        "styles": {"burning": "low and smoky"}}
   {"type": "set_trait", "role": "actor", "trait": "stamina", "change": -5}
   {"type": "move_object", "name_role": "direct", "to": "actor"}
   {"type": "move_object", "name_role": "direct", "to": "room"}

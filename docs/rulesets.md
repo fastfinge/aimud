@@ -634,12 +634,12 @@ Three things fell out of it:
 * **"You cannot take off what is covered" is a rule**, not a line inside
   `take_off`, because `covered` is now testable. A world where a cloak slips
   off over everything suspends it.
-* **The wear style is not a state.** "Tied loosely around her waist" is text
-  about one garment, not a condition anything could test, and a state register
+* **The wear style is not a state** -- "tied loosely around her waist" is text
+  about one garment, not a condition anything could test, and a register
   filling up with a phrase per scarf would have lost what the register is for.
-  It lives in `db.wearstyle`; `db.covered_by` likewise stays a pointer, because
-  `covered` is the fact and *which garment* is the detail. Both are written in
-  `_wear` and `_unwear` and nowhere else.
+  It became its own general thing instead; see §10. `db.covered_by` stays a
+  pointer, because `covered` is the fact and *which garment* is the detail,
+  and both are written in `_cover` and `_uncover` and nowhere else.
 * **A ruleset's `conditions` section gained `states`.** `apply_states`
   registers a slug it has never seen, which is the right default and the wrong
   thing to rely on here: with nobody having said which group `worn` belongs to,
@@ -699,3 +699,58 @@ the endless-alchemy world in `future-plans.md` wants.
 the contrib: a recipe is a fact about one world, and belongs with that world's
 other rules where it can be read, replaced, scoped to a room, and proposed by
 `suggest` from what players kept trying.
+
+---
+
+## 10. Styles: how a thing is in the state it is in
+
+The wear style was the last piece of storage clothes had that no other ruleset
+could have had, and generalising it turned out to be the same argument as
+`worn` one level down.
+
+**A state is a word from a closed vocabulary**, and that is what makes it worth
+having: it can be grouped, made exclusive, tested by a condition, answered to
+as an alias, and counted. What it cannot be is *particular*. A coat is `worn`
+the way every coat is worn, and "slung over one arm" has nowhere to go. A sword
+held point-down, a lantern raised high, a fire burning low and a body lying
+where it fell all want the same thing, and none of them could have it.
+
+So **a state may carry a phrase saying how**. One per state per thing, open
+text, in `verbs.styles`. `world.clothing` reads its wear style out of it and
+`world.gear` is the second user rather than a hypothetical one.
+
+Three rules keep it from becoming a second vocabulary nobody can test:
+
+* **It rides on a state and dies with it.** `apply_states` drops the style of
+  anything it removes — including what an exclusive group removes on its own —
+  so there is no way to be "slung over one arm" while not being worn. That is
+  why it is keyed by slug rather than being a free attribute, and it is the
+  whole of what keeps the two from drifting.
+* **It may not name a state.** The line `name_contradicts_states` already
+  draws, for the same reason: a phrase saying "burning" has said something no
+  rule can read and nothing can undo. `style_complaints` refuses it, and a
+  refused style leaves the plain state behind — less said, never something
+  false said.
+* **Nothing tests it.** There is deliberately no `style` predicate. A substring
+  match against open text is the bug `world.quantity` exists to have fixed, and
+  re-inventing it here would be worse for being on purpose. **If it matters,
+  it is a state; if it only has to read well, it is a style.**
+
+It stays inside `basic-principles.md`'s rule against decorative text, and not
+by a technicality: a style is written into the events `world.memory` records,
+it is part of what a character reads of themselves in `own_appearance` and so
+is something they can act on, and it hangs off a state every system reads.
+
+A rule can set one — `set_state` takes `styles: {slug: how}` — which is what
+makes this a ruleset's to use rather than a mechanic's private convenience.
+
+### And `db.wielded` went the same way
+
+Converting it was not scope creep but the proof: `world.gear` had exactly the
+private slot `world.clothing` had, for exactly as long, and a generalisation
+with one user is a rename. `wielded` is a state registered by `wielding.json`,
+and `gear.wield` takes a style.
+
+That leaves the four mechanics with no bespoke storage between them except
+`db.covered_by`, which is a pointer to an object rather than a fact about one —
+a different kind of thing, and the one shape a state cannot hold.
