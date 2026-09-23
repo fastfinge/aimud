@@ -524,6 +524,8 @@ check rule it says what must hold before the verb may happen at all:
   {"subject": "actor", "holds": ["direct"]}         they are carrying it
   {"subject": "actor", "wears": ["direct"]}         they have it on
   {"subject": "direct", "owned_by": "actor"}        it is theirs
+  {"subject": "actor", "holds": {"of_kind": "coal.n.01", "count": 2}}
+  {"subject": "actor", "not_wears": {"of_kind": "hat.n.01", "count": 2}}
   {"subject": "direct", "owned_by": "nobody"}       it is nobody's
   {"subject": "direct", "owned_by": "somebody"}     it belongs to somebody
   {"subject": "actor", "trait": "piloting", "min": 10}
@@ -545,6 +547,24 @@ a subject and a predicate:
 "any" is for "or" and nothing else. A list of conditions already means all of
 them, so a check rule with two requirements is two check rules, never one rule
 wrapped around both.
+
+"holds", "wears" and their opposites may say how many of what sort instead of
+naming a thing: {"of_kind": "<a synset>", "count": 2}. "of_kind" matches
+through the taxonomy, so a rule about wood.n.01 is answered by an oak plank
+and one about iron.n.01 is not answered by an iron key -- which naming it
+"iron" would have been. Use "of_name" instead when the rule really does mean
+one particular thing by what it is called.
+
+"holds" is "at least this many" and "not_holds" is "fewer than this many", so
+a limit of one hat is {"not_wears": {"of_kind": "hat.n.01", "count": 2}}.
+Leave "count" out for one.
+
+Add "as": "<a name>" when the verb then acts on the very things counted, and
+name that in the effect: a recipe checks {"holds": {"of_kind": "coal.n.01",
+"count": 2, "as": "fuel"}} and carries out {"type": "destroy_object",
+"name_role": "fuel"}, which consumes those two and no others. Only "holds"
+and "wears" may say "as"; there is nothing to act on in what must not be
+there.
 """
 
 _EFFECTS = """An effect is one of:

@@ -89,7 +89,7 @@ def _world_objects(world_root, actor):
     return out
 
 
-def find_of_kind(world_root, actor, kind, actor_only=False):
+def find_of_kind(world_root, actor, kind, actor_only=False, skip=()):
     """
     Anything in this world that is the sort of thing wanted, nearest first.
 
@@ -102,14 +102,25 @@ def find_of_kind(world_root, actor, kind, actor_only=False):
     Nearest first for the same reason `_world_objects` is: a goal satisfied by
     any cake should be satisfied by the cake in the room rather than sending
     somebody across the world for an identical one.
+
+    `skip` is what must not be the answer, and it is what makes a *counted*
+    want plannable. `_world_objects` looks in the actor's own hands first, so
+    somebody wanting three apples and holding one was handed back the apple
+    they were already holding: there is no step that gets you a thing you
+    have, so the goal looked unreachable and was given up on after a few
+    turns. Told to skip what already counts, the same search finds the next
+    apple along and the want advances one at a time.
     """
     from world import kinds as kinds_mod
 
     wanted = kinds_mod.canonical(kind)
     if not wanted:
         return None
+    avoid = {obj.id for obj in (skip or ()) if obj is not None}
     for obj in (actor.contents if actor_only else
                 _world_objects(world_root, actor)):
+        if obj.id in avoid:
+            continue
         for owned in (obj.db.kinds or []):
             if kinds_mod.canonical(owned) == wanted:
                 return obj
@@ -463,6 +474,12 @@ def _leaf_schema(relations, tb, known_traits, types):
             "kind": {"type": "string",
                      "description": "Instead of object: any thing of this "
                                     "sort counts"},
+            "count": {"type": "integer",
+                      "description": "How many, for carried, worn, not_holds "
+                                     "and delivered. One when left out; use "
+                                     "it with kind rather than object, since "
+                                     "there is only ever one of a named "
+                                     "thing"},
             "room": {"type": "string",
                      "description": "in_room: a room's name, as find_rooms "
                                     "lists them"},

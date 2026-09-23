@@ -2074,6 +2074,24 @@ def achieves(effect, condition):
     if name == "holds" and etype == "move_object":
         return str(effect.get("to") or "") == "actor"
 
+    if name == "holds" and etype == "create_object":
+        # Making one is a way to come to have one, and for a world with a
+        # recipe in it the only way. Read for what it makes, like `exists`
+        # below: a rule that conjures a candle does not satisfy a want for a
+        # key. A spec asking for a *sort* cannot be read this way -- what a
+        # `create_object` names is a name, and whether the thing it makes will
+        # turn out to be that sort is not knowable from the effect's shape --
+        # so a sort is left to `exists`, which has the same answer and does
+        # not pretend to more.
+        made = str(effect.get("name") or "").lower()
+        if str(effect.get("location") or "") != "actor" or not made:
+            return False
+        from world import quantity
+
+        specs, _ok = quantity.read_all(value, roles=ROLES)
+        return any(spec["of_name"] and spec["of_name"].lower() in made
+                   for spec in specs)
+
     if name == "holds" and etype == "move_contents":
         # Emptying something into your hands is a way to come to hold what was
         # in it. Which particular thing that is, is a fact about the world at
@@ -2282,27 +2300,54 @@ def from_goal(condition):
                  ctype: {preposition: condition.get("host", "")}}]
 
     if ctype == "not_holds":
-        return [{"subject": "actor", "not_holds": [name or kind]}]
+        return [{"subject": "actor", "not_holds": [_goal_spec(condition)]}]
 
     if ctype == "not_worn":
-        return [{"subject": "actor", "not_wears": [name or kind]}]
+        return [{"subject": "actor", "not_wears": [_goal_spec(condition)]}]
 
     if ctype == "delivered":
         # Being inside the recipient is exactly what `holds` asks, from the
         # other end: `goals` tests whether the thing is in them.
         return [{"subject": {"named": str(condition.get("to") or "")},
-                 "holds": [name] if name else []}]
+                 "holds": [_goal_spec(condition)] if (name or kind) else []}]
 
     predicate = _GOAL_PREDICATES.get(ctype)
     if not predicate:
         return []
     if predicate in ("exists", "gone"):
         return [{"subject": subject, predicate: True}]
-    if predicate == "holds":
-        return [{"subject": "actor", "holds": [name or kind]}]
-    if predicate == "wears":
-        return [{"subject": "actor", "wears": [name or kind]}]
+    if predicate in ("holds", "wears"):
+        return [{"subject": "actor", predicate: [_goal_spec(condition)]}]
     return [{"subject": subject, predicate: True}]
+
+
+def _goal_spec(condition):
+    """
+    What a goal is asking for, as a `world.quantity` spec.
+
+    A goal already said whether it meant a particular thing or any thing of a
+    sort -- `object` against `kind` -- and until there was a spec to put it in,
+    both came through here as a bare word. A kind then went into `holds` as
+    though it were a name, and was matched as a substring of what things are
+    called: "cake.n.01" appears in nothing, so a goal for *a* cake could never
+    be met by any cake. Nobody saw it, because a quest that asks for a cake by
+    name works and is what quests mostly do.
+
+    A named thing wanted singly comes back as the bare word it always was.
+    That is not a special case grudgingly kept: a bare word *is* how this
+    language says "a thing called this, one of it", and spelling it the long
+    way would put `{"of_name": ...}` through every quest listing and every
+    stored comparison to say what one word already said.
+    """
+    name = str(condition.get("object") or "").strip()
+    kind = str(condition.get("kind") or "").strip()
+    count = condition.get("count")
+    if name and count in (None, 1):
+        return name
+    spec = {"of_name": name} if name else {"of_kind": kind}
+    if count is not None:
+        spec["count"] = count
+    return spec
 
 
 def from_goals(conditions):
@@ -2363,9 +2408,7 @@ def as_goal(condition, bound=None, actor=None):
     goal_types = {"holds": "holds", "wears": "worn",
                   "not_holds": "not_holds", "not_wears": "not_worn"}
     if predicate in goal_types:
-        wanted = [str(s) for s in _listed(value) if s]
-        return ({"type": goal_types[predicate], "object": wanted[0]}
-                if wanted else None)
+        return _quantified_goal(goal_types[predicate], value, bound, actor)
     if predicate == "trait":
         entry = {"type": "trait", "trait": str(value)}
         for edge in TRAIT_BOUNDS:
@@ -2386,6 +2429,45 @@ def as_goal(condition, bound=None, actor=None):
         for preposition, host in where.items():
             return {"type": predicate, "object": name,
                     "preposition": str(preposition), "host": str(host)}
+    return None
+
+
+def _quantified_goal(gtype, value, bound, actor):
+    """
+    A `holds` or `wears` clause as the goal the planner should take up.
+
+    The first thing the clause names, because a planner needs one way forward
+    and a rule wanting a hammer and two nails is advanced by going after
+    either. Read through `quantity`, which is the point: a spec put through
+    `str()` came out as its own repr, so a check rule refusing for want of two
+    lumps of coal sent the planner looking for an object called
+    "{'of_kind': 'coal.n.01', 'count': 2}". It would never find one, take the
+    blame for the rule not working, and after a few tries stop planning with
+    it altogether.
+
+    A clause naming a role is resolved to what the role was bound to, for the
+    reason the whole function exists: `direct` means nothing to a planner
+    looking at the world next turn, and the ship does.
+    """
+    from world import quantity
+
+    specs, _ok = quantity.read_all(value, roles=ROLES)
+    for spec in specs:
+        goal = {"type": gtype}
+        if spec["role"]:
+            named = _goal_subject_name(spec["role"], bound, actor)
+            if not named:
+                continue
+            goal["object"] = named
+        elif spec["of_name"]:
+            goal["object"] = spec["of_name"]
+        elif spec["of_kind"]:
+            goal["kind"] = spec["of_kind"]
+        else:
+            continue
+        if spec["count"] != 1:
+            goal["count"] = spec["count"]
+        return goal
     return None
 
 
@@ -2446,7 +2528,7 @@ def schema(ctx=None):
         return {"type": "array", "items": {"type": "string"},
                 "description": what}
 
-    leaf = _leaf_schema(names, known_traits, tb)
+    leaf = _leaf_schema(names, known_traits, tb, _wanted)
     properties = dict(leaf["properties"])
     # One level of "or", over plain conditions and nothing deeper. A model is
     # offered no `all` and no nesting: a list of conditions already means all
@@ -2471,8 +2553,27 @@ def schema(ctx=None):
     return {"type": "object", "properties": properties, "required": []}
 
 
-def _leaf_schema(names, known_traits, tb):
+#: How the four quantified predicates are offered to a model.
+#:
+#: Each item is a name, a role, or a spec -- so `items` carries a description
+#: and no `type`. That is deliberate and slightly uncomfortable: an untyped
+#: item is looser than this file likes, and the alternative of spelling both
+#: shapes out with `oneOf` is the shape that made Google refuse every call
+#: naming the tool a rule loop ends on (see the note under `any`). `normalise`
+#: holds whatever comes back to a condition's shape either way, and a provider
+#: that only ever emits strings goes on behaving exactly as it did.
+_SPEC_SAID = ('a name, or a role, or {"of_kind": "<synset>", "count": <n>, '
+              '"as": "<a name for what it matched>"}')
+
+
+def _wanted(what):
+    return {"type": "array", "items": {"description": _SPEC_SAID},
+            "description": what}
+
+
+def _leaf_schema(names, known_traits, tb, wanted=None):
     """One plain condition: a subject and one predicate."""
+    wanted = wanted or names
     return {
         "type": "object",
         "properties": {
@@ -2483,10 +2584,15 @@ def _leaf_schema(names, known_traits, tb):
             "is": names("states it must be in"),
             "lacks": names("states it must not be in"),
             "affords": names("what must be doable to it"),
-            "holds": names("what the subject must be carrying"),
-            "not_holds": names("what the subject must not be carrying"),
-            "wears": names("what the subject must have on"),
-            "not_wears": names("what the subject must not have on"),
+            "holds": wanted("what the subject must be carrying, or how many "
+                            "of what sort"),
+            "not_holds": wanted("what the subject must not be carrying, or "
+                                "how many of what sort it must have fewer "
+                                "than"),
+            "wears": wanted("what the subject must have on, or how many of "
+                            "what sort"),
+            "not_wears": wanted("what the subject must not have on, or how "
+                                "many of what sort it must have fewer than"),
             "kind": {"description": "a sort of thing it must be"},
             "not_kind": {"description": "a sort of thing it must not be"},
             "owned_by": {"description": "'actor', a participant, 'nobody' or "

@@ -379,6 +379,23 @@ class ReadingTheOldShapes(SimpleTestCase):
             C.from_goal({"type": "exists", "kind": "cake.n.01"}),
             [{"subject": {"of_kind": "cake.n.01"}, "exists": True}])
 
+    def test_wanting_a_sort_of_thing_carried_asks_for_the_sort(self):
+        """
+        It used to ask for the synset as a *name*. "cake.n.01" appears in
+        nothing anybody calls a cake, so a goal for *a* cake could never be
+        met by any cake -- and nobody saw it, because a quest that names the
+        cake works and is what quests mostly do.
+        """
+        self.assertEqual(
+            C.from_goal({"type": "holds", "kind": "cake.n.01"}),
+            [{"subject": "actor", "holds": [{"of_kind": "cake.n.01"}]}])
+
+    def test_wanting_several_of_a_sort(self):
+        self.assertEqual(
+            C.from_goal({"type": "holds", "kind": "apple.n.01", "count": 3}),
+            [{"subject": "actor",
+              "holds": [{"of_kind": "apple.n.01", "count": 3}]}])
+
     def test_an_unknown_goal_type_converts_to_nothing(self):
         self.assertEqual(C.from_goal({"type": "invented"}), [])
         self.assertEqual(C.from_goal("nonsense"), [])
@@ -416,6 +433,48 @@ class ReadingBackwards(SimpleTestCase):
         self.assertFalse(C.achieves(
             {"type": "move_object", "to": "room"},
             {"subject": "actor", "holds": ["direct"]}))
+
+    def test_making_a_thing_in_your_hands_achieves_holding_one(self):
+        """
+        For a world with a recipe in it, the only way. Read for what it makes,
+        as `exists` is: a rule that conjures a candle does not satisfy a want
+        for a key.
+        """
+        self.assertTrue(C.achieves(
+            {"type": "create_object", "name": "iron sword",
+             "location": "actor"},
+            {"subject": "actor", "holds": ["sword"]}))
+        self.assertFalse(C.achieves(
+            {"type": "create_object", "name": "iron sword",
+             "location": "actor"},
+            {"subject": "actor", "holds": ["candle"]}))
+
+    def test_but_not_one_left_on_the_floor(self):
+        self.assertFalse(C.achieves(
+            {"type": "create_object", "name": "iron sword", "location": "room"},
+            {"subject": "actor", "holds": ["sword"]}))
+
+    def test_and_a_want_for_a_sort_is_left_to_exists(self):
+        """
+        What `create_object` names is a name. Whether the thing it makes will
+        turn out to be that sort is not knowable from the effect's shape, and
+        `exists` has the same answer without pretending to more.
+        """
+        self.assertFalse(C.achieves(
+            {"type": "create_object", "name": "iron sword",
+             "location": "actor"},
+            {"subject": "actor", "holds": [{"of_kind": "weapon.n.01"}]}))
+
+    def test_a_count_does_not_change_whether_a_step_would_help(self):
+        """
+        "That would help" is all `achieves` ever says. Taking one apple helps
+        somebody who wants three, and the goal is asked again afterwards --
+        which is how three apples get carried without anything counting here.
+        """
+        self.assertTrue(C.achieves(
+            {"type": "move_object", "to": "actor"},
+            {"subject": "actor",
+             "holds": [{"of_kind": "apple.n.01", "count": 3}]}))
 
     def test_putting_a_thing_somewhere_achieves_it_being_there(self):
         self.assertTrue(C.achieves(
