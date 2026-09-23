@@ -722,11 +722,47 @@ def _close_quietly(instance):
         pass
 
 
-def _consolidate_sync(banks, force=False):
-    """Sleep these banks. Returns {bank: result}. Must run in a thread."""
-    def _run(backend):
-        done = {}
-        for bank in banks:
+def _consolidate_sync(banks, force=False, payers=None, keep_going=None):
+    """
+    Sleep these banks. Returns {bank: result}. Must run in a thread.
+
+    `payers` is {bank: (sponsor, model)}, resolved by the caller on the main
+    thread because a sponsor reaches the database. Summarising goes through
+    the game's own model (`world.summaries`), and the pair says whose key pays
+    for the bank being slept -- named around each one rather than passed,
+    because mnemosyne calls the summariser from inside itself. A bank with no
+    payer is still slept: everything sleep does besides summarising, it does
+    without a model.
+
+    **One bank per turn of the lock, not one per pass.** `_with_backend` holds
+    `_lock`, and every recall and every write in the game takes the same lock
+    -- so holding it across the whole pass meant all memory in the game was
+    serialised behind however long every bank took together. The lock is there
+    for one SQLite connection, and a connection is only in use for the bank
+    being slept; taking it per bank lets a player's own remembering interleave
+    with the sweep instead of queueing behind all of it.
+
+    `keep_going` is asked between banks and stops the pass when it answers
+    False. The same shape `fact_gen.distil` already had: a long queue costs a
+    player nothing, it simply gets shorter over several quiet spells instead
+    of one. Nothing is lost by stopping -- a bank that was not reached is
+    found again by the next pass, unchanged.
+    """
+    from world import summaries
+
+    payers = payers or {}
+    done = {}
+
+    for bank in banks:
+        if keep_going is not None and not keep_going():
+            logger.log_info(
+                f"memory: stopped sleeping after {len(done)} of {len(banks)} "
+                f"bank(s); somebody is playing, and the rest keep")
+            break
+
+        sponsor, model = payers.get(bank) or (None, None)
+
+        def _one(backend, bank=bank, sponsor=sponsor, model=model):
             instance = None
             try:
                 # Each bank is its own SQLite file, so sleeping one says
@@ -735,18 +771,25 @@ def _consolidate_sync(banks, force=False):
                 # a character whose last event predates the cutoff would
                 # otherwise be skipped for having no "current" session.
                 instance = backend.Mnemosyne(bank=bank)
-                done[bank] = instance.sleep_all_sessions(force=force)
-            except Exception as exc:
-                logger.log_info(f"memory: could not sleep {bank!r}: {exc}")
+                with summaries.paying_for(sponsor, model):
+                    return instance.sleep_all_sessions(force=force)
             finally:
                 if instance is not None:
                     _close_quietly(instance)
-        return done
 
-    return _with_backend(_run) or {}
+        try:
+            outcome = _with_backend(_one)
+        except Exception as exc:
+            # One bad bank has never stopped the pass and still does not.
+            logger.log_info(f"memory: could not sleep {bank!r}: {exc}")
+            continue
+        if outcome is not None:
+            done[bank] = outcome
+
+    return done
 
 
-def consolidate(force=False, on_done=None):
+def consolidate(force=False, on_done=None, yield_to_players=True):
     """
     Async, fire-and-forget. Sleep every living character's memories.
 
@@ -758,12 +801,35 @@ def consolidate(force=False, on_done=None):
     Banks whose character is gone are skipped rather than slept. There is
     nothing to be gained by summarising the memories of somebody who no longer
     exists, and opening one is what would stop the sweep deleting it.
+
+    `yield_to_players` stops the pass as soon as somebody is at the keyboard,
+    and is the default because the callers that want it are the ones nobody
+    asked for: `MemorySleepScript` checks the game is quiet before it starts
+    but the pass outlives that check, and the call at server start does not
+    check at all -- it fires while a player is logging in, which is how a
+    player came to wait four minutes for a room behind it.
+
+    The exception is `upkeep`, where somebody has typed `sleep` and is waiting
+    to be told how many banks were done: there, being interrupted by the
+    player who asked would be absurd, so it passes False.
     """
     if _closing or not available():
         return
 
     stranded = set(orphaned_banks())
     banks = [name for name in _bank_names() if name not in stranded]
+
+    # Who pays for each bank's summaries, worked out here because this is the
+    # main thread and a sponsor reads the database. See `world.summaries`.
+    from world import summaries
+
+    payers = summaries.payers_for(banks)
+
+    keep_going = None
+    if yield_to_players:
+        from world.activity import quiet_enough_for_heavy_work
+
+        keep_going = quiet_enough_for_heavy_work
 
     def _finished(result):
         slept = sum(
@@ -777,8 +843,9 @@ def consolidate(force=False, on_done=None):
         if on_done:
             on_done(result)
 
-    threads.deferToThread(_consolidate_sync, banks, force).addCallbacks(
-        _finished, _swallow)
+    threads.deferToThread(
+        _consolidate_sync, banks, force, payers, keep_going
+    ).addCallbacks(_finished, _swallow)
 
 
 # ---------------------------------------------------------------------------
@@ -794,6 +861,14 @@ def consolidate(force=False, on_done=None):
 # eighty times the cost of a plain write, and what it produced was the model's
 # own working-out rather than any fact. So the work is done here instead, in
 # batches, out of hours, against the model the game is already configured with.
+#
+# Sleep now goes the same way, and did not for a long time -- which is what
+# this note should have led to and did not. Summarising was still on the local
+# model, and cost one live server 9.5 CPU-hours in an afternoon without
+# finishing while a player waited four minutes for a room. It is routed
+# through mnemosyne's host-backend hook rather than replaced, because the rest
+# of what sleep does -- marking rows consolidated, exempting them from
+# retention -- is bookkeeping only it can do. See `world.summaries`.
 #
 # The results are written back as ordinary memories rather than into
 # mnemosyne's facts table. They are then recalled by exactly the machinery

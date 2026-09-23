@@ -371,8 +371,17 @@ where it is called rarely:
 |---|---|
 | `naming` | fast and cheap; called for every new room |
 | `dialogue` | fast and cheap; called for every line an NPC hears |
+| `summaries` | fast and cheap; a bulk background summariser, run only while nobody is playing |
 | `rooms`, `contents`, `items`, `npcs` | mid-range — this is the prose you read |
 | `commands`, `quests` | your most capable model: structured decisions, called rarely, and getting them wrong is what makes a world incoherent |
+
+`summaries` is what turns a run of remembered events into one summary when a
+character sleeps. It has its own job rather than sharing `memory` because the
+two want opposite things: this is batch work nobody is waiting for, while
+`memory` answers a player who typed `remember` and is watching the screen.
+Before it existed, mnemosyne did this on a **local CPU model** — which cost
+one server 9.5 CPU-hours in an afternoon without finishing. A MUD should not
+need a fast CPU to remember anything; see `world/summaries.py`.
 
 Validation is not in that list any more and is not a model you choose. Whether
 a thing could be in a room, and whether it can be picked up, are single bits

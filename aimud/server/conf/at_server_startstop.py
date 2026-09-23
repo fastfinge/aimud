@@ -66,6 +66,13 @@ def at_server_start():
             f"came before one bank per world; clearing them up"
         )
 
+    # Before anything can sleep: mnemosyne summarises on a local CPU model
+    # unless told otherwise, which cost one live server 5.7 CPU-hours in an
+    # afternoon without finishing. See world.summaries.
+    from world.summaries import install as route_summaries
+
+    route_summaries()
+
     # Load the memory backend off the reactor now, rather than making the
     # first remembered event wait seconds for the embedding stack to import.
     warm_up()
@@ -73,7 +80,13 @@ def at_server_start():
     # Worth doing once a run as well as on the clock: a server restarted more
     # often than the sleep interval would otherwise never consolidate at all,
     # and unconsolidated memories are the ones that get deleted.
-    consolidate()
+    #
+    # It gives way as soon as anybody starts playing, which matters most here
+    # of anywhere: nobody is logged in at this moment, so every check for a
+    # quiet game passes, and the player who logs in ten seconds later is behind
+    # whatever this started. `consolidate` stops between banks for them, and
+    # the banks it did not reach keep until the next pass.
+    consolidate(yield_to_players=True)
 
 
 def _warm_lexicon():

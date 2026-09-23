@@ -38,14 +38,24 @@ def immediately():
     Run model work in this thread, and call back before returning.
 
     The same contract `fetch` has, minus the thread: `on_success` gets what the
-    work returned, `on_error` gets a Failure, and exactly one of them is called.
+    work returned, `on_error` gets a Failure, and exactly one of them is
+    called. The callbacks themselves are `llm.callbacks`, the very pair the
+    real door uses, so a callback that raises behaves here as it does in the
+    game rather than coming back out to the test.
     """
     def fetch(work, *args, on_success, on_error):
+        # The callbacks come from `llm` rather than being written again here.
+        # They used to be written again, unguarded, which made this stand-in
+        # safer than the door it stands in for: a callback that raised came
+        # back out to the test, where in the game it vanished into a Deferred
+        # nothing was watching and stranded whatever the caller held. See
+        # `llm.callbacks`.
+        succeeded, failed = llm.callbacks(on_success, on_error)
         try:
             answer = work(*args)
         except Exception:
-            return on_error(Failure())
-        return on_success(answer)
+            return failed(Failure())
+        return succeeded(answer)
 
     with mock.patch.object(llm, "fetch", fetch):
         yield

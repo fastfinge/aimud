@@ -59,6 +59,7 @@ JOBS = [
     ("npcs", "NPC creation"),
     ("dialogue", "NPC dialogue generation"),
     ("memory", "Answering the remember command"),
+    ("summaries", "Summarising what a character remembers, while nobody plays"),
     ("quests", "Turning an NPC's request into a checkable quest"),
     ("commands", "Command and object behavior creation"),
     ("menus", "Filling in a menu field for you, when you type ~"),

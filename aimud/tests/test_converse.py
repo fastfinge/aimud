@@ -306,6 +306,119 @@ class WhatALoopReports(_Conversing, SimpleTestCase):
 
 
 @tag("unit")
+class ACallbackThatRaises(_Conversing, SimpleTestCase):
+    """
+    A generator's own callback raising must still end the job.
+
+    Found on a live server: a player watched "building the way east" for four
+    minutes with the reactor idle, the threadpool idle and nothing in flight.
+    `exits.at_traverse` sets `ndb.generating` before asking and clears it only
+    in its callbacks, so an exception in one of them stranded the door until
+    the next reload -- and the exception reached a Deferred nothing had an
+    errback on, which Twisted reports only when it is collected, so the log
+    said nothing at all.
+
+    The fix is at the seam rather than the 31 call sites that hand `converse`
+    a callback: `llm._delivered`. Every generator already routes `on_error` to
+    something that releases what it holds, so a raise arriving there is what
+    makes the door open again.
+    """
+
+    def boom(self, _value):
+        raise RuntimeError("the room could not be built")
+
+    def test_a_done_callback_that_raises_becomes_an_error(self):
+        got = {"done": [], "error": []}
+        box = tb.Toolbox([answer_tool()])
+        with immediately(), replying(tool_reply(tool_call("answer", n=2))):
+            llm.converse(SPONSOR, "test/model",
+                         [{"role": "user", "content": "go"}], box,
+                         on_done=self.boom,
+                         on_error=got["error"].append)
+        self.assertEqual(len(got["error"]), 1, "nobody was told")
+        self.assertIn("could not be used", got["error"][0])
+        self.assertIn("the room could not be built", got["error"][0])
+
+    def test_and_does_not_raise_into_the_reactor(self):
+        """
+        The whole point: it must not come back out. A raise here reaches a
+        Deferred with no errback, which is the invisible half of the bug.
+        """
+        box = tb.Toolbox([answer_tool()])
+        with immediately(), replying(tool_reply(tool_call("answer", n=2))):
+            llm.converse(SPONSOR, "test/model",
+                         [{"role": "user", "content": "go"}], box,
+                         on_done=self.boom,
+                         on_error=lambda _why: None)   # released, said nothing
+
+    def test_an_error_callback_that_raises_is_swallowed_and_logged(self):
+        """
+        There is nowhere left to report it to, so it is logged and stops here
+        rather than becoming the same lost Deferred one layer further out.
+        """
+        box = tb.Toolbox([answer_tool()])
+        with immediately(), replying(Exception("the service refused")), \
+                mock.patch.object(llm, "_callback_failed") as noted:
+            llm.converse(SPONSOR, "test/model",
+                         [{"role": "user", "content": "go"}], box,
+                         on_done=lambda _v: None, on_error=self.boom)
+        self.assertTrue(noted.called)
+
+    def test_an_exhausted_callback_that_raises_becomes_an_error_too(self):
+        got = {"error": []}
+        box = tb.Toolbox([answer_tool()])
+        with immediately(), replying(tool_reply(tool_call("answer", n=1))):
+            llm.converse(SPONSOR, "test/model",
+                         [{"role": "user", "content": "go"}], box,
+                         on_done=lambda _v: None,
+                         on_error=got["error"].append,
+                         on_exhausted=self.boom, rounds=2)
+        self.assertEqual(len(got["error"]), 1)
+
+    def test_the_job_is_only_ended_once(self):
+        """
+        `on_error` is reached through the raise, not as well as by the loop
+        ending twice -- otherwise a caller would release what it holds twice.
+        """
+        got = {"done": [], "error": []}
+        box = tb.Toolbox([answer_tool()])
+        with immediately(), replying(tool_reply(tool_call("answer", n=2))):
+            llm.converse(SPONSOR, "test/model",
+                         [{"role": "user", "content": "go"}], box,
+                         on_done=self.boom,
+                         on_error=got["error"].append)
+        self.assertEqual(len(got["error"]), 1)
+        self.assertEqual(got["done"], [])
+
+
+@tag("unit")
+class AFetchCallbackThatRaises(SimpleTestCase):
+    """
+    The outer net, for a caller that goes through `fetch` directly rather than
+    through a tool loop -- `world.decisions` is one.
+    """
+
+    def test_a_success_callback_that_raises_reaches_the_error_path(self):
+        failures = []
+        with immediately():
+            llm.fetch(lambda: "answer",
+                      on_success=lambda _v: (_ for _ in ()).throw(
+                          RuntimeError("could not use it")),
+                      on_error=failures.append)
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0], Failure)
+        self.assertIn("could not use it", failures[0].getErrorMessage())
+
+    def test_an_error_callback_that_raises_stops_there(self):
+        with immediately(), mock.patch.object(llm, "_callback_failed") as noted:
+            llm.fetch(lambda: (_ for _ in ()).throw(RuntimeError("no answer")),
+                      on_success=lambda _v: None,
+                      on_error=lambda _f: (_ for _ in ()).throw(
+                          RuntimeError("and no way to say so")))
+        self.assertTrue(noted.called)
+
+
+@tag("unit")
 class CheckingArguments(SimpleTestCase):
 
     SCHEMA = {"type": "object", "required": ["n"], "properties": {
