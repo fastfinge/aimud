@@ -1,6 +1,8 @@
 # Development plan: building by hand
 
-Status: scoped, not built.
+Status: built, phases 1 to 6. Phase 7 (export and import) is still a plan of
+its own. What each phase actually came to, and where it differs, is under
+each phase in §15.
 
 This covers the `future-plans.md` item "full menu-based building of worlds for
 players who want to create something fun without having to use AI", and the two
@@ -1014,17 +1016,70 @@ both already work and any behaviour change is a bug.
 now, and a `Picker` in a test form can open a maker's `new` form and come back
 with the value.
 
+*Built.* `world/making.py`, `commands/making_subject.py`, and the two additions
+to `world/menus.py`. Where it differs:
+
+* **`tokens` and `pronouns` were not ported.** The port was the proof that the
+  table can carry an existing subject, and twelve new makers are a better one;
+  against that, it is pure churn over two things that already work, with a
+  regression risk and no new capability. Left alone deliberately rather than
+  forgotten.
+* **A maker refuses a reserved word at registration.** `menus.Item` already
+  refuses one, but only when the list holding it is drawn -- which is a crash
+  in front of a player rather than a failure at import. Found by the way out of
+  a room, whose natural name is `exit` and which is the word that quits every
+  menu in the game; it is called a **way** (§9.2).
+* **A bug in `guided` forms was found and fixed.** A form whose `items` is a
+  function of the context builds a fresh `Field` every time it is asked, so
+  "(2 of 5)" was looked up by identity against a different object: it gave up
+  silently everywhere and raised in `open_menu`. `menus._step_of` matches by
+  key. Every form in `world/makers` builds its items that way, because what
+  they offer depends on what the world holds.
+* **`listing_field`** joined the two engine additions as a caller of them: a
+  list kept in a draft, with one form to add to it and an entry per member to
+  take one out. A rule's conditions, a rule's effects, an action's roles, a
+  kind's affordances, an NPC's traits and an errand's givers are all it.
+
 **Phase 2: the vocabulary.** Kinds and affordances, attributes, conditions and
 groups, word folds (§11c), and `view term`. The sense and anchor pickers.
 *Done when:* a world with no API key can be given a new kind, a new attribute
 and a new pair of exclusive states from menus, and `view faults` has nothing to
 say about any of them.
 
+*Built.* `world/makers/vocabulary.py`, `world/folds.py` and
+`commands/term_subject.py`. Where it differs:
+
+* **Folds own the verb table now.** `rulesets._fold` wrote `verb_synonyms`
+  directly; both halves live in `world/folds.py`, and `rulesets` and
+  `verbs.canonical_verb` are callers. A noun fold reads through
+  `naming.best_match` as another name the thing answers to, beside the aliases
+  a conjured object already carries.
+* **A picker may offer "type your own".** An affordance is any verb, and a
+  closed list of two dozen would be the game deciding what a world may be
+  about. `making.word_form` is the one-question form behind that entry.
+* **`view term` shows what this world has done with the word too**, not only
+  what the dictionaries say -- whether it is already a kind here, a verb, a
+  condition, an attribute, or another word for one of them.
+
 **Phase 3: actions and verbs.** `create action`, `reset action`, `create verb`,
 `reset kind`; the dependant reporting in §6.4.
 *Done when:* an action declared by hand is taken by the parser and bound the
 same way a model-declared one is, and `reset kind` names what it will forget
 before it forgets it.
+
+*Built.* `world/makers/doing.py`, and `reset` as a fifth verb on the maker
+table. Where it differs:
+
+* **`reset action` is still `reset verb`**, which already existed and already
+  said the right things. A second name for it would have been tidiness at the
+  cost of a word players have learned.
+* **`reset kind` drops the narrations written about things of that sort**, by
+  the same `effects.forget_narrations` a modified object goes through. They
+  were written about what the kind used to afford.
+* **Finding what is of a kind was wrong and is fixed.** The `ai_world` tag is
+  on rooms, not on the things in them, so a search by tag alone found the
+  places and none of their contents -- the wrong half for a question about
+  kinds. It walks the rooms' contents now.
 
 **Phase 4: rules.** The rule form, the condition builder, the effect builder,
 and the checks in §8.5. The biggest phase by a distance; worth splitting at the
@@ -1037,9 +1092,41 @@ That last criterion is the real test of this plan. The rulesets are hand-written
 documents that say everything a world could say for itself; if the menus cannot
 reproduce them, the menus are missing something.
 
+*Built.* `world/makers/rules.py`. Where it differs:
+
+* **Byte-equal was the wrong test and coverage is the right one.** A seeded
+  rule carries an id, a `born` timestamp and a `source` mark that a rule
+  somebody writes cannot and should not reproduce. What the criterion was
+  really asking is whether the menus can *say* everything the documents say,
+  and that is held by three tests instead: every effect in
+  `effects.VOCABULARY`, every predicate in `conditions.PREDICATES`, and every
+  goal type in `goals.CONDITION_TYPES` is reachable from a menu. A vocabulary
+  entry no menu can reach is exactly the hole byte-equality was looking for,
+  and these name it directly.
+* **Two effect fields are asked under another name.** `exit` quits every menu,
+  and `location` reads as a place rather than as a choice between two;
+  `STORED_AS` maps them back on the way in.
+* **The phase question shows firing order as it is answered**, which §8.4 asked
+  for, and its three nudges read the rest of the rule -- which is what asking
+  it last buys.
+
 **Phase 5: contents.** Items, rooms, exits, people. The `thing_here` matcher.
 *Done when:* a small world -- four rooms, a few items, one NPC -- can be built
 end to end with no model, and playing it works.
+
+*Built.* `world/makers/things.py`, and `subjects.reachable` / `thing_here`.
+Where it differs:
+
+* **`create npc` and `create person` are two commands, not one fork.** The
+  generated one costs money and runs asynchronously; the hand-built one costs
+  nothing and finishes at once, and folding them into one menu would have hidden
+  that difference behind a submenu. Each one's help names the other.
+* **A way out is a `way`**, for the reason in phase 1.
+* **`modify_complaints` checks a thing being made, not only one being
+  changed.** Its two rules -- a name says what a thing is and never its
+  condition, a description may only ask for word lists this world keeps -- are
+  just as true of a new thing, so the thing being made is given the shape the
+  checker reads rather than the rules being written out a second time.
 
 **Phase 6: quests.** The spec store, `offer_quest`, chains and repeats,
 `quest_gen` refactored onto the same writer, and the pool offered to both
@@ -1049,6 +1136,23 @@ sides -- `quests.lookup_tools`, the `use_quest` answer, and the player's
 non-repeatable one is not offered again, and a generated NPC asked for work in
 a world that already holds a fitting errand hands that one out instead of
 writing another.
+
+*Built.* The spec store in `world/quests.py`, the `offer_quest` effect in
+`world/effects.py`, `world/makers/errands.py`, and `use_quest` in
+`world/quest_gen.py`. Where it differs:
+
+* **`create quest` writes the rule that offers it, and says so.** The default
+  is that greeting the giver asks; declining leaves the errand written and
+  unoffered. The effect does all the deciding -- already done, too soon,
+  something else first, hands full -- so the rule it writes can be one line and
+  still be right.
+* **A goal is written in the goal vocabulary**, not the condition vocabulary.
+  They are different closed lists: `goals.satisfied` can only test its own, and
+  a goal it cannot test would hang the errand for ever rather than fail it.
+* **`greet` is declared if the world has not got it**, since the default rule
+  is about being greeted.
+* The last criterion is held by `use_quest` being offered and enumerating this
+  world's specs; whether a model *prefers* it is a live test, not a free one.
 
 **Phase 7 (separate plan): export and import.** A world as a document, over the
 same maker table. Named here so phases 1 to 6 build for it; scoped when they

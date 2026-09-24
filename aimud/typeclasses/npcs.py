@@ -747,11 +747,16 @@ class NPC(ObjectParent, DefaultObject):
             quest = quests.offer(
                 self, target,
                 title=spec["title"],
-                description=request,
+                # What was actually said, which is this character's own way of
+                # asking. A reused errand keeps its goal and gets a fresh
+                # voice -- see world/quests.py -- so the spoken request wins
+                # over the errand's general wording either way.
+                description=spec.get("description") or request,
                 conditions=spec["goal"],
                 reward=spec["reward"],
                 punishment=spec["punishment"],
                 time_limit=time_limit,
+                spec_id=spec.get("spec", ""),
             )
             if quest is None:
                 logger.log_info(

@@ -128,8 +128,25 @@ typing a command.
 `world/preferences.py`, stored in an attribute. Do not add a single-purpose
 command for it.
 
+**Something a player can make belongs in `world/making.py`.** A `Maker` says
+what one creatable thing is called, how to list what a world holds of it, the
+form that makes one and the form that changes one; `commands/making_subject.py`
+turns each into a `Subject` with its command line, its menu entry and its
+permission check already right, and `menus.Picker` offers the same register
+inside another form. A maker writes through the function the generators already
+call (`kinds.remember`, `traits.register`, `rulebooks.add`, `clothing.create`)
+and never touches an attribute itself -- that is what keeps a world somebody
+typed and a world a model wrote the same world. The forms live in
+`world/makers/`. See docs/player-building.md.
+
+**Nothing in building calls a model.** `~` is the only paid key and it is
+always optional. A test (`tests/test_building.py`, `NoModels`) drives the forms
+with the LLM layer patched to raise.
+
 ### World content (`world/`)
 
+- `making.py` — the table of everything a player can create, and the pickers and list-fields that read it; `makers/` holds one module of forms per sort of thing
+- `folds.py` — another word for something this world knows: a verb spelling, or a noun that names a kind
 - `prototypes.py` — module-level dicts define object prototypes (spawnable templates); use `evennia.spawn()` or in-game `spawn` command to instantiate them
 - `batch_cmds.ev` — batch command scripts for populating the world
 - `help_entries.py` — additional help entries beyond auto-generated command help

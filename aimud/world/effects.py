@@ -559,6 +559,14 @@ VOCABULARY = {
         "takes": "action, roles",
         "backwards": False, "answers": False,
     },
+    "offer_quest": {
+        "means": "asks somebody to run an errand this world has written",
+        "takes": "quest, role",
+        # A goal a planner could aim at is a state of the world; being offered
+        # something is a state of a conversation. Nothing to read backwards,
+        # and saying so here keeps it off the planner's list of holes.
+        "backwards": False, "answers": False,
+    },
 }
 
 
@@ -723,6 +731,9 @@ def say(effect):
     if etype == "try":
         return f"means {effect.get('action') or 'something else'} instead"
 
+    if etype == "offer_quest":
+        return f"offers {what} the errand {effect.get('quest') or ''}".rstrip()
+
     return f"does something this game calls {etype or 'nothing'}"
 
 
@@ -779,6 +790,34 @@ def _apply_one(actor, room, effect, bound, world_root, found=None):
         ownership.claim(actor, obj)
         where = "is now here" if location is room else "is now carried"
         return f"{obj.get_numbered_name(1, None, return_string=True)} {where}."
+
+    if etype == "offer_quest":
+        # Offering is an effect rather than a hook, so *when* an errand is
+        # offered is something a world writes as a rule -- on being greeted,
+        # on walking in, on being asked a third time -- rather than a
+        # behaviour hardcoded in the quest module. It works identically
+        # whether a person, a character or a model set it going, which is the
+        # standing rule for effects, and it is the whole of what a world with
+        # no model needs in order to hand out work.
+        from world import quests
+
+        giver = _resolve(effect, "name", bound, room, actor) or actor
+        to = effect.get("role") or "actor"
+        taker = actor if to == "actor" else bound.get(to)
+        if taker is None or giver is None or taker is giver:
+            return None
+        record = quests.spec(world_root, effect.get("quest"))
+        if record is None:
+            return None
+        allowed, _why = quests.available(taker, world_root, record)
+        if not allowed:
+            return None
+        own = next((said for npc, said in quests.givers_of(world_root, record)
+                    if npc is giver), "")
+        quest = quests.offer_spec(giver, taker, record, description=own)
+        if quest is None:
+            return None
+        return f"{giver.key} asks about {quest['title']}."
 
     if etype == "describe":
         # The one effect that changes nothing and only says something.

@@ -10,6 +10,31 @@ would not be.
 Rewards and punishments are ordinary verb effects, so they run through the
 same guarded applier: a punishment cannot delete a player or an exit, however
 sore the NPC who set it.
+
+**A quest used to exist only from the moment it was offered.** `offer` built
+the record on the character receiving it, so there was no such thing as an
+errand waiting to be given, and every quest the game had ever seen was written
+by `quest_gen` in the middle of a conversation. A world built by hand needs the
+other thing, and so does a world with no model at all.
+
+So a **spec** is an errand written in advance and kept on the world: the same
+fields `offer` takes, plus the four only a pre-written errand needs -- who
+gives it, whether it repeats, what must be done first, and when it is
+available. `offer` takes one, `quest_gen` writes one, and a player writes one
+through the menus, which is what keeps this from being a second quest system.
+
+**A spec belongs to the world, not to its giver.** Deleting the character who
+handed it out leaves it in place with nobody to give it, the way a rule filed
+against a deleted object stays in the book -- one store and an orphan report,
+rather than a second store and an index to keep in step with it.
+
+**Each giver keeps its own way of asking.** Reuse is meant to save the
+expensive half of an errand -- a testable goal, sanitised conditions, effects
+inside QUEST_EFFECTS -- and not to make two characters say the same sentence.
+The goal is the machine half; the description is the voice, and it hangs on
+the giver. Which is the split `attempt.py` already makes one level down,
+between what a verb means for everything of its sort and how this door differs
+from that door.
 """
 
 import time
@@ -46,6 +71,44 @@ ABANDONED = "abandoned"
 #: want to think about it, so they are given far longer.
 OFFER_LAPSES_AFTER = 180
 OFFER_LAPSES_AFTER_PLAYER = 900
+
+
+def lookup_tools():
+    """
+    `list_errands`: the written errands, for a generator to reuse one.
+
+    A world with a dozen written errands is one where a character asked for
+    work should usually be handing one out rather than inventing a thirteenth.
+    Reuse saves the expensive half -- a testable goal, sanitised conditions,
+    effects inside QUEST_EFFECTS -- and `use_quest` lets the character still
+    ask in their own words, which is the cheap half and the one worth writing
+    fresh. This is "one vocabulary per world" (world/traits.py) applied to
+    errands, and it heads off the same drift: eleven near-identical
+    fetch-the-chalk quests with eleven different goals, only some testable.
+    """
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        held = specs(ctx.world_root)
+        if not held:
+            return "This world has no written errands."
+        lines = []
+        for record in sorted(held.values(), key=lambda r: r.get("id", "")):
+            givers = ", ".join(npc.key for npc, _said
+                               in givers_of(ctx.world_root, record))
+            lines.append(
+                f"{record['id']}: {record.get('title')} -- "
+                f"{goals.describe(record.get('goal'))}"
+                + (f" (given by {givers})" if givers else " (given by nobody)")
+                + ("" if record.get("repeatable") else " [once ever]"))
+        return "\n".join(lines)
+
+    return [tb.Tool("list_errands",
+                    "The errands this world has already written. Hand one of "
+                    "these out rather than writing another like it.",
+                    tb.params(tb.PAGE), tb.answering(listing),
+                    doing="looking up this world's errands", looks=True,
+                    available=lambda ctx: bool(specs(ctx.world_root)))]
 
 
 def is_person(obj):
@@ -115,7 +178,7 @@ def visible(character):
 
 
 def offer(npc, character, title, description, conditions,
-          reward=None, punishment=None, time_limit=None):
+          reward=None, punishment=None, time_limit=None, spec_id=""):
     """
     Record an offer from `npc` to `character`. Returns the quest, or None.
 
@@ -153,6 +216,9 @@ def offer(npc, character, title, description, conditions,
         "description": str(description or "").strip(),
         "giver": npc.key,
         "giver_id": npc.id,
+        # Which written errand this came from, when it came from one. What
+        # makes "once ever" mean it, and what a chain's `after` reads.
+        "spec": str(spec_id or ""),
         "world_root": root.id if root else None,
         "goal": clean,
         "reward": _clean_effects(reward),
@@ -166,6 +232,202 @@ def offer(npc, character, title, description, conditions,
     entries.append(quest)
     _save(character, entries)
     return quest
+
+
+# ---------------------------------------------------------------------------
+# Specifications: an errand written in advance
+# ---------------------------------------------------------------------------
+
+#: Where a world keeps the errands it holds, and the counter that names them.
+SPECS_ATTR = "quest_specs"
+SPECS_COUNTER = "quest_spec_counter"
+
+#: Where a character records which written errands they have finished, and
+#: when. Beside the quest list rather than in it: a finished quest leaves the
+#: list in time, and "once ever" has to outlive that.
+DONE_ATTR = "quests_done"
+
+
+def specs(world_root):
+    """Every errand this world holds, as {id: spec}."""
+    from evennia.utils.dbserialize import deserialize
+
+    if world_root is None:
+        return {}
+    return dict(deserialize(getattr(world_root.db, SPECS_ATTR, None)) or {})
+
+
+def spec(world_root, spec_id):
+    """One errand, or None."""
+    return specs(world_root).get(str(spec_id or "").strip()) or None
+
+
+def blank_spec(**fields):
+    """An errand with every slot present, so nothing downstream has to guess."""
+    record = {
+        "id": "",
+        "title": "",
+        "description": "",
+        "goal": [],
+        "reward": [],
+        "punishment": [],
+        "time_limit": None,
+        # Who hands it out, and in whose words:
+        # [{"npc": <id>, "description": ""}]. A list, because one errand may
+        # be several characters', and each of them asks differently. An empty
+        # description falls back to the errand's own.
+        "givers": [],
+        # Once ever, or again after `cooldown` seconds.
+        "repeatable": False,
+        "cooldown": 0,
+        # Errands that must be finished first, which is what makes a chain.
+        "after": [],
+        # And anything else that must be true before it is on offer.
+        "only_when": [],
+    }
+    record.update({k: v for k, v in fields.items() if k in record})
+    return record
+
+
+def save_spec(world_root, record):
+    """Write an errand, giving it an id if it has none. Answers with it."""
+    if world_root is None:
+        return None
+    record = blank_spec(**dict(record or {}))
+    record["goal"] = goals.sanitise(record.get("goal") or [])
+    record["reward"] = _clean_effects(record.get("reward"))
+    record["punishment"] = _clean_effects(record.get("punishment"))
+    if not record["id"]:
+        number = int(getattr(world_root.db, SPECS_COUNTER, 0) or 0) + 1
+        setattr(world_root.db, SPECS_COUNTER, number)
+        record["id"] = f"q{number}"
+    store = specs(world_root)
+    store[record["id"]] = record
+    setattr(world_root.db, SPECS_ATTR, store)
+    logger.log_info(f"quests: {record['id']} {record['title']!r} written for "
+                    f"{world_root.key}")
+    return record
+
+
+def remove_spec(world_root, spec_id):
+    """Take an errand out of the world. Quests already accepted are untouched."""
+    store = specs(world_root)
+    spec_id = str(spec_id or "").strip()
+    if spec_id not in store:
+        return None
+    gone = store.pop(spec_id)
+    setattr(world_root.db, SPECS_ATTR, store)
+    return gone
+
+
+def givers_of(world_root, record):
+    """The characters who hand one out, skipping any that have been deleted."""
+    from evennia.objects.models import ObjectDB
+
+    found = []
+    for entry in (record or {}).get("givers") or []:
+        try:
+            npc = ObjectDB.objects.get(id=int(entry.get("npc")))
+        except Exception:
+            continue
+        found.append((npc, str(entry.get("description") or "")))
+    return found
+
+
+def orphaned(world_root):
+    """
+    Errands with nobody left to give them.
+
+    Reported rather than repaired, the way `rulebooks.orphans` reports a rule
+    whose object has gone: an errand somebody wrote is worth keeping until
+    they say otherwise, and `edit quest` hands it to somebody else.
+    """
+    return [record for record in specs(world_root).values()
+            if not givers_of(world_root, record)]
+
+
+def specs_from(world_root, npc):
+    """What this character hands out, as [(spec, their own words)]."""
+    found = []
+    for record in sorted(specs(world_root).values(),
+                         key=lambda r: r.get("id", "")):
+        for entry in record.get("givers") or []:
+            try:
+                if int(entry.get("npc")) == npc.id:
+                    found.append((record, str(entry.get("description") or "")))
+            except (TypeError, ValueError):
+                continue
+    return found
+
+
+# -- what somebody has already done -----------------------------------------
+
+def finished(character):
+    """{spec id: when it was last finished} for this character."""
+    from evennia.utils.dbserialize import deserialize
+
+    return dict(deserialize(getattr(character.db, DONE_ATTR, None)) or {})
+
+
+def record_finished(character, spec_id):
+    if not spec_id:
+        return
+    done = finished(character)
+    done[str(spec_id)] = time.time()
+    setattr(character.db, DONE_ATTR, done)
+
+
+def available(character, world_root, record):
+    """
+    (whether this errand may be offered to this character now, why not).
+
+    Five questions, asked in the order somebody would ask them: have they done
+    it already, is it too soon to do it again, have they done what comes
+    first, is the world ready for it, and are their hands free.
+    """
+    if not record:
+        return False, "there is no such errand"
+    done = finished(character)
+    spec_id = str(record.get("id") or "")
+    when = done.get(spec_id)
+    if when is not None:
+        if not record.get("repeatable"):
+            return False, "they have done it already"
+        cooldown = int(record.get("cooldown") or 0)
+        if cooldown and time.time() - when < cooldown:
+            return False, "they did it too recently"
+    for earlier in record.get("after") or []:
+        if str(earlier) not in done:
+            return False, f"they have not finished {earlier} yet"
+    wanted = record.get("only_when") or []
+    if wanted:
+        from world import conditions
+
+        ctx = conditions.context(actor=character, world_root=world_root,
+                                 room=getattr(character, "location", None))
+        if not conditions.satisfied(wanted, ctx):
+            return False, "the world is not ready for it"
+    if not can_accept(character):
+        return False, "they already have an errand"
+    return True, ""
+
+
+def offer_spec(npc, character, record, description=""):
+    """
+    Hand a written errand over. Returns the quest, or None.
+
+    The description is the giver's own where they have one and the errand's
+    otherwise, which is what keeps one errand given by three characters from
+    being the same sentence three times.
+    """
+    if not record:
+        return None
+    return offer(npc, character, record.get("title"),
+                 description or record.get("description"),
+                 record.get("goal"), reward=record.get("reward"),
+                 punishment=record.get("punishment"),
+                 time_limit=record.get("time_limit"),
+                 spec_id=record.get("id"))
 
 
 def forget_world(character, root_id, giver_ids=()):
@@ -393,6 +655,10 @@ def review(character, announce=True):
             _update(character, quest_id, status=DONE)
             _release_goal(character, quest)
             _tally(character, DONE, world_root, quest["title"])
+            # And against the written errand it came from, which is what
+            # "once ever" and a chain's `after` read. Kept apart from the
+            # quest list, which is swept.
+            record_finished(character, quest.get("spec"))
             said = _apply(character, quest.get("reward"), world_root)
             if announce:
                 _tell(character,

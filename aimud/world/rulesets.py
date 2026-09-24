@@ -636,7 +636,9 @@ def _apply(world_root, doc, decided):
     return [rule for rule in added if rule]
 
 
-#: Where a world keeps the verb spellings its rulesets fold.
+#: Where a world keeps the verb spellings its rulesets fold. Kept here as a
+#: name other modules import; `world.folds` owns the store now, because a
+#: player may fold a spelling too and one register cannot have two writers.
 VERBS_ATTR = "verb_synonyms"
 
 
@@ -651,22 +653,17 @@ def _fold(world_root, entry):
     """
     if not hasattr(entry, "keys"):
         return
-    word = str(entry.get("word") or "").strip().lower()
-    means = str(entry.get("means") or "").strip().lower()
-    if not word or not means or word == means:
-        return
-    stored = dict(getattr(world_root.db, VERBS_ATTR, None) or {})
-    if stored.get(word) == means:
-        return
-    stored[word] = means
-    setattr(world_root.db, VERBS_ATTR, stored)
+    from world import folds
+
+    folds.fold(world_root, entry.get("word"), entry.get("means"),
+               noun=bool(entry.get("noun")))
 
 
 def synonyms(world_root):
-    """The spellings this world's rulesets fold, as {word: canonical}."""
-    if world_root is None:
-        return {}
-    return dict(getattr(world_root.db, VERBS_ATTR, None) or {})
+    """The verb spellings this world folds, as {word: canonical}."""
+    from world import folds
+
+    return folds.verbs_of(world_root)
 
 
 def said(name):

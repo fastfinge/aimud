@@ -266,6 +266,17 @@ def resemblance(phrase, key):
 # Finding what was meant
 # ---------------------------------------------------------------------------
 
+def _folded_words(caller):
+    """The world whose folds apply here, or None when there are none."""
+    from world import folds
+
+    room = getattr(caller, "location", None)
+    root = getattr(room.db, "world_root", None) if room is not None else None
+    if root is None:
+        return None
+    return root if folds.nouns_of(root) else None
+
+
 def best_match(caller, phrase, candidates=None):
     """
     (object, score) for the thing in reach that `phrase` most likely names.
@@ -282,12 +293,23 @@ def best_match(caller, phrase, candidates=None):
 
         candidates = relations.reachable(caller)
 
+    folded = _folded_words(caller)
     best, best_score = None, 0.0
     for obj in candidates:
         # Aliases count as much as the key. An item conjured as a "Brass
         # Orrery" for somebody who asked for an astrolabe carries "astrolabe"
         # as an alias, and that is the name they will type again.
         names = [obj.key] + [str(alias) for alias in obj.aliases.all()]
+        # And a word this world folds onto one of its sorts of thing, which
+        # is the same idea a world wide: every raygun answers to "blaster"
+        # because somebody said so once, rather than each being told.
+        if folded:
+            from world import folds, kinds
+
+            try:
+                names += folds.words_for(folded, kinds.of(obj))
+            except Exception:
+                pass
         score = max(resemblance(phrase, name) for name in names)
         # Ties go to the oldest, so repeated attempts settle on one thing
         # rather than wandering between near-identical ones.

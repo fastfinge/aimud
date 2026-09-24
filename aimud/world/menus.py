@@ -15,6 +15,16 @@ That is what lets one description serve three readers: a player moving through
 it, a command line that reaches the same point in one go, and later a model
 filling a field in (`~`), which needs every field's label, help and value.
 
+**A form may grow what it offers while it is open.** A `Picker` lists what a
+world already holds and ends with "none of these -- make one", which opens the
+form that makes one; that form answers with `Picked`, and the engine sets the
+picker to what came back. A `Submenu` opened with `into=` answers its opener's
+draft the same way, adding to a list there when `append`. Those two are the
+whole of it, and they are here rather than in a helper because a register that
+can be added to from inside a menu is what
+docs/player-building.md is built on -- a rule's scope, a condition's state, an
+item's kind, an NPC's pronouns.
+
 **Two kinds of form.** An *edit* form changes something over several steps,
 and holds the player's input until they finish or quit. A *view* form is
 there to be read -- `score`, `quests` -- and shows what it is for at once,
@@ -454,6 +464,77 @@ class Field(Item):
         return text, ""
 
 
+class Picker(Field):
+    """
+    A field answered from what the world already has, or by making one.
+
+    `options(ctx)` is what exists -- `(value, label)` or `(value, label, help)`
+    -- and the entry after them opens `make`, whose own last action answers
+    with a `Picked`. The engine then sets this field to what came back.
+
+    That is the whole of "offer what is there, and the chance to make one when
+    none of it fits", and it is engine work rather than a helper in one module
+    because six forms in docs/player-building.md want it: a rule's scope, a
+    condition's state, an item's kind, an NPC's pronouns, a quest's giver, an
+    attribute's group. Each lists a register that is allowed to grow while
+    somebody is standing in the middle of using it, which is exactly the case
+    a fixed `choices` list cannot serve.
+    """
+
+    def __init__(self, key, label, options=None, make=None, make_data=None,
+                 make_draft=None, none="None of these -- make a new one",
+                 **kwargs):
+        kwargs.setdefault("kind", CHOICE)
+        super().__init__(key, label, **kwargs)
+        self.options = options
+        # `make(ctx)` is the form that makes one. None -- or a function
+        # answering None -- means this picker only offers what is there, which
+        # is right for a register somebody else fills.
+        self.make = make
+        self.make_data = make_data
+        self.make_draft = make_draft
+        self.none = none
+
+    def choices_for(self, ctx):
+        found = []
+        for option in _call(self.options, ctx, []) or []:
+            if isinstance(option, Choice):
+                found.append(option)
+                continue
+            value, label, helped = (tuple(option) + ("", ""))[:3]
+            found.append(Choice(value, label, help=helped))
+        return found
+
+    def make_form(self, ctx):
+        return _call(self.make, ctx, None)
+
+    def none_label(self, ctx):
+        return str(_call(self.none, ctx, "") or "")
+
+
+class Picked:
+    """
+    What an action answers with when something below it was waiting for a value.
+
+    A `Picker` opens a maker's own form from inside a field; that form finishes
+    with an action returning one of these, and the engine writes the value
+    where the picker was waiting and comes back to it. A `Submenu` opened with
+    `into=` does the same into its opener's draft.
+
+    Returned with nothing waiting, it behaves as `after=BACK` with a message,
+    which is what it means: the form answered, and there was nobody to answer.
+    """
+
+    def __init__(self, value, said=""):
+        self.value = value
+        self.said = said
+
+
+#: Stands in a picker's list for "none of these -- make one". One object for
+#: every picker; the label lives on the entry, as every other label does.
+MAKE_NEW = "__make_new__"
+
+
 class Action(Item):
     """
     Something that happens when chosen.
@@ -485,15 +566,20 @@ class Submenu(Item):
     """
 
     def __init__(self, key, label, form, data=None, fresh_draft=False,
-                 prepare=None, draft=None, **kwargs):
+                 prepare=None, draft=None, into=None, append=False, **kwargs):
         super().__init__(key, label, **kwargs)
         self.form = form
         self.data = data
-        self.fresh_draft = fresh_draft or draft is not None
+        self.fresh_draft = fresh_draft or draft is not None or into is not None
         self.prepare = prepare
         # `draft(ctx)` fills the fresh draft in: editing a world starts from
         # what the world was set up with.
         self.draft = draft
+        # `into` names a key in the OPENER's draft that this submenu answers,
+        # with `Picked`. `append` adds to a list there rather than replacing
+        # it, which is how a rule collects conditions one at a time.
+        self.into = into
+        self.append = append
 
     def context(self, ctx):
         data = _call(self.data, ctx, {}) or {}
@@ -573,7 +659,11 @@ def _filtered(entries, text):
     if not text:
         return entries
     return [entry for entry in entries
-            if text in strip_ansi(entry.label).lower()
+            # A picker's "make one" survives every filter. Somebody who has
+            # narrowed a long list down to nothing is the likeliest person in
+            # the game to need it.
+            if entry.target is MAKE_NEW
+            or text in strip_ansi(entry.label).lower()
             or any(text in name for name in entry.names)]
 
 
@@ -589,15 +679,39 @@ def _pick(entries, text):
     return None
 
 
+def _step_of(form, ctx, field):
+    """
+    "(2 of 5)" for a field in a wizard, or None.
+
+    Found **by key** and not by identity. A form whose `items` is a function
+    of the context builds a fresh `Field` every time it is asked, so the field
+    a caller is holding is never the same object as the one in the next
+    listing -- which made this raise on `open_menu` and quietly give up on the
+    step count everywhere else. Every form in world/makers builds its items
+    that way, because what they offer depends on what the world holds.
+    """
+    if not form.guided:
+        return None
+    required = [item for item in form.items_for(ctx)
+                if isinstance(item, Field) and item.required]
+    for number, item in enumerate(required, 1):
+        if item.key == field.key:
+            return (number, len(required))
+    return None
+
+
 class _Frame:
     """One level of the stack: a form, a field being set, a question."""
 
-    def __init__(self, kind, form, ctx, item=None, step=None):
+    def __init__(self, kind, form, ctx, item=None, step=None, into=None):
         self.kind = kind          # "form", "field", "confirm" or "help"
         self.form = form
         self.ctx = ctx
         self.item = item
         self.step = step
+        # What this frame answers when an action in it returns `Picked`:
+        # ("field", the field frame) or ("draft", the form frame, key, append).
+        self.into = into
         self.filter = ""
         self.page = 0
         self.question = None      # what a confirmation asks
@@ -690,6 +804,13 @@ class GameMenu(EvMenu):
             label = str(_call(choice.label, frame.ctx, ""))
             names = choice.keys + (str(choice.value).lower(),)
             entries.append(_Entry(choice, label, names))
+        field = frame.item
+        # A picker's last entry, always last however the list is filtered:
+        # somebody who has typed to narrow a long list to nothing is exactly
+        # the person who needs to be able to make one.
+        if isinstance(field, Picker) and field.make_form(frame.ctx) is not None:
+            entries.append(_Entry(MAKE_NEW, field.none_label(frame.ctx),
+                                  ("new", "make", "none", "other")))
         return entries
 
     def _size(self, frame=None):
@@ -733,6 +854,12 @@ class GameMenu(EvMenu):
         if self._suggestible(frame):
             said.append("~ fills it in for you" if entry
                         else "~ fills one in for you")
+        if paged and isinstance(frame.item, Picker) \
+                and frame.item.make_form(frame.ctx) is not None:
+            # On the last page, where the entry itself is. Said anyway,
+            # because the entry is numbered on one page out of twenty and the
+            # word works from all of them.
+            said.append("new makes one that is not listed")
         if paged:
             said.append("n and p turn the page")
         if filterable:
@@ -1175,6 +1302,8 @@ class GameMenu(EvMenu):
                     return self._set_filter(frame, "")
                 chosen = _pick(_filtered(entries, frame.filter), text)
                 if chosen is not None:
+                    if chosen.target is MAKE_NEW:
+                        return self._make_new(frame)
                     return self._set_field(frame, chosen.target.value)
                 if (text.lower() in CLEAR_WORDS and not field.required
                         and field.is_set(ctx)):
@@ -1198,14 +1327,57 @@ class GameMenu(EvMenu):
             return self._refuse(complaint)
         return self._set_field(frame, value)
 
-    def _enter(self, form, ctx):
+    def _enter(self, form, ctx, into=None):
         """Push a form, and its first question if it is a wizard."""
-        base = _Frame("form", form, ctx)
+        base = _Frame("form", form, ctx, into=into)
         self.stack.append(base)
         if form.guided:
             first = form.unset_required(ctx)
             if first is not None:
                 self.stack.append(self._field_frame(base, first))
+        self.refresh()
+
+    def _make_new(self, frame):
+        """A picker's last entry: make one, and come back with it."""
+        field = frame.item
+        form = field.make_form(frame.ctx)
+        if form is None:
+            return self._refuse("There is no way to make one of those here.")
+        child = frame.ctx.child(**(_call(field.make_data, frame.ctx, {}) or {}))
+        child.draft = dict(_call(field.make_draft, frame.ctx, {}) or {})
+        child.dirty = False
+        return self._enter(form, child, into=("field", frame))
+
+    def _answer(self, frame, picked):
+        """
+        An action supplied the value something further down was waiting for.
+
+        Nothing waiting is not an error: a maker's form is the same form
+        whether it was opened from a picker or from `create kind` on its own,
+        and on its own it simply goes back having said what it did.
+        """
+        waiting = next((f.into for f in reversed(self.stack)
+                        if f.into is not None), None)
+        if waiting is None:
+            self.say(picked.said)
+            return self.back()
+        target = waiting[1]
+        try:
+            at = self.stack.index(target)
+        except ValueError:
+            self.say(picked.said)
+            return self.back()
+        self.stack = self.stack[:at + 1]
+        self.say(picked.said)
+        if waiting[0] == "field":
+            return self._set_field(target, picked.value)
+        key, append = waiting[2], waiting[3]
+        draft = target.ctx.draft
+        if append:
+            draft[key] = list(draft.get(key) or []) + [picked.value]
+        else:
+            draft[key] = picked.value
+        target.ctx.dirty = True
         self.refresh()
 
     def _set_field(self, frame, value, confirmed=False):
@@ -1318,13 +1490,8 @@ class GameMenu(EvMenu):
     # -- choosing ------------------------------------------------------------
 
     def _field_frame(self, base, field):
-        step = None
-        if base.form.guided:
-            required = [item for item in base.form.items_for(base.ctx)
-                        if isinstance(item, Field) and item.required]
-            if field in required:
-                step = (required.index(field) + 1, len(required))
-        return _Frame("field", base.form, base.ctx, item=field, step=step)
+        return _Frame("field", base.form, base.ctx, item=field,
+                      step=_step_of(base.form, base.ctx, field))
 
     def choose(self, frame, item):
         # A field reports being chosen when it is set, not when it is opened.
@@ -1337,14 +1504,16 @@ class GameMenu(EvMenu):
             return self.refresh()
         if isinstance(item, Submenu):
             child = item.context(frame.ctx)
+            into = (("draft", frame, item.into, item.append)
+                    if item.into else None)
             if item.prepare is None:
-                return self._enter(item.form, child)
+                return self._enter(item.form, child, into=into)
 
             def proceed():
                 # The fetch may finish after the player has left the menu, or
                 # moved elsewhere in it. Only enter if they are still here.
                 if self.caller.ndb._evmenu is self and self.top is frame:
-                    self._enter(item.form, child)
+                    self._enter(item.form, child, into=into)
 
             return item.prepare(child, proceed, self._refuse)
         if isinstance(item, Action):
@@ -1369,6 +1538,8 @@ class GameMenu(EvMenu):
             said = action.run(ctx)
         except Refuse as refusal:
             return self.say(str(refusal))
+        if isinstance(said, Picked):
+            return self._answer(frame, said)
         self.say(said)
 
         if action.after == CLOSE:
@@ -1527,7 +1698,10 @@ def open_menu(caller, form, session=None, draft=None, path=(),
         if isinstance(item, Submenu):
             # Anything a submenu has to fetch first is the opener's to have
             # fetched; a path is followed in one go.
-            stack.append(_Frame("form", item.form, item.context(frame.ctx)))
+            stack.append(_Frame(
+                "form", item.form, item.context(frame.ctx),
+                into=(("draft", frame, item.into, item.append)
+                      if item.into else None)))
         elif isinstance(item, Field) and item.kind != LONG_TEXT:
             stack.append(_Frame("field", frame.form, frame.ctx, item=item))
         else:
@@ -1536,11 +1710,8 @@ def open_menu(caller, form, session=None, draft=None, path=(),
     if len(stack) == 1 and form.guided:
         first = form.unset_required(ctx)
         if first is not None:
-            required = [item for item in form.items_for(ctx)
-                        if isinstance(item, Field) and item.required]
             stack.append(_Frame("field", form, ctx, item=first,
-                                step=(required.index(first) + 1,
-                                      len(required))))
+                                step=_step_of(form, ctx, first)))
 
     return GameMenu(runner, stack, session=session)
 
