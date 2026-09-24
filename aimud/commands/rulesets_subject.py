@@ -52,10 +52,7 @@ def _set_wanted(ctx, names):
     root = _root(ctx)
     if root is None:
         return "You are not in a world."
-    for name in rulesets.chosen(root):
-        if name not in names:
-            rulesets.forget(root, name)
-    rulesets.seed(root, names)
+    rulesets.apply_choice(root, names)
     return ""
 
 
@@ -80,7 +77,51 @@ def _toggle(name):
         help_text += f" Needs: {needs}, which is switched on with it."
     return menus.Field(
         name, doc.get("title") or name, kind=menus.BOOLEAN,
-        get=get, set=put, help=help_text)
+        get=get, set=put, help=help_text,
+        confirm=lambda ctx, value: _warn(ctx, name, value))
+
+
+def _warn(ctx, name, value):
+    """
+    (key, question) when this toggle is changing a world that already exists.
+
+    A world being made has nothing to lose, so the wizard asks nothing. A
+    world already built does, and the honest account of it is short:
+
+    * **Its rules start or stop at once.** That part is clean -- `forget`
+      suspends rather than deletes, so switching back on restores them.
+    * **What the world has already built stays as it is.** A coat somebody is
+      wearing is still worn after clothing goes; with the mechanic gone,
+      taking it off is a word the world has to work out afresh.
+    * **Words it added stay in the world's vocabulary.** Measured rather than
+      guessed: after `forget`, `resurrect` still folds onto `revive`, `revive`
+      is still a declared action, and `health` is still a figure this world
+      keeps. None of it does anything on its own, and all of it is in the way
+      if the point was to be rid of the idea entirely.
+
+    So `reset world` is named, because it is the answer when somebody wants
+    the change to be total -- and it is *not* forced, because none of the
+    above stops the change working.
+    """
+    if ctx.draft is not None and "rulesets" in ctx.draft:
+        return None                      # a world being made has no history
+    root = _root(ctx)
+    if root is None or not rulesets.chosen(root):
+        return None
+    doc = rulesets.get(name) or {}
+    title = doc.get("title") or name
+    if value:
+        return ("change_ruleset",
+                f"Switch {title} on in a world that is already built? Its "
+                f"rules start at once. Anything this world has already "
+                f"decided for itself keeps its own meaning -- a verb it has "
+                f"worked out is not re-read -- so |wreset world|n is the way "
+                f"to build it in from the start.")
+    return ("change_ruleset",
+            f"Switch {title} off? Its rules stop at once and come back if "
+            f"you switch it on again. What this world has already built "
+            f"stays as it is, and the words it added stay in this world's "
+            f"vocabulary; |wreset world|n rebuilds without it entirely.")
 
 
 def _items(ctx):

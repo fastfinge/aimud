@@ -434,6 +434,34 @@ def seed(world_root, names=None):
     return added
 
 
+def apply_choice(world_root, names):
+    """
+    Make this world hold exactly these rulesets. Answers what was added.
+
+    `seed` only ever adds, which is right for it -- it is what a world calls
+    on its way past to make sure its rules are there, and must never take
+    anything away by being asked twice. Saying which set a world should hold
+    is a different act, and it was being done in two places that each did half
+    of it: `edit rulesets` forgot what was dropped and the world wizard did
+    not, so unticking a ruleset in `edit world` and saving appeared to work
+    and changed nothing at all.
+
+    One function now, for the same reason anything else here is one: two
+    accounts of what a choice means is one more than this design allows.
+    """
+    if world_root is None:
+        return []
+    wanted = set(names or [])
+    # Whatever is required by something still wanted stays, whether or not it
+    # was named: a world that keeps permadeath keeps death, and unticking the
+    # one it rests on is not a thing anybody can mean.
+    keeping, _wrong = resolve(sorted(wanted))
+    for name in chosen(world_root):
+        if name not in keeping:
+            forget(world_root, name)
+    return seed(world_root, keeping)
+
+
 def _source_of(doc):
     """What a ruleset's rules are marked with."""
     name = str(doc.get("name") or "")

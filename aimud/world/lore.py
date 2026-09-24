@@ -228,7 +228,10 @@ def store(root, spec):
         # of what makes the choice survive a reset. See world/rulesets.py.
         from world import rulesets
 
-        rulesets.seed(root, list(spec.get("rulesets") or []))
+        # The whole choice, not half of it: what is no longer named is let go
+        # as well. `seed` alone only ever adds, so unticking a ruleset in the
+        # wizard and saving used to appear to work and change nothing.
+        rulesets.apply_choice(root, list(spec.get("rulesets") or []))
 
 
 def store_clock(root, wanted):

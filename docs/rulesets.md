@@ -869,3 +869,48 @@ engine already has a gate, use the gate.
 `tests/test_crafting.TheSoakWorldsStrut` keeps the case as it was typed, and
 was checked by putting the bad rules back and watching it reproduce the
 sentence above.
+
+---
+
+## 13. Changing a ruleset in a world that already exists
+
+The soak's second finding: untick a ruleset in `edit world`, save, reopen the
+menu, and it is ticked again.
+
+**`seed` only ever adds**, which is right for it — it is what a world calls on
+its way past to be sure its rules are there, and must never take anything away
+by being asked twice. Saying which set a world should *hold* is a different
+act, and it was being done in two places that each did half of it:
+`edit rulesets` forgot what was dropped, and the wizard's save did not. So
+`lore.store` handed `seed` the shortened list and nothing happened at all.
+`rulesets.apply_choice` is that act, once, and both doors call it.
+
+It also keeps whatever the surviving rulesets require, named or not: unticking
+the thing a ruleset you are keeping rests on is not something anybody can mean.
+
+### What a live change can and cannot do
+
+Worth writing down, because the answer decided the prompt. Measured, not
+assumed:
+
+| | on switching a ruleset off |
+|---|---|
+| its rules | stop at once, and come back if it is switched on again — `forget` suspends rather than deletes |
+| its mechanic | switches off at once |
+| verb synonyms | **stay**: `resurrect` still folds onto `revive` |
+| declared actions | **stay**: `revive` is still declared |
+| registered figures | **stay**: `health` is still a trait this world keeps |
+| what it already built | **stays**: a coat somebody is wearing is still worn, and with clothing off, taking it off is a word the world must work out afresh |
+
+Switching one *on* has a quieter version of the same: `actions.declare` is
+first-answer-wins, so an action the world had already settled for itself keeps
+the arity it settled on and the ruleset's declaration loses.
+
+So the honest answer to "can a ruleset be changed without a reset" is **yes,
+and it leaves residue** — not "no". A `change_ruleset` confirmation says which
+half is clean and which is not, and names `reset world` as the way to make the
+change total. It does not *force* a reset, because none of the residue stops
+the change working, and regenerating a world is expensive enough that it should
+be something somebody chooses rather than something a checkbox does to them.
+
+A world still being made is never asked: it has no history to lose.

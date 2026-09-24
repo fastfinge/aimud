@@ -171,3 +171,82 @@ class SurvivingAReset(_InAWorld):
         fresh.db.world_root = fresh
         lore.store(fresh, spec)
         self.assertEqual(rulesets.chosen(fresh), rulesets.chosen(self.root))
+
+
+@tag("world")
+class UntickingOneAndSaving(_InAWorld):
+    """
+    The soak bug: unticking a ruleset in `edit world` appeared to work and
+    changed nothing, so the menu showed it on again next time.
+
+    `seed` only ever adds, which is right for it -- it is what a world calls
+    on its way past to be sure its rules are there, and must not take anything
+    away by being asked twice. Saying which set a world should hold is a
+    different act, and it was being done in two places that each did half of
+    it: `edit rulesets` forgot what was dropped and the wizard did not.
+    """
+
+    def test_the_wizard_save_drops_what_was_unticked(self):
+        rulesets.seed(self.root, ["crafting"])
+        spec = lore.spec_of(self.root)
+        spec["rulesets"] = [n for n in spec["rulesets"] if n != "crafting"]
+        lore.store(self.root, spec)
+        self.assertNotIn("crafting", rulesets.chosen(self.root))
+
+    def test_and_the_menu_then_shows_it_off(self):
+        """What the player actually saw: it came back ticked."""
+        rulesets.seed(self.root, ["crafting"])
+        spec = lore.spec_of(self.root)
+        spec["rulesets"] = [n for n in spec["rulesets"] if n != "crafting"]
+        lore.store(self.root, spec)
+        items = {item.key: item
+                 for item in rulesets_subject.FORM.items_for(self.ctx())}
+        self.assertFalse(items["crafting"].get(self.ctx()))
+
+    def test_both_doors_do_the_same_thing(self):
+        """One function behind them, so they cannot differ again."""
+        rulesets.seed(self.root, ["crafting"])
+        rulesets.apply_choice(self.root, [rulesets.DEFAULT])
+        self.assertNotIn("crafting", rulesets.chosen(self.root))
+
+    def test_what_something_kept_still_requires_is_kept(self):
+        """
+        Unticking what a ruleset you are keeping rests on is not a thing
+        anybody can mean, so `default` survives being left out.
+        """
+        rulesets.seed(self.root, ["crafting"])
+        rulesets.apply_choice(self.root, ["crafting"])
+        self.assertIn(rulesets.DEFAULT, rulesets.chosen(self.root))
+
+
+@tag("world")
+class AskingBeforeChangingAWorldThatExists(_InAWorld):
+
+    def toggle(self, ctx=None):
+        items = {item.key: item for item
+                 in rulesets_subject.FORM.items_for(ctx or self.ctx())}
+        return items["crafting"]
+
+    def test_a_world_being_made_is_not_asked(self):
+        """There is no history to lose, so the wizard stays out of the way."""
+        ctx = self.ctx(draft=world_subject.new_draft("A harbour town."))
+        self.assertIsNone(self.toggle(ctx).confirmation(ctx, True))
+
+    def test_a_world_already_built_is(self):
+        rulesets.seed(self.root)
+        asked = self.toggle().confirmation(self.ctx(), True)
+        self.assertIsNotNone(asked)
+        self.assertEqual(asked[0], "change_ruleset")
+
+    def test_and_switching_one_off_says_what_stays(self):
+        rulesets.seed(self.root, ["crafting"])
+        _key, question = self.toggle().confirmation(self.ctx(), False)
+        self.assertIn("stop at once", question)
+        self.assertIn("reset world", question)
+
+    def test_the_confirmation_is_one_a_player_can_switch_off(self):
+        """Every `confirm` key needs an entry, or nobody can stop being asked."""
+        from world import preferences
+
+        self.assertIn("change_ruleset",
+                      [key for key, _label, _why in preferences.CONFIRMATIONS])
