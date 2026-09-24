@@ -801,7 +801,8 @@ def remove_thing(root, ident):
 MAKERS = [
     making.Maker(
         "item", ("item", "items", "thing", "things", "object", "objects"),
-        "Things", listing=item_entries, new=NEW_ITEM, edit=edit_item,
+        "Things", opens_with="name",
+        listing=item_entries, new=NEW_ITEM, edit=edit_item,
         remove=remove_thing,
         reached=lambda caller: reachable(caller, people=False),
         make_label="Something in this room",
@@ -810,7 +811,8 @@ MAKERS = [
     ),
     making.Maker(
         "room", ("room", "rooms", "place"),
-        "This place", new=NEW_ROOM, edit=lambda root, ident: EDIT_ROOM,
+        "This place", opens_with="direction",
+        new=NEW_ROOM, edit=lambda root, ident: EDIT_ROOM,
         one=lambda root, ident: "", sole=True,
         make_label="Somewhere new, opening off this room",
         help="A room, written rather than generated. Editing always means the "
@@ -821,7 +823,8 @@ MAKERS = [
         # so a subject named that could never be an entry in one. "Ways out"
         # is what this codebase calls them anyway.
         "way", ("way", "ways", "door", "doors", "passage"),
-        "Ways out of here", listing=exit_entries, new=NEW_EXIT,
+        "Ways out of here", opens_with="name",
+        listing=exit_entries, new=NEW_EXIT,
         remove=remove_exit,
         reached=lambda caller: [obj for obj
                                 in getattr(getattr(caller, "location", None),
@@ -833,7 +836,8 @@ MAKERS = [
     ),
     making.Maker(
         "person", ("person", "people", "somebody"),
-        "People", listing=lambda root: [], new=NEW_NPC,
+        "People", opens_with="name",
+        listing=lambda root: [], new=NEW_NPC,
         edit=lambda root, ident: EDIT_PERSON, remove=remove_thing,
         reached=lambda caller: [obj for obj in reachable(caller, people=True)
                                 if getattr(obj.db, "is_npc", False)],

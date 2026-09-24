@@ -901,7 +901,8 @@ def remove_fold(root, word):
 MAKERS = [
     making.Maker(
         "kind", ("kind", "kinds", "sort", "sorts"),
-        "Sorts of thing", listing=kind_entries, one=kind_text,
+        "Sorts of thing", opens_with="word",
+        listing=kind_entries, one=kind_text,
         new=NEW_KIND, edit=edit_kind, reset=reset_kind,
         reset_question=reset_kind_question,
         make_label="A sort of thing",
@@ -912,7 +913,8 @@ MAKERS = [
     ),
     making.Maker(
         "attribute", ("attribute", "attributes"),
-        "Figures kept about people", listing=attribute_entries,
+        "Figures kept about people", opens_with="slug",
+        listing=attribute_entries,
         one=attribute_text, new=NEW_ATTRIBUTE, edit=edit_attribute,
         make_label="Something measurable about a person",
         help="A number kept about a character: stamina, standing, fuel. "
@@ -920,7 +922,8 @@ MAKERS = [
     ),
     making.Maker(
         "condition", ("condition", "conditions", "state", "states"),
-        "Conditions things can be in", listing=condition_entries,
+        "Conditions things can be in", opens_with="slug",
+        listing=condition_entries,
         one=condition_text, new=NEW_CONDITION_STATE, edit=edit_condition,
         make_label="A condition something can be in",
         help="What is true of a thing right now: lit, shut, wet. Either so "
@@ -928,7 +931,8 @@ MAKERS = [
     ),
     making.Maker(
         "group", ("group", "groups"),
-        "Groups of conditions", listing=group_entries, one=group_text,
+        "Groups of conditions", opens_with="group",
+        listing=group_entries, one=group_text,
         new=NEW_GROUP,
         make_label="A group of conditions",
         help="Conditions that answer one question about a thing, so that one "
@@ -936,7 +940,8 @@ MAKERS = [
     ),
     making.Maker(
         "word", ("word", "words", "synonym", "synonyms"),
-        "Other words for things", listing=fold_entries, one=fold_text,
+        "Other words for things", opens_with="word",
+        listing=fold_entries, one=fold_text,
         new=NEW_FOLD, remove=remove_fold,
         make_label="Another word for something",
         help="Teaches this world that one spelling means another, so the "

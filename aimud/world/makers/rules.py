@@ -349,7 +349,7 @@ EFFECT_FIELDS = {
     "describe": ("role",),
     "narrate": (),
     "try": ("action",),
-    "offer_quest": ("quest", "role"),
+    "offer_quest": ("quest", "name_role", "role"),
 }
 
 
@@ -363,6 +363,13 @@ def effect_options(ctx):
 
 def _effect_takes(ctx):
     return EFFECT_FIELDS.get(str(ctx.draft.get("type") or ""), ())
+
+
+def _name_role_label(ctx):
+    """One field, two questions: what it is done to, or who is doing it."""
+    if str(ctx.draft.get("type") or "") == "offer_quest":
+        return "Who asks"
+    return "To what"
 
 
 def _asks(field):
@@ -454,8 +461,15 @@ NEW_EFFECT = menus.Form(
                           "is one no character can ever plan towards."),
         menus.Picker("role", "To what", options=subject_options,
                      lock=_asks("role")),
-        menus.Picker("name_role", "To what", options=subject_options,
-                     lock=_asks("name_role")),
+        menus.Picker("name_role", _name_role_label, options=subject_options,
+                     lock=_asks("name_role"),
+                     help=lambda ctx: (
+                         "Whoever is doing the asking. Left empty, whatever "
+                         "is being acted on -- greeting somebody offers "
+                         "their errand."
+                         if str(ctx.draft.get("type") or "") == "offer_quest"
+                         else "Which part of what somebody typed this "
+                              "happens to.")),
         making.picker("add", "Puts it into", "condition",
                       options=state_options, lock=_asks("add"),
                       parse=lambda ctx, text: _read_words(text),
@@ -512,7 +526,7 @@ NEW_EFFECT = menus.Form(
                       help="The whole attempt starts again as that verb, so "
                            "every check about it still applies."),
         making.picker("quest", "Which errand", "quest",
-                      lock=_asks("quest"),
+                      lock=_asks("quest"), make=False,
                       help="An errand this world has written. Whether it may "
                            "actually be offered -- already done, too soon, "
                            "something else first -- the effect decides, so "
@@ -1001,7 +1015,8 @@ def remove_rule(root, rule_id):
 MAKERS = [
     making.Maker(
         "rule", ("rule",),
-        "Rules", listing=rule_entries, one=rule_text, new=NEW_RULE,
+        "Rules", opens_with="name",
+        listing=rule_entries, one=rule_text, new=NEW_RULE,
         edit=edit_rule, remove=remove_rule,
         make_label="A rule",
         help="What happens when somebody tries something here, what has to be "

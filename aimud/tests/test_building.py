@@ -1284,3 +1284,124 @@ class EveryFormDraws(Building):
         for verb in ("create", "edit", "delete", "view", "reset"):
             with self.subTest(verb=verb):
                 self.assertTrue(self.draw(subjects.verb_form(verb)))
+
+
+@tag("world")
+class OfferingAnErrandNeedsTwoPeople(Building):
+    """
+    Who asks and who is asked are two questions, and conflating them is silent.
+
+    `_resolve` falls back from `name_role` to `role`, which for this effect
+    would make the giver and the taker the same person -- and an effect that
+    quietly does nothing is worse than one that refuses, because a refusal can
+    be read.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from evennia import create_object
+        from world.makers import errands
+
+        self.npc = create_object("typeclasses.npcs.NPC", key="Hob",
+                                 location=self.room1)
+        self.npc.db.is_npc = True
+        self.spec_id, _said = errands.keep_quest(self.draft(
+            title="Fetch the chalk",
+            goal=[{"type": "holds", "object": "chalk"}],
+            givers=[{"npc": str(self.npc.id), "description": ""}],
+            wire=False))
+
+    def offer(self, **effect):
+        from world import effects, quests
+
+        effects.apply(self.char1, self.room1,
+                      [dict({"type": "offer_quest", "quest": self.spec_id},
+                            **effect)],
+                      bound={"direct": self.npc}, world_root=self.root)
+        return quests.offered_to(self.char1)
+
+    def test_the_giver_defaults_to_what_is_being_acted_on(self):
+        """Which is what a rule built from the menus leaves it as."""
+        offered = self.offer(role="actor")
+        self.assertIsNotNone(offered)
+        self.assertEqual(offered["giver"], "Hob")
+
+    def test_and_may_be_named(self):
+        offered = self.offer(role="actor", name_role="direct")
+        self.assertIsNotNone(offered)
+
+    def test_an_errand_this_world_does_not_hold_offers_nothing(self):
+        from world import effects, quests
+
+        effects.apply(self.char1, self.room1,
+                      [{"type": "offer_quest", "quest": "q999",
+                        "role": "actor"}],
+                      bound={"direct": self.npc}, world_root=self.root)
+        self.assertIsNone(quests.offered_to(self.char1))
+
+
+@tag("world")
+class TypingItAllOnOneLine(Building):
+    """
+    `create kind datapad` puts the word where the form wants it.
+
+    The field is named on the maker rather than worked out from the form,
+    because half these forms build their items from the context -- there is
+    no list to look in, and iterating one crashed. Checked for every maker so
+    a new one cannot quietly take nothing on the line.
+    """
+
+    def test_every_maker_says_where_the_line_goes(self):
+        for maker in making.registered():
+            if maker.new is None:
+                continue
+            with self.subTest(maker=maker.key):
+                self.assertTrue(maker.opens_with,
+                                f"{maker.key} takes nothing on the line")
+
+    def test_and_it_lands_in_the_draft(self):
+        for maker in making.registered():
+            if maker.new is None:
+                continue
+            with self.subTest(maker=maker.key):
+                self.assertEqual(maker.opening_draft("something"),
+                                 {maker.opens_with: "something"})
+
+    def test_and_names_a_field_the_form_actually_has(self):
+        ctx = menus.Context(self.char1, world_root=self.root)
+        for maker in making.registered():
+            if maker.new is None:
+                continue
+            with self.subTest(maker=maker.key):
+                keys = {item.key for item in maker.new.items_for(ctx)}
+                self.assertIn(maker.opens_with, keys)
+
+    def test_a_kind_opens_with_its_word_filled_in(self):
+        kind = making.get("kind")
+        self.build(kind.new, [], draft=kind.opening_draft("datapad"))
+        self.assertIn("datapad", " ".join(self.said))
+
+
+@tag("world")
+class NoTwoChoicesShareAName(Building):
+    """
+    A verb's own menu gathers entries from every subject that answers it.
+
+    Two entries answering to one word is not an error anywhere -- `_pick`
+    simply takes the first -- so it has to be looked for.
+    """
+
+    def test_across_every_verb_menu(self):
+        from commands import subjects
+
+        ctx = menus.Context(self.char1, world_root=self.root)
+        for verb in subjects.VERBS:
+            seen = {}
+            for item in subjects.verb_form(verb).items_for(ctx):
+                for name in item.names():
+                    with self.subTest(verb=verb, name=name):
+                        self.assertNotIn(
+                            name, seen,
+                            f"{verb}: {name!r} is claimed by {item.key} and "
+                            f"{seen.get(name)}")
+                    seen[name] = item.key

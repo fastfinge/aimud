@@ -74,7 +74,7 @@ class Maker:
     def __init__(self, key, words, label, listing=None, one=None, new=None,
                  edit=None, remove=None, reset=None, reset_question=None,
                  help="", none="", make_label="", offered=None, sole=False,
-                 reached=None):
+                 reached=None, opens_with=""):
         from world import menus
 
         self.key = str(key)
@@ -119,6 +119,19 @@ class Maker:
         # these and why `edit item lamp` can never mean a lamp elsewhere.
         # See docs/player-building.md 5.
         self.reached = reached
+        # Which field `create kind datapad` puts the rest of the line in.
+        # Named rather than worked out from the form: half these forms build
+        # their items from the context, so there is no list to look in, and
+        # "the first required field" would be a different field the day one
+        # is added above it.
+        self.opens_with = str(opens_with or "")
+
+    def opening_draft(self, said):
+        """What was typed after `create <thing>`, as a draft."""
+        said = str(said or "").strip()
+        if not said or not self.opens_with:
+            return {}
+        return {self.opens_with: said}
 
     def targets(self, caller):
         """The objects in reach this maker can act on, as `(id, label)`."""

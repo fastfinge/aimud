@@ -98,26 +98,14 @@ def _create_run(maker):
         if root is None or not require_owner(
                 caller, root, f"add {maker.key} to it"):
             return
-        draft = {}
-        if words:
-            draft = _opening_draft(maker, " ".join(words))
+        draft = maker.opening_draft(" ".join(words)) if words else {}
+        if words and not draft:
+            caller.msg(f"|w{maker.key}|n takes nothing on the line; the menu "
+                       f"asks for what it needs.")
         menus.open_menu(caller, maker.new, session=cmd.session, draft=draft,
                         world_root=root)
 
     return run
-
-
-def _opening_draft(maker, said):
-    """
-    What was typed after `create kind`, put into the first field.
-
-    The rule every maker's form follows: its first required field is the one
-    thing somebody would name on the command line -- a kind's word, a rule's
-    name, an item's name. Anything more structured than that is the menu's.
-    """
-    first = next((item for item in maker.new.items
-                  if isinstance(item, menus.Field) and item.required), None)
-    return {first.key: said} if first is not None else {}
 
 
 def _create_items(maker):

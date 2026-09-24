@@ -515,7 +515,8 @@ def remove_quest(root, spec_id):
 MAKERS = [
     making.Maker(
         "quest", ("quest", "quests", "errand", "errands"),
-        "Errands", listing=quest_entries, one=quest_text, new=NEW_QUEST,
+        "Errands", opens_with="title",
+        listing=quest_entries, one=quest_text, new=NEW_QUEST,
         edit=edit_quest, remove=remove_quest,
         make_label="An errand somebody here wants done",
         none="None of these -- write a new errand",

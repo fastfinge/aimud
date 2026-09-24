@@ -801,13 +801,29 @@ def _apply_one(actor, room, effect, bound, world_root, found=None):
         # no model needs in order to hand out work.
         from world import quests
 
-        giver = _resolve(effect, "name", bound, room, actor) or actor
-        to = effect.get("role") or "actor"
+        # Who asks and who is asked, and they are two different questions.
+        # `name_role` is the giver and defaults to what is being acted on --
+        # greeting Hob offers Hob's errand -- because a rule that names only
+        # one role means the other one is the actor. Resolved apart rather
+        # than through `_resolve`'s single fallback, which would have made
+        # both of them the same person and turned the whole effect into a
+        # silent no-op.
+        to = str(effect.get("role") or "actor")
         taker = actor if to == "actor" else bound.get(to)
-        if taker is None or giver is None or taker is giver:
-            return None
+        asking = str(effect.get("name_role") or "").strip()
+        if asking:
+            giver = actor if asking == "actor" else bound.get(asking)
+        else:
+            giver = bound.get("direct") or bound.get("target")
         record = quests.spec(world_root, effect.get("quest"))
         if record is None:
+            logger.log_info(f"quests: a rule offers {effect.get('quest')!r}, "
+                            f"which this world does not hold")
+            return None
+        if taker is None or giver is None or taker is giver:
+            logger.log_info(
+                f"quests: {record['id']} was not offered -- "
+                f"{'nobody to ask' if giver is None else 'nobody to ask it of'}")
             return None
         allowed, _why = quests.available(taker, world_root, record)
         if not allowed:

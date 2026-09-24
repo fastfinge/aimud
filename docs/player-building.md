@@ -1039,6 +1039,10 @@ to `world/menus.py`. Where it differs:
   list kept in a draft, with one form to add to it and an entry per member to
   take one out. A rule's conditions, a rule's effects, an action's roles, a
   kind's affordances, an NPC's traits and an errand's givers are all it.
+* **A maker names the field the command line fills**, rather than the subject
+  working it out as "the first required field". Same reason as the step count
+  above: there is often no list of items to look in, and "first required"
+  would silently become a different field the day one was added over it.
 
 **Phase 2: the vocabulary.** Kinds and affordances, attributes, conditions and
 groups, word folds (§11c), and `view term`. The sense and anchor pickers.
@@ -1151,6 +1155,11 @@ writing another.
   a goal it cannot test would hang the errand for ever rather than fail it.
 * **`greet` is declared if the world has not got it**, since the default rule
   is about being greeted.
+* **Who asks and who is asked are resolved apart.** `effects._resolve` falls
+  back from `name_role` to `role`, which for this one effect would make the
+  giver and the taker the same person and turn the whole thing into a silent
+  no-op. The giver defaults to what is being acted on -- greeting somebody
+  offers their errand -- and an offer that cannot happen says why in the log.
 * The last criterion is held by `use_quest` being offered and enumerating this
   world's specs; whether a model *prefers* it is a live test, not a free one.
 

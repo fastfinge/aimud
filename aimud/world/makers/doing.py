@@ -223,7 +223,8 @@ def edit_action(root, verb):
 MAKERS = [
     making.Maker(
         "action", ("action", "actions"),
-        "Verbs this world knows", listing=action_entries, one=action_text,
+        "Verbs this world knows", opens_with="action",
+        listing=action_entries, one=action_text,
         new=NEW_ACTION, edit=edit_action,
         make_label="A verb this world knows",
         none="None of these -- declare a new verb",
