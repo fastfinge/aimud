@@ -1,0 +1,1129 @@
+# Development plan: building by hand
+
+Status: scoped, not built.
+
+This covers the `future-plans.md` item "full menu-based building of worlds for
+players who want to create something fun without having to use AI", and the two
+items about terms ("view term command", "create term commands"), which turn out
+to be the same work seen from the reading end (§11).
+
+Today `create` and `edit` reach a world, a start room, word lists, pronoun sets
+and a generated NPC, and nothing else. Everything a world is actually made of
+-- its kinds, its actions, its states, its traits, its rules, its rooms, its
+items, its people -- can only be written by a model. That is a hole in the open
+sandbox: the game can be read all the way down and written only at the top.
+
+Three things follow from closing it, and they are why this comes before several
+other items in `future-plans.md` rather than after them:
+
+* **Hand-built worlds make every later feature testable for free.** Testing a
+  weather ruleset, a quest chain, or the endless-alchemy world currently means
+  paying a model to build something to test against, and getting something
+  slightly different each time. A world somebody typed is a fixture.
+* **"Let players configure what models do" has nothing to configure until
+  there is a way to do it by hand.** A switch saying "the model may not invent
+  verbs here" is only usable in a world whose verbs somebody wrote.
+* **Export, import, and an MCP server are all the same surface seen from
+  outside.** Once every creatable thing has one writer and one description, a
+  document and a tool call are two more readers of it (§3.2).
+
+---
+
+## 1. The change, on one page
+
+* **One table of makers** (`world/making.py`). One entry per thing a person can
+  create: what it is called, how to list what a world already has, the form
+  that makes a new one, the form that edits one, and how to remove one. Nothing
+  in it is new machinery -- every entry points at the writer the generators
+  already call (§3).
+* **Two additions to the menu engine.** A `Picker` field, which offers what the
+  world already has and "none of these -- make one" at the bottom; and a way
+  for a submenu to answer its parent with a value, which is what makes that
+  bottom entry work (§4). These are the only changes to `world/menus.py`.
+* **Subjects generated from the table**, so `create kind`, `edit rule`,
+  `delete attribute` and the rest arrive without forty-four hand-written `Use`
+  objects, and each still answers on the command line and in the verb's menu
+  exactly as `create tokens` does now (§3.2).
+* **Things in the world are found the way the parser finds them** -- what is in
+  this room, in your hands, or the room you are standing in. Never a search of
+  the whole world by name (§5).
+* **Quest specifications**, a new store, because a quest today exists only at
+  the moment an NPC offers one and a world with no model has no NPC to offer
+  it. Once errands are a register, the generator can be handed the pool and
+  reuse one rather than writing a thirteenth (§10).
+* **No model is called anywhere in this system.** `~` stays available and stays
+  optional; a world with no API key builds exactly as well (§12).
+
+---
+
+## 2. What is already there
+
+The good news is how little of this is new. Every register already has a
+writer that folds near-duplicates, a reader for its vocabulary, and in most
+cases a machine-readable declaration of its own shape, because the generators
+needed all three first.
+
+| Thing | Stored by | Written through | Vocabulary | Declares its shape |
+|---|---|---|---|---|
+| kind + affordances | `kind_specs` | `kinds.remember` | `kinds.vocabulary` | `kinds.ANCHOR_RULE`, `affordances.PROMPT` |
+| attribute (trait) | `trait_vocabulary` | `traits.register` | `traits.vocabulary` | `traits.declaration_schema` |
+| condition (state) | `state_vocabulary` | `verbs.register_state` | `verbs.vocabulary` | — |
+| condition group | `state_groups` | `verbs.register_group` | `verbs.groups` | — |
+| action | `action_specs` | `actions.declare` | `actions.vocabulary` | `actions.declaration_tool` |
+| verb spelling | `verb_synonyms` | `rulesets._fold` | `rulesets.synonyms` | — |
+| rule | `rules` | `rulebooks.add` | `rulebooks.all_rules` | `rule_gen.PERMITTED` |
+| condition (clause) | inside a rule | `conditions.normalise` | `conditions.PREDICATES` | `conditions.schema` |
+| effect | inside a rule | `effects.apply` | `effects.VOCABULARY` | `effects.schema` |
+| word list | `token_lists` | `token_lists.register` | `token_lists.vocabulary` | `token_lists.schema` |
+| pronoun set | `pronoun_sets` | `pronouns.register` | `pronouns.vocabulary` | `pronouns.set_schema` |
+| goal / quest goal | on the character | `goals.sanitise` | — | `goals.schema` |
+
+Two of those are worth pausing on.
+
+**`rulesets._apply` is already a complete writer for half this list.** It takes
+a JSON document with `attributes`, `conditions`, `kinds`, `verbs`, `actions`
+and `rules` sections and writes every one of them into a world through the
+functions above. A ruleset is "everything a world could have said for itself
+with `create rule`" -- said by a file instead. What this plan builds is the
+other half of that sentence, and the two should stay interchangeable: anything
+`create` can make, `export` should be able to write out as one of these
+documents, and anything one of these documents says, `edit` should be able to
+show (§15, phase 7).
+
+**The schemas are not menus and must not be turned into menus mechanically.**
+`conditions.schema` offers twenty-six optional predicate fields and lets the
+model choose one, because that is the shape a provider will take. A player
+offered twenty-six optional fields has been handed a form, not a choice. So the
+forms in this plan are written by hand beside the schema, and a test asserts
+that the two cover the same ground -- the arrangement `effects.VOCABULARY`
+already has with `_apply_one`, where "adding an effect without an entry here is
+caught by a test".
+
+---
+
+## 3. The spine: one table of makers
+
+### 3.1 What a maker says
+
+`world/making.py` holds one `Maker` per creatable thing. It is a description,
+not a class to subclass:
+
+```python
+Maker(
+    key="attribute",
+    words=("attribute", "attributes", "trait", "traits"),
+    label="Something measurable about a person",
+    listing=lambda root: traits.offerable(root),      # [(id, one line)]
+    one=lambda root, slug: traits.describe_spec(root, slug),
+    new=NEW_ATTRIBUTE,                                # a menus.Form
+    edit=lambda root, slug: EDIT_ATTRIBUTE,
+    remove=None,                                      # nothing removes a trait
+    revisable=True,
+    help="A number kept about a character: stamina, standing, fuel.",
+)
+```
+
+`listing` is the one function every reader needs and the one no register
+exposes in the same shape today -- `traits.offerable`, `kinds.vocabulary`,
+`verbs.groups` and `rulebooks.all_rules` each answer a different shape. Each
+gains a small adapter here rather than a change to itself.
+
+`remove=None` is a real answer and not a gap. A trait that half the world's
+rules test cannot be deleted without breaking them silently, and the honest
+alternative -- suspend a rule, which already exists -- is better than a
+deletion that leaves a rule testing a word nothing registers. The same is true
+of kinds and actions. **Rules, word lists, items, rooms, people and quests are
+removable; vocabulary is not.** `view faults` already reports the consequence
+of a vocabulary gap, which is the right place for it.
+
+### 3.2 Four readers
+
+The point of writing that table down once is that four separate pieces of work
+read it:
+
+1. **The subjects.** `commands/making_subject.py` walks the table and produces
+   a `Subject` per maker with the `create`, `edit`, `delete` and `view` uses
+   the maker supports. The command line (`create attribute stamina`), the menu
+   entry under a bare `create`, and `offered=owns_here` all come out of the
+   table. No maker writes a `Use`.
+2. **The pickers.** Any form needing "an attribute" puts a `Picker` on the
+   maker (§4.1), and gets the world's list plus the maker's own `new` form for
+   free. This is the whole of the user-facing requirement that reusable things
+   be offered before they are invented.
+3. **`export world` and `import world`.** A maker knows how to list what a
+   world holds and how to write one; a document is that, serialised. The
+   ruleset sections already name most of them, so the document format is a
+   ruleset with `rooms`, `items`, `people` and `quests` added. Out of scope
+   here, named so the table is built for it.
+4. **A tool surface.** The MCP server, an ACP agent, or anything else outside
+   the game wants exactly this list: what can be made, what each needs, what
+   exists already. Also out of scope, also the reason the table is a table.
+
+A test asserts every maker in the table has a subject, a help entry, and a
+`new` form whose required fields are all reachable from the command line -- the
+existing rule that every point in a menu is also typeable (§14).
+
+---
+
+## 4. Two engine additions
+
+`world/menus.py` gets two things and nothing else. Both are small, both are
+general, and both are needed by more than the forms in this plan.
+
+### 4.1 `Picker`: choose what is there, or make one
+
+```python
+menus.Picker("kind", "What sort of thing this is", maker="kind",
+             required=True,
+             none="None of these -- describe a new sort of thing")
+```
+
+A `Picker` is a `Field` whose `choices_for` is the maker's `listing`, plus one
+final entry that opens the maker's `new` form. It inherits the engine's
+filtering and paging, so a world with two hundred kinds is typed at rather than
+scrolled through, and it shows each entry's one-line description so choosing
+between `chest.n.02` and `chest.n.01` is possible without leaving the menu.
+
+Two behaviours it needs that a choice field does not have:
+
+* **The list is what the world holds now**, not what it held when the form was
+  built. `choices` is already allowed to be a function of the context, so this
+  falls out.
+* **Near-duplicates are caught at the bottom, not on the way in.** Several
+  registers have `near_duplicate` for exactly this. If somebody picks "make a
+  new one" and types a name close to one that exists, the new form says so and
+  offers the existing one, the way `token_lists.register` already folds on the
+  model's behalf. A person should be told rather than folded silently.
+
+`Picker` also solves a problem the plan would otherwise have: a rule's
+conditions are a list of conditions, each of which is a small form. A
+`Picker` whose maker is `condition-clause` and whose listing is the clauses
+already on this draft, plus "add another", is the same widget again.
+
+### 4.2 `Picked`: a submenu that answers with a value
+
+Today a `Submenu` with `fresh_draft=True` gets a draft of its own and has no
+way to hand anything back; the child's final `Action` writes to a store and
+closes. That is right for `create tokens` opened from the top and wrong for
+`create tokens` opened from inside a rule that needs a word list.
+
+So: an `Action` may return `menus.Picked(value, said)`. `GameMenu.run_action`
+recognises it, writes `value` into the draft of the frame that opened the
+submenu under the key the submenu was opened for, says `said`, and goes back
+one frame. Everything else about the action is unchanged; a `Picked` returned
+by an action nobody opened for a value behaves as `after=BACK` with a message,
+which is what it means.
+
+That is about twenty lines in `run_action` and one new class. It is worth
+being deliberate about because it is the only place in this plan where the menu
+engine grows a new concept, and because "the child wrote something and the
+parent should now use it" is the shape every nested wizard after this will
+want.
+
+---
+
+## 5. Finding what you mean, in the room you are in
+
+`edit room` means the room you are standing in. Always, with no argument and
+no ambiguity, because there is exactly one and naming it could only introduce
+the mistake.
+
+`edit item` and `edit npc` are the ones with a choice to make, and the rule is
+the one the user asked for and the parser already keeps: **candidates are what
+is in reach, never the world.** Concretely, a new helper in
+`commands/subjects.py`:
+
+```python
+def thing_here(caller, words, wanting=None):
+    """What `words` names among what the caller can reach, or a menu of them."""
+```
+
+built on what already decides this for every verb in the game:
+
+* the candidate set is the room's contents, the caller's inventory, and what is
+  in or on anything reachable -- `relations.reachable`, not a database search.
+  "the coin in the chest" is reachable and resolves, because reach already
+  follows containment and already stops at a closed lid;
+* matching is `naming.resemblance`, so "blackbaord" and "kandle" reach the
+  right thing and a confident match is acted on while a merely plausible one is
+  offered back;
+* two things answering to one word produce the engine's own numbered list,
+  which is the existing `which one?` behaviour rather than a second one;
+* with no words at all, every reachable thing is offered as a numbered menu.
+
+What this buys is exactly the failure this is meant to avoid: `edit item lamp`
+in a world with forty lamps edits the one in front of you or asks, and can
+never silently edit one on the other side of the map. It also means the
+building commands inherit typo tolerance and possessives ("Samuel's coat") for
+nothing, because `naming` and `anatomy` already do that work.
+
+**One thing at a time, always.** There is no `edit every lamp` and no bulk
+selection anywhere in this plan. Making the same change to many things is a
+templating problem -- every coin is the same coin -- and belongs with the
+"objects from templates" item in `future-plans.md`, where the answer is that
+they were one thing to begin with rather than forty things edited together.
+`world/bulk.py` is about quantity in the parser ("get all the coins") and is
+not this; it stays out.
+
+`create item` and `create npc` put the new thing here. `create room` is the
+exception and takes a direction (§9.2).
+
+---
+
+## 6. The vocabulary: kinds, affordances, attributes, conditions
+
+These four are one phase of work because they are one idea: the closed word
+lists a world keeps so that its rules can mean something. All four already have
+a writer that folds near-duplicates; all four gain a form.
+
+### 6.1 Kinds and affordances
+
+`create kind` is the most interesting form in this plan, because it is where
+invented vocabulary gets grounded, and the mechanism already exists.
+
+```
+create kind
+  Word                  datapad
+  Which sense           [1] datapad is not in the dictionary
+                        (for "chest": [1] chest.n.01 the ribcage
+                                      [2] chest.n.02 the box with a lid)
+  What sort of thing    device.n.01                      <- only when needed
+  What can be done      read yes / write yes / burn no / eat no
+  What it holds         in: anything;  on: nothing
+```
+
+* **Which sense** is `lexicon.senses(word, pos="n")` as a picker, with each
+  sense's gloss. This is the half of grounding that matters most and the half
+  `kinds.needs_anchor` says is not an anchor case: `box`, `key`, `chest` and
+  `pen` all have senses and the world just needs to be told which one.
+* **What sort of thing** is the `under` anchor, shown only when
+  `kinds.needs_anchor` says the dictionary has never heard of the word. Its
+  picker offers the sensible roots -- `device.n.01`, `container.n.01`,
+  `tool.n.01`, `weapon.n.01` -- and accepts any sense, checked against the
+  dictionary exactly as `kinds.anchor` already checks a model's answer.
+  `commonsense.py` can suggest one for free where the corpus is present, which
+  is the same use it is already put to and within its "never a floor" clause.
+* **What can be done** is an affordance map. Affordances are verbs
+  (`affordances.py`), so the picker offers this world's actions plus the common
+  English ones, each as yes or no, and the `{"burn": False}` form means
+  negation needs no vocabulary. The affordance list is a cache key, so the form
+  says so: `help affordances` already explains why.
+* **What it holds** is `relations` -- `accepts` on the spec.
+
+Everything is written by one call to `kinds.remember`, which applies the
+taxonomic floor last and so cannot be talked out of a chest being a container.
+
+`view kind <word>` shows the spec, its ancestors, how many objects in this
+world are of it, and which rules are filed against it. That last line is what
+makes §6.4 usable.
+
+### 6.2 Attributes
+
+`create attribute` fills `traits.register`: slug, name, what it means, type
+(`counter`, `gauge`, `static`), base, minimum, maximum, rate. `traits.bands`
+gives it the optional part where a number is described in words ("exhausted",
+"fresh"), which is worth having in the form because a trait nobody can read is
+a number on a sheet.
+
+`vocabulary.claim` refuses a word already held as a state, and says why. That
+refusal must reach the player as a sentence they can act on -- "this world
+already keeps `warm` as a condition; a word cannot be both" -- which is
+`menus.Refuse`.
+
+### 6.3 Conditions
+
+"Condition" in the user's list means a state: `lit`, `open`, `burning`. The
+form is two levels, because states come in groups and the group is where the
+useful behaviour lives:
+
+```
+create condition
+  Word                  lit
+  What it means         the lamp is giving light
+  Group                 [Picker over verbs.groups, + make one]
+    (new group)         lightness -- exclusive, so lit and unlit cannot
+                        both hold; does not end on moving
+  Cannot hold with      unlit                 <- filled from the group
+  While it holds        you may not act / move / speak    <- rarely
+  Or worked out from    [conditions, for a derived state]
+```
+
+The group picker is `Picker` doing its job: an exclusive group is the thing
+that makes `wet` put out `burning`, and a world whose creator never met the
+concept will get one anyway because the form asks for one and offers to make
+it. "Or worked out from" is `when` -- the derived state, defined once, that
+`verbs.py` describes as how "starving" is hunger at 10 or less. It takes the
+condition builder from §8.2, which is why conditions come after rules in
+implementation order even though they come before them here.
+
+### 6.4 First answer stands, and the way out
+
+A kind's affordances and an action's arity are **cache keys**. Every rule the
+world has learned is filed against them, so revising one silently changes what
+those rules mean. `actions.py` says so ("First answer stands"), and `kinds.py`
+says so, and both are right.
+
+But a person building by hand will get one wrong, and "you may never fix that"
+is not an answer either. `reset verb` already settled the shape of the
+exception, and it settled it well: the reset is a separate, named gesture; it
+is confirmed; it says out loud what it does and does not touch; and the rules
+survive untouched.
+
+So:
+
+* **`edit kind` and `edit action` change only what is safe to change** -- the
+  `means` line, the trait's name, a description. Safe is defined as "no cache
+  key and no rule reads it".
+* **`reset kind <word>` and `reset action <verb>`** are the exception, beside
+  `reset verb`. Each says what depends on it before asking: "14 objects are of
+  this kind; 3 rules are filed against it; every narration about them will be
+  written afresh". On yes, it drops the spec, and calls
+  `effects.forget_narrations` on the affected objects, which already exists and
+  already does exactly this job for a modified object.
+* **`view kind` names the dependants**, so the question can be answered before
+  it is asked.
+
+This is a decision on the record rather than a convenience: see §16.
+
+---
+
+## 7. Actions and verbs
+
+`create action` fills `actions.declare`, and it is short, because the hard part
+of that declaration is a menu already:
+
+```
+create action
+  Word                  launch
+  Which sense           [1] launch.v.01  set in motion
+                        [2] launch.v.04  begin with vigour
+  What it means         to send a ship away from its berth
+  What it takes         direct     the ship          must be able to touch it
+                        instrument the launch key    optional, must be holding
+  Works even when       [ ] you cannot act  [ ] cannot move  [ ] cannot speak
+```
+
+Roles come from `actions.ROLES`, access from the access vocabulary beside them,
+and "works even when" is `despite`, which is the one field that loosens rather
+than tightens and therefore is the one the form should ask about last and least
+enthusiastically. The sense picker is `lexicon.senses(word, pos="v")` and is
+what makes `lexicon.verb_ancestors` useful afterwards -- without it, as
+`actions.py` notes, `launch` answers `['open', 'propel']` from the bare word.
+
+`create verb` is the other, smaller thing: teaching this world that one
+spelling means another. `rulesets._fold` already writes it and
+`rulesets.synonyms` already reads it; this gives it a menu and moves the writer
+out of `rulesets.py` into `verbs.py` where it belongs, since it will now have
+two callers.
+
+The important line in the form is the one that says what a fold is *for*: it is
+world-scoped on purpose, because a server runs many worlds and `forge` meaning
+`make` is a fact about one of them.
+
+---
+
+## 8. Rules
+
+This is the largest form in the plan and the one the rest exists to serve.
+Nothing about the shape of a rule changes: `rulebooks.blank` already lists
+every slot, `rulebooks.add` already normalises conditions and drops what cannot
+be stored, and `rule_gen.PERMITTED` already says what a written rule may
+contain. The form fills the same dictionary a model fills.
+
+```
+create rule
+  Name                  a lit lamp cannot be lit again
+  When somebody tries   [Picker: this world's actions, + create action]
+  What it is about      [Picker: the thing acted on, the actor, the room, ...]
+  Where it applies      [Picker: this object / this sort of thing /
+                         this room / this area / the whole world]
+  Only when             [conditions, optional -- guards]
+  It requires           [conditions]
+  Then                  [effects]
+  What people see       "The lamp is already lit."
+  What should happen    [the phase question, §8.4]
+```
+
+**The phase is asked last**, which is why §8.4 comes after the fields it reads
+rather than before them. It is the one field that is *about* the rest of the
+rule: its three nudges have nothing to nudge from until the conditions and
+effects exist, and the firing order it shows cannot be drawn without the action
+and the scope. Asking it first would be asking a builder to classify a rule
+they have not written yet.
+
+The form is `guided`, so a new draft still walks its required fields in order
+and the phase is the last question before the summary. Somebody who knows what
+they want can choose it at any point from the summary, as they can any field.
+
+### 8.1 Scope
+
+`Where it applies` is the field that decides whether `power datapad` powers the
+datapad or the ship you are standing in, so it gets the most care. The picker
+offers, in order of how specific it is:
+
+* **this very thing** -- resolved by §5, so it means the lamp in front of you;
+* **this sort of thing** -- a `Picker` over kinds, defaulting to the kinds of
+  the thing in front of you, which is nearly always what is meant;
+* **this room**, **this area** -- `zones`, with the current zone first;
+* **the whole world**.
+
+`rulebooks.said_scope` renders each of those as a sentence already, so the
+picker's labels are free. `about` -- what the scope is matched against -- is
+the other half of the same question and is shown next to it, defaulted to
+`direct`, with `here`, `zone` and `enclosure` available for the rule that is
+about a place nobody named.
+
+A scope that is too general is refused with the reason: `rule_gen.SCOPE_CEILING`
+and `SCOPE_BREADTH` already measure this, and a person filing a rule against
+`artifact.n.01` should be told it covers ten thousand sorts of thing before
+they find out by playing.
+
+### 8.2 Conditions
+
+A condition is a subject and one predicate (`conditions.py`), which is a two
+-field form, and the twenty-six predicates are a picker grouped into the
+handful of questions a person actually asks:
+
+| Group | Predicates |
+|---|---|
+| what state it is in | `is`, `lacks` |
+| what sort of thing it is | `kind`, `not_kind`, `affords` |
+| who has it | `holds`, `not_holds`, `wears`, `not_wears`, `owned_by`, `not_owned_by` |
+| where it is | `placed`, `not_placed`, `in_room`, `not_in_room`, `leads_to` |
+| a figure about somebody | `trait` |
+| whether it is there at all | `exists`, `gone`, `unbound` |
+| the time | `clock` |
+| reach and sight | `reachable_by`, `visible_to`, `able` |
+| never | `never` |
+
+The value picker then depends on the predicate: `is` offers this world's
+states (and offers to make one, §6.3), `kind` offers its kinds, `trait` offers
+its attributes with a minimum and maximum. This is the single clearest place
+where "offer what exists or let them make a new one" pays off, and it is why
+`Picker` is engine work rather than a helper in one module.
+
+`conditions.describe(clause, mood="abstract")` renders each finished clause
+back as a sentence, so the summary of a rule under construction reads as
+English -- which is the only way somebody is going to notice they built the
+wrong one. `conditions.normalise` holds every clause to its shape on the way
+into `rulebooks.add`, unchanged.
+
+One level of `any` (or), matching what the schema offers a model, and no
+nesting. A list already means all of them.
+
+### 8.3 Effects
+
+`effects.VOCABULARY` is the picker's list, and it is already written for this:
+each entry has a `means` sentence in the second person ("puts something into a
+condition, or takes it out of one") and a `takes` line naming its fields. The
+form is one small sub-form per effect type, and `effects.say` renders each
+finished one back as a clause, the way `view effects` already prints them.
+
+Effects that are not readable backwards (`modify_object`, `create_room`,
+`describe`) are offered with that noted, because a rule built only out of them
+is a rule no NPC can ever plan towards, and the `backwards` flag already
+records which.
+
+`create_object` gets the same guard `effects.modify_complaints` applies to a
+model: a name says what a thing is and never its condition, and a description
+may only use word lists this world keeps. One function, two callers, so a
+person and a rule are held to the same standard.
+
+### 8.4 The phase, which is asked and not inferred
+
+**Inference is not possible, and it is worth being exact about why**, because
+the reason is the same reason the phases are worth having.
+
+A phase does not say what a rule does. It says **what else runs**. Reading
+`attempt.py`:
+
+* `instead` -- the most specific one wins outright and processing ends. "One
+  winner, never a merge: this is the phase where meaning lives." It runs
+  *before* the checks, so an instead rule is not subject to them.
+* `check` -- every gathered rule, cumulatively, in specificity order; the first
+  unmet condition is what the player is told. "Can only ever make an action
+  stricter, never change what it means."
+* `carry_out` -- the most specific rule with anything to do supplies both the
+  effects and the contest. One winner, after the checks.
+* `after` -- what follows from it having worked.
+* `becomes` -- fires because something became true, not because anybody tried
+  anything.
+
+Now try to infer from content. Only one signal exists: **a rule with no effects
+is a check**, because a rule that requires something and does nothing can only
+be a precondition. That signal is already the default -- `rulebooks.blank` has
+`phase=CHECK`.
+
+Every other pair is undecidable, and not by a little:
+
+* **instead versus carry_out.** Both have effects, both take the most specific
+  winner. The difference is whether the checks run first. Nothing in the rule's
+  own content says whether its author wanted them to.
+* **carry_out versus after.** "Eating consumes the food" and "eating gains you
+  stamina" are the same shape -- an effect on a role, no conditions. One is what
+  the verb *is* and one is what follows. The distinction lives entirely in the
+  author's head.
+* **check versus instead.** A rule that refuses ("the door is locked") and a
+  rule that replaces ("the door is locked, and rattling it wakes the guard")
+  differ by whether anything else may still speak.
+* **becomes versus any action.** `action: None` already means "every action"
+  (`rulebooks.blank`), so a missing action cannot distinguish a becomes rule
+  from a rule about everything.
+
+So the answer is not to infer it. It is to **stop asking it in Inform's
+vocabulary and ask it in the second person**, which is the same move
+`rule_gen.py` made when it turned "how general is this?" into a menu of closed
+identifiers: the hard judgement becomes multiple choice.
+
+```
+What should happen?
+  [1] It should be stopped -- say why it cannot happen, and refuse it
+      Every rule like this applies, so you can add another later.
+  [2] It is what happens -- this is what the verb does here
+      The most particular rule wins; the checks still apply.
+  [3] Something else should happen instead -- and the usual thing should not
+      The most particular rule wins outright, and nothing else runs,
+      not even the checks.
+  [4] It follows afterwards -- once it has already worked
+  [5] Nothing is being tried -- this happens when something becomes true
+```
+
+Each line names the consequence a builder actually has to choose between --
+does everything apply or only the winner, do the checks still run -- rather
+than a rulebook name. `[1]`'s second line is the property `attempt.py` calls
+"safe to extend by construction", and it is the most useful thing a new builder
+can be told, because it is permission to write a half-right rule and add to it.
+
+**Three nudges, which are not inference.** This is what asking last buys: by
+the time the question arrives the rest of the rule exists, so the form can look
+at it and say something. It never chooses:
+
+* effects, with `[1]` chosen -- a check rule with effects is legal (refusing can
+  set a state) and is usually a slip, so it says so;
+* no effects, with `[2]` or `[3]` chosen -- a carry-out rule with nothing to do
+  means the verb does nothing, which is the silent no-op `actions.py` was
+  written to stop;
+* no action named -- `[5]` is offered first, with "every action" named as the
+  other reading.
+
+**And it shows the order at the moment of choosing.** §8.5 runs
+`rulebooks.gather` before the rule is kept; the phase field runs it too, and
+shows where this rule would land among the rules already there:
+
+```
+  instead     (none)
+  check       the world -- you must be able to reach what you act on
+              water -- you cannot combine a thing with itself     <- yours
+  carry out   the world -- combining two substances makes a third
+```
+
+Seeing the rule take its place in firing order teaches the phases in a way no
+help text does, and every piece of it already exists.
+
+### 8.4.1 Worked: what endless alchemy needs
+
+The flagship world in `future-plans.md` is the test of this, and it needs all
+five. `rulesets/crafting.json` declares `combine` and folds `mix`, `blend` and
+`join` onto it, and ships **no rules at all** -- every one of these is the
+builder's:
+
+| What they want | Phase | Why that one |
+|---|---|---|
+| both things must be substances; you cannot combine a thing with itself | check | cumulative -- each is written separately and they add up |
+| pouring something into the cauldron means putting it in | instead | a `try` redirect; the verb means something else here, and re-enters the pipeline |
+| combining two substances destroys both and produces a third | carry out | it is what the verb does, filed at the world |
+| water and fire make steam | carry out | filed against the kind, so the most particular rule wins over the line above |
+| each new substance raises `discoveries` | after | it follows from it having worked |
+| at ten discoveries the alchemist has something new to ask | becomes | nobody tried anything; a figure crossed a line |
+
+Two of those are the same phase at different scopes -- the general rule at the
+world and the particular recipe filed against a kind, the second winning by
+specificity. That is §8.1's distinction, already answered by the time this
+question is asked, which is part of why it is asked last: a builder who has
+settled where a rule applies is in a much better position to say what should
+happen than one who has not.
+
+None of the six could have been placed by reading its own content.
+
+So: **the phase picker stays, it comes last, and it is the field the form
+spends the most words on.**
+
+### 8.5 Checking before keeping
+
+The last entry in the form is "Keep this rule", and before it writes, it runs
+what already exists:
+
+* `rulecheck` over the world as it would be, reporting a condition this rule
+  requires that nothing in the world can bring about -- the fault that is
+  "invisible while a world is being played and fatal to it afterwards";
+* `rulebooks.gather` for the action and scope, showing where this rule would
+  sit in firing order and what it would sit behind;
+* the orphan and dead-rule checks `edit rules dead` already runs.
+
+None of these refuse the rule. They are shown, the rule is kept, and
+`view faults` says the same thing later. A builder who knows what they are
+doing is allowed to write a rule whose moment has not arrived yet.
+
+---
+
+## 9. Contents: items, rooms, exits, people
+
+### 9.1 Items
+
+`create item` here; `edit item` on what §5 finds. Name, description, kinds
+(picker), states (picker), owner, and where it goes -- your hands, the floor,
+or in/on/under/behind something reachable (`relations.PREPOSITIONS`).
+
+Everything goes through the writers a rule's effects use -- `effects` for
+creation and modification, `relations.place` for where it sits,
+`verbs.set_states` for its condition -- so an item somebody typed and an item a
+rule made are the same object made the same way. `effects.modify_complaints`
+guards the name and description as in §8.3.
+
+`create item from <thing>` copies a reachable thing, which is the cheap version
+of the "objects from templates" item in `future-plans.md` and costs nothing to
+add here: every coin in a world can be the same coin.
+
+### 9.2 Rooms and exits
+
+`create room <direction>` digs. The machinery is entirely in place and none of
+it is model-dependent: `coords.DIRECTION_VECTORS` gives the cell,
+`coords` says whether something is there already, `zones` says which area it
+belongs to and whether that area is full, and the `create_room` effect already
+opens a way onto somewhere new. The only new part is that the room is written
+by a person rather than generated on first entry.
+
+**The form asks for everything**: name, description, area (picker over `zones`,
++ make one), states, and what is in it. It does not try to be quick by asking
+for less, because a room with no description is a room somebody has to come
+back to, and the generated rooms it will stand beside have all of it.
+
+Twenty hand-built rooms is twenty descriptions, and the answer to that is not
+to ask for fewer -- it is that there are already several tools for it and a
+builder can use whichever suits:
+
+* **word lists.** `{smell}`, `{weather}`, `{stonework}`: write the list once
+  with `create tokens`, and a description that uses it keeps its choice for
+  that room for good (`token_lists`). This is the cheapest way to write twenty
+  rooms that differ, and it is the reason word lists exist.
+* **copying.** `create room ... from <room>` takes an existing room's text as
+  the starting draft, the same gesture as `create item from <thing>` in §9.1.
+* **`~`.** A model fills one field in, for a builder who has a key and wants
+  one paragraph written. §12's constraint is that nothing *requires* a model,
+  not that nothing may use one.
+* **the line editor**, which `LONG_TEXT` fields already open and come back
+  from.
+
+If the cell is occupied, the form says which room is there and offers to
+connect to it instead -- which is the existing behaviour that lets a world
+close back on itself, surfaced rather than reimplemented.
+
+`edit room` is the room you are in: name, description, area, states.
+
+`create exit` links this room to another by name, for the connections a grid
+cannot express -- a portal, a staircase, `in` and `out`, which `coords` already
+excludes from displacement for this reason. `delete exit` is the one deletion
+here that needs care: `effects.py` keeps exits permanently off limits to rules
+because a character deleting one would strand the world. A builder may, with a
+confirmation that names what becomes unreachable.
+
+### 9.3 People
+
+`create npc` exists and generates. It grows a fork at the top: **generate one**
+(what it does now, costs money) or **build one** (new, costs nothing).
+
+The built form is name, description, pronouns (picker, + `create pronouns`
+which already exists), kinds, traits (picker over attributes, with values),
+states, what they are carrying, and what they want -- a goal, which is the
+condition builder from §8.2 again.
+
+`edit npc` on what §5 finds, same fields. This is also where a quest gets
+attached (§10).
+
+What a built NPC does without a model is out of scope and named in
+`future-plans.md` as the AIML item: today an NPC with no model reachable simply
+does not act. The one thing this plan adds is that such an NPC can still
+**offer a quest**, because a quest offer becomes an effect rather than a
+model's tool call (§10).
+
+---
+
+## 10. Quests without a model
+
+This is the only genuinely new store in the plan, and the reason is worth
+stating precisely: **a quest today exists only from the moment it is offered.**
+`quests.offer` builds the record on the character receiving it; there is no
+such thing as a quest waiting to be given. Every quest in the game so far was
+written by `quest_gen` in the middle of a conversation.
+
+A hand-built world needs the other thing: a quest written in advance, attached
+to somebody, waiting.
+
+**The store.** `world_root.db.quest_specs`, `{id: spec}`, where a spec is what
+`quests.offer` takes -- title, description, goal conditions, reward effects,
+punishment effects, time limit -- plus four fields that only a pre-written
+quest needs:
+
+* `givers` -- who hands it out, and in whose words (§10.2);
+* `repeatable` -- once ever, or again after a cooldown;
+* `after` -- quest ids that must be done first, which is what makes a chain,
+  and what the endless-alchemy world in `future-plans.md` is built out of;
+* `only_when` -- conditions, so a quest can wait for something other than
+  another quest.
+
+Completion is recorded per character, beside the quest list already on them.
+`quests_completed` exists as a builtin trait and counts; this needs the names,
+so that "once ever" can mean it.
+
+**Offering is an effect, not a hook.** `offer_quest`, added to
+`effects.VOCABULARY`, taking the spec id and a role for who is being offered
+it. That is the whole integration, and it is the right one for three reasons:
+
+* it goes through the same guarded applier as every other effect, so a quest
+  spec cannot do anything `quests.QUEST_EFFECTS` does not already permit;
+* it makes *when* a quest is offered a decision the world writes as a rule --
+  on greeting, on entering the room, on the third time somebody asks -- rather
+  than a behaviour hardcoded here;
+* it works identically whether a person, an NPC, or a model triggered it, which
+  is the standing rule for effects.
+
+`create quest` therefore builds two things and says so: the spec, and
+optionally a rule that offers it. The rule is the default (`when somebody
+greets <this NPC>`, `instead`, scoped to that object) and can be declined by
+somebody who wants to wire it themselves.
+
+**A spec belongs to the world, not to its giver.** Deleting the NPC leaves the
+spec in place, because the errand is the thing somebody wrote and the person
+who hands it over is a field on it. A spec with nobody left to give it is
+offered by nothing, `view faults` reports it the way it reports an orphaned
+rule (`rulebooks.orphans` already has this shape), and `edit quest` reattaches
+it. `quests.forget_world` still takes the lot when the world goes.
+
+That is the same trade `rulebooks.py` made when it chose "one store, not five":
+keeping the attachment on the errand rather than on the character means
+deleting the character does not take it with them, and the cost is an orphan
+report, which is cheaper than a second store plus an index to keep in step
+with it.
+
+### 10.2 Whose errand it is, and in whose words
+
+A spec's `givers` is a list, not a dbref, and each entry is a character and
+what *they* say when they ask:
+
+```python
+"givers": [
+    {"npc": "#412", "description": ""},
+    {"npc": "#588", "description": "The chalk. From the storeroom. Before "
+                                   "the bell, if you would."},
+]
+```
+
+An empty override falls back to the spec's own description, so the simple case
+stays simple and nothing has to be filled in twice.
+
+**This is the field that stops reuse flattening a world**, and it is worth
+saying why it is the description rather than the goal. Nobody minds that two
+characters both want the chalk fetched -- errands repeat in real places, and a
+standing bounty that several people can set you is a good thing to be able to
+build. What makes a world feel cookie-cutter is hearing the *same sentence*
+twice from two different mouths. The goal is the machine half; the description
+is the voice.
+
+The game already makes this exact split one level down, in `attempt.py`: a rule
+says what a verb means for everything of its sort, and the specifics say "how
+this door differs from that door". A spec and a giver's override are that same
+division applied to errands, which is why it does not need a second store --
+one record, a general answer, and a particular one beside it.
+
+It pays off hardest on the model path. `use_quest` (§10.3) may supply an
+override with it, so a generated NPC reusing a written errand still asks in its
+own voice: the expensive half -- a testable goal, sanitised conditions, effects
+inside `QUEST_EFFECTS` -- is reused for nothing, and the cheap half is one
+sentence of fresh prose. That is a better trade than either writing the whole
+quest again or handing out somebody else's words.
+
+**Narrow on purpose: the override is the description and nothing else.** The
+title names the errand in the quest list and in `quests_completed`, and two
+names for one errand would make a chain's `after` unreadable to the person
+following it. If a giver ever needs its own title, it needs its own spec.
+
+### 10.3 One pool of errands, for the model too
+
+`quests.offer` is refactored to take a spec, and `quest_gen` builds a spec
+instead of calling `offer` directly -- so the model path and the hand path
+converge on one writer rather than running beside each other. That is the piece
+that keeps this from being a second quest system.
+
+It buys something more than tidiness, and it is worth building for
+deliberately: **once specs are a register, the generator can be shown the ones
+that exist and reuse one.**
+
+`quest_gen` today writes a new errand every time it is asked, which is the
+right behaviour when there is nothing to reuse and waste when there is. A world
+with a dozen written errands is a world where an NPC asked for work should
+usually be handing one out, not inventing a thirteenth. So:
+
+* **A lookup.** `quests.lookup_tools()` alongside the other registers in
+  `lookups.MODULES`, answering with the world's specs -- title, what it asks
+  for, who else gives it, whether it repeats. The generator can read the pool
+  before it writes.
+* **An answer that is not writing.** `write_quest` gains a sibling, `use_quest`,
+  taking a spec id and, optionally, this character's own way of asking (§10.2).
+  Choosing one is a complete answer to "what does this character want", and it
+  costs a fraction of writing one.
+* **The prompt says to prefer it**, in the same words every other register's
+  prompt says to reuse what is there: this is `traits.py`'s "one vocabulary per
+  world" applied to errands, and it heads off the drift it heads off everywhere
+  else -- eleven near-identical fetch-the-chalk quests with eleven different
+  goal conditions, only some of which are testable.
+
+The player gets the same pool from the other side: `create quest` opens on a
+`Picker` over the existing specs before it offers a blank form, so attaching an
+errand somebody already wrote to a second character is one choice and a
+sentence rather than a retyped quest. Same list, same maker, two readers --
+which is §3.2 doing its job rather than a special case.
+
+Worth being explicit about the one hazard: a spec reused by several givers is
+one record, so editing its goal changes the errand everywhere. Editing a
+giver's own words does not, which is the point of §10.2. The `view quest`
+listing names every giver for that reason, and `edit quest` says how many
+before it opens.
+
+---
+
+## 11. Terms and vocabulary: yes, in three parts, and one no
+
+The user's question -- should players be able to create terms and vocabulary,
+to ground original words against WordNet and ConceptNet -- has a better answer
+than yes or no, because **the grounding mechanism already exists and is already
+per-register.** A kind grounds through `under` and a sense id. An action grounds
+through `sense`. A state grounds through its group and its `means`. A trait
+grounds through `means` and its bands. There is no ungrounded-term problem
+waiting for a new store; there is a set of fields the generators fill in and
+players currently cannot.
+
+So:
+
+**(a) Yes to reading: `view term <word>`.** Everything WordNet and ConceptNet
+know about a word, together: its senses and their glosses, what each is a kind
+of and what kinds of it there are, its verb forms, and ConceptNet's
+`/r/ReceivesAction`, `/r/MannerOf`, `/r/HasPrerequisite` and `/r/DistinctFrom`
+edges, which are four things this game invented for itself and can now show
+side by side. `future-plans.md` lists this as its own item; it belongs in this
+plan because somebody picking a sense in §6.1 needs it open in front of them,
+and because it is the one command that makes the lexicons visible to a player
+who is building without a model. Costs nothing, reads two corpora already on
+disk, answers neutrally when they are not.
+
+**(b) Yes to grounding, as fields on the forms already planned.** §6.1's sense
+picker and anchor picker, §7's verb sense picker. Nothing new.
+
+**(c) Yes to one small new store: word folds for nouns.** `verb_synonyms`
+already teaches a world that `forge` means `make`. The same table for nouns is
+what makes an invented word *playable* rather than merely stored: a world with
+a kind called `raygun` should be able to say that `blaster` and `zapper` name
+it, so the parser binds them and `naming.resemblance` stops trying to conjure a
+second object. Without it, an invented word exists in the register and cannot
+be typed. This is the one piece of "create term" that is not already covered,
+it is about fifty lines, and it should be done.
+
+**(d) No to adding senses to WordNet itself**, which `future-plans.md` floats.
+`lexicon.py` makes a promise the whole cache design rests on: WordNet is a
+closed controlled vocabulary that the world selects from, it is never asked
+what a word means here, and nothing in it is load-bearing because it may be
+missing entirely. A player-added synset breaks all three -- it is a global
+mutation to express a world-local fact, it would sit in cache keys, and a world
+exported to another server would arrive referring to senses that server has
+never heard of. The world-local invented sense already exists and is called an
+anchored kind. Recommend moving this item to `bad-ideas.md` with that reasoning
+when the plan is built.
+
+---
+
+## 12. What this costs: nothing
+
+A hard constraint, and the reason the whole plan is worth doing now: **no form
+in this system calls a model.** Not for validation, not for suggestions, not
+for filling a field.
+
+`~` remains what it is -- an optional key, on forms that declare a `sponsor`,
+that fills one field in. A form here declares one only where a model could
+plausibly help (a description, a word list's entries) and never for anything
+structural. In a world with no API key, `sponsor.key()` raises, `~` says so,
+and everything else works.
+
+A test asserts it: every form this plan adds, driven through the menu harness
+in `tests/test_menus.py` with the LLM layer made to raise on any call,
+completes and writes what it was supposed to write.
+
+That test is the deliverable, more than any single command. It is what makes a
+hand-built world a fixture that later features can be tested against without
+spending anything or getting a different world each time.
+
+---
+
+## 13. Permissions
+
+Unchanged from what subjects already do: `owns_here`, meaning whoever created
+this world, or a superuser. Reading is open to anybody standing in the world --
+the open sandbox -- so `view kind`, `view term`, `view rules` and the rest are
+offered to everyone, and every `create`, `edit` and `delete` is not.
+
+Shared worlds and co-ownership are both `future-plans.md` items and both will
+want a broader answer than "the creator". Nothing here should make that harder:
+the permission check stays in one place (`subjects.owns`) and every maker goes
+through it, so the day it becomes "anybody with build rights here" it becomes
+that once.
+
+---
+
+## 14. Every point is also a command line
+
+The existing rule holds and is the main constraint on the forms above: every
+point in a menu must also be reachable by typing. For a maker-generated
+subject that means:
+
+```
+create kind                       the form
+create kind datapad               the form, opened past its first field
+view kind datapad                 the spec, printed
+edit kind datapad means <text>    one safe field, no menu
+delete rule r14 yes               with the confirmation answered in advance
+```
+
+The `<maker> <id> <field> <value>` form is what makes this usable by an agent,
+a batch file, or anybody with no session -- `menus.open_menu` already decides
+to print instead of opening for those, and the maker table has the field names
+to make that message say what could have been typed.
+
+A test walks the maker table and asserts each one's required fields are
+settable from a single line.
+
+---
+
+## 15. Phases
+
+Each phase ends with the free test suite passing and the docs updated.
+
+**Phase 1: the engine and the table.** `Picker` and `Picked` in
+`world/menus.py`; `world/making.py` with the `Maker` description;
+`commands/making_subject.py` generating subjects from it. Port `tokens` and
+`pronouns` off their hand-written subjects onto the table as the proof, since
+both already work and any behaviour change is a bug.
+*Done when:* `create tokens` and `create pronouns` behave exactly as they do
+now, and a `Picker` in a test form can open a maker's `new` form and come back
+with the value.
+
+**Phase 2: the vocabulary.** Kinds and affordances, attributes, conditions and
+groups, word folds (§11c), and `view term`. The sense and anchor pickers.
+*Done when:* a world with no API key can be given a new kind, a new attribute
+and a new pair of exclusive states from menus, and `view faults` has nothing to
+say about any of them.
+
+**Phase 3: actions and verbs.** `create action`, `reset action`, `create verb`,
+`reset kind`; the dependant reporting in §6.4.
+*Done when:* an action declared by hand is taken by the parser and bound the
+same way a model-declared one is, and `reset kind` names what it will forget
+before it forgets it.
+
+**Phase 4: rules.** The rule form, the condition builder, the effect builder,
+and the checks in §8.5. The biggest phase by a distance; worth splitting at the
+condition builder if it runs long, since the condition builder is also what
+§6.3's derived states and §9.3's goals need.
+*Done when:* every rule in `world/rulesets/default.json` can be built through
+the menus and comes out byte-equal to the seeded one.
+
+That last criterion is the real test of this plan. The rulesets are hand-written
+documents that say everything a world could say for itself; if the menus cannot
+reproduce them, the menus are missing something.
+
+**Phase 5: contents.** Items, rooms, exits, people. The `thing_here` matcher.
+*Done when:* a small world -- four rooms, a few items, one NPC -- can be built
+end to end with no model, and playing it works.
+
+**Phase 6: quests.** The spec store, `offer_quest`, chains and repeats,
+`quest_gen` refactored onto the same writer, and the pool offered to both
+sides -- `quests.lookup_tools`, the `use_quest` answer, and the player's
+`Picker` over existing specs.
+*Done when:* an NPC built by hand offers a pre-written quest, it completes, a
+non-repeatable one is not offered again, and a generated NPC asked for work in
+a world that already holds a fitting errand hands that one out instead of
+writing another.
+
+**Phase 7 (separate plan): export and import.** A world as a document, over the
+same maker table. Named here so phases 1 to 6 build for it; scoped when they
+are done.
+
+The flagship worlds in `future-plans.md` -- endless alchemy, the Taipan!-shaped
+one, hunt the wumpus -- are the acceptance test for the whole thing and should
+be built with it rather than after it. If one of them needs something the menus
+cannot express, that is the finding.
+
+---
+
+## 16. Decisions
+
+**Vocabulary is not deletable; rules, contents and quests are.** A trait or
+state half the rules test cannot be removed without breaking them silently, and
+suspending a rule is the honest alternative and already exists. §3.1.
+
+**First answer still stands, with a named way out.** `edit kind` and
+`edit action` change only what no cache key and no rule reads; `reset kind` and
+`reset action` are separate, confirmed gestures that say what they invalidate,
+beside `reset verb`, which already set this precedent deliberately. §6.4.
+
+**Forms are written by hand beside the schemas, and a test holds them level.**
+The schemas are shaped for what a provider will accept, not for what a person
+can answer. §2.
+
+**Candidates come from what is in reach, never a world search.** §5.
+
+**Offering a quest is an effect.** Not a hook, not a hardcoded NPC behaviour.
+§10.
+
+**No form calls a model, and a test enforces it.** §12.
+
+**Players do not add senses to WordNet.** The world-local invented sense
+already exists and is called an anchored kind. §11d.
+
+**The phase is asked, never inferred.** A phase says what *else* runs, not what
+this rule does, so nothing in a rule's own content distinguishes instead from
+carry-out or carry-out from after. It is asked in the second person, about the
+consequence rather than the rulebook name, with the firing order shown as it is
+answered. Endless alchemy needs all five. §8.4.
+
+**`create room` asks for everything.** A room with no description is a room
+somebody has to come back to. The cost of twenty of them is answered by word
+lists, by copying an existing room, by the line editor and by `~` -- four tools
+that already exist -- and not by asking for less. §9.2.
+
+**One thing at a time; no bulk editing.** Making the same change to many things
+is templating, and belongs with "objects from templates" in `future-plans.md`,
+where the answer is that they were one thing to begin with. Reach still follows
+containment, so "the coin in the chest" resolves. §5, §9.1.
+
+**A quest spec belongs to the world, not its giver**, and survives it
+unattached. The generator is shown the pool and may reuse a spec rather than
+write one, which is "one vocabulary per world" applied to errands. Each giver
+keeps its own way of asking, so reuse saves the testable half without
+flattening the voices. §10.2, §10.3.
+
+**The phase is asked last.** It is the one field about the rest of the rule:
+its nudges have nothing to read until the conditions and effects exist, and the
+firing order it shows cannot be drawn without the action and the scope. §8.
+
+### Open questions
+
+None outstanding. Two were settled in review and are recorded above: the phase
+goes last in the form (§8), and a giver carries its own way of asking (§10.2).
+
+What is deliberately left unscoped, and named so nobody mistakes it for an
+oversight:
+
+* **What a hand-built NPC does between quests.** Without a model it does not
+  act. That is the AIML item in `future-plans.md` and a plan of its own; all
+  this one adds is that such a character can still hand out an errand (§10).
+* **Export and import**, phase 7, scoped separately once the maker table has
+  proved itself against phases 1 to 6 (§15).
+* **Bulk change**, which is templating and belongs with "objects from
+  templates" (§5).
