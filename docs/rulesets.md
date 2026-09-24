@@ -958,3 +958,49 @@ to work and leaves the world unchanged.
 other end: mark a rule as worth running twice and skip the cache for it.
 Nothing ever set it, and it is moot now — effects always run, so there is
 nothing for the flag to protect.
+
+---
+
+## 15. Making somewhere new
+
+The soak's feature gap, and the last of the effect vocabulary's obvious holes.
+A rule could make a thing, move a thing, destroy a thing and change where a
+way out led, and could not make anywhere to *go*. A player who digs into a
+bank, mines a shaft, or walls himself a shelter out of struts and heat-shield
+tile is plainly making a room, and nothing could say so.
+
+**`create_room` opens a way and generates nothing.** The way is left *pending*,
+and the room behind it is built by the ordinary generator the first time
+anybody walks through — the same machinery every world grows by, at the same
+cost, at the same moment.
+
+That is not a shortcut, it is the rule the effect vocabulary already lives by.
+Effects run synchronously and must stay free: `create_object` builds from a
+spec the rule already holds precisely so that firing costs nothing, and a room
+that phoned a model mid-rule would make every dig cost money whether or not
+anybody went and looked at the hole.
+
+It needed no new generation path at all. A pending exit with a
+`destination_hint` is exactly "somewhere that does not exist yet, and what it
+should be when it does", and the game has had it since worlds first grew.
+
+```json
+{"type": "create_room", "direction": "down", "exit": "burrow",
+ "why": "dug out of the packed earth with a shovel"}
+```
+
+`why` becomes the hint, which is the field `generate_connected_room` already
+reads to keep a door's promise and the room behind it consistent. "Walled with
+strut and heat-shield tile" and "dug out of the packed earth" are what a world
+writes here, and the generator writes the place they describe.
+
+Two decisions worth recording:
+
+* **A named direction that is not free does nothing.** Digging down when down
+  is already a staircase should fail rather than quietly dig sideways: a rule
+  about a shaft means the shaft. With no direction named, any free one will do.
+* **It is not readable backwards**, and that is a decision rather than a gap.
+  A goal names a room, and the room this opens onto has no name until somebody
+  walks into it and the generator writes one — so there is nothing for a
+  planner to aim at. A character who wants to be somewhere new walks through
+  the way, which is `move_actor` and already read.

@@ -237,6 +237,62 @@ def _everyone_in(room, actor, role):
     return found
 
 
+def _open_a_way(actor, room, effect, world_root):
+    """
+    Make somewhere new: dig a burrow, mine a shaft, build a shelter.
+
+    **Nothing is generated here.** A way out is opened and left *pending*, and
+    the room behind it is built by the ordinary generator the first time
+    anybody walks through -- the same machinery a world grows by, with the
+    same cost at the same moment. That is not a shortcut. Effects run
+    synchronously and must stay free: `create_object` builds from a spec the
+    rule already holds for exactly this reason, and a room that phoned a model
+    while a rule was mid-flight would make every dig cost money whether or not
+    anybody went and looked.
+
+    What makes the room the right one is `why`, which becomes the exit's
+    `destination_hint` -- the field the room generator already reads to keep a
+    door's promise and the room behind it consistent. "Dug out of the packed
+    earth with a shovel" and "walled with strut and heat-shield tile" are what
+    a world says here, and the generator writes the place they describe.
+
+    The direction is the rule's if it names one, and any free one otherwise.
+    A named direction that is *not* free does nothing: digging down when down
+    is already a staircase should fail rather than quietly dig sideways, and a
+    rule about a shaft means the shaft.
+    """
+    from world import worldgen
+
+    if room is None or world_root is None:
+        return None
+    free = worldgen.openable_directions(world_root, room)
+    wanted = worldgen.canonical_direction(
+        str(effect.get("direction") or "").strip())
+    if wanted:
+        if wanted not in free:
+            return None
+        going = wanted
+    elif free:
+        going = free[0]
+    else:
+        return None             # walled in on all six sides
+
+    name = str(effect.get("exit") or "").strip() or going
+    why = str(effect.get("why") or effect.get("hint") or "").strip()
+    way = worldgen._make_exit(_ai_exit(), name, room, room, pending=True,
+                              hint=why)
+    if way is None:
+        return None
+    return (f"A way {name} opens from here."
+            if name != going else f"A way {going} opens from here.")
+
+
+def _ai_exit():
+    from typeclasses.exits import AIExit
+
+    return AIExit
+
+
 def _destroy_one(obj, room, world_root):
     """
     Take one thing out of the world for good; answer what it was called.
@@ -475,6 +531,18 @@ VOCABULARY = {
         "takes": 'exit, to: <a room\'s name>',
         "backwards": True, "answers": False,
     },
+    "create_room": {
+        "means": "opens a way onto somewhere new -- dug, mined or built -- "
+                 "which is made the first time anybody goes through",
+        "takes": "direction, exit, why (what the place is and how it came "
+                 "to be)",
+        # Not readable backwards, and that is a decision rather than a gap. A
+        # goal names a room; the room this opens onto has no name until
+        # somebody walks into it and the generator writes one, so there is
+        # nothing for a planner to aim at. A character wanting to be somewhere
+        # new walks through the way, which is `move_actor` and already read.
+        "backwards": False, "answers": False,
+    },
     "describe": {
         "means": "shows what something looks like, and changes nothing",
         "takes": "role",
@@ -635,6 +703,13 @@ def say(effect):
     if etype == "set_exit":
         way = str(effect.get("exit") or effect.get("name") or "a way out")
         return f"makes {way} lead to {effect.get('to') or 'somewhere else'}"
+
+    if etype == "create_room":
+        going = str(effect.get("direction") or "").strip()
+        where = f" {going}" if going else ""
+        why = str(effect.get("why") or "").strip()
+        return (f"opens a way{where} onto somewhere new"
+                + (f", {why}" if why else ""))
 
     if etype == "describe":
         # Not "shows you what {what} looks like": the role words are written
@@ -837,6 +912,9 @@ def _apply_one(actor, room, effect, bound, world_root, found=None):
             return f"{emptied.capitalize()} is emptied: {_and_then(moved)}."
         return (f"{actor.get_display_name(actor)} empties {emptied}: "
                 f"{_and_then(moved)}.")
+
+    if etype == "create_room":
+        return _open_a_way(actor, room, effect, world_root)
 
     if etype == "set_exit":
         # Where a way out of here leads. The effect a launching ship needs: its

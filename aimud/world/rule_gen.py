@@ -578,6 +578,8 @@ _EFFECTS = """An effect is one of:
                           "preposition": "in"}
   {"type": "move_object", "name_role": "direct", "to": "<a room's name>"}
   {"type": "set_exit", "exit": "airlock", "to": "<a room's name>"}
+  {"type": "create_room", "direction": "down", "exit": "burrow",
+                          "why": "dug out of the packed earth with a shovel"}
   {"type": "create_object", "name": "loaf of bread", "why": "what baking makes"}
   {"type": "destroy_object", "name_role": "direct"}
   {"type": "set_owner", "name_role": "direct", "to": "actor"}
