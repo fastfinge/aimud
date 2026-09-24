@@ -1060,6 +1060,19 @@ to `world/menus.py`. Where it differs:
   in front of a player rather than a failure at import. Found by the way out of
   a room, whose natural name is `exit` and which is the word that quits every
   menu in the game; it is called a **way** (§9.2).
+* **A menu can no longer trap anybody, whatever breaks inside it.** The worst
+  shape a bug in this game can take, and it took it. A menu's cmdset takes
+  every line typed before any command sees it, so a form that raises while
+  working out what it offers does not merely fail -- it holds the player with
+  nothing that works: not `q`, because a choice field builds its list before
+  it reads what was typed; not `@reload`, which never becomes a command; not
+  disconnecting, because the menu is waiting on the way back in. The only way
+  out was stopping the server from a shell, which is not something a player of
+  somebody else's world can do. Three lines now make it impossible: `render`
+  catches what breaks while drawing, `parse_input` catches what breaks while
+  reading and closes the menu, and `q` is read before anything that could
+  raise. A `Refuse` is still a refusal -- a form saying no is not a form
+  breaking.
 * **A listing that raises no longer takes the menu with it.** Found in play:
   `actions.vocabulary` answers a sorted *list* of verbs where four of the six
   registers answer a map, so the action picker raised the moment it was

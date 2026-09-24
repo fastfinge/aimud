@@ -43,6 +43,17 @@ whichever of session, account or character the input arrived on, and closing
 cleanly. `GameMenu` keeps all of that and replaces what a menu looks like and
 how input is read.
 
+**A menu can never trap anybody.** Whatever breaks inside a form -- a listing
+that raises, an action that throws, a set of items that cannot be built at all
+-- the player gets their game back. A menu's cmdset takes every line before any
+command sees it, so a form that fails while working out what it offers does not
+merely fail: without this it holds somebody with no way out, `q` included if
+quitting is read after the thing that raised, and `@reload` included because it
+never becomes a command. Two nets, and both are needed: `render` catches what
+breaks while drawing (the first draw happens after the cmdset is on), and
+`parse_input` catches what breaks while reading and closes the menu. `Refuse` is
+not caught by either -- a form saying no is not a form breaking.
+
 **Nobody without a session is shown a menu.** An NPC, a script, a batch file
 or an agent driving a command gets told what the command needed and what it
 could have been, in words it can act on. `open_menu` makes that decision, so
@@ -762,22 +773,38 @@ class GameMenu(EvMenu):
         self.goto("show", "")
 
     def render(self):
+        # The other half of never trapping anybody. `parse_input` catches what
+        # breaks while *reading*; this catches what breaks while *drawing*,
+        # which includes the very first draw -- before which the cmdset is
+        # already installed, so a form that cannot be drawn at all would
+        # otherwise leave somebody holding a menu that can never show them
+        # anything. A screen saying so, with `q` on it, beats a blank wall.
+        try:
+            return PRESENTER.shown(self, self._drawn())
+        except Exception:
+            from evennia.utils import logger
+
+            logger.log_trace(f"menus: {getattr(self.top.form, 'key', '')} "
+                             f"could not be drawn")
+            return ("|rSomething went wrong drawing this menu.|n\n\n"
+                    "Type |wq|n to leave it and go back to the game. "
+                    "|xWhat happened is in the server log.|n")
+
+    def _drawn(self):
         frame = self.top
         if frame.kind == "field":
-            text = self._render_field(frame)
-        elif frame.kind == "confirm":
-            text = self._render_confirm(frame)
-        elif frame.kind == "help":
-            text = self._render_help(frame)
-        elif frame.kind == "suggest":
-            text = self._render_suggest(frame)
-        elif frame.kind == "proposal":
-            text = self._render_proposal(frame)
-        elif frame.form.kind == VIEW:
-            text = self._render_view(frame)
-        else:
-            text = self._render_form(frame)
-        return PRESENTER.shown(self, text)
+            return self._render_field(frame)
+        if frame.kind == "confirm":
+            return self._render_confirm(frame)
+        if frame.kind == "help":
+            return self._render_help(frame)
+        if frame.kind == "suggest":
+            return self._render_suggest(frame)
+        if frame.kind == "proposal":
+            return self._render_proposal(frame)
+        if frame.form.kind == VIEW:
+            return self._render_view(frame)
+        return self._render_form(frame)
 
     def nodetext_formatter(self, nodetext):
         return nodetext
@@ -1210,6 +1237,58 @@ class GameMenu(EvMenu):
                 self._proposal_input(frame, text)
         except Refuse as refusal:
             self.say(str(refusal))
+        except Exception:
+            self._let_go()
+
+    def _let_go(self):
+        """
+        Something broke while reading input. Say so, and let the player go.
+
+        **A menu must never be able to trap somebody**, and this is the line
+        that guarantees it. A menu's cmdset takes every line typed before any
+        command sees it, so a form that raises while working out what it
+        offers does not merely fail -- it holds the player with no way out.
+        Not `q`, if quitting is reached after the thing that raised; not
+        `quit`; not `@reload`, which never gets to be a command at all; not
+        disconnecting, because the menu is waiting when they come back. The
+        only way out was to stop the server from a shell, which is not
+        something a player of somebody else's game can do.
+
+        So whatever it was, it ends here: logged with its traceback for
+        whoever has to fix it, said plainly to whoever hit it, and the menu
+        closed. Losing a half-filled form is a small harm; the alternative is
+        a player who cannot type anything at all.
+        """
+        from evennia.utils import logger
+
+        where = ""
+        try:
+            frame = self.top
+            where = getattr(frame.form, "key", "") or ""
+            if frame.item is not None:
+                where = f"{where}.{frame.item.key}"
+        except Exception:
+            pass
+        logger.log_trace(f"menus: {where or 'a menu'} broke while reading "
+                         f"input; closing it rather than trapping anybody")
+        try:
+            self.msg(
+                "|rSomething went wrong in that menu, so it has been closed "
+                "and you are back in the game.|n\n"
+                "|xWhatever you had entered is lost. It has been written to "
+                "the server log.|n")
+        except Exception:
+            pass
+        try:
+            self.close_menu(why="broke")
+        except Exception:
+            # Even closing failed. Take the cmdset off by hand, because the
+            # whole point of being here is that the player gets their game
+            # back whatever else is true.
+            try:
+                self.caller.cmdset.remove(self._menutree)
+            except Exception:
+                logger.log_trace("menus: could not close a broken menu")
 
     def _refuse(self, text=None):
         said = text or ("That is not one of the choices. l lists them again, "
@@ -1315,6 +1394,14 @@ class GameMenu(EvMenu):
         ctx, field = frame.ctx, frame.item
         escaped = text.startswith(ESCAPE) and len(text) > 1
         literal = text[1:] if escaped else text
+
+        # Getting out comes before everything that could go wrong. A choice
+        # field works out what it offers before it reads what was typed, so
+        # `q` used to be unreachable in exactly the field that had broken --
+        # the one place somebody most needs it. Cheap, and it changes nothing
+        # else: these two words mean this in every frame already.
+        if not escaped and text.lower() in QUIT_WORDS + BACK_WORDS:
+            return self._navigate(frame, text)
 
         if field.kind in (CHOICE, BOOLEAN):
             entries = self._choice_entries(frame)
