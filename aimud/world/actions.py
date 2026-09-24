@@ -447,6 +447,15 @@ def learn(sponsor, world_root, action, bound, actor, on_success,
     def fall_back(_why=""):
         on_success(observe(world_root, action, bound))
 
+    # A world that does not let a model settle what its verbs take falls back
+    # to what the attempt shows, exactly as one with no key does -- which is
+    # the whole reason `observe` exists. Refused rather than asked, and never
+    # refusing the verb: the declaration is the cheap half and the world
+    # manages without it.
+    if not sponsor.will("verbs"):
+        fall_back()
+        return
+
     try:
         sponsor.key()          # refuse early rather than mid-prompt
     except (AttributeError, ValueError):

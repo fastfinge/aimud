@@ -978,7 +978,52 @@ MODE = m.Field(
           "last player logs out."),
 )
 
-THIS_WORLD = m.Form(key="world", title=_world_title, items=[MODE])
+def _permit_field(making, label, off):
+    """
+    One of the five, on the world itself. Changed here, it takes effect at once.
+
+    The wizard asks the same question into a draft, because the answer has to
+    be known before anything is generated; this is the same question asked of
+    a world that already exists. Both write through `permits.choose`.
+    """
+    from world import permits
+
+    def get(ctx):
+        return permits.setting(world_root_of(ctx), making)
+
+    def put(ctx, value):
+        root = world_root_of(ctx)
+        now = permits.choose(root, making, value)
+        said = {permits.ALWAYS: "whenever anything asks",
+                permits.ASKED: "only when a player goes looking",
+                permits.NEVER: f"never -- {off}"}[now]
+        return f"This world writes its own {making} {said}."
+
+    return m.Field(
+        making, label, kind=m.CHOICE, get=get, set=put,
+        choices=lambda ctx: [
+            m.Choice(permits.ALWAYS, "whenever anything asks",
+                     keys=("always", "on")),
+            m.Choice(permits.ASKED, "only when a player goes looking",
+                     keys=("asked", "player", "players")),
+            m.Choice(permits.NEVER, f"never -- {off}",
+                     keys=("never", "off", "no")),
+        ],
+        help=f"{label}. |wonly when a player goes looking|n keeps the world "
+             f"from growing while nobody is watching. |wnever|n means {off} "
+             f"-- what is here is what somebody built, and |wcreate|n is how "
+             f"more of it arrives.")
+
+
+def _permit_fields():
+    from world import permits
+
+    return [_permit_field(name, label, off)
+            for name, label, off in permits.MAKES]
+
+
+THIS_WORLD = m.Form(key="world", title=_world_title,
+                    items=lambda ctx: [MODE] + _permit_fields())
 
 
 # ---------------------------------------------------------------------------

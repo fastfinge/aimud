@@ -1060,6 +1060,22 @@ to `world/menus.py`. Where it differs:
   in front of a player rather than a failure at import. Found by the way out of
   a room, whose natural name is `exit` and which is the word that quits every
   menu in the game; it is called a **way** (§9.2).
+* **A listing that raises no longer takes the menu with it.** Found in play:
+  `actions.vocabulary` answers a sorted *list* of verbs where four of the six
+  registers answer a map, so the action picker raised the moment it was
+  opened -- and because the field frame was already on the stack, every input
+  after it hit the same wall and even `@reload` never reached a command.
+  Caught at the one place a menu is *drawn* (`menus._choice_entries`), which
+  is deliberately not the same place as the listing itself: guarding the
+  listing too would have made the guard untestable, and the first version of
+  this did exactly that and hid the bug from the test written for it.
+* **Drawing a form is not enough to know its fields work.** A picker with no
+  value yet shows "not set" without ever asking what it could be set to, so
+  `EveryFormDraws` walked straight past a listing that could not run.
+  `EveryChoiceCanBeOpened` walks *into* every choice field of every maker
+  form, in an empty world and a furnished one, and does it again for each
+  predicate, each effect type and each goal type -- which is what a player
+  does and what the first test did not.
 * **A bug in `guided` forms was found and fixed.** A form whose `items` is a
   function of the context builds a fresh `Field` every time it is asked, so
   "(2 of 5)" was looked up by identity against a different object: it gave up
@@ -1199,6 +1215,38 @@ writing another.
   offers their errand -- and an offer that cannot happen says why in the log.
 * The last criterion is held by `use_quest` being offered and enumerating this
   world's specs; whether a model *prefers* it is a live test, not a free one.
+
+**Phase 6a: what a world writes for itself.** Not in this plan, and needed by
+it. `create world` plans zones, names a room, describes it, fills it with
+things and puts somebody in it -- every one of which a hand-built world has to
+undo before it can start, and pays for twice. So `world/permits.py`: five
+things a model may be asked for (rooms, items, people, verbs, errands), three
+answers each (whenever anything asks, only when a player goes looking, never),
+and `Sponsor.will(making)` as the one question a generator asks. It is the
+`future-plans.md` item about configuring what models may do, which turned out
+to be a prerequisite rather than a successor.
+
+*Built.* Where it differs from what that item said:
+
+* **Five things, not "each type of thing".** Rooms, items, people, verbs and
+  errands is what a generator can actually be pointed at. "Descriptions" and
+  "names" are part of making one of the five, and a world that could have a
+  room but not its description would have a nameless room rather than a saved
+  call.
+* **`asked` turns on a session**, not on the shape of the call. "A player's
+  own action" means somebody is at the keyboard; a body left standing in a
+  room is exactly the case the setting exists to stop.
+* **The default is what the game already did.** Everything `always`, stored
+  with the world's spec so `reset world` keeps a creator's decision, and no
+  world in play changes because a register gained a default.
+* **Rooms off means no model call at all.** `worldgen.first_room_by_hand`
+  makes one plain room that says what to do next, and skips the zone plan,
+  the naming call, the description call, the contents pass and the frontier.
+  `ensure_frontier` also stops opening doors onto nothing: a world built by
+  hand is not closed off by accident at the edge its builder stopped at.
+* **It is not about characters thinking.** Turning people off stops new ones
+  arriving; whoever is already there still talks. NPC autonomy is its own
+  `future-plans.md` item and stays there.
 
 **Phase 7 (separate plan): export and import.** A world as a document, over the
 same maker table. Named here so phases 1 to 6 build for it; scoped when they

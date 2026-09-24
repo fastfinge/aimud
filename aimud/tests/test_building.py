@@ -1551,3 +1551,122 @@ class EveryConfirmationCanBeTurnedOff(SimpleTestCase):
 
         keys = [key for key, _label, _why in preferences.confirmations()]
         self.assertEqual(len(keys), len(set(keys)))
+
+
+@tag("world")
+class EveryChoiceCanBeOpened(Building):
+    """
+    Every picker in every form can produce its choices, in an empty world
+    and a furnished one.
+
+    `EveryFormDraws` was not enough and the gap is worth naming. Drawing a
+    form shows each field's *value*, and a picker with nothing in it yet shows
+    the word "not set" without ever asking what it could be set to. So a
+    listing function that raises -- one `.items()` on a register that answers
+    a list -- was invisible until somebody chose that line, and then took the
+    whole menu down in front of them.
+
+    This walks into each field instead, which is what a player does.
+    """
+
+    loose_objects = 1
+
+    def furnish(self):
+        from evennia import create_object
+        from world import actions, coords, kinds, traits, verbs
+
+        kinds.remember(self.root, "lantern", {"light": True})
+        traits.register(self.root, "discoveries", means="what they found")
+        verbs.register_state(self.root, "lit", means="it is giving light")
+        actions.declare(self.root, "combine", means="to put two together",
+                        applies_to=[{"role": "direct", "access": "carried"}])
+        coords.place(self.root, self.room1, coords.ORIGIN)
+        npc = create_object("typeclasses.npcs.NPC", key="Hob",
+                            location=self.room1)
+        npc.db.is_npc = True
+        from world.makers import errands
+
+        errands.keep_quest(self.draft(
+            title="An errand", goal=[{"type": "holds", "object": "chalk"}],
+            givers=[{"npc": str(npc.id), "description": ""}], wire=False))
+
+    def every_choice(self, form, ctx, seen=None, depth=0):
+        """Every choice field reachable from a form, its submenus included."""
+        seen = seen if seen is not None else set()
+        if depth > 4 or id(form) in seen:
+            return
+        seen.add(id(form))
+        for item in form.items_for(ctx):
+            if isinstance(item, menus.Field) and item.kind == menus.CHOICE:
+                yield form, item
+            elif isinstance(item, menus.Submenu):
+                yield from self.every_choice(item.form, item.context(ctx),
+                                             seen, depth + 1)
+
+    def check(self, ctx):
+        looked = 0
+        for maker in making.registered():
+            for form in (maker.new,):
+                if form is None:
+                    continue
+                for holder, field in self.every_choice(form, ctx):
+                    looked += 1
+                    with self.subTest(maker=maker.key, field=field.key):
+                        choices = field.choices_for(ctx)
+                        self.assertIsInstance(choices, list)
+                        for choice in choices:
+                            self.assertIsNotNone(choice.value, field.key)
+        self.assertGreater(looked, 20, "nothing was actually looked at")
+
+    def test_in_an_empty_world(self):
+        self.check(menus.Context(self.char1, world_root=self.root))
+
+    def test_and_in_a_furnished_one(self):
+        self.furnish()
+        self.check(menus.Context(self.char1, world_root=self.root))
+
+    def test_a_predicate_chosen_opens_the_value_picker_it_names(self):
+        """The condition builder's whole shape: the second choice narrows."""
+        from world.makers import rules
+
+        self.furnish()
+        for group, _label, members in rules.PREDICATE_GROUPS:
+            for predicate, _said, _takes in members:
+                ctx = menus.Context(
+                    self.char1, world_root=self.root,
+                    draft={"subject": "direct", "group": group,
+                           "predicate": predicate})
+                with self.subTest(predicate=predicate):
+                    for item in rules.NEW_CONDITION.items_for(ctx):
+                        if isinstance(item, menus.Field) \
+                                and item.kind == menus.CHOICE:
+                            self.assertIsInstance(item.choices_for(ctx), list)
+
+    def test_an_effect_chosen_opens_the_fields_it_names(self):
+        from world import effects
+        from world.makers import rules
+
+        self.furnish()
+        for etype in sorted(effects.VOCABULARY):
+            ctx = menus.Context(self.char1, world_root=self.root,
+                                draft={"type": etype})
+            with self.subTest(effect=etype):
+                asked = [item.key for item in rules.NEW_EFFECT.items_for(ctx)]
+                for field in rules.EFFECT_FIELDS[etype]:
+                    self.assertIn(field, asked)
+                for item in rules.NEW_EFFECT.items_for(ctx):
+                    if isinstance(item, menus.Field) \
+                            and item.kind == menus.CHOICE:
+                        self.assertIsInstance(item.choices_for(ctx), list)
+
+    def test_and_a_goal_type_opens_the_fields_it_names(self):
+        from world.makers import errands
+
+        self.furnish()
+        for wanted, _said, fields in errands.GOAL_TYPES:
+            ctx = menus.Context(self.char1, world_root=self.root,
+                                draft={"type": wanted})
+            with self.subTest(goal=wanted):
+                asked = [item.key for item in errands.NEW_GOAL.items_for(ctx)]
+                for field in fields:
+                    self.assertIn(field, asked)

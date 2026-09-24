@@ -804,7 +804,22 @@ class GameMenu(EvMenu):
 
     def _choice_entries(self, frame):
         entries = []
-        for choice in frame.item.choices_for(frame.ctx):
+        # Where a broken list of choices stops. A field's choices are worked
+        # out from whatever the game holds, and one that raises used to take
+        # the menu down in front of whoever chose that line -- and leave it
+        # open, so everything typed afterwards hit the same wall and even
+        # quitting looked broken. Logged loudly and drawn short instead.
+        # Nothing else guards this: a caller asking a field what it offers
+        # gets the exception, which is what a test wants.
+        try:
+            offered = frame.item.choices_for(frame.ctx)
+        except Exception:
+            from evennia.utils import logger
+
+            logger.log_trace(f"menus: {frame.item.key} could not work out "
+                             f"what it offers")
+            offered = []
+        for choice in offered:
             label = str(_call(choice.label, frame.ctx, ""))
             names = choice.keys + (str(choice.value).lower(),)
             entries.append(_Entry(choice, label, names))
@@ -949,6 +964,8 @@ class GameMenu(EvMenu):
             entries = self._choice_entries(frame)
             filterable = len(entries) > FILTER_FROM
             visible, shown, start, notes = self._page(frame, entries)
+            if not entries:
+                lines.append("|yThere is nothing to choose from here.|n")
             for number, entry in enumerate(shown, start + 1):
                 lines.append(f"{number}. {entry.label}")
             lines += [""] + notes if notes else [""]

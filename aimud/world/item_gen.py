@@ -393,6 +393,10 @@ def ask_for_item(sponsor, object_name, on_spec, on_error, room=None,
     `room` is where somebody reached for it, when they did. A rule's thing is
     made wherever the rule fires, so it is asked about with the world alone.
     """
+    if not sponsor.will("items"):
+        on_error(sponsor.refusal("items")
+                 or "Nothing new of that sort happens here.")
+        return
     model = sponsor.model_for("items")
     try:
         sponsor.key()          # refuse early rather than mid-prompt

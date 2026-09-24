@@ -127,7 +127,7 @@ def add(world_root, word, meaning):
                 f"and a world may not move it. Pick another spelling.")
 
     lowered = meaning.lower()
-    if lowered in (actions.vocabulary(world_root) or {}):
+    if lowered in actions.vocabulary(world_root):
         fold(world_root, word, lowered)
         return f"This world now reads |w{word}|n as |w{lowered}|n."
     if kinds.spec(world_root, kinds.canonical(meaning)) is not None:

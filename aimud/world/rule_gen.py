@@ -699,6 +699,10 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
     model that says it cannot express something has answered, and the world
     goes on without a rule rather than with a wrong one.
     """
+    if not sponsor.will("verbs"):
+        on_error(sponsor.refusal("verbs")
+                 or "Nothing new of that sort happens here.")
+        return
     try:
         sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as err:
@@ -1428,6 +1432,6 @@ def ask_when_it_runs_out(character, slug, world_root):
         if slug in becoming.thresholds_of_rule(world_root, rule):
             return
     payer = sponsor_mod.of_world(world_root, actor=character)
-    if not payer.answers:
+    if not payer.will("verbs"):
         return
     learn_becoming(payer, world_root, slug)

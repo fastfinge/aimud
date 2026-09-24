@@ -146,6 +146,10 @@ def formalise(sponsor, npc, target, request, offer, consequence, on_success, on_
     Calls on_success({"title", "goal", "reward", "punishment"}) or
     on_error(msg) in the main thread.
     """
+    if not sponsor.will("quests"):
+        on_error(sponsor.refusal("quests")
+                 or "Nothing new of that sort happens here.")
+        return
     model = sponsor.model_for("quests", "commands")
     try:
         sponsor.key()          # refuse early rather than mid-prompt
@@ -240,6 +244,10 @@ def formalise_goal(sponsor, npc, want, on_success, on_error):
 
     Calls on_success([condition, ...]) or on_error(msg) in the main thread.
     """
+    if not sponsor.will("quests"):
+        on_error(sponsor.refusal("quests")
+                 or "Nothing new of that sort happens here.")
+        return
     model = sponsor.model_for("quests", "commands")
     try:
         sponsor.key()          # refuse early rather than mid-prompt

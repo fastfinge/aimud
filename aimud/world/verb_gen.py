@@ -259,6 +259,10 @@ def ask_admission(sponsor, world_root, verb, rule, kind, on_answer, on_error):
     different question depending on whether burning, in this world, means
     catching fire or means being consumed utterly.
     """
+    if not sponsor.will("verbs"):
+        on_error(sponsor.refusal("verbs")
+                 or "Nothing new of that sort happens here.")
+        return
     model = sponsor.model_for("commands")
     try:
         sponsor.key()          # refuse early rather than mid-prompt
@@ -329,6 +333,10 @@ def narrate(sponsor, verb, bound, actor, raw, on_success, on_error, result=None)
     """
     from world import checks
 
+    if not sponsor.will("verbs"):
+        on_error(sponsor.refusal("verbs")
+                 or "Nothing new of that sort happens here.")
+        return
     model = sponsor.model_for("commands")
     try:
         sponsor.key()          # refuse early rather than mid-prompt

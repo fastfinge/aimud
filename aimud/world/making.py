@@ -324,6 +324,13 @@ def picker(key, label, maker, world=None, make=True, options=None, none=None,
     finder = world or root_of
 
     def listing(ctx):
+        # Deliberately not guarded here. A listing that raises is a bug, and
+        # `EveryChoiceCanBeOpened` in tests/test_building.py finds it by
+        # calling exactly this. What must not happen is a player's menu going
+        # down with it, and that is caught where a menu is *drawn*
+        # (`menus._choice_entries`) -- so the test sees the bug and the player
+        # sees a short list. Guarding both places would have meant guarding
+        # neither: the first swallow makes the second untestable.
         if options is not None:
             return options(ctx) if callable(options) else options
         found = get(maker)

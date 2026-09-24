@@ -489,6 +489,7 @@ Beyond that:
 | `reset world [<n or title>] [yes]` | Wipe and regenerate from the same setup. Asks first unless you add `yes`. |
 | `delete world [<n or title>] [yes]` | Delete a world permanently. Asks first unless you add `yes`. |
 | `edit world` → Open a way on | Open a way on, in a world that has built itself into a corner and has nowhere unexplored left. |
+| `create world` / `edit world` → What this world writes for itself | Whether this world grows its own rooms, items, characters, verbs and errands — **whenever anything asks**, **only when a player goes looking**, or **never**. `settings world <what> <how>` changes it later. Everything is on until you say otherwise, so no world you already have changes. |
 | `view zones` | The areas of this world, how full each is, what may exist only once in each, and where you are. |
 | `view rules [<verb>]` | Every rule this world holds, or only the ones about one verb: what it needs before it will work, what it does, and what follows. In the order they are consulted, which is the point — a rule about datapads decides what powering a datapad does even aboard a ship with its own rule about powering. Costs nothing. |
 | `edit rules [<id> suspend \| restore]` / `edit rules dead` | Take a rule out of force, keeping it readable, or put one back. `dead` suspends every rule that provably cannot fire. For whoever made the world. |
@@ -533,6 +534,26 @@ without leaving the rule.
 On the command line the usual rule holds throughout: leave the arguments out
 and you get a menu, give some of them and the menu opens there, give all of
 them and there is no menu at all.
+
+### Building instead of generating
+
+A world can be told what it may write for itself, and the middle answer is the
+interesting one:
+
+| | |
+|---|---|
+| **whenever anything asks** | What every world does. A character wandering through a door writes the room beyond it. |
+| **only when a player goes looking** | The same, but only for a player's own action. The world stops growing while nobody is watching, without freezing. |
+| **never** | What is here is what somebody built. Nothing is conjured, nothing arrives, and nothing costs anything. |
+
+Five things separately: rooms, items, people, verbs and errands. So a world
+about combining substances can let a model invent things and the sorts of
+thing they are, and never invent a room, a person or a verb nobody typed.
+
+**A world with rooms turned off is made without a model at all** — one plain
+room, at once, for you to name and build out from. Turning people off does not
+strike anybody dumb, either: it stops new characters arriving, and whoever is
+already there still talks.
 
 `create`, `edit`, `delete`, `reset`, `view` and `enter` typed on their own open
 a menu of what they can act on. Inside a world they are only these commands when

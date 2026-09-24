@@ -232,6 +232,14 @@ def store(root, spec):
         # as well. `seed` alone only ever adds, so unticking a ruleset in the
         # wizard and saving used to appear to work and change nothing.
         rulesets.apply_choice(root, list(spec.get("rulesets") or []))
+    # What this world lets a model make for itself. Stored with the rest of
+    # the spec for the reason rulesets are: `reset world` rebuilds from it,
+    # and a world whose creator turned its rooms off must not come back with
+    # them on. See world/permits.py.
+    from world import permits
+
+    if permits.ATTR in spec:
+        permits.apply_choice(root, permits.from_spec(spec))
 
 
 def store_clock(root, wanted):

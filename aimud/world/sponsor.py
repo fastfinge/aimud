@@ -97,8 +97,43 @@ class Sponsor:
         generator should ask before building a prompt, and the place worldmode
         `none` will be added when it exists -- one line here rather than a
         branch in each of the callers.
+
+        Whether it *should* be asked about this particular sort of thing is
+        `will`, which is the question most callers actually want.
         """
         return bool(self.account and self.account.db.openrouter_api_key)
+
+    def may(self, making):
+        """
+        Whether this world lets a model make one of these, for this actor.
+
+        Three parts, and a sponsor is the only thing that holds all three: the
+        world whose choice it is, what is being made, and who caused the call
+        -- which is what tells "a player went looking" from "a character
+        wandered through". See world/permits.py.
+        """
+        from world import permits
+
+        return permits.allows(self.world_root, making, self.actor)
+
+    def will(self, making):
+        """
+        Whether a model is going to answer for one of these, here, now.
+
+        The question a generator wants: there is a key to spend, and this
+        world allows this sort of thing to be made at all. `answers` alone was
+        every caller's test, and it could only ever say whether somebody had
+        paid.
+        """
+        return self.answers and self.may(making)
+
+    def refusal(self, making):
+        """Why not, for whoever is standing there, or ''."""
+        from world import permits
+
+        if not self.answers:
+            return ""
+        return permits.refused(self.world_root, making, self.actor)
 
     # -- what a generator needs ------------------------------------------
 

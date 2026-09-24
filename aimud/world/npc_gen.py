@@ -1341,6 +1341,10 @@ def generate_npc(sponsor, room, on_success, on_error):
     Async. Generate and spawn an NPC appropriate for the room.
     Calls on_success(npc_obj) or on_error(msg) in the main thread.
     """
+    if not sponsor.will("people"):
+        on_error(sponsor.refusal("people")
+                 or "Nothing new of that sort happens here.")
+        return
     model = sponsor.model_for("npcs")
     try:
         sponsor.key()          # refuse early rather than mid-prompt

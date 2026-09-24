@@ -121,7 +121,7 @@ def _here_block(word, world_root):
     for name in kinds.vocabulary(world_root):
         if name != settled and lexicon.head_noun(name) == word:
             found.append(f"  and |w{name}|n (|wview kind {name}|n)")
-    if word in (actions.vocabulary(world_root) or {}):
+    if word in actions.vocabulary(world_root):
         found.append(f"  a verb here (|wview action {word}|n)")
     if word in (verbs.vocabulary(world_root) or {}):
         found.append(f"  a condition here (|wview condition {word}|n)")

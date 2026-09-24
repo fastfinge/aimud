@@ -110,7 +110,7 @@ def affordance_options(ctx):
 
     root = _root(ctx)
     found, seen = [], set()
-    for verb in sorted(actions.vocabulary(root) or {}):
+    for verb in actions.vocabulary(root):
         found.append((verb, f"{verb} -- a verb this world knows"))
         seen.add(verb)
     for verb, said in COMMON_AFFORDANCES:
@@ -832,8 +832,8 @@ def fold_options(ctx):
     from world import actions, kinds
 
     root = _root(ctx)
-    found = [(verb, f"{verb} -- a verb") for verb
-             in sorted(actions.vocabulary(root) or {})]
+    found = [(verb, f"{verb} -- a verb")
+             for verb in actions.vocabulary(root)]
     found += [(kind, f"{kind} -- a sort of thing")
               for kind in kinds.vocabulary(root)]
     return found

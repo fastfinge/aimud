@@ -176,7 +176,12 @@ def action_entries(root):
     from world import actions
 
     found = []
-    for verb, record in sorted((actions.vocabulary(root) or {}).items()):
+    # `actions.vocabulary` answers a sorted list of verbs, the way
+    # `kinds.vocabulary` answers a list of kinds; each record is read through
+    # `spec`. The two registers that answer a list and the four that answer a
+    # map is a difference worth knowing once rather than being caught by.
+    for verb in actions.vocabulary(root):
+        record = actions.spec(root, verb) or {}
         takes = ", ".join(r["role"] for r in record.get("applies_to") or [])
         found.append((verb, f"{verb} -- takes {takes or 'nothing'}",
                       record.get("means") or ""))
