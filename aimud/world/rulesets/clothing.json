@@ -1,13 +1,12 @@
 {
   "name": "clothing",
   "title": "Clothing",
-  "version": 3,
+  "version": 4,
   "default": true,
   "means": "Characters can wear things, and what they have on shows in how they look.",
   "requires": ["default"],
   "conflicts": [],
   "mechanics": ["clothing"],
-  "affordances": ["wear"],
 
   "conditions": [
     {"group": "wornness", "exclusive": true, "states": ["worn"]}

@@ -59,8 +59,19 @@ DEFAULT = "default"
 
 #: The sections a document may have, each the vocabulary one store keeps.
 #: Every one is optional; a ruleset says only what it needs.
-SECTIONS = ("actions", "verbs", "kinds", "affordances", "attributes",
+#:
+#: Every one is also read by `_apply` or by `world.mechanics`, and a document
+#: naming anything else is refused. That check is not tidiness: `affordances`
+#: was in this list and read by nothing, so `"affordances": ["combine"]` sat
+#: in a shipped ruleset doing precisely nothing, and the only symptom was a
+#: soak world where combining refused everything. A section nobody reads is a
+#: promise nobody keeps.
+SECTIONS = ("actions", "verbs", "kinds", "attributes",
             "conditions", "rules", "mechanics")
+
+#: What a document may have besides its sections.
+HEADER = ("name", "title", "version", "means", "requires", "conflicts",
+          "default", "path")
 
 #: Where the rulesets that ship with the game live.
 BUILTIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -219,6 +230,12 @@ def problems(doc, known=None):
             continue
         if isinstance(value, str) or not hasattr(value, "__iter__"):
             wrong.append(f"{section} is not a list")
+
+    unknown = sorted(set(doc) - set(SECTIONS) - set(HEADER))
+    if unknown:
+        wrong.append(
+            f"nothing reads {', '.join(repr(name) for name in unknown)}; a "
+            f"section nobody reads is a promise nobody keeps")
 
     for rule in doc.get("rules") or []:
         if not hasattr(rule, "keys"):

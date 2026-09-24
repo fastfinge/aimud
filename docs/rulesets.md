@@ -698,7 +698,8 @@ the endless-alchemy world in `future-plans.md` wants.
 `crafting` ships **no recipes**, which is the whole argument against copying
 the contrib: a recipe is a fact about one world, and belongs with that world's
 other rules where it can be read, replaced, scoped to a room, and proposed by
-`suggest` from what players kept trying.
+`suggest` from what players kept trying. It ships no rules at all, for a
+reason the soak found; see §12.
 
 ---
 
@@ -813,3 +814,58 @@ again under the rug. `Room.filter_visible` drops what another thing already
 accounts for. That hook rather than the listing, because "is this one of the
 things shown" is exactly what it answers, and everything that lists a room
 asks it.
+
+---
+
+## 12. What the soak found: a frame that outranked its world
+
+The first hour of play in a space-crash world, verbatim:
+
+```
+> combine strut with shield tile
+You cannot combine a titanium strut. You can salvage and wield it.
+```
+
+The world had written its own recipes — *combining a strut and a heat shield
+tile makes an improvised shovel* — and the crafting ruleset refused them.
+
+`crafting.json` shipped two check rules requiring both things to afford
+`combine`. Three things were wrong, in increasing order of importance.
+
+**Nothing ever puts `combine` in an affordance map.** Affordances are written
+per object by the generators, which were never told the word existed. The
+world's struts afford `salvage` and `wield`, because that is what a strut is
+for.
+
+**The `affordances` section was dead config.** `crafting.json` said
+`"affordances": ["combine"]` and `clothing.json` said `["wear"]`, and `_apply`
+read neither — the section was in `SECTIONS` and handled nowhere. It had been
+doing nothing since the day it was written. `SECTIONS` is now exactly what is
+read, and a document naming anything else is refused at load: *a section nobody
+reads is a promise nobody keeps.*
+
+**And the real one: a world-scope check rule cannot be overruled.** Check rules
+accumulate — that is what makes the phase safe to extend — so a specific
+carry-out rule can never get past a general check. The frame's guess about what
+is combinable therefore outranked the world's own knowledge of what combining
+*does*, permanently. That is exactly backwards: the frame is the thing that
+should yield.
+
+Worse, the question it asked was the wrong one. "Did some generator happen to
+write this word down?" is not "does combining this make sense", and the engine
+already asks the second: `kinds.admits` settles it once per kind per verb,
+model-answered and cached, and runs in the pipeline already. The check rules
+duplicated an existing gate, badly.
+
+So `crafting` ships **no rules**. Actions, verbs, and nothing else.
+
+The lesson generalises past crafting, and is worth stating for every ruleset
+written from here: **a ruleset's check rules are a tax on every world that
+takes it.** Ship one only where it is true of every world that could ever want
+the ruleset — "you must be able to reach what you act on" clears that bar, and
+"you can only combine things that go together" plainly does not. Where the
+engine already has a gate, use the gate.
+
+`tests/test_crafting.TheSoakWorldsStrut` keeps the case as it was typed, and
+was checked by putting the bad rules back and watching it reproduce the
+sentence above.

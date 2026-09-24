@@ -1,13 +1,12 @@
 {
   "name": "wielding",
   "title": "Wielding",
-  "version": 2,
+  "version": 3,
   "default": true,
   "means": "Characters can hold things in their hands, and what they hold can be worth something to them.",
   "requires": ["default"],
   "conflicts": [],
   "mechanics": ["wielding"],
-  "affordances": ["wield"],
 
   "conditions": [
     {"group": "handedness", "exclusive": true, "states": ["wielded"]}

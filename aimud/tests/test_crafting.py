@@ -59,11 +59,24 @@ class TheFrame(test_phases.RunningTheAttempt):
         self.assertEqual(roles["direct"]["access"], "carried")
         self.assertEqual(roles["instrument"]["access"], "carried")
 
-    def test_it_ships_no_recipes(self):
-        """A recipe is a fact about one world, not about crafting."""
+    def test_it_ships_no_rules_at_all(self):
+        """
+        Not only no recipes -- no rules. It shipped two check rules requiring
+        both things to afford `combine`, and a soak world found them out
+        within the hour: the world had written "a strut and a heat shield tile
+        make a shovel", and the frame answered "You cannot combine a titanium
+        strut." Nothing ever puts `combine` in an affordance map, and a
+        world-scope check rule cannot be overridden by a more specific one --
+        so the frame's generic guess permanently outranked the world's own
+        knowledge, which is exactly backwards.
+
+        `kinds.admits` already asks the better question -- can this sort of
+        thing be combined at all -- once per kind, model-answered and cached.
+        See `WhatGatesIt`.
+        """
         names = [r["name"] for r in R.all_rules(self.root)
                  if rulesets.from_ruleset(r, "crafting")]
-        self.assertEqual(len(names), 2, names)
+        self.assertEqual(names, [])
 
 
 @tag("world")
@@ -169,7 +182,17 @@ class ARecipeAWorldWrote(test_phases.RunningTheAttempt):
 
 
 @tag("world")
-class WhatTheFrameRefuses(test_phases.RunningTheAttempt):
+class WhatGatesIt(test_phases.RunningTheAttempt):
+    """
+    Whether a thing can be combined at all is `kinds.admits`, not a rule.
+
+    The frame used to ask it as a check rule over affordances, and that was
+    wrong twice over: it asked whether some generator had happened to write
+    the word down rather than whether the thing makes sense to combine, and
+    being a world-scope check it could not be overruled by the world's own
+    recipe. `admits` asks the right question, once per kind, and caches.
+    """
+
     loose_objects = 2
 
     def setUp(self):
@@ -177,17 +200,64 @@ class WhatTheFrameRefuses(test_phases.RunningTheAttempt):
         rulesets.seed(self.root, ["crafting"])
         self.obj2.key = "brick"
         self.obj2.db.kinds = ["brick.n.01"]
-        kinds.admit(self.root, ["book.n.01"], "combine", True)
-        kinds.admit(self.root, ["brick.n.01"], "combine", True)
 
-    def test_you_cannot_combine_what_does_not_go_together(self):
-        """
-        The one thing the frame itself says. Inform ships a handful of these
-        and they are why an author writes so little; this is the crafting
-        one, and it stops `combine the innkeeper with the table` reaching a
-        model at all.
-        """
+    def test_a_sort_of_thing_this_world_has_refused_is_refused(self):
+        kinds.admit(self.root, ["book.n.01"], "combine", False)
         self.obj1.move_to(self.char1, quiet=True)
         self.obj2.move_to(self.char1, quiet=True)
         said = self.try_it("combine book with brick")
         self.assertNotIn("You do it", said)
+
+    def test_and_one_it_has_allowed_is_not(self):
+        kinds.admit(self.root, ["book.n.01"], "combine", True)
+        kinds.admit(self.root, ["brick.n.01"], "combine", True)
+        self.obj1.move_to(self.char1, quiet=True)
+        self.obj2.move_to(self.char1, quiet=True)
+        R.add(self.root, R.blank(
+            action="combine", phase=R.CARRY_OUT, scope={"world": True},
+            name="combining makes a lump",
+            effects=[{"type": "create_object", "name": "lump",
+                      "why": "what combining makes", "location": "actor"}]))
+        self.try_it("combine book with brick")
+        self.assertTrue([o for o in self.char1.contents if "lump" in o.key])
+
+
+@tag("world")
+class TheSoakWorldsStrut(test_phases.RunningTheAttempt):
+    """
+    The case that found it, kept as it was typed.
+
+    A world with two recipes of its own, and objects the generators had
+    described as salvageable and wieldable because nothing had told them
+    crafting existed. Every attempt was refused by the frame.
+    """
+
+    loose_objects = 2
+
+    def setUp(self):
+        super().setUp()
+        rulesets.seed(self.root, ["crafting"])
+        self.strut, self.tile = self.obj1, self.obj2
+        self.strut.key = "titanium strut"
+        self.strut.db.kinds = ["strut.n.01"]
+        self.strut.db.affordances = {"salvage": True, "wield": True}
+        self.tile.key = "heat shield tile"
+        self.tile.db.kinds = ["tile.n.01"]
+        self.tile.db.affordances = {"salvage": True}
+        for obj in (self.strut, self.tile):
+            obj.move_to(self.char1, quiet=True)
+            kinds.admit(self.root, obj.db.kinds, "combine", True)
+        R.add(self.root, R.blank(
+            action="combine", phase=R.CARRY_OUT, scope={"kind": "strut.n.01"},
+            name="combining a strut and a heat shield tile makes a shovel",
+            effects=[{"type": "create_object", "name": "improvised shovel",
+                      "why": "what combining makes", "location": "actor"}]))
+
+    def test_the_worlds_own_recipe_is_not_refused_by_the_frame(self):
+        said = self.try_it("combine strut with shield tile")
+        self.assertNotIn("You cannot combine", said)
+
+    def test_and_it_makes_the_shovel(self):
+        self.try_it("combine strut with shield tile")
+        self.assertTrue([o for o in self.char1.contents
+                         if "shovel" in o.key], "the recipe should have run")
