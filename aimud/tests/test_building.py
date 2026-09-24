@@ -146,6 +146,58 @@ class VocabulariesCoverEachOther(SimpleTestCase):
 
         self.assertEqual(set(effects.VOCABULARY), set(rules.EFFECT_FIELDS))
 
+    def test_and_so_is_every_field_it_takes(self):
+        """
+        The gap that cost a builder the kind of the thing their rule made.
+
+        Knowing an effect exists is not enough: `create_object` was reachable
+        and asked for three of the six things it reads, so the sort of thing
+        it made was guessed from the head noun of whatever it was called.
+        Anything left out on purpose is in `NOT_ASKED` with its reason, which
+        makes a gap a decision somebody wrote down rather than one nobody saw.
+        """
+        from world import effects
+        from world.makers import rules
+
+        for etype, known in effects.VOCABULARY.items():
+            asked = {rules.STORED_AS.get(field, field)
+                     for field in rules.EFFECT_FIELDS[etype]}
+            for field in known["fields"]:
+                if (etype, field) in rules.NOT_ASKED:
+                    continue
+                with self.subTest(effect=etype, field=field):
+                    self.assertIn(field, asked)
+
+    def test_and_nothing_is_asked_for_that_no_effect_takes(self):
+        """The other direction: a field nothing reads is a field nobody fills."""
+        from world import effects
+        from world.makers import rules
+
+        for etype, fields in rules.EFFECT_FIELDS.items():
+            reads = set(effects.VOCABULARY[etype]["fields"])
+            for field in fields:
+                with self.subTest(effect=etype, field=field):
+                    self.assertIn(rules.STORED_AS.get(field, field), reads)
+
+    def test_every_deliberate_omission_says_why(self):
+        from world import effects
+        from world.makers import rules
+
+        for (etype, field), why in rules.NOT_ASKED.items():
+            with self.subTest(effect=etype, field=field):
+                self.assertIn(etype, effects.VOCABULARY)
+                self.assertIn(field, effects.VOCABULARY[etype]["fields"])
+                self.assertGreater(len(why), 40, "say why, at length")
+
+    def test_the_prose_and_the_list_agree(self):
+        """`takes` is read by `help`; `fields` is read by the menu."""
+        from world import effects
+
+        for etype, known in effects.VOCABULARY.items():
+            for field in known["fields"]:
+                with self.subTest(effect=etype, field=field):
+                    self.assertIn(field, known["takes"])
+
     def test_every_predicate_is_reachable(self):
         from world import conditions
         from world.makers import rules
@@ -1754,3 +1806,102 @@ class FinishingClosesTheForm(Building):
         self.assertIn("brewing", verbs.groups(self.root))
         self.type("keep")
         self.assertFalse(self.is_open)
+
+
+@tag("world")
+class WhatARuleMakesIsWhatItWasTold(Building):
+    """
+    A rule that creates a thing can say what sort of thing it is.
+
+    Reported from play: it could not, and so it guessed. `clothing.create`
+    reads sixteen fields off a spec and the effect menu asked for three of
+    them, so the sort of thing was worked out from the head noun of whatever
+    it was called -- a Wisp of Steam becomes a wisp, and every rule filed
+    against the sort it was meant to be misses it.
+
+    Worse than a missing field, and worth saying: `effects.VOCABULARY` -- the
+    register that exists so the sentence and the applier cannot drift apart --
+    named `why`, which nothing has ever read, and named none of the ten it
+    does. The menu was written from it and inherited the gap.
+    """
+
+    def effect(self, **fields):
+        from world.makers import rules
+
+        made, _said = rules.keep_effect(self.draft(type="create_object",
+                                                   **fields))
+        return made
+
+    def apply(self, effect):
+        from world import effects
+
+        effects.apply(self.char1, self.room1, [effect], bound={},
+                      world_root=self.root)
+        return next((obj for obj in self.room1.contents
+                     if obj.key == effect.get("name")), None)
+
+    def test_the_kind_it_was_given_is_the_kind_it_gets(self):
+        from world import kinds
+
+        kinds.remember(self.root, "substance.n.01", {"drink": True})
+        made = self.apply(self.effect(name="Wisp of Steam",
+                                      kind="substance.n.01"))
+        self.assertIsNotNone(made)
+        self.assertIn("substance.n.01", kinds.of(made))
+
+    def test_and_without_one_it_is_still_guessed_from_the_name(self):
+        """The old behaviour, kept -- it is right when nobody has said."""
+        from world import kinds
+
+        made = self.apply(self.effect(name="Wisp of Steam"))
+        self.assertIsNotNone(made)
+        self.assertTrue(kinds.of(made))
+        self.assertNotIn("substance.n.01", kinds.of(made))
+
+    def test_what_condition_it_is_made_in(self):
+        from world import verbs
+
+        verbs.register_state(self.root, "brewed", means="it has been brewed")
+        made = self.apply(self.effect(name="Green Draught",
+                                      states=["brewed"]))
+        self.assertIn("brewed", verbs.states(made))
+
+    def test_and_whether_it_can_be_picked_up(self):
+        # Not "Standing Stone": `standing` is a condition, and a name may not
+        # carry one. The checker catching that here is the same one that
+        # catches it for a hand-made item, which is the point of sharing it.
+        made = self.apply(self.effect(name="Granite Boulder", takeable=False))
+        self.assertFalse(made.db.ai_takeable)
+
+    def test_the_menu_asks_for_everything_the_maker_of_things_reads(self):
+        """
+        The drift that caused this, caught structurally.
+
+        `clothing.create` is the one writer, and what it reads off a spec is
+        what a rule making a thing should be able to say. Not every field --
+        gear bonuses and garment styles are their own shape and are left out
+        on purpose -- but nothing may be *asked* for that it does not read,
+        which is the direction the bug came from.
+        """
+        import pathlib
+        import re
+
+        from tests.test_token_lists import GAME
+        from world.makers import rules
+
+        source = pathlib.Path(GAME / "world/clothing.py").read_text(
+            encoding="utf-8")
+        reads = set(re.findall(r'spec\.get\(\s*"([a-z_]+)"', source))
+        asked = {rules.STORED_AS.get(field, field)
+                 for field in rules.EFFECT_FIELDS["create_object"]}
+        self.assertEqual(asked - reads - {"location"}, set())
+
+    def test_and_the_register_says_what_it_really_takes(self):
+        """`why` was in it for as long as nothing read it."""
+        from world import effects
+        from world.makers import rules
+
+        said = effects.VOCABULARY["create_object"]["takes"]
+        for field in rules.EFFECT_FIELDS["create_object"]:
+            self.assertIn(rules.STORED_AS.get(field, field), said)
+        self.assertNotIn("why", said)

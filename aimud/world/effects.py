@@ -450,6 +450,14 @@ def _resolve(effect, key, bound, room, actor):
 #: Every effect there is, and what each one means -- the register that makes
 #: the vocabulary readable instead of only runnable.
 #:
+#: `takes` is the prose somebody reads; **`fields` is the same fact in a shape
+#: a test can walk**, and it is here because the prose drifted. `create_object`
+#: said it took `why`, which nothing has ever read, and said nothing about
+#: `kind`, which decides what sort of thing it makes -- so the menu written
+#: from it could not say, and every rule that made something got the sort
+#: guessed from the head noun of whatever it was called. One list beside the
+#: applier, and `tests/test_building.py` fails if a menu cannot reach it.
+#:
 #: This exists because a world was not examinable. `rules launch` printed what
 #: launching *required* and never what it *did*, so the one question a person
 #: most wants answered -- what will happen if I type this -- could only be
@@ -475,21 +483,33 @@ VOCABULARY = {
         "means": "puts something into a condition, or takes it out of one",
         "takes": 'role, add: [...], remove: [...], '
                  'styles: {state: how it is in it}',
+        "fields": ("role", "add", "remove", "styles"),
         "backwards": True, "answers": False,
     },
     "set_trait": {
         "means": "moves a figure kept about a person, at once or over time",
         "takes": 'role, trait, change / set_to, rate',
+        "fields": ("role", "trait", "change", "set_to", "rate"),
         "backwards": True, "answers": False,
     },
     "create_object": {
         "means": "brings something into being, here or in your hands",
-        "takes": 'name, why, description, location: "room" | "actor"',
+        # What `clothing.create` actually reads, which is what this makes.
+        # It said `why` for a long time, and nothing has ever read that --
+        # a register that names a field the applier ignores is the drift it
+        # exists to stop, and it cost a builder the one field they wanted:
+        # with no `kind`, the sort of thing is guessed from the head noun of
+        # whatever it is called.
+        "takes": 'name, description, kind, takeable, states, '
+                 'location: "room" | "actor"',
+        "fields": ("name", "description", "kind", "takeable", "states",
+                   "location"),
         "backwards": True, "answers": False,
     },
     "destroy_object": {
         "means": "takes something out of the world for good",
         "takes": "name_role",
+        "fields": ("name_role",),
         "backwards": True, "answers": False,
     },
     "move_object": {
@@ -497,6 +517,7 @@ VOCABULARY = {
                  "inside or on another thing, or another room entirely",
         "takes": 'name_role, to: "actor" | "room" | <role> | <a room\'s name>, '
                  "preposition",
+        "fields": ("name_role", "to", "preposition"),
         "backwards": True, "answers": False,
     },
     "move_contents": {
@@ -504,31 +525,37 @@ VOCABULARY = {
                  "one thing would have gone",
         "takes": 'name_role, to: "actor" | "room" | <role> | <a room\'s name>, '
                  'preposition, from: "in" | "on" | "under" | "behind"',
+        "fields": ("name_role", "to", "from"),
         "backwards": True, "answers": False,
     },
     "set_owner": {
         "means": "makes something somebody's, or nobody's",
         "takes": 'name_role, to: "actor" | <role> | "nobody", cascade',
+        "fields": ("name_role", "to", "cascade"),
         "backwards": True, "answers": False,
     },
     "modify_object": {
         "means": "changes what something is called or what it looks like",
         "takes": "name_role, new_name, new_description, affordances",
+        "fields": ("name_role", "new_name", "new_description", "affordances"),
         "backwards": False, "answers": False,
     },
     "modify_room": {
         "means": "changes what this place is called or what it looks like",
         "takes": "new_name, new_description",
+        "fields": ("new_name", "new_description"),
         "backwards": False, "answers": False,
     },
     "move_actor": {
         "means": "takes you somewhere, by a way out or by naming the place",
         "takes": 'exit | to: <a room\'s name>',
+        "fields": ("exit", "to"),
         "backwards": True, "answers": False,
     },
     "set_exit": {
         "means": "changes where a way out of this room leads",
         "takes": 'exit, to: <a room\'s name>',
+        "fields": ("exit", "to"),
         "backwards": True, "answers": False,
     },
     "create_room": {
@@ -541,30 +568,35 @@ VOCABULARY = {
         # somebody walks into it and the generator writes one, so there is
         # nothing for a planner to aim at. A character wanting to be somewhere
         # new walks through the way, which is `move_actor` and already read.
+        "fields": ("direction", "exit", "why"),
         "backwards": False, "answers": False,
     },
     "describe": {
         "means": "shows what something looks like, and changes nothing",
         "takes": "role",
+        "fields": ("role",),
         "backwards": False, "answers": True,
     },
     "narrate": {
         "means": "does nothing beyond being seen to happen -- for a verb "
                  "whose whole result is that somebody watched you do it",
         "takes": "nothing",
+        "fields": (),
         "backwards": False, "answers": False,
     },
     "try": {
         "means": "means another verb instead, and runs it from the start",
         "takes": "action, roles",
+        "fields": ("action", "roles"),
         "backwards": False, "answers": False,
     },
     "offer_quest": {
         "means": "asks somebody to run an errand this world has written",
-        "takes": "quest, role",
+        "takes": "quest, name_role (who asks), role (who is asked)",
         # A goal a planner could aim at is a state of the world; being offered
         # something is a state of a conversation. Nothing to read backwards,
         # and saying so here keeps it off the planner's list of holes.
+        "fields": ("quest", "name_role", "role"),
         "backwards": False, "answers": False,
     },
 }

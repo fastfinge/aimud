@@ -1060,6 +1060,25 @@ to `world/menus.py`. Where it differs:
   in front of a player rather than a failure at import. Found by the way out of
   a room, whose natural name is `exit` and which is the word that quits every
   menu in the game; it is called a **way** (§9.2).
+* **An effect's form asks for everything the effect takes**, which it did
+  not. Reported from play: a rule that made something could not say what
+  *sort* of thing it was, so the sort was guessed from the head noun of
+  whatever it was called -- a Wisp of Steam becomes a wisp, and every rule
+  filed against the sort it was meant to be misses it.
+
+  The cause is worth more than the symptom. §8.4 said effects were read out
+  of `effects.VOCABULARY` so there would be no second list to keep level --
+  but what that register carried was a line of *prose*, and prose drifts: it
+  said `create_object` takes `why`, which nothing has ever read, and said
+  nothing about `kind`, `takeable` or `states`, which it does. The menu was
+  written from it and inherited the gap, and six other effects had it too.
+
+  So the register now carries `fields` beside `takes`: the same fact in a
+  shape a test can walk. Three tests hold it -- every field an effect takes
+  is asked for, nothing is asked for that no effect takes, and the prose
+  names everything the list does. A field left out on purpose goes in
+  `NOT_ASKED` with its reason, so a gap is a decision somebody wrote down
+  rather than one nobody saw. There is one: a redirect's `roles`.
 * **A finished form closes, and stops calling itself unsaved.** It could not
   before: a maker's form had to stay open so a picker could take the value
   back, so every one of them said `after=STAY` and you had to quit a form

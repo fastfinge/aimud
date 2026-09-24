@@ -329,27 +329,41 @@ def _read_words(text):
 # One effect
 # ---------------------------------------------------------------------------
 
-#: Which fields each effect asks for. Read beside `effects.VOCABULARY`, whose
-#: `takes` line says the same thing in prose for a person reading `help`.
-#: A test holds the two level: an effect in one and not the other is either a
-#: menu nobody can reach or an effect nobody can make.
+#: Which fields each effect's form asks for, in the order it asks them.
+#: `effects.VOCABULARY[...]["fields"]` is what the applier reads; this is the
+#: same list arranged for somebody filling it in, with the two renames below.
+#: A test holds them level, and that test is why this is now complete: it was
+#: written from the `takes` prose, which had drifted, and so the menu could
+#: not say what sort of thing a rule was making.
 EFFECT_FIELDS = {
-    "set_state": ("role", "add", "remove"),
+    "set_state": ("role", "add", "remove", "styles"),
     "set_trait": ("role", "trait", "change", "set_to", "rate"),
-    "create_object": ("name", "description", "where"),
+    "create_object": ("name", "description", "kind", "takeable", "states",
+                      "where"),
     "destroy_object": ("name_role",),
     "move_object": ("name_role", "to", "preposition"),
-    "move_contents": ("name_role", "to"),
-    "set_owner": ("name_role", "to"),
-    "modify_object": ("name_role", "new_name", "new_description"),
+    "move_contents": ("name_role", "to", "taken_from"),
+    "set_owner": ("name_role", "to", "cascade"),
+    "modify_object": ("name_role", "new_name", "new_description",
+                      "affordances"),
     "modify_room": ("new_name", "new_description"),
     "move_actor": ("way", "to"),
     "set_exit": ("way", "to"),
-    "create_room": ("direction", "why"),
+    "create_room": ("direction", "way", "why"),
     "describe": ("role",),
     "narrate": (),
     "try": ("action",),
     "offer_quest": ("quest", "name_role", "role"),
+}
+
+#: What a form deliberately does not ask for, and why. A gap on the record
+#: rather than a gap: the test below reads this, so leaving something out is
+#: a decision somebody wrote down instead of one nobody noticed.
+NOT_ASKED = {
+    ("try", "roles"):
+        "a redirect runs the other verb over the roles the parser already "
+        "bound, which is what makes it useful; naming different ones is a "
+        "shape no menu can express usefully and no rule has ever wanted",
 }
 
 
@@ -379,7 +393,13 @@ def _asks(field):
 #: Where a field is asked under one name and stored under another. Two, and
 #: both for a reason outside the effect itself: `exit` quits every menu in the
 #: game, and `location` reads as a place rather than a choice between two.
-STORED_AS = {"way": "exit", "where": "location"}
+#: `taken_from` is the third: `from` is a Python keyword, so it cannot be a
+#: field name, and a form field called `from` would read as where the thing
+#: goes rather than where it comes out of.
+STORED_AS = {"way": "exit", "where": "location", "taken_from": "from"}
+
+#: Fields that hold several things, however few were typed.
+LISTED = frozenset(["add", "remove", "states"])
 
 
 WHERE_NEW = (("room", "here, on the floor"), ("actor", "in your hands"))
@@ -396,8 +416,14 @@ def keep_effect(ctx):
         value = ctx.draft.get(field)
         if value in (None, "", []):
             continue
-        if field == "add" or field == "remove":
+        if field in LISTED:
             effect[field] = list(value) if isinstance(value, list) else [value]
+        elif field == "affordances":
+            effect[field] = {str(one.get("verb")): bool(one.get("yes"))
+                             for one in value if one.get("verb")}
+        elif field == "styles":
+            effect[field] = {str(one.get("state")): str(one.get("said"))
+                             for one in value if one.get("state")}
         else:
             effect[STORED_AS.get(field, field)] = value
 
@@ -449,6 +475,41 @@ def _text_complaints(ctx, effect):
     return "; ".join(said).capitalize() + "." if said else ""
 
 
+def _affordance_form(ctx):
+    from world.makers import vocabulary
+
+    return vocabulary.NEW_AFFORDANCE
+
+
+def _affordance_said(ctx, entry):
+    return f"{entry.get('verb')} -- {'yes' if entry.get('yes') else 'no'}"
+
+
+STYLE = menus.Form(
+    key="new-style", title="How it is in that condition", guided=True,
+    intro="A condition, and this thing's own way of being in it.",
+    items=[
+        making.picker("state", "Which condition", "condition",
+                      options=state_options, required=True),
+        menus.Field("said", "In its own words", required=True,
+                    suggestible=True,
+                    help="Slung over one arm; jammed half open; guttering."),
+        making.keeper("keep", "Keep it", lambda ctx: (
+            {"state": str(ctx.draft.get("state") or ""),
+             "said": str(ctx.draft.get("said") or "")},
+            f"{ctx.draft.get('state')}: {ctx.draft.get('said')}")),
+    ],
+)
+
+
+def _style_form(ctx):
+    return STYLE
+
+
+def _style_said(ctx, entry):
+    return f"{entry.get('state')}: {entry.get('said')}"
+
+
 NEW_EFFECT = menus.Form(
     key="new-effect", title="Something that happens", guided=True,
     intro="What a rule actually does. Everything a verb changes it changes "
@@ -495,6 +556,26 @@ NEW_EFFECT = menus.Form(
                     help="Two to four words, as the thing will be called."),
         menus.Field("description", "What it looks like", kind=menus.LONG_TEXT,
                     lock=_asks("description"), suggestible=True),
+        making.picker("kind", "What sort of thing it is", "kind",
+                      options=kind_options, lock=_asks("kind"),
+                      help="Which sort the thing it makes belongs to. This is "
+                           "where its affordances come from and what a rule "
+                           "about that sort of thing will reach -- and left "
+                           "empty it is guessed from the head noun of "
+                           "whatever the thing is called, which is how a "
+                           "Wisp of Steam becomes a wisp."),
+        menus.Field("takeable", "Can it be picked up?", kind=menus.BOOLEAN,
+                    lock=_asks("takeable"), default=True,
+                    help="Answered for the sort of thing rather than only "
+                         "this one, so a world with forty chairs answers "
+                         "once."),
+        making.picker("states", "What condition it is made in", "condition",
+                      options=state_options, lock=_asks("states"),
+                      parse=lambda ctx, text: _read_words(text),
+                      show=lambda ctx, value: ", ".join(value or []) or "none",
+                      help="Conditions it exists in from the moment it is "
+                           "made: lit, wet, brewed. Several, separated by "
+                           "spaces."),
         menus.Field("where", "Where it appears", kind=menus.CHOICE,
                     lock=_asks("where"),
                     choices=lambda ctx: [menus.Choice(v, l)
@@ -506,6 +587,30 @@ NEW_EFFECT = menus.Form(
                     lock=_asks("preposition"),
                     choices=lambda ctx: [menus.Choice(v, l)
                                          for v, l in PLACEMENTS]),
+        menus.Field("taken_from", "Out of where", kind=menus.CHOICE,
+                    lock=_asks("taken_from"),
+                    choices=lambda ctx: [menus.Choice(v, l)
+                                         for v, l in PLACEMENTS],
+                    help="Which of the things it holds are emptied out: what "
+                         "is in it, on it, under it or behind it. Left empty, "
+                         "whatever is inside."),
+        menus.Field("cascade", "And everything it holds?", kind=menus.BOOLEAN,
+                    lock=_asks("cascade"),
+                    help="Yes hands over what is inside it as well, so giving "
+                         "somebody a satchel gives them what is in it."),
+        making.listing_field(
+            "affordances", "What can now be done to it",
+            _affordance_form, _affordance_said,
+            add_label="Add a verb", empty="leave it as its sort decides",
+            help="Changes what this particular thing affords, which its sort "
+                 "would otherwise decide. Burning one book does not stop "
+                 "books being readable."),
+        making.listing_field(
+            "styles", "How it is in that condition", _style_form, _style_said,
+            add_label="Add a way of being in one", empty="said plainly",
+            help="How this thing wears a condition, in its own words: a "
+                 "cloak slung over one arm rather than merely worn. One per "
+                 "condition."),
         menus.Field("new_name", "Its new name", lock=_asks("new_name")),
         menus.Field("new_description", "Its new look", kind=menus.LONG_TEXT,
                     lock=_asks("new_description"), suggestible=True),
