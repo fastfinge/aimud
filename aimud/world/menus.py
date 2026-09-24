@@ -534,6 +534,10 @@ class Picked:
 #: every picker; the label lives on the entry, as every other label does.
 MAKE_NEW = "__make_new__"
 
+#: What `_answer` says when a `Picked` came back and nothing had asked for it.
+#: Not None, which is what every other handler here returns to mean "drawn".
+_NOBODY_WAITING = object()
+
 
 class Action(Item):
     """
@@ -1348,25 +1352,24 @@ class GameMenu(EvMenu):
         child.dirty = False
         return self._enter(form, child, into=("field", frame))
 
-    def _answer(self, frame, picked):
+    def _answer(self, frame, picked, action=None):
         """
         An action supplied the value something further down was waiting for.
 
         Nothing waiting is not an error: a maker's form is the same form
-        whether it was opened from a picker or from `create kind` on its own,
-        and on its own it simply goes back having said what it did.
+        whether a picker opened it or `create kind` did, and answers with the
+        same `Picked` either way. `_NOBODY_WAITING` says so, and the caller
+        then treats the action as the ordinary action it is.
         """
         waiting = next((f.into for f in reversed(self.stack)
                         if f.into is not None), None)
         if waiting is None:
-            self.say(picked.said)
-            return self.back()
+            return _NOBODY_WAITING
         target = waiting[1]
         try:
             at = self.stack.index(target)
         except ValueError:
-            self.say(picked.said)
-            return self.back()
+            return _NOBODY_WAITING
         self.stack = self.stack[:at + 1]
         self.say(picked.said)
         if waiting[0] == "field":
@@ -1539,7 +1542,14 @@ class GameMenu(EvMenu):
         except Refuse as refusal:
             return self.say(str(refusal))
         if isinstance(said, Picked):
-            return self._answer(frame, said)
+            answered = self._answer(frame, said, action)
+            if answered is not _NOBODY_WAITING:
+                return answered
+            # Nothing was waiting, so the action behaves as it says it does:
+            # a maker's form opened on its own closes when it is finished and
+            # hands the value back when a picker opened it, which is one
+            # action doing one thing in two places rather than two actions.
+            said = said.said
         self.say(said)
 
         if action.after == CLOSE:

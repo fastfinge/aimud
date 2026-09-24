@@ -1019,11 +1019,42 @@ with the value.
 *Built.* `world/making.py`, `commands/making_subject.py`, and the two additions
 to `world/menus.py`. Where it differs:
 
-* **`tokens` and `pronouns` were not ported.** The port was the proof that the
-  table can carry an existing subject, and twelve new makers are a better one;
-  against that, it is pure churn over two things that already work, with a
-  regression risk and no new capability. Left alone deliberately rather than
-  forgotten.
+* **`tokens` and `pronouns` were ported after all**, and it was worth doing
+  for a reason the plan did not anticipate. Twelve new makers prove the table
+  can carry what it was shaped around; a subject it was *not* shaped around is
+  what tells you what it had assumed. Three things were missing, all of them
+  general rather than concessions to word lists:
+
+  * **`Maker.opens`** -- a command line that fills more than one field.
+    `create tokens smell: what it is for = brine | tar` fills three, and
+    `opens_with` was only ever the short way of writing the common case.
+  * **`Maker.extras`** -- an entry in a view menu that is about the register
+    rather than about any one thing in it. `view tokens try <text>` is the
+    case, and it would have been lost.
+  * **`Maker.owner`** -- a maker anybody standing here may use. A pronoun set
+    is a fact about the person choosing it rather than about the world, and
+    refusing a guest one would be the world deciding how they are spoken
+    about. Everything else the world is built out of stays its owner's.
+
+  And it found three things quietly wrong, which is the part that earned the
+  churn:
+
+  * **A complete command line opened a menu anyway.** "Give all the arguments
+    and there is no menu" (§4 of docs/commands-and-settings.md) was true of
+    the hand-written `create tokens` and of nothing the table generated. It is
+    everybody's now: a line whose draft leaves no required field unset runs
+    the form's finishing action and says what happened. A line that gives only
+    part of it opens the menu there, and for a caller with no menu says which
+    fields are still missing -- which the old command did for word lists and
+    the general path had stopped doing.
+  * **`Picked` swallowed the action's `after`.** A maker's form answers with
+    the same `Picked` whether a picker opened it or `create tokens` did; with
+    nobody waiting it has to behave as the ordinary action it is, and instead
+    every form that said `after=CLOSE` had quietly stopped closing.
+  * **A picker could not make a pronoun set.** That form answered with a
+    string, so the set was registered and then dropped on the floor and the
+    picker stayed empty -- which is what the "add a pronoun set" entry on a
+    hand-built character did. It answers with its name now.
 * **A maker refuses a reserved word at registration.** `menus.Item` already
   refuses one, but only when the list holding it is drawn -- which is a crash
   in front of a player rather than a failure at import. Found by the way out of
@@ -1043,6 +1074,12 @@ to `world/menus.py`. Where it differs:
   working it out as "the first required field". Same reason as the step count
   above: there is often no list of items to look in, and "first required"
   would silently become a different field the day one was added over it.
+* **`settings confirmations` is generated from the table too**, which is a
+  fifth reader of it. Every maker that deletes or forgets something asks
+  first, §8 says every confirmation has a setting, and a hand-written list
+  would have been missing one the day somebody added a maker -- leaving a
+  confirmation nobody could turn off, which is the register not knowing about
+  it rather than the player having chosen to keep it.
 
 **Phase 2: the vocabulary.** Kinds and affordances, attributes, conditions and
 groups, word folds (§11c), and `view term`. The sense and anchor pickers.

@@ -1,22 +1,32 @@
 """
 Everything a person can make, as one table.
 
-`create world` and `create tokens` were each written out by hand: a `Subject`,
-a `Use` per verb, a listing, a form, a deletion, a confirmation. Eleven more
-things want making -- kinds, attributes, conditions, actions, verb spellings,
-rules, items, rooms, ways out, people, errands -- and writing forty-four more
-`Use` objects would not only be long, it would put the answer to "what can be
-made here?" in eleven places that nothing can read at once.
+`create world`, `create tokens` and `create pronouns` were each written out by
+hand: a `Subject`, a `Use` per verb, a listing, a form, a deletion, a
+confirmation. Eleven more things wanted making -- kinds, attributes,
+conditions, actions, verb spellings, rules, items, rooms, ways out, people,
+errands -- and writing forty-four more `Use` objects would not only be long,
+it would put the answer to "what can be made here?" in fourteen places that
+nothing can read at once.
+
+Word lists and pronoun sets are here too, ported rather than left where they
+were. Not for tidiness: a table only tested against the things it was shaped
+around has not been tested. Carrying two it did not shape is what found the
+three things it was missing (`opens`, `extras`, `owner`) and the three it had
+quietly got wrong -- see docs/player-building.md, phase 1.
 
 So a **maker** is a description of one creatable thing, and this is the table
-of them. Four separate pieces of work read it, which is the whole reason it is
-a table rather than eleven modules each minding themselves:
+of them. Five separate pieces of work read it, which is the whole reason it is
+a table rather than fourteen modules each minding themselves:
 
 * `commands/making_subject.py` turns each into a `Subject`, so `create kind`,
   `edit rule` and `delete item` arrive with their command lines, their menu
   entries and their permission checks already right;
 * `menus.Picker` offers one register's contents inside another's form, with
   "none of these -- make one" opening the maker's own form;
+* `preferences.confirmations` gives every maker that deletes or forgets
+  something a setting to turn the asking off, because a list of those written
+  by hand is one that is missing an entry the day somebody adds a maker;
 * `export world` and `import world`, later, are this table serialised;
 * a tool surface -- MCP, ACP -- wants exactly this list and nothing else.
 
@@ -72,9 +82,11 @@ class Maker:
     """
 
     def __init__(self, key, words, label, listing=None, one=None, new=None,
-                 edit=None, remove=None, reset=None, reset_question=None,
+                 edit=None, remove=None, delete_question=None,
+                 reset=None, reset_question=None,
                  help="", none="", make_label="", offered=None, sole=False,
-                 reached=None, opens_with=""):
+                 reached=None, opens_with="", opens=None, extras=None,
+                 owner=True):
         from world import menus
 
         self.key = str(key)
@@ -96,6 +108,7 @@ class Maker:
         self.new = new
         self.edit = edit
         self.remove = remove
+        self.delete_question = delete_question
         # `reset(root, id)` forgets what a world settled about something,
         # where `edit` may not. The deliberate exception to "first answer
         # stands", made out loud, as `reset verb` already made it: a separate,
@@ -125,13 +138,60 @@ class Maker:
         # "the first required field" would be a different field the day one
         # is added above it.
         self.opens_with = str(opens_with or "")
+        # `opens(said)` is the same question answered by a maker whose command
+        # line is more than one word going into one field: `create tokens
+        # smell: what it is for = brine | tar` fills three. `opens_with` is
+        # the short way of writing the common case.
+        self.opens = opens
+        # More entries in the view menu than one per thing this world holds.
+        # A word list's "try some text" is the case: it is about the register
+        # rather than about any one entry in it.
+        self.extras = extras
+        # Whether making or changing one is for whoever made the world. True
+        # for everything the world is built out of; false for a pronoun set,
+        # which is a fact about the person choosing it rather than about the
+        # world, and which anybody standing here may add and go by.
+        self.owner = bool(owner)
 
     def opening_draft(self, said):
         """What was typed after `create <thing>`, as a draft."""
         said = str(said or "").strip()
-        if not said or not self.opens_with:
+        if not said:
             return {}
-        return {self.opens_with: said}
+        if self.opens is not None:
+            return dict(self.opens(said) or {})
+        return {self.opens_with: said} if self.opens_with else {}
+
+    def extra_items(self, ctx):
+        """Whatever else belongs in this maker's view menu."""
+        if self.extras is None:
+            return []
+        try:
+            return list(self.extras(ctx) or [])
+        except Exception:
+            logger.log_trace(f"making: {self.key}'s extra entries failed")
+            return []
+
+    def confirmations(self):
+        """
+        The confirmation keys this maker uses, for `settings confirmations`.
+
+        Generated rather than written out beside the hand-written ones, for
+        the reason the whole table exists: a list of confirmations kept by
+        hand would be missing one the day somebody adds a maker, and a
+        confirmation nobody can turn off is one the registry does not know
+        about rather than one the player has chosen.
+        """
+        found = []
+        if self.remove is not None:
+            found.append((f"delete_{self.key}", f"Deleting a {self.key}",
+                          f"A deleted {self.key} is gone."))
+        if self.reset is not None:
+            found.append((f"reset_{self.key}",
+                          f"Forgetting what a {self.key} was settled as",
+                          f"The world decides afresh the next time it needs "
+                          f"to."))
+        return found
 
     def targets(self, caller):
         """The objects in reach this maker can act on, as `(id, label)`."""
@@ -408,4 +468,17 @@ def keeper(key, label, keep, command=None, **kwargs):
         value, said = keep(ctx)
         return menus.Picked(value, said)
 
-    return menus.Action(key, label, run=run, command=command, **kwargs)
+    action = menus.Action(key, label, run=run, command=command, **kwargs)
+    # Marked so that a command line giving everything can run it without
+    # opening a menu at all -- "give all the arguments and there is no menu",
+    # which is the rule every other command in the game already keeps.
+    action.keeps = True
+    return action
+
+
+def finisher(form, ctx):
+    """The action that finishes a form, or None."""
+    for item in form.items_for(ctx):
+        if getattr(item, "keeps", False):
+            return item
+    return None

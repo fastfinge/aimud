@@ -15,7 +15,7 @@ other.
 """
 
 from commands.command import Command
-from world import menus
+from world import making, menus
 from world import pronouns as pronoun_mod
 
 #: The order the wizard asks in, and what to call each form for somebody who
@@ -140,7 +140,13 @@ def _number_choices(ctx):
 
 
 def _keep(ctx):
-    """Register the set and give it to whoever asked for it."""
+    """
+    Register the set, give it to whoever asked, and answer with its name.
+
+    Answering with the name is what lets this same form be opened from a
+    picker -- the pronouns on somebody being built by hand -- and come back
+    with the set it just made. See world/making.py .
+    """
     world_root = ctx.world_root
     declared = {field: ctx.draft.get(field) for field, _example, _like in ASKED}
     declared["plural"] = bool(ctx.draft.get("plural"))
@@ -149,12 +155,14 @@ def _keep(ctx):
 
     slug = pronoun_mod.register(world_root, declared)
     if not slug:
-        return "That set was not complete enough to keep. Nothing changed."
+        raise menus.Refuse("That set was not complete enough to keep. "
+                           "Nothing changed.")
 
     pronoun_mod.give(ctx.character, slug, world_root)
     entry = pronoun_mod.get(world_root, slug)
-    return (f"This world now keeps |w{pronoun_mod.spelled(entry)}|n, and you "
-            f"go by it. Anybody here can use it, characters included.")
+    return slug, (f"This world now keeps |w{pronoun_mod.spelled(entry)}|n, and "
+                  f"you go by it. Anybody here can use it, characters "
+                  f"included.")
 
 
 NEW_SET = menus.Form(
@@ -170,6 +178,7 @@ NEW_SET = menus.Form(
                     choices=_number_choices, required=True,
                     show=lambda ctx, value: "not answered yet" if value is None
                     else _number_choices(ctx)[1 if value else 0].label),
-        menus.Action("keep", "Keep this set", run=_keep, after=menus.CLOSE),
+        making.keeper("keep", "Keep this set", _keep, after=menus.CLOSE,
+                      command=lambda ctx: "create pronouns"),
     ],
 )

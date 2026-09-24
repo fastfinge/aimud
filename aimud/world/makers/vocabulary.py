@@ -948,3 +948,270 @@ MAKERS = [
              "parser finds an invented word.",
     ),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Word lists
+# ---------------------------------------------------------------------------
+#
+# Word lists and pronoun sets were the first two things `create` ever reached
+# that were not a world, and they were each written out by hand: a Subject, a
+# Use per verb, a listing, a form, a deletion. Ported onto the table so there
+# is one way of adding something a player can make rather than two -- and
+# because the table had to prove it can carry a subject it did not shape.
+#
+# Three things were missing to do it, and all three are general rather than
+# concessions: a command line that fills more than one field (`Maker.opens`),
+# an entry in a view menu that is about the register rather than any one thing
+# in it (`extras`), and a maker anybody standing here may use (`owner`).
+
+
+def tokens_listing(root):
+    from world import token_lists
+
+    kept = token_lists.vocabulary(root)
+    if not kept:
+        return "This world keeps no word lists yet. |wcreate tokens|n makes one."
+    lines = ["Word lists this world keeps:", ""]
+    for name, entry in sorted(kept.items()):
+        lines.append(f"  |w{{{name}}}|n -- {token_lists.spelled(entry)} -- "
+                     f"{entry.get('means', '')}")
+    return "\n".join(lines)
+
+
+def token_entries(root):
+    from world import token_lists
+
+    found = []
+    for name, entry in sorted((token_lists.vocabulary(root) or {}).items()):
+        found.append((name, f"{{{name}}} -- {token_lists.spelled(entry)}",
+                      entry.get("means", "")))
+    return found
+
+
+def token_list(root, name):
+    from world import token_lists
+
+    name = str(name or "").strip()
+    entry = token_lists.get(root, name)
+    if entry is None:
+        return f"This world keeps no list called |w{name}|n."
+    lines = [f"|w{{{name.lower()}}}|n -- {entry.get('means', '')}",
+             f"Kept: {entry.get('scope')}"
+             + (f", as a condition in the group |w{entry['group']}|n"
+                if entry.get("group") else ""), ""]
+    for item in entry["entries"]:
+        weight = item.get("weight", 1)
+        sets = (item.get("sets") or {}).get("states") or []
+        lines.append(f"  {item['text']}"
+                     + (f"  (weight {weight:g})" if weight != 1 else "")
+                     + (f"  sets {', '.join(sets)}" if sets else ""))
+    return "\n".join(lines)
+
+
+def one_token_list(root, name):
+    """
+    One list, or what some text comes to.
+
+    `view tokens try <text>` is a question about the register rather than
+    about any one list in it, and the view menu offers it as its own entry.
+    The command line has spelled it this way since word lists existed, so it
+    is answered here rather than taken away.
+    """
+    said = str(name or "").strip()
+    if said.lower() == "try" or said.lower().startswith("try "):
+        return try_text(None, root, said[3:])
+    return token_list(root, said)
+
+
+def try_text(caller, root, text):
+    from world import tokens
+
+    if not str(text or "").strip():
+        return "Try what? |wview tokens try It smells of {smell}.|n"
+    shown = tokens.text(text, tokens.Context(viewer=caller, world_root=root,
+                                             purpose="display"))
+    return f"That comes to: {shown}"
+
+
+TRY_TOKENS = menus.Form(
+    key="try-tokens", title="Try some text",
+    items=[menus.Field(
+        "text", "Text to try",
+        get=lambda ctx: None,
+        set=lambda ctx, value: try_text(making.caller_of(ctx), _root(ctx),
+                                        value or ""),
+        prompt="Type some text with a list in braces, like It smells of {smell}",
+        help="Shows what a piece of text comes to for you, here, with each "
+             "list in braces replaced by one of its entries.")],
+)
+
+
+def token_extras(ctx):
+    return [menus.Submenu("try", "Try some text", TRY_TOKENS,
+                          command=lambda ctx: "view tokens try <text>")]
+
+
+def add_list(root, name, means, entries):
+    from world import token_lists
+
+    name = str(name or "").strip().lower()
+    if not name or not entries:
+        return ("A word list needs a name and at least one entry: "
+                "|wcreate tokens smell = brine | tar|n.")
+    used = token_lists.register(root, name, {
+        "means": str(means or "").strip() or f"a word list called {name}",
+        "entries": entries,
+    })
+    if not used:
+        return (f"|w{name}|n could not be kept. A list needs a name nothing "
+                f"else here uses, and entries that finish.")
+    if used != name:
+        return (f"This world already keeps |w{used}|n, which is the same list. "
+                f"Nothing changed.")
+    return f"This world now keeps |w{{{used}}}|n."
+
+
+def _split_entries(text):
+    return [part.strip() for part in str(text or "").split("|") if part.strip()]
+
+
+def _world_context(ctx):
+    """What a model filling in a word list should know about the world."""
+    from world import lore
+
+    root = _root(ctx)
+    if root is None:
+        return ""
+    return (f"The world is {lore.title(root)}: "
+            f"{(root.db.world_description or '').strip()}")
+
+
+def _sponsor(ctx):
+    from world import sponsor
+
+    return sponsor.of(making.caller_of(ctx))
+
+
+def keep_tokens(ctx):
+    name = str(ctx.draft.get("name") or "")
+    said = add_list(_root(ctx), name, ctx.draft.get("means") or "",
+                    _split_entries(ctx.draft.get("entries")))
+    if not said.startswith("This world now keeps"):
+        raise menus.Refuse(said)
+    return name.strip().lower(), said
+
+
+def opening_tokens(said):
+    """
+    `create tokens smell: what it is for = brine | tar`, as a draft.
+
+    Three fields out of one line, which is why a maker may name a function
+    here rather than one field. The line is what it always was; only where it
+    is read has moved.
+    """
+    left, sep, right = str(said or "").partition("=")
+    name, _colon, means = left.partition(":")
+    draft = {"name": name.strip()}
+    if means.strip():
+        draft["means"] = means.strip()
+    if sep and right.strip():
+        draft["entries"] = right.strip()
+    return draft
+
+
+NEW_TOKENS = menus.Form(
+    key="new-tokens", title="A new word list",
+    intro="A description that says {name} has one entry of the list chosen "
+          "for it, and keeps that choice.",
+    discard="Throw away this word list?",
+    sponsor=_sponsor,
+    context=_world_context,
+    items=[
+        menus.Field("name", "Name", required=True, suggestible=True,
+                    help="What descriptions write in braces: smell for {smell}. "
+                         "One lower-case word."),
+        menus.Field("means", "What it is for", suggestible=True,
+                    help="One line saying what the list is for, so the next "
+                         "model to see it uses it the same way."),
+        menus.Field("entries", "Entries", required=True, suggestible=True,
+                    prompt="Type the entries separated by a bar, like brine | "
+                           "tar | fish",
+                    help="The words or phrases the list chooses between."),
+        making.keeper("keep", "Keep this list", keep_tokens,
+                      after=menus.CLOSE,
+                      command=lambda ctx: "create tokens <list> = <entry> | "
+                                          "<entry>"),
+    ],
+)
+
+
+def remove_list(root, name):
+    from world import token_lists
+
+    said = str(name or "").strip()
+    removed, complaint = token_lists.unregister(root, said)
+    return f"|w{said}|n is gone." if removed else complaint
+
+
+def _delete_tokens_question(root, name):
+    return f"Delete the word list {name}? Descriptions that use it lose it."
+
+
+# ---------------------------------------------------------------------------
+# Pronoun sets
+# ---------------------------------------------------------------------------
+
+def pronoun_entries(root):
+    from world import pronouns
+
+    found = []
+    for name in sorted(pronouns.vocabulary(root) or {}):
+        entry = pronouns.get(root, name)
+        found.append((name, pronouns.spelled(entry) if entry else name))
+    return found
+
+
+def pronoun_text(root, name):
+    from world import pronouns
+
+    entry = pronouns.get(root, str(name or "").strip())
+    if entry is None:
+        return ""
+    return (f"|w{pronouns.spelled(entry)}|n -- {entry.get('means', '')}\n"
+            f"  |wpronouns {name}|n goes by it.")
+
+
+def _new_pronouns():
+    from commands.pronoun_cmds import NEW_SET
+
+    return NEW_SET
+
+
+MAKERS += [
+    making.Maker(
+        "tokens", ("tokens", "token", "wordlists", "wordlist"),
+        "Word lists", opens=opening_tokens,
+        listing=token_entries, one=one_token_list, extras=token_extras,
+        new=NEW_TOKENS, remove=remove_list,
+        delete_question=_delete_tokens_question,
+        make_label="A word list",
+        none="None of these -- make a new word list",
+        help="The word lists this world keeps. A description that writes "
+             "{smell} has one entry of the list chosen for it, and keeps that "
+             "choice, so twenty rooms written from one description differ.",
+    ),
+    making.Maker(
+        "pronouns", ("pronouns", "pronoun"),
+        "Pronoun sets", listing=pronoun_entries, one=pronoun_text,
+        new=_new_pronouns(), opens_with="subject",
+        # Anybody standing here, not only whoever made the world: how somebody
+        # is spoken about is a fact about them rather than about the world, and
+        # a guest refused one would be the world deciding it for them. See
+        # `Maker.owner`.
+        owner=False,
+        make_label="A pronoun set this world does not have",
+        help="Walks through the five forms and the verb after them. The set "
+             "is then there for everybody here, and you go by it.",
+    ),
+]

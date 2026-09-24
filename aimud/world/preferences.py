@@ -71,6 +71,9 @@ MODELS_CACHE = "openrouter_models_cache"
 
 #: Every confirmation, in the order the menu lists them: key, what it guards,
 #: and why it asks. docs/commands-and-settings.md §8.
+#: The confirmations that are not a maker's. Everything a maker asks before
+#: -- deleting one, forgetting one -- is generated from the table instead;
+#: `confirmations()` below is the whole list.
 CONFIRMATIONS = [
     ("delete_world", "Deleting a world", "A deleted world cannot be brought back."),
     ("reset_world", "Resetting a world", "Every room is destroyed and built again."),
@@ -323,13 +326,40 @@ def _confirmation_field(key, label, why):
                    help=f"{why} On asks yes or no first; off just does it.")
 
 
+def confirmations():
+    """
+    Every confirmation there is: the ones written above, and the makers'.
+
+    A maker that can delete or forget something asks before it does, and the
+    rule in docs/commands-and-settings.md §8 is that every confirmation has a
+    setting. Hand-writing one per maker would have been a list that is missing
+    an entry the day somebody adds a maker -- and a confirmation with no
+    setting is not one the player has chosen to keep, it is one the register
+    does not know about. So they are read off the table, which is the fifth
+    thing that reads it.
+
+    Read when asked rather than at import: the makers import the game.
+    """
+    from world import making
+
+    found = list(CONFIRMATIONS)
+    seen = {key for key, _label, _why in found}
+    for maker in making.registered():
+        for entry in maker.confirmations():
+            if entry[0] not in seen:
+                found.append(entry)
+                seen.add(entry[0])
+    return found
+
+
 def _all_confirmations(on):
     def run(ctx):
         if on:
             ctx.account.attributes.remove(m.CONFIRMATIONS_ATTR)
             return "Every confirmation is on."
-        ctx.account.attributes.add(m.CONFIRMATIONS_ATTR,
-                                   {key: False for key, _, _ in CONFIRMATIONS})
+        ctx.account.attributes.add(
+            m.CONFIRMATIONS_ATTR,
+            {key: False for key, _label, _why in confirmations()})
         return "Every confirmation is off. Nothing will ask before it acts."
     return run
 
@@ -338,9 +368,9 @@ CONFIRMATIONS_FORM = m.Form(
     key="confirmations", title="Confirmations",
     intro="Whether you are asked yes or no before each of these. All are on "
           "until you turn them off.",
-    items=[
+    items=lambda ctx: [
         *(_confirmation_field(key, label, why)
-          for key, label, why in CONFIRMATIONS),
+          for key, label, why in confirmations()),
         m.Action("allon", "Turn every confirmation on",
                  run=_all_confirmations(True)),
         m.Action("alloff", "Turn every confirmation off",
@@ -1021,6 +1051,24 @@ def listing(ctx):
 _SETTING_WORDS = None
 
 
+def _listed_items(form):
+    """
+    A form's items, when they can be had without anybody looking at it.
+
+    Most are a plain list. Confirmations are a function, because what they
+    offer is read off the maker table and that cannot be read at import time;
+    they do not look at the context, so they answer to None. A form whose
+    items genuinely depend on who is asking has no settings to document and
+    falls out here rather than being guessed at.
+    """
+    if not callable(form.items):
+        return list(form.items or [])
+    try:
+        return list(form.items(None) or [])
+    except Exception:
+        return []
+
+
 def setting_words():
     """
     Every word `settings` answers to after its own name, whoever is asking.
@@ -1039,9 +1087,8 @@ def setting_words():
     found = {"list"}
     for key, _label, _scope, form, _about, _visible in GROUPS:
         found.add(key)
-        if not callable(form.items):
-            for item in form.items:
-                found.update(item.names())
+        for item in _listed_items(form):
+            found.update(item.names())
     # The one group whose entries are built per caller. They are the same
     # entries every time -- what varies is whether there is a world to show
     # them for -- so asking for them with no context is safe.
@@ -1054,9 +1101,7 @@ def setting_words():
 def static_fields():
     """(group key, field) for every setting whose description needs no context."""
     for key, _label, _scope, form, _about, _visible in GROUPS:
-        if callable(form.items):
-            continue
-        for item in form.items:
+        for item in _listed_items(form):
             if isinstance(item, m.Field):
                 yield key, item
     yield "you", NAME

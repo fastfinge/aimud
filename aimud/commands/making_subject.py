@@ -60,7 +60,7 @@ def _view_form(maker):
     return menus.Form(
         key=f"view-{maker.key}", title=maker.label, kind=menus.VIEW,
         intro=lambda ctx: listing_text(maker, _root(ctx)),
-        items=lambda ctx: [
+        items=lambda ctx: maker.extra_items(ctx) + [
             menus.Action(f"at{number}", label,
                          run=lambda ctx, value=value: one_text(
                              maker, _root(ctx), value),
@@ -95,22 +95,92 @@ def _create_run(maker):
     def run(cmd, ctx, words):
         caller = cmd.caller
         root = require_world(caller)
-        if root is None or not require_owner(
-                caller, root, f"add {maker.key} to it"):
+        if root is None or not _may_change(maker, caller, root,
+                                           f"add {maker.key} to it"):
             return
         draft = maker.opening_draft(" ".join(words)) if words else {}
         if words and not draft:
             caller.msg(f"|w{maker.key}|n takes nothing on the line; the menu "
                        f"asks for what it needs.")
-        menus.open_menu(caller, maker.new, session=cmd.session, draft=draft,
-                        world_root=root)
+        if draft and _kept_outright(maker, cmd, root, draft):
+            return
+        if draft and _said_what_is_missing(maker, cmd, root, draft):
+            return
+        # Opened through `create`'s own menu rather than straight at the form,
+        # so that `b` backs out to what else can be made here. That is what
+        # `create tokens` and `create pronouns` have always done, and the
+        # difference is only visible from inside: a form opened on its own has
+        # nothing behind it to go back to.
+        from commands.subjects import verb_form
+
+        menus.open_menu(caller, verb_form("create"), session=cmd.session,
+                        path=[maker.key], world_root=root, opening=draft)
 
     return run
+
+
+def _kept_outright(maker, cmd, root, draft):
+    """
+    A line that gave everything is kept there and then. True when it was.
+
+    The rule every command in this game keeps, said once here for every maker
+    instead of once per maker: leave the arguments out and you get a menu,
+    give part of them and the menu opens at that point, give all of them and
+    there is no menu (docs/commands-and-settings.md §4). `create tokens smell
+    = brine | tar` is the line that has always done this, and the port is
+    what made it everybody's.
+    """
+    form = maker.new
+    ctx = menus.Context(cmd.caller, session=cmd.session, draft=dict(draft),
+                        world_root=root)
+    if form.unset_required(ctx) is not None:
+        return False
+    finishing = making.finisher(form, ctx)
+    if finishing is None:
+        return False
+    try:
+        answered = finishing.run(ctx)
+    except menus.Refuse as refusal:
+        cmd.caller.msg(str(refusal))
+        return True
+    cmd.caller.msg(getattr(answered, "said", None) or str(answered or ""))
+    return True
+
+
+def _said_what_is_missing(maker, cmd, root, draft):
+    """
+    For somebody with no menu: what the line still needs. True when it was said.
+
+    A half-finished line is the one case where the general answer is worse
+    than the old particular one. `open_menu` tells a caller with no session
+    what the *menu* offers, which for a partial line is the whole `create`
+    list over again and not the two words that are missing. An agent, a batch
+    file or a player who turned menus off is owed the answer they asked for.
+    """
+    ctx = menus.Context(cmd.caller, session=cmd.session, draft=dict(draft),
+                        world_root=root)
+    runner = ctx.account or cmd.caller
+    if menus.interactive(runner):
+        return False
+    wanted = [item for item in maker.new.items_for(ctx)
+              if isinstance(item, menus.Field) and item.required
+              and not item.is_set(ctx)]
+    if not wanted:
+        return False
+    finishing = making.finisher(maker.new, ctx)
+    typed = finishing.command_for(ctx) if finishing is not None else ""
+    said = ", ".join(item.label_for(ctx).lower() for item in wanted)
+    cmd.caller.msg(f"That {maker.key} still needs its {said}."
+                   + (f" Type |w{typed}|n." if typed else ""))
+    return True
 
 
 def _create_items(maker):
     return lambda ctx: [menus.Submenu(
         maker.key, maker.make_label, maker.new, fresh_draft=True,
+        # What was typed on the line, handed down into the fresh draft. A
+        # submenu with a draft of its own would otherwise drop it.
+        draft=lambda ctx: dict((ctx.data or {}).get("opening") or {}),
         data=lambda ctx: {"world_root": _root(ctx)},
         help=maker.help, aliases=maker.words[1:],
         command=lambda ctx: f"create {maker.key}")]
@@ -181,8 +251,8 @@ def _edit_run(maker):
     def run(cmd, ctx, words):
         caller = cmd.caller
         root = require_world(caller)
-        if root is None or not require_owner(
-                caller, root, f"change its {maker.key}"):
+        if root is None or not _may_change(
+                maker, caller, root, f"change its {maker.key}"):
             return
         if maker.sole:
             menus.open_menu(caller, maker.edit(root, None),
@@ -236,7 +306,9 @@ def _edit_reached(maker, cmd, root, words):
 # Removing one
 # ---------------------------------------------------------------------------
 
-def _delete_question(maker, ident):
+def _delete_question(maker, root, ident):
+    if maker.delete_question is not None:
+        return maker.delete_question(root, ident)
     return f"Delete the {maker.key} {ident}?"
 
 
@@ -246,7 +318,7 @@ def _delete_items(maker):
             f"at-{value}".lower(), label,
             run=lambda ctx, value=value: maker.remove(_root(ctx), value),
             confirm=f"delete_{maker.key}",
-            question=_delete_question(maker, value),
+            question=_delete_question(maker, _root(ctx), value),
             after=menus.STAY, aliases=names_for(value),
             command=lambda ctx: f"delete {maker.key} {value}")
 
@@ -259,7 +331,7 @@ def _reached_delete_items(maker):
             f"at-{ident}", label,
             run=lambda ctx, ident=ident: maker.remove(_root(ctx), ident),
             confirm=f"delete_{maker.key}",
-            question=_delete_question(maker, label), after=menus.STAY,
+            question=_delete_question(maker, _root(ctx), label), after=menus.STAY,
             command=lambda ctx: f"delete {maker.key} {label}")
 
     return one
@@ -269,8 +341,8 @@ def _delete_run(maker):
     def run(cmd, ctx, words):
         caller = cmd.caller
         root = require_world(caller)
-        if root is None or not require_owner(
-                caller, root, f"change its {maker.key}"):
+        if root is None or not _may_change(
+                maker, caller, root, f"change its {maker.key}"):
             return
         words, yes = answered(words)
         if maker.reached is not None:
@@ -283,7 +355,7 @@ def _delete_run(maker):
                 session=cmd.session, world_root=root)
             return
         ident = " ".join(words)
-        asking(cmd, _delete_question(maker, ident), f"delete_{maker.key}",
+        asking(cmd, _delete_question(maker, root, ident), f"delete_{maker.key}",
                f"delete {maker.key} {ident}",
                lambda: caller.msg(maker.remove(root, ident)), already=yes)
 
@@ -305,7 +377,7 @@ def _delete_reached(maker, cmd, root, words, yes):
         caller.msg(complaint or f"Which {maker.key}?")
         return
     ident, label = str(found.id), found.key
-    asking(cmd, _delete_question(maker, label), f"delete_{maker.key}",
+    asking(cmd, _delete_question(maker, root, label), f"delete_{maker.key}",
            f"delete {maker.key} {said}",
            lambda: caller.msg(maker.remove(root, ident)), already=yes)
 
@@ -338,8 +410,8 @@ def _reset_run(maker):
     def run(cmd, ctx, words):
         caller = cmd.caller
         root = require_world(caller)
-        if root is None or not require_owner(
-                caller, root, f"change its {maker.key}"):
+        if root is None or not _may_change(
+                maker, caller, root, f"change its {maker.key}"):
             return
         words, yes = answered(words)
         if not words:
@@ -375,11 +447,25 @@ def _delete_menu(maker):
                         _delete_items(maker))
 
 
+def _may_change(maker, caller, root, what):
+    """
+    Whether this caller may build with this maker, telling them if not.
+
+    Almost always "whoever made the world", which is what everything the
+    world is built out of needs. A pronoun set is the exception and says so
+    on the maker: it is a fact about the person choosing it, and refusing one
+    to a guest would be the world deciding how they are spoken about.
+    """
+    if not maker.owner:
+        return True
+    return require_owner(caller, root, what)
+
+
 def _offered(maker, owner):
     def offered(ctx):
         if not maker.is_offered(ctx):
             return False
-        return owns_here(ctx) if owner else in_world(ctx)
+        return owns_here(ctx) if (owner and maker.owner) else in_world(ctx)
 
     return offered
 

@@ -1097,6 +1097,47 @@ class TheCommands(GameCommandTest):
         self.assertIn("Forget what this world settled", said)
         self.assertIsNotNone(kinds.spec(self.root, settled))
 
+    def test_a_line_that_gives_everything_needs_no_menu(self):
+        """The rule every command keeps, now kept by every maker. Docs 4."""
+        from commands.verbs import CmdCreate
+        from world import token_lists
+
+        said = self.call(CmdCreate(),
+                         "tokens smell: what docks smell of = brine | tar")
+        self.assertIn("This world now keeps", said)
+        self.assertIsNotNone(token_lists.get(self.root, "smell"))
+
+    def test_and_a_line_that_gives_part_says_what_is_missing(self):
+        """For a caller with no menu, which is what the old command did."""
+        from commands.verbs import CmdCreate
+        from world import token_lists
+
+        said = self.call(CmdCreate(), "tokens smell")
+        self.assertIsNone(token_lists.get(self.root, "smell"))
+        self.assertIn("still needs its entries", said)
+        self.assertIn("create tokens", said)
+
+    def test_and_says_it_for_every_maker(self):
+        ctx = menus.Context(self.char1, world_root=self.root)
+        for maker in making.registered():
+            if maker.new is None:
+                continue
+            with self.subTest(maker=maker.key):
+                finishing = making.finisher(maker.new, ctx)
+                self.assertIsNotNone(
+                    finishing,
+                    f"{maker.key}'s form has no finishing action, so a line "
+                    f"giving everything cannot be kept without a menu")
+
+    def test_anybody_here_may_add_a_pronoun_set(self):
+        """How somebody is spoken about is theirs, not the world's. Maker.owner."""
+        from commands.verbs import CmdCreate
+
+        self.root.db.world_creator = self.account2
+        self.assertNotIn("Only whoever made",
+                         self.call(CmdCreate(), "pronouns"))
+        self.assertIn("Only whoever made", self.call(CmdCreate(), "tokens"))
+
     def test_the_parser_still_lets_the_world_have_its_own_verbs(self):
         """`create kind` is ours; `create a distraction` is the world's."""
         from commands import subjects
@@ -1356,25 +1397,28 @@ class TypingItAllOnOneLine(Building):
             if maker.new is None:
                 continue
             with self.subTest(maker=maker.key):
-                self.assertTrue(maker.opens_with,
+                self.assertTrue(maker.opens_with or maker.opens,
                                 f"{maker.key} takes nothing on the line")
 
     def test_and_it_lands_in_the_draft(self):
         for maker in making.registered():
-            if maker.new is None:
+            if maker.new is None or not maker.opens_with:
                 continue
             with self.subTest(maker=maker.key):
                 self.assertEqual(maker.opening_draft("something"),
                                  {maker.opens_with: "something"})
 
-    def test_and_names_a_field_the_form_actually_has(self):
+    def test_and_names_fields_the_form_actually_has(self):
         ctx = menus.Context(self.char1, world_root=self.root)
         for maker in making.registered():
             if maker.new is None:
                 continue
             with self.subTest(maker=maker.key):
                 keys = {item.key for item in maker.new.items_for(ctx)}
-                self.assertIn(maker.opens_with, keys)
+                for named in maker.opening_draft("something"):
+                    self.assertIn(named, keys)
+
+
 
     def test_a_kind_opens_with_its_word_filled_in(self):
         kind = making.get("kind")
@@ -1405,3 +1449,105 @@ class NoTwoChoicesShareAName(Building):
                             f"{verb}: {name!r} is claimed by {item.key} and "
                             f"{seen.get(name)}")
                     seen[name] = item.key
+
+
+@tag("world")
+class WhatThePortSurfaced(Building):
+    """
+    Two things that were quietly broken until word lists and pronoun sets
+    moved onto the table, and one that was only ever half true.
+
+    Worth their own class because none of them is about the port: they are
+    about the table being asked to carry something it did not shape, which is
+    the only way to find out what it was assuming.
+    """
+
+    def test_a_form_opened_on_its_own_still_closes_when_it_says_to(self):
+        """
+        `Picked` used to swallow the action's `after`.
+
+        A maker's form answers with the same `Picked` whether a picker opened
+        it or `create tokens` did. With nobody waiting it has to behave as the
+        ordinary action it is, or every form that said `after=CLOSE` quietly
+        stopped closing.
+        """
+        from world.makers import vocabulary
+
+        self.open(vocabulary.NEW_TOKENS, world_root=self.root)
+        self.type("1")
+        self.type("smell")
+        self.type("3")
+        self.type("brine | tar")
+        self.type("keep")
+        self.assertIn("This world now keeps", " ".join(self.said))
+        self.assertFalse(self.is_open)
+
+    def test_and_a_picker_can_make_a_pronoun_set_and_come_back_with_it(self):
+        """
+        Which it could not, because that form answered with a string.
+
+        The NPC being built by hand offers this world's pronoun sets and the
+        chance to add one; before the port the added set was registered and
+        then dropped on the floor, and the picker stayed empty.
+        """
+        from world import pronouns
+        from world.makers import things
+
+        picker = next(item for item in things._npc_items(
+            menus.Context(self.char1, world_root=self.root))
+            if item.key == "pronouns")
+        form = menus.Form(key="holder", title="Holder", items=[picker])
+        self.open(form, world_root=self.root)
+        self.type("1")
+        self.type("new")
+        for answer in ("ze", "zir", "zir", "zirs", "zirself"):
+            self.type(answer)
+        self.type("1")
+        self.type("keep")
+        self.assertIn("ze", pronouns.vocabulary(self.root))
+        # And the picker is set to it, which is the half that was missing.
+        shown = self.type("l")
+        self.assertIn("ze", shown)
+
+    def test_a_maker_that_is_not_the_world_owners_says_so(self):
+        self.assertFalse(making.get("pronouns").owner)
+        for key in ("tokens", "kind", "rule", "item", "quest"):
+            self.assertTrue(making.get(key).owner, key)
+
+
+@tag("unit")
+class EveryConfirmationCanBeTurnedOff(SimpleTestCase):
+    """
+    §8 of docs/commands-and-settings.md: every confirmation has a setting.
+
+    It was true of the hand-written ones and silently untrue of the generated
+    ones -- `delete rule` asked every time and `settings confirmations` did
+    not know it existed, which is the registry missing an entry rather than
+    the player having chosen anything.
+    """
+
+    def setUp(self):
+        making.forget()
+
+    def test_every_maker_that_asks_is_in_the_register(self):
+        from world import preferences
+
+        known = {key for key, _label, _why in preferences.confirmations()}
+        for maker in making.registered():
+            for key, _label, _why in maker.confirmations():
+                with self.subTest(key=key):
+                    self.assertIn(key, known)
+
+    def test_and_the_hand_written_ones_are_still_there(self):
+        from world import preferences
+
+        known = {key for key, _label, _why in preferences.confirmations()}
+        for key in ("delete_world", "reset_world", "discard", "suggestion",
+                    "delete_tokens"):
+            self.assertIn(key, known)
+
+    def test_no_key_is_listed_twice(self):
+        from world import preferences
+
+        keys = [key for key, _label, _why in preferences.confirmations()]
+        self.assertEqual(len(keys), len(set(keys)))
