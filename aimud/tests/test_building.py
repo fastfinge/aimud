@@ -1670,3 +1670,87 @@ class EveryChoiceCanBeOpened(Building):
                 asked = [item.key for item in errands.NEW_GOAL.items_for(ctx)]
                 for field in fields:
                     self.assertIn(field, asked)
+
+
+@tag("world")
+class FinishingClosesTheForm(Building):
+    """
+    When the thing exists, the form is done with you.
+
+    Both halves were wrong and the second is the one that grates: the menu
+    stayed open after writing, and then quitting asked whether to throw away
+    what had been entered -- about a kind that was already in the register.
+    Asking somebody to confirm the loss of something that is not lost is
+    worse than not asking, because it teaches them to answer yes unread.
+    """
+
+    def test_keeping_something_closes_the_menu(self):
+        from world import kinds
+        from world.makers import vocabulary
+
+        self.open(vocabulary.NEW_KIND, world_root=self.root)
+        self.type("cup")                 # the one required field
+        said = self.type("keep")
+        self.assertIn("This world now knows", said)
+        self.assertFalse(self.is_open)
+        self.assertIsNotNone(kinds.spec(self.root, kinds.canonical("cup")))
+
+    def test_and_says_how_to_type_it_next_time(self):
+        from world.makers import vocabulary
+
+        self.open(vocabulary.NEW_KIND, world_root=self.root)
+        self.type("cup")
+        self.type("keep")
+        self.assertIn("create kind", " ".join(self.said))
+
+    def test_nothing_is_asked_about_throwing_away_what_was_written(self):
+        from world.makers import vocabulary
+
+        self.open(vocabulary.NEW_KIND, world_root=self.root)
+        self.type("cup")
+        self.type("keep")
+        self.assertNotIn("Throw away", " ".join(self.said))
+
+    def test_and_a_form_left_half_filled_still_asks(self):
+        """The confirmation is right when there really is something to lose."""
+        from world.makers import vocabulary
+
+        self.open(vocabulary.NEW_KIND, world_root=self.root)
+        self.type("cup")
+        said = self.type("q")
+        self.assertIn("Throw away", said)
+        self.assertTrue(self.is_open)
+
+    def test_every_maker_closes_when_it_is_finished(self):
+        ctx = menus.Context(self.char1, world_root=self.root)
+        for maker in making.registered():
+            if maker.new is None:
+                continue
+            with self.subTest(maker=maker.key):
+                finishing = making.finisher(maker.new, ctx)
+                self.assertIsNotNone(finishing, maker.key)
+                self.assertEqual(finishing.after, menus.CLOSE, maker.key)
+
+    def test_and_a_picker_still_gets_its_value_back(self):
+        """
+        Closing is what happens when nobody was waiting, and only then.
+
+        The two used to be in tension -- the form had to stay open so a
+        picker could take the value -- and `Picked` saying "nobody was
+        waiting" is what let them both be true.
+        """
+        from world import verbs
+
+        self.open(making.get("condition").new, world_root=self.root)
+        self.type("brewed")
+        self.type("group")
+        self.type("new")
+        self.type("brewing")
+        self.type("yes")
+        self.type("keep")
+        # The group was made and the picker came back with it: still open, in
+        # the condition's own form, with the group set.
+        self.assertTrue(self.is_open)
+        self.assertIn("brewing", verbs.groups(self.root))
+        self.type("keep")
+        self.assertFalse(self.is_open)

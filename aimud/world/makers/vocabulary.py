@@ -241,7 +241,7 @@ NEW_KIND = menus.Form(
                     parse=lambda ctx, text: _read_holds(text),
                     help="Whether things can be put in, on, under or behind "
                          "one. Several, separated by spaces."),
-        making.keeper("keep", "Keep this kind", keep_kind, after=menus.STAY,
+        making.keeper("keep", "Keep this kind", keep_kind,
                       command=lambda ctx: "create kind <word>"),
     ],
 )
@@ -505,7 +505,6 @@ NEW_ATTRIBUTE = menus.Form(
                          "for a figure that only changes when something "
                          "changes it."),
         making.keeper("keep", "Keep this attribute", keep_attribute,
-                      after=menus.STAY,
                       command=lambda ctx: "create attribute <word>"),
     ],
 )
@@ -636,7 +635,7 @@ NEW_GROUP = menus.Form(
         menus.Field("prevents_moving", "Stops you moving?", kind=menus.BOOLEAN),
         menus.Field("prevents_speaking", "Stops you speaking?",
                     kind=menus.BOOLEAN),
-        making.keeper("keep", "Keep this group", keep_group, after=menus.STAY),
+        making.keeper("keep", "Keep this group", keep_group),
     ],
 )
 
@@ -713,7 +712,6 @@ def _new_condition_items(ctx):
                  "worked out whenever anybody asks. Starving is hunger at ten "
                  "or less, defined once."),
         making.keeper("keep", "Keep this condition", keep_condition,
-                      after=menus.STAY,
                       command=lambda ctx: "create condition <word>"),
     ]
     return items
@@ -865,7 +863,7 @@ NEW_FOLD = menus.Form(
                      help="Something this world already knows: one of its "
                           "verbs, or one of its sorts of thing. Which "
                           "register it is in decides what the fold does."),
-        making.keeper("keep", "Keep this word", keep_fold, after=menus.STAY,
+        making.keeper("keep", "Keep this word", keep_fold,
                       command=lambda ctx: "create word <word>"),
     ],
 )

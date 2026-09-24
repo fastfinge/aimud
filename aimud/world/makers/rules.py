@@ -899,7 +899,7 @@ def _rule_items(ctx):
         menus.Submenu("phase", _phase_label, PHASE_FORM,
                       help="What else runs. Asked last, because it is the one "
                            "field that is about the rest of the rule."),
-        making.keeper("keep", "File this rule", keep_rule, after=menus.STAY,
+        making.keeper("keep", "File this rule", keep_rule,
                       command=lambda ctx: "create rule <name>"),
     ]
 

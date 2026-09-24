@@ -206,7 +206,7 @@ NEW_ITEM = menus.Form(
                     choices=lambda ctx: [menus.Choice(v, l) for v, l in WHERE]),
         menus.Picker("host", "In or on what", options=host_options,
                      lock=_needs_host),
-        making.keeper("keep", "Make it", keep_item, after=menus.STAY,
+        making.keeper("keep", "Make it", keep_item,
                       command=lambda ctx: "create item <name>"),
     ],
 )
@@ -426,7 +426,7 @@ NEW_ROOM = menus.Form(
                          "what makes `only one of these in this area` "
                          "answerable, and what a rule about that sort of "
                          "place reaches."),
-        making.keeper("keep", "Make it", keep_room, after=menus.STAY,
+        making.keeper("keep", "Make it", keep_room,
                       command=lambda ctx: "create room <direction>"),
     ],
 )
@@ -588,7 +588,7 @@ NEW_EXIT = menus.Form(
         menus.Field("returning", "What the way back is called",
                     lock=lambda ctx: bool(ctx.draft.get("both")),
                     help="Left empty, the opposite of the way out, or `back`."),
-        making.keeper("keep", "Open it", keep_exit, after=menus.STAY,
+        making.keeper("keep", "Open it", keep_exit,
                       command=lambda ctx: "create way <name>"),
     ],
 )
@@ -731,7 +731,7 @@ def _npc_items(ctx):
             empty="nothing in particular",
             help="What they are working towards. Without a model they will "
                  "not plan for it, and a rule can still test it."),
-        making.keeper("keep", "Make them", keep_npc, after=menus.STAY,
+        making.keeper("keep", "Make them", keep_npc,
                       command=lambda ctx: "create person <name>"),
     ]
 

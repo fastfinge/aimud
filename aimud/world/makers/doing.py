@@ -156,7 +156,6 @@ NEW_ACTION = menus.Form(
                          "-- reviving, struggling. A dead character who can "
                          "still open doors is not dead."),
         making.keeper("keep", "Declare this action", keep_action,
-                      after=menus.STAY,
                       command=lambda ctx: "create action <verb>"),
     ],
 )

@@ -397,7 +397,6 @@ def _quest_items(ctx):
                          "errand written and unoffered, for a world that "
                          "wants to ask for it some other way."),
         making.keeper("keep", "Write this errand", keep_quest,
-                      after=menus.STAY,
                       command=lambda ctx: "create quest <name>"),
     ]
 

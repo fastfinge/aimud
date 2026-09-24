@@ -1060,6 +1060,16 @@ to `world/menus.py`. Where it differs:
   in front of a player rather than a failure at import. Found by the way out of
   a room, whose natural name is `exit` and which is the word that quits every
   menu in the game; it is called a **way** (§9.2).
+* **A finished form closes, and stops calling itself unsaved.** It could not
+  before: a maker's form had to stay open so a picker could take the value
+  back, so every one of them said `after=STAY` and you had to quit a form
+  whose whole job was already done -- and then answer "throw away what you
+  have entered?" about a kind that was in the register. Asking somebody to
+  confirm the loss of something that is not lost is worse than not asking,
+  because it teaches them to answer yes unread. `Picked` learning to say
+  "nobody was waiting" is what let both be true at once: with a picker
+  waiting the value goes back and the form stays; with nobody waiting the
+  form closes, and the draft is marked written rather than dirty.
 * **A menu can no longer trap anybody, whatever breaks inside it.** The worst
   shape a bug in this game can take, and it took it. A menu's cmdset takes
   every line typed before any command sees it, so a form that raises while

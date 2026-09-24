@@ -466,13 +466,25 @@ def keeper(key, label, keep, command=None, **kwargs):
 
     `keep(ctx)` writes and returns `(value, what to say)`, or raises
     `menus.Refuse`. The value is what a picker was waiting for; with nobody
-    waiting the menu simply says it and goes back, which is what `create kind`
-    typed on its own should do.
+    waiting the menu closes, because the thing it was open to make now exists.
+
+    **It closes, and the draft stops being dirty.** Both halves matter and the
+    second is easy to miss: a form that has written what it was filled in with
+    has nothing left to throw away, and leaving it marked dirty meant quitting
+    afterwards asked "throw away what you have entered?" about a kind that was
+    already in the register. Asking somebody to confirm the loss of something
+    that is not lost is worse than not asking at all -- it teaches them to
+    answer yes without reading.
     """
     from world import menus
 
+    kwargs.setdefault("after", menus.CLOSE)
+
     def run(ctx):
         value, said = keep(ctx)
+        # Written, so there is nothing in hand any more. `_leave` reads this
+        # to decide whether quitting needs a confirmation.
+        ctx.dirty = False
         return menus.Picked(value, said)
 
     action = menus.Action(key, label, run=run, command=command, **kwargs)
