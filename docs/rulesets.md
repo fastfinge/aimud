@@ -914,3 +914,47 @@ the change working, and regenerating a world is expensive enough that it should
 be something somebody chooses rather than something a checkbox does to them.
 
 A world still being made is never asked: it has no history to lose.
+
+---
+
+## 14. A verb that worked once and said it had worked twice
+
+The soak's sharpest find, and the oldest bug this work turned up — it is on
+`master` and predates the branch by a long way.
+
+```
+> forage
+You forage about and turn up a scrap of twisted metal.
+> forage
+You forage about and turn up a scrap of twisted metal.
+> inventory
+a scrap of twisted metal
+```
+
+A narration is cached against the things it was written about, so a world does
+not pay a model to describe the same act on the same thing for ever. That is
+right and worth keeping. What was wrong is that the cache answered the **whole
+attempt**: `_with_rule` returned the stored sentence before reaching `_finish`,
+which is where effects land, after rules run, memory is written and quests are
+reviewed. So the second time anybody did anything, nothing happened and they
+were told it had.
+
+There was already a second, correct cached path a few lines below `_finish` —
+stored words, effects still applied. It was simply unreachable for the
+commonest case, because the early return got there first.
+
+**Why it survived this long.** Most verbs worth doing twice are refused the
+second time for a reason of their own: the lamp is already lit, the door is
+already open, the note is already read. The precondition fires first and the
+cache is never reached. Seeing the bug needs a verb with *no* precondition and
+a real effect — forage, dig, search, combine — which is to say it needs
+crafting, which is what the soak was for.
+
+It also explains the shape of the report better than the report did. "It says
+it did" is the symptom of a replayed narration; so is a `combine` that appears
+to work and leaves the world unchanged.
+
+`repeatable` on a rule was an earlier attempt at the same problem, from the
+other end: mark a rule as worth running twice and skip the cache for it.
+Nothing ever set it, and it is moot now — effects always run, so there is
+nothing for the flag to protect.

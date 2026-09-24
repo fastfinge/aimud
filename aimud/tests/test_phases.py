@@ -378,3 +378,64 @@ class WhenTheStandardRulesThemselvesChange(RunningTheAttempt):
         _a_version_behind(self.root)
         standard_rules.seed(self.root)
         self.assertIsNotNone(actions.spec(self.root, "launch"))
+
+
+@tag("world")
+class DoingSomethingTwice(RunningTheAttempt):
+    """
+    The soak's sharpest find: a verb worked once and said it had worked twice.
+
+    A narration is cached against the things it was written about, so a world
+    does not pay a model to describe the same act on the same thing for ever.
+    That was right. What was wrong is that the cache answered the *whole*
+    attempt: the reply returned before `_finish`, which is where effects land,
+    after rules run, memory is written and quests are reviewed. So the second
+    time anybody did anything, nothing happened and they were told it had.
+
+    It hid behind the preconditions. Most verbs worth doing twice are refused
+    the second time for a reason of their own -- the lamp is already lit, the
+    door already open -- so the refusal came first and the cache was never
+    reached. Seeing it takes a verb with no precondition and a real effect,
+    which is exactly what foraging is.
+    """
+
+    def forage_rule(self):
+        R.add(self.root, R.blank(
+            action="forage", phase=R.CARRY_OUT, scope={"world": True},
+            name="foraging turns up scrap",
+            effects=[{"type": "create_object",
+                      "name": "scrap of twisted metal",
+                      "why": "what foraging turns up", "location": "actor"}]))
+
+    def scraps(self):
+        return [obj for obj in self.char1.contents if "scrap" in obj.key]
+
+    def test_a_verb_with_no_object_runs_its_effects_every_time(self):
+        self.forage_rule()
+        for expected in (1, 2, 3):
+            self.try_it("forage")
+            self.assertEqual(len(self.scraps()), expected,
+                             f"foraging {expected} times should give "
+                             f"{expected} scraps")
+
+    def test_and_still_says_so_from_the_cache(self):
+        """
+        The cache is kept -- it is what stops a world paying to describe the
+        same act for ever. It describes; it no longer decides.
+        """
+        self.forage_rule()
+        first = self.try_it("forage")
+        again = self.try_it("forage")
+        self.assertEqual(first, again)
+
+    def test_a_verb_on_the_same_object_runs_its_effects_twice(self):
+        R.add(self.root, R.blank(
+            action="read", phase=R.CARRY_OUT, scope={"world": True},
+            name="reading wears the book a little",
+            effects=[{"type": "set_trait", "role": "actor",
+                      "trait": "tiredness", "change": 1}]))
+        from world import traits
+
+        self.try_it("read book")
+        self.try_it("read book")
+        self.assertEqual(traits.value(self.char1, "tiredness"), 2)

@@ -1179,25 +1179,28 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
               if contest else None)
     outcome = result["outcome"] if result else "success"
 
+    # A narration already written for these things, if there is one. **The
+    # words only.** This used to be an early return -- reply with the stored
+    # sentence and go home -- and going home meant skipping `_finish`, which
+    # is where the effects are applied, the after rules run, the memory is
+    # written and the quest review happens. So the second time anybody did
+    # anything, nothing happened and they were told it had.
+    #
+    # It hid for a long time behind the preconditions. Most verbs worth doing
+    # twice are refused the second time for a reason of their own -- the lamp
+    # is already lit, the door already open -- so the refusal came first and
+    # the cache was never reached. What it takes to see it is a verb with no
+    # precondition and a real effect, which is exactly what crafting is: a
+    # soak world foraged twice, was told twice that it had found a scrap of
+    # twisted metal, and held one scrap.
+    #
+    # The cache is still worth having and still costs nothing -- it is what
+    # keeps a world from paying a model to describe the same act on the same
+    # thing for ever. It just describes; it does not decide.
+    # There was a second, correct cached path already, below `_finish`, which
+    # uses the stored words *and* runs the effects. It was simply unreachable
+    # for the commonest case, because the early return got there first.
     cached = _cached_narration(bound, verb, outcome, caller)
-    # A contested verb always runs its effects again: the player swung again,
-    # and this time it landed. Only a verb with a settled, single outcome may
-    # answer from the cache without touching the world.
-    if cached is not None and result is None and not rule.get("repeatable"):
-        # What is cached is the template, so the room line still names its
-        # actor as {actor} and has to be filled in here too -- broadcasting it
-        # raw hands a stray format placeholder to msg_contents.
-        # Counted like any other success. A verb answered from the cache is the
-        # commonest kind of working verb there is, and leaving it out would make
-        # every world look as though it refused far more than it allowed --
-        # which is the exact figure a suggester weighs its proposals by.
-        counters.note(world_root, verb, bound, caller, counters.DONE)
-        release(cached.get("actor", ""),
-                events_mod.Event(
-                    actor=caller, room=room, verb=verb, roles=bound,
-                    outcome=outcome, raw=raw,
-                    room_template=events_mod.repair(cached.get("room", ""))))
-        return
 
     # Whether this rule's own effects are the whole of the answer. Looking is
     # the case: `describe` returns the appearance, and a model asked to narrate
