@@ -541,3 +541,466 @@ Permadeath was a tenth and is not being built — see §5.5.
 * **No per-ruleset storage.** Rules go in `db.rules` with the rest, marked by
   `source`, for the reason `rulebooks.py` gives for one store rather than five.
 * **No count in `bulk`.** §3.2.
+
+---
+
+## 9. What was actually built, and where it differs
+
+Written after the fact, against `3f99cfb` and what follows it. Steps 1–9 are
+done; step 10 was a soak, and permadeath was declined in §5.5 before any of it
+started. Everything below is a place where building it taught us something the
+plan had wrong.
+
+### The counting work found three bugs the plan did not predict
+
+All three fail by doing nothing, which is why none of them had been noticed.
+
+* **`conditions.as_goal` put a clause's value through `str()`.** A check rule
+  refusing for want of two lumps of coal handed the planner a goal for an
+  object called `"{'of_kind': 'coal.n.01', 'count': 2}"`. It would never find
+  one, blame the rule for not delivering, and after `FAILURES_ALLOWED` tries
+  stop planning with that rule at all.
+* **`conditions.from_goal` put a goal's *kind* into `holds` as a name**, where
+  it was matched as a substring of what things are called. `"cake.n.01"`
+  appears in nothing anybody calls a cake, so a goal for *a* cake could never
+  be met by any cake. This predates counting entirely; nobody saw it because a
+  quest that names the cake works, and that is what quests mostly do.
+* **`model_json.listed` tested for a mapping by type.** An Evennia attribute
+  hands a stored mapping back as a `_SaverDict`, which is not a `dict`, so a
+  spec read from the database fell through to the sequence case and came apart
+  into its keys — the same failure that function exists to stop, one level up.
+  It could not happen while every listed value was a word.
+
+The trap §7 predicted — a counted goal looping — was real and worse than
+predicted: `goals._world_objects` looks in the actor's own hands first, so
+somebody wanting three apples and holding one was handed back the apple they
+were already holding, found no step that would get it, and gave the want up.
+`find_of_kind` takes a `skip` now. `tests/test_counted_goals.py` was checked
+by reverting the fix and watching it fail, rather than assumed.
+
+### `in_room` does not take a count, and `MAX_COUNT` is not `bulk.LIMIT`
+
+§3.2 listed `in_room` among the predicates to give counting. It is about the
+*room's title*, not its contents, so there is nothing to count; `holds`,
+`not_holds`, `wears` and `not_wears` are the four.
+
+§3.3 said the ceiling should be `bulk`'s. That borrowed `bulk.LIMIT`'s number
+*and* its argument, and the argument does not transfer: `bulk`'s twelve is
+about how many model calls `eat all` may cost in a storeroom, while counting
+runs against a pool already in hand. It refused to store "no more than twenty
+things at once", which is an ordinary rule. Fifty now, as a guard against
+nonsense rather than a claim about play.
+
+### A becomes rule's trigger is its `when`
+
+`world.becoming` reads `when` and nothing else. The death ruleset's first
+draft used `conditions`, was filed, was gathered, and never fired. The
+validator refuses that now — the symptom is a rule that works in the wrong way
+rather than not at all, which is the hardest sort to see.
+
+### `life_status` stays in `verbs.STATE_GROUPS`
+
+§5.4 said the death ruleset should own it. It does not. An unused state group
+is inert and costs nothing; removing it from the seeds would mean a world that
+invents `dead` *without* the ruleset gets a state that looks like death and
+stops nobody acting. The genuinely optional part of death is the health
+figure, the rule joining it to dying, and the way back — and that is what the
+ruleset holds. `death.json` declares the group as well, so the dependency is
+written down; registering it again is a fold and a no-op.
+
+### `worn` and `covered` are states
+
+Done, after an argument worth recording because the first attempt got the
+reasoning wrong.
+
+The case for leaving `db.worn` alone was that the conversion buys visibility
+and settability and costs eighteen call sites plus a migration, while `wears`
+and `not_wears` read the attribute directly — so the counted wardrobe limits
+work either way. That weighed the wrong thing. **`db.worn` was storage no other
+ruleset could have had.** Nothing could write a rule against it, `condition`
+did not print it, `set_state` could not reach it, and a ruleset wanting its own
+idea of being dressed had no way in. Every other fact about a thing in this
+game is a state — lit, open, burning, dead — and clothes had a private slot.
+That is a reason on its own, and it does not depend on any particular use for
+it.
+
+So `worn` and `covered` are states, registered by `clothing.json` like any
+ruleset's vocabulary, which means a world without clothing has neither word.
+`clothing.is_worn` / `is_covered` are the readers, and the eighteen call sites
+now go through them.
+
+Three things fell out of it:
+
+* **"You cannot take off what is covered" is a rule**, not a line inside
+  `take_off`, because `covered` is now testable. A world where a cloak slips
+  off over everything suspends it.
+* **The wear style is not a state** -- "tied loosely around her waist" is text
+  about one garment, not a condition anything could test, and a register
+  filling up with a phrase per scarf would have lost what the register is for.
+  It became its own general thing instead; see §10. `db.covered_by` stays a
+  pointer, because `covered` is the fact and *which garment* is the detail,
+  and both are written in `_cover` and `_uncover` and nowhere else.
+* **A ruleset's `conditions` section gained `states`.** `apply_states`
+  registers a slug it has never seen, which is the right default and the wrong
+  thing to rely on here: with nobody having said which group `worn` belongs to,
+  `register_state` folds it onto whatever looks similar and may hand back a
+  different word. A ruleset that means one particular word says so when it is
+  seeded.
+
+`examine coat` now reads "It is worn", as it reads "It is lit" for a lamp. That
+is the treatment every other state gets and it was not there before.
+
+### Clothing and wielding ship switched **on**
+
+§5.3 and §6 read as though clothing becomes opt-in. It is opt-*out*:
+`clothing.json` and `wielding.json` are `default: true`. On is the status quo —
+a world made before rulesets existed had them, and `reset world` must not take
+them away. What rulesets buy here is the ability to say no, not a change of
+default.
+
+### Two things `seed` needed that the plan did not mention
+
+* A world's `rules suspend` decisions are carried across an **edition** and not
+  across a fresh install. Without that, putting back a ruleset that had been
+  taken away brought it back switched off, because `forget` unlists everything
+  it seeded and `_decisions` read that as a decision.
+* Validation runs in two passes. A document is checked for naming things
+  nothing declares, and what a ruleset's `requires` declares lives in another
+  document — so the cross-document half cannot run until every document is
+  parsed. Written as one pass, it recursed until the stack gave out.
+
+### The limits are a pre-check, so "only one hat" is a count of **one**
+
+A check rule runs before the thing it guards. "You may wear only one hat" is
+`not_wears` with a count of 1 — *be wearing fewer than one before putting one
+on*. Written with 2, as the obvious reading suggests, it lets the second hat
+through and refuses the third. Worth knowing for every limit written this way.
+
+### §1.1 was right, and the test walked into it anyway
+
+The plan argued that `craft <recipe> from <stuff>` is the wrong syntax here,
+because `verbs.bind` binds nouns to things that exist and the thing being made
+does not. The first draft of `tests/test_crafting.py` typed `forge a blade` and
+every recipe test reached for a model to invent a blade. `forge`, naming the
+result not at all and reading what is in hand, is the idiom — and it is the one
+the endless-alchemy world in `future-plans.md` wants.
+
+### What the rulesets actually ship
+
+| | rules | what else |
+|---|---|---|
+| `default` | 8 | 5 action declarations |
+| `clothing` | 4 limits | the `clothing` mechanic, `wear`/`remove` |
+| `wielding` | — | the `wielding` mechanic |
+| `death` | 4 | `health`, `life_status`, `revive`/`heal`, 3 synonyms |
+| `crafting` | 2 | `combine`/`make`, 7 synonyms, the `combine` affordance |
+
+`crafting` ships **no recipes**, which is the whole argument against copying
+the contrib: a recipe is a fact about one world, and belongs with that world's
+other rules where it can be read, replaced, scoped to a room, and proposed by
+`suggest` from what players kept trying. It ships no rules at all, for a
+reason the soak found; see §12.
+
+---
+
+## 10. Styles: how a thing is in the state it is in
+
+The wear style was the last piece of storage clothes had that no other ruleset
+could have had, and generalising it turned out to be the same argument as
+`worn` one level down.
+
+**A state is a word from a closed vocabulary**, and that is what makes it worth
+having: it can be grouped, made exclusive, tested by a condition, answered to
+as an alias, and counted. What it cannot be is *particular*. A coat is `worn`
+the way every coat is worn, and "slung over one arm" has nowhere to go. A sword
+held point-down, a lantern raised high, a fire burning low and a body lying
+where it fell all want the same thing, and none of them could have it.
+
+So **a state may carry a phrase saying how**. One per state per thing, open
+text, in `verbs.styles`. `world.clothing` reads its wear style out of it and
+`world.gear` is the second user rather than a hypothetical one.
+
+Three rules keep it from becoming a second vocabulary nobody can test:
+
+* **It rides on a state and dies with it.** `apply_states` drops the style of
+  anything it removes — including what an exclusive group removes on its own —
+  so there is no way to be "slung over one arm" while not being worn. That is
+  why it is keyed by slug rather than being a free attribute, and it is the
+  whole of what keeps the two from drifting.
+* **It may not name a state.** The line `name_contradicts_states` already
+  draws, for the same reason: a phrase saying "burning" has said something no
+  rule can read and nothing can undo. `style_complaints` refuses it, and a
+  refused style leaves the plain state behind — less said, never something
+  false said.
+* **Nothing tests it.** There is deliberately no `style` predicate. A substring
+  match against open text is the bug `world.quantity` exists to have fixed, and
+  re-inventing it here would be worse for being on purpose. **If it matters,
+  it is a state; if it only has to read well, it is a style.**
+
+It stays inside `basic-principles.md`'s rule against decorative text, and not
+by a technicality: a style is written into the events `world.memory` records,
+it is part of what a character reads of themselves in `own_appearance` and so
+is something they can act on, and it hangs off a state every system reads.
+
+A rule can set one — `set_state` takes `styles: {slug: how}` — which is what
+makes this a ruleset's to use rather than a mechanic's private convenience.
+
+### And `db.wielded` went the same way
+
+Converting it was not scope creep but the proof: `world.gear` had exactly the
+private slot `world.clothing` had, for exactly as long, and a generalisation
+with one user is a rename. `wielded` is a state registered by `wielding.json`,
+and `gear.wield` takes a style.
+
+That leaves the four mechanics with no bespoke storage between them except
+`db.covered_by`, which is a pointer to an object rather than a fact about one —
+a different kind of thing, and the one shape a state cannot hold.
+
+---
+
+## 11. Under is not inside
+
+`db.covered_by` survived §10 because a state cannot point at an object. The
+question that finished it was somebody else's: *if I put the table on the rug,
+the rug is now under the table — and the rug cannot be on the table while the
+table is on the rug.*
+
+Both halves turned out to be about something larger. `world.relations` stored
+**every** preposition as containment — `obj.move_to(host)` — and that is right
+for two of the four and plainly wrong for the other two:
+
+```
+put coin under rug   ->  coin.location is rug
+take rug             ->  the coin goes into your inventory, inside the rug
+                         the floor has neither
+```
+
+A coin under a rug is not in the rug. Neither is a key behind a painting in
+the painting. `in` and `on` earn containment — a thing in a box or on a tray
+travels with it, is hidden when the box is shut, and needs no bookkeeping
+because Evennia's containment does all of it — but `under` and `behind` say
+where a thing is in a room rather than what holds it.
+
+So `relations.BESIDE` is a pointer: both things stay where they are, one
+pointing at the other. Three things follow.
+
+**Covering is placement.** "The shirt is under the coat" is the same word, said
+of two things that share a wearer rather than a floor. That was impossible
+while `under` meant containment — §2.1 was right that the shirt must not sit
+inside the coat, and wrong to conclude that covering therefore was not
+placement. `db.covered_by` and the `covered` state are both gone; `relations`
+keeps the one fact, and "you cannot take off what is covered" is
+`{"not_placed": {"under": true}}` — which needed `placed` to learn a wildcard
+host, since the rule is about being under *something* and naming the garment
+would make it a rule about that garment.
+
+**Cleanup is a lapse, not a hook.** A thing is under another because they are
+in the same place, so `host_of` answers None the moment they part — burn the
+rug, pocket it, shut it in a chest, and the coin is a coin on the floor again.
+No door needs unpicking because there is no door this misses. Nothing is
+narrated: what to say when a coin comes to light is a rule's business.
+
+**The other side can be spoken.** Only the guest ever carried the word, so
+`relation_of(rug)` said the rug was nowhere in particular while a table stood
+on it. `INVERSE` and `relations.standing` give it the sentence.
+
+The cycle was already refused, by `_holds` — but in the only words it had:
+"that would have to go inside itself", which names containment to somebody who
+said "on". It now says which way round things already are.
+
+One consequence worth watching in play: a coin under a rug is in the room's
+own contents now, so it would read twice — loosely among what you see, and
+again under the rug. `Room.filter_visible` drops what another thing already
+accounts for. That hook rather than the listing, because "is this one of the
+things shown" is exactly what it answers, and everything that lists a room
+asks it.
+
+---
+
+## 12. What the soak found: a frame that outranked its world
+
+The first hour of play in a space-crash world, verbatim:
+
+```
+> combine strut with shield tile
+You cannot combine a titanium strut. You can salvage and wield it.
+```
+
+The world had written its own recipes — *combining a strut and a heat shield
+tile makes an improvised shovel* — and the crafting ruleset refused them.
+
+`crafting.json` shipped two check rules requiring both things to afford
+`combine`. Three things were wrong, in increasing order of importance.
+
+**Nothing ever puts `combine` in an affordance map.** Affordances are written
+per object by the generators, which were never told the word existed. The
+world's struts afford `salvage` and `wield`, because that is what a strut is
+for.
+
+**The `affordances` section was dead config.** `crafting.json` said
+`"affordances": ["combine"]` and `clothing.json` said `["wear"]`, and `_apply`
+read neither — the section was in `SECTIONS` and handled nowhere. It had been
+doing nothing since the day it was written. `SECTIONS` is now exactly what is
+read, and a document naming anything else is refused at load: *a section nobody
+reads is a promise nobody keeps.*
+
+**And the real one: a world-scope check rule cannot be overruled.** Check rules
+accumulate — that is what makes the phase safe to extend — so a specific
+carry-out rule can never get past a general check. The frame's guess about what
+is combinable therefore outranked the world's own knowledge of what combining
+*does*, permanently. That is exactly backwards: the frame is the thing that
+should yield.
+
+Worse, the question it asked was the wrong one. "Did some generator happen to
+write this word down?" is not "does combining this make sense", and the engine
+already asks the second: `kinds.admits` settles it once per kind per verb,
+model-answered and cached, and runs in the pipeline already. The check rules
+duplicated an existing gate, badly.
+
+So `crafting` ships **no rules**. Actions, verbs, and nothing else.
+
+The lesson generalises past crafting, and is worth stating for every ruleset
+written from here: **a ruleset's check rules are a tax on every world that
+takes it.** Ship one only where it is true of every world that could ever want
+the ruleset — "you must be able to reach what you act on" clears that bar, and
+"you can only combine things that go together" plainly does not. Where the
+engine already has a gate, use the gate.
+
+`tests/test_crafting.TheSoakWorldsStrut` keeps the case as it was typed, and
+was checked by putting the bad rules back and watching it reproduce the
+sentence above.
+
+---
+
+## 13. Changing a ruleset in a world that already exists
+
+The soak's second finding: untick a ruleset in `edit world`, save, reopen the
+menu, and it is ticked again.
+
+**`seed` only ever adds**, which is right for it — it is what a world calls on
+its way past to be sure its rules are there, and must never take anything away
+by being asked twice. Saying which set a world should *hold* is a different
+act, and it was being done in two places that each did half of it:
+`edit rulesets` forgot what was dropped, and the wizard's save did not. So
+`lore.store` handed `seed` the shortened list and nothing happened at all.
+`rulesets.apply_choice` is that act, once, and both doors call it.
+
+It also keeps whatever the surviving rulesets require, named or not: unticking
+the thing a ruleset you are keeping rests on is not something anybody can mean.
+
+### What a live change can and cannot do
+
+Worth writing down, because the answer decided the prompt. Measured, not
+assumed:
+
+| | on switching a ruleset off |
+|---|---|
+| its rules | stop at once, and come back if it is switched on again — `forget` suspends rather than deletes |
+| its mechanic | switches off at once |
+| verb synonyms | **stay**: `resurrect` still folds onto `revive` |
+| declared actions | **stay**: `revive` is still declared |
+| registered figures | **stay**: `health` is still a trait this world keeps |
+| what it already built | **stays**: a coat somebody is wearing is still worn, and with clothing off, taking it off is a word the world must work out afresh |
+
+Switching one *on* has a quieter version of the same: `actions.declare` is
+first-answer-wins, so an action the world had already settled for itself keeps
+the arity it settled on and the ruleset's declaration loses.
+
+So the honest answer to "can a ruleset be changed without a reset" is **yes,
+and it leaves residue** — not "no". A `change_ruleset` confirmation says which
+half is clean and which is not, and names `reset world` as the way to make the
+change total. It does not *force* a reset, because none of the residue stops
+the change working, and regenerating a world is expensive enough that it should
+be something somebody chooses rather than something a checkbox does to them.
+
+A world still being made is never asked: it has no history to lose.
+
+---
+
+## 14. A verb that worked once and said it had worked twice
+
+The soak's sharpest find, and the oldest bug this work turned up — it is on
+`master` and predates the branch by a long way.
+
+```
+> forage
+You forage about and turn up a scrap of twisted metal.
+> forage
+You forage about and turn up a scrap of twisted metal.
+> inventory
+a scrap of twisted metal
+```
+
+A narration is cached against the things it was written about, so a world does
+not pay a model to describe the same act on the same thing for ever. That is
+right and worth keeping. What was wrong is that the cache answered the **whole
+attempt**: `_with_rule` returned the stored sentence before reaching `_finish`,
+which is where effects land, after rules run, memory is written and quests are
+reviewed. So the second time anybody did anything, nothing happened and they
+were told it had.
+
+There was already a second, correct cached path a few lines below `_finish` —
+stored words, effects still applied. It was simply unreachable for the
+commonest case, because the early return got there first.
+
+**Why it survived this long.** Most verbs worth doing twice are refused the
+second time for a reason of their own: the lamp is already lit, the door is
+already open, the note is already read. The precondition fires first and the
+cache is never reached. Seeing the bug needs a verb with *no* precondition and
+a real effect — forage, dig, search, combine — which is to say it needs
+crafting, which is what the soak was for.
+
+It also explains the shape of the report better than the report did. "It says
+it did" is the symptom of a replayed narration; so is a `combine` that appears
+to work and leaves the world unchanged.
+
+`repeatable` on a rule was an earlier attempt at the same problem, from the
+other end: mark a rule as worth running twice and skip the cache for it.
+Nothing ever set it, and it is moot now — effects always run, so there is
+nothing for the flag to protect.
+
+---
+
+## 15. Making somewhere new
+
+The soak's feature gap, and the last of the effect vocabulary's obvious holes.
+A rule could make a thing, move a thing, destroy a thing and change where a
+way out led, and could not make anywhere to *go*. A player who digs into a
+bank, mines a shaft, or walls himself a shelter out of struts and heat-shield
+tile is plainly making a room, and nothing could say so.
+
+**`create_room` opens a way and generates nothing.** The way is left *pending*,
+and the room behind it is built by the ordinary generator the first time
+anybody walks through — the same machinery every world grows by, at the same
+cost, at the same moment.
+
+That is not a shortcut, it is the rule the effect vocabulary already lives by.
+Effects run synchronously and must stay free: `create_object` builds from a
+spec the rule already holds precisely so that firing costs nothing, and a room
+that phoned a model mid-rule would make every dig cost money whether or not
+anybody went and looked at the hole.
+
+It needed no new generation path at all. A pending exit with a
+`destination_hint` is exactly "somewhere that does not exist yet, and what it
+should be when it does", and the game has had it since worlds first grew.
+
+```json
+{"type": "create_room", "direction": "down", "exit": "burrow",
+ "why": "dug out of the packed earth with a shovel"}
+```
+
+`why` becomes the hint, which is the field `generate_connected_room` already
+reads to keep a door's promise and the room behind it consistent. "Walled with
+strut and heat-shield tile" and "dug out of the packed earth" are what a world
+writes here, and the generator writes the place they describe.
+
+Two decisions worth recording:
+
+* **A named direction that is not free does nothing.** Digging down when down
+  is already a staircase should fail rather than quietly dig sideways: a rule
+  about a shaft means the shaft. With no direction named, any free one will do.
+* **It is not readable backwards**, and that is a decision rather than a gap.
+  A goal names a room, and the room this opens onto has no name until somebody
+  walks into it and the generator writes one — so there is nothing for a
+  planner to aim at. A character who wants to be somewhere new walks through
+  the way, which is `move_actor` and already read.

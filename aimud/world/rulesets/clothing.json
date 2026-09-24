@@ -1,0 +1,83 @@
+{
+  "name": "clothing",
+  "title": "Clothing",
+  "version": 4,
+  "default": true,
+  "means": "Characters can wear things, and what they have on shows in how they look.",
+  "requires": ["default"],
+  "conflicts": [],
+  "mechanics": ["clothing"],
+
+  "conditions": [
+    {"group": "wornness", "exclusive": true, "states": ["worn"]}
+  ],
+
+  "actions": [
+    {
+      "action": "wear",
+      "means": "to put something on",
+      "applies_to": [{"role": "direct", "access": "carried"}]
+    },
+    {
+      "action": "remove",
+      "means": "to take something off",
+      "applies_to": [{"role": "direct", "access": "carried"}]
+    }
+  ],
+
+  "rules": [
+    {
+      "name": "you may wear only one hat",
+      "phase": "check",
+      "action": "wear",
+      "scope": {"world": true},
+      "about": "actor",
+      "conditions": [
+        {"subject": "actor",
+         "not_wears": {"of_kind": "hat.n.01", "count": 1}}
+      ]
+    },
+    {
+      "name": "you may wear only one pair of gloves",
+      "phase": "check",
+      "action": "wear",
+      "scope": {"world": true},
+      "about": "actor",
+      "conditions": [
+        {"subject": "actor",
+         "not_wears": {"of_kind": "glove.n.02", "count": 1}}
+      ]
+    },
+    {
+      "name": "you may wear only one pair of shoes",
+      "phase": "check",
+      "action": "wear",
+      "scope": {"world": true},
+      "about": "actor",
+      "conditions": [
+        {"subject": "actor",
+         "not_wears": {"of_kind": "shoe.n.01", "count": 1}}
+      ]
+    },
+    {
+      "name": "you cannot take off what is covered",
+      "phase": "check",
+      "action": "remove",
+      "scope": {"world": true},
+      "about": "direct",
+      "when": [{"subject": "direct", "unbound": false}],
+      "conditions": [{"subject": "direct", "not_placed": {"under": true}}]
+    },
+    {
+      "name": "there is a limit to what you can get on at once",
+      "phase": "check",
+      "action": "wear",
+      "scope": {"world": true},
+      "about": "actor",
+      "conditions": [
+        {"subject": "actor",
+         "not_wears": {"of_kind": "clothing.n.01", "count": 20}}
+      ]
+    }
+  ]
+}

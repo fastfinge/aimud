@@ -22,7 +22,7 @@ from django.test import SimpleTestCase, tag
 
 from tests.base import GameCommandTest, GameTest
 from world import conditions as C
-from world import effects, ownership
+from world import effects, ownership, verbs
 
 
 @tag("world")
@@ -317,7 +317,8 @@ class Giving(GameCommandTest):
         self.assertEqual(self.coin.location, self.char2)
 
     def test_you_cannot_give_away_what_you_are_wearing(self):
-        self.coin.db.worn = True
+        verbs.apply_states(self.coin, add=["worn"],
+                           world_root=self.room1)
         said = self.attempt(f"give coin to {self.char2.key}")
         self.assertIn("take", said)
         self.assertEqual(self.coin.location, self.char1)

@@ -611,12 +611,14 @@ def give(character, obj, recipient):
     through the standard `after` rule on `give`, which is where a world can
     read it, argue with it, or replace it.
     """
+    from world import clothing
+
     from world import events, gear, relations
 
     name = obj.get_numbered_name(1, character, return_string=True)
     if obj.location is not character:
         return False, f"You are not carrying {name}.", None
-    if obj.db.worn:
+    if clothing.is_worn(obj):
         return False, f"You would have to take {name} off first.", None
     if recipient is character:
         return False, "You already have that.", None

@@ -228,6 +228,20 @@ def plural(noun, obj=None):
         return noun
 
 
+def number(n):
+    """
+    A figure as English writes it: "one", "three", "13".
+
+    Split out of `count` because a sentence sometimes wants the number without
+    the noun behind it -- "one more apple" puts a word between them, and
+    gluing that together from `count` gets you "an apple more".
+    """
+    try:
+        return _inflect().number_to_words(n, threshold=FIGURES_ABOVE)
+    except Exception:
+        return str(n)
+
+
 def count(n, noun, obj=None):
     """
     A number of something: "a sword", "three swords", "13 coins", "some water".
@@ -243,11 +257,7 @@ def count(n, noun, obj=None):
         return with_article(noun, obj)
     if is_mass(obj, noun):
         return f"some {noun}"
-    try:
-        figure = _inflect().number_to_words(n, threshold=FIGURES_ABOVE)
-    except Exception:
-        figure = str(n)
-    return f"{figure} {plural(noun, obj)}"
+    return f"{number(n)} {plural(noun, obj)}"
 
 
 # ---------------------------------------------------------------------------

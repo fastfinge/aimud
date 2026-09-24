@@ -98,6 +98,8 @@ def _surroundings(npc, target):
     Without this the model invents object names, and a goal naming something
     that is not there can never be satisfied.
     """
+    from world import clothing
+
     from evennia.objects.objects import DefaultCharacter
 
     room = npc.location
@@ -113,9 +115,10 @@ def _surroundings(npc, target):
     # carrying it" are different errands, and a coat somebody has on is not
     # loose in the room for anyone else to fetch.
     for obj in target.contents:
-        carried.append(f"{obj.key} (worn)" if obj.db.worn else obj.key)
+        carried.append(f"{obj.key} (worn)" if clothing.is_worn(obj)
+                       else obj.key)
     for obj in npc.contents:
-        state = "worn by" if obj.db.worn else "carried by"
+        state = "worn by" if clothing.is_worn(obj) else "carried by"
         here.append(f"{obj.key} ({state} {npc.key})")
 
     room_title = (room.db.room_title or room.key) if room else "nowhere"

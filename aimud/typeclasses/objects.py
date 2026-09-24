@@ -125,8 +125,15 @@ class ObjectParent:
         going into are each marked. Before the move, because the before is what
         a rule said while the thing was still here. See world/becoming.py.
         """
-        from world import becoming
+        from world import becoming, clothing
 
+        # And take it off first, if it is being worn out of somebody's hands.
+        # This was `typeclasses.clothing.Garment.at_pre_move`, and it is here
+        # now for the reason that class is gone: wearability is an affordance
+        # any object may have, so the hook belongs where every object gets it
+        # rather than on a class a thing had to be built as.
+        if not clothing.leaving(self, destination):
+            return False
         for changing in (self, self.location, destination):
             becoming.mark(changing)
         return super().at_pre_move(destination, **kwargs)

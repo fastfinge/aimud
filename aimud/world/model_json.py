@@ -311,7 +311,13 @@ def listed(value):
         return []
     if isinstance(value, str):
         return [value] if value.strip() else []
-    if isinstance(value, dict):
+    # Tested by what it can do rather than by what it is, because an Evennia
+    # attribute hands a stored mapping back as a _SaverDict -- a mapping, but
+    # not a dict. Read by type, one of those fell through to the sequence case
+    # below and came apart into its *keys*, which is the same failure this
+    # function exists to stop, one level up. It could not happen while every
+    # listed value was a word; `world.quantity` made one a mapping.
+    if hasattr(value, "keys"):
         return [value]
     try:
         return [item for item in value if item not in (None, "")]

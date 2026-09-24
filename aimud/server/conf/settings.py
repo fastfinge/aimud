@@ -24,6 +24,8 @@ put secret game- or server-specific settings in secret_settings.py.
 
 """
 
+import os
+
 # Use the defaults from Evennia unless explicitly overridden
 from evennia.settings_default import *
 
@@ -50,6 +52,15 @@ COMMAND_PARSER = "server.conf.cmdparser.cmdparser"
 # taken out: a real password hash for every fixture account, and a full garbage
 # collection that walked the WordNet indices. See server/conf/test_runner.py.
 TEST_RUNNER = "server.conf.test_runner.Runner"
+
+# Directories holding rulesets this server offers beyond the ones that ship
+# with the game. A ruleset is a validated JSON document and never code, so
+# nothing here can run; what putting a file in one of these buys is the right
+# to add rules, kinds, states and figures a world's creator can then choose
+# from. It needs access to the machine, which is the bar basic-principles.md
+# sets for extending the game. A file whose `name` matches a built-in ruleset
+# replaces it. See world/rulesets.py.
+RULESET_DIRS = [os.path.join(GAME_DIR, "server", "conf", "rulesets")]
 
 
 ######################################################################

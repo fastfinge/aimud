@@ -51,6 +51,35 @@ class ReadingAConditionBackAsAGoal(SimpleTestCase):
             C.as_goal({"subject": "actor", "wears": ["helmet"]}),
             {"type": "worn", "object": "helmet"})
 
+    def test_a_counted_requirement_comes_back_as_a_counted_goal(self):
+        """
+        Put through `str()` a spec came out as its own repr, so a rule
+        refusing for want of two lumps of coal sent the planner looking for
+        an object called "{'of_kind': 'coal.n.01', 'count': 2}". It would
+        never find one, take the blame for the rule not working, and after a
+        few tries stop planning with that rule at all.
+        """
+        self.assertEqual(
+            C.as_goal({"subject": "actor",
+                       "holds": {"of_kind": "coal.n.01", "count": 2}}),
+            {"type": "holds", "kind": "coal.n.01", "count": 2})
+
+    def test_a_requirement_for_a_sort_asks_for_the_sort(self):
+        self.assertEqual(
+            C.as_goal({"subject": "actor", "holds": {"of_kind": "coal.n.01"}}),
+            {"type": "holds", "kind": "coal.n.01"})
+
+    def test_a_requirement_naming_several_takes_the_first_way_forward(self):
+        """A planner needs one way on, not every way on."""
+        self.assertEqual(
+            C.as_goal({"subject": "actor", "holds": ["hammer", "nail"]}),
+            {"type": "holds", "object": "hammer"})
+
+    def test_and_a_counted_goal_survives_the_round_trip(self):
+        goal = {"type": "holds", "kind": "apple.n.01", "count": 3}
+        back = C.from_goal(goal)
+        self.assertEqual(C.as_goal(back[0]), goal)
+
     def test_a_room_condition_comes_back(self):
         self.assertEqual(
             C.as_goal({"subject": "actor", "in_room": "Bridge"}),

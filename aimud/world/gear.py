@@ -58,6 +58,44 @@ WIELDABLE = "wield"
 #: a sword and a shield is the case this exists for.
 WIELD_LIMIT = 2
 
+#: That a thing is in hand.
+#:
+#: A state, for the reason `clothing.WORN` is one: `db.wielded` was a slot
+#: only this module knew about, so no rule could ask about it, `condition`
+#: did not print it, and a ruleset wanting its own idea of holding a weapon
+#: had no way in. Registered by `world/rulesets/wielding.json`, so a world
+#: without wielding has not got the word.
+#:
+#: It carries a style like any state -- "held point-down", "raised high" --
+#: through `verbs.set_style`. That was `world.clothing`'s alone until it was
+#: made general; see the note above `verbs.styles`.
+WIELDED = "wielded"
+
+
+def _root_of(obj):
+    """The world something belongs to, found from where it is."""
+    where = obj
+    while where is not None:
+        root = getattr(getattr(where, "db", None), "world_root", None)
+        if root is not None:
+            return root
+        where = getattr(where, "location", None)
+    return None
+
+
+def is_wielded(obj):
+    """Whether this is in somebody's hand."""
+    from world import verbs
+
+    return obj is not None and WIELDED in verbs.states(obj)
+
+
+def wield_style(obj):
+    """How it is being held, as a phrase, or "" for plainly."""
+    from world import verbs
+
+    return verbs.style_of(obj, WIELDED)
+
 #: The verbs this module owns, when the noun really is something to wield.
 #:
 #: "hold" is here because it means both things at once and only one of them is
@@ -232,9 +270,11 @@ def applies(obj, character):
     if obj.location is not character:
         return False
     if where == "worn":
-        return bool(obj.db.worn)
+        from world import clothing
+
+        return clothing.is_worn(obj)
     if where == "wielded":
-        return bool(obj.db.wielded)
+        return is_wielded(obj)
     return True
 
 
@@ -247,7 +287,7 @@ def wielded(character):
     if character is None:
         return []
     return sorted(
-        (obj for obj in character.contents if obj.db.wielded),
+        (obj for obj in character.contents if is_wielded(obj)),
         key=lambda o: o.id,
     )
 
@@ -267,15 +307,17 @@ def _event(character, verb, obj, template, **roles):
                         room_template=template)
 
 
-def wield(character, obj):
+def wield(character, obj, style=""):
     """Take something in hand. Returns (ok, actor_text, event)."""
+    from world import clothing, verbs
+
     name = obj.get_display_name(character)
 
     if obj.location is not character:
         return False, f"You are not carrying {name}.", None
-    if obj.db.wielded:
+    if is_wielded(obj):
         return False, f"You are already wielding {name}.", None
-    if obj.db.worn:
+    if clothing.is_worn(obj):
         return False, f"You would have to take {name} off first.", None
 
     in_hand = wielded(character)
@@ -283,7 +325,9 @@ def wield(character, obj):
         busy = ", ".join(o.get_display_name(character) for o in in_hand)
         return False, f"Your hands are full: {busy}.", None
 
-    obj.db.wielded = True
+    root = _root_of(character)
+    verbs.apply_states(obj, add=[WIELDED], world_root=root, announce=False)
+    verbs.set_style(obj, WIELDED, style, root)
     recompute(character)
     return (True, f"You take {name} in hand.",
             _event(character, "wield", obj, "{actor} $pconj(take) {direct} in hand."))
@@ -291,11 +335,15 @@ def wield(character, obj):
 
 def unwield(character, obj):
     """Stop holding something. Returns (ok, actor_text, event)."""
+    from world import verbs
+
     name = obj.get_display_name(character)
-    if not obj.db.wielded:
+    if not is_wielded(obj):
         return False, f"You are not wielding {name}.", None
 
-    obj.attributes.remove("wielded")
+    # The style goes with the state, in `apply_states`.
+    verbs.apply_states(obj, remove=[WIELDED], world_root=_root_of(character),
+                       announce=False)
     recompute(character)
     return (True, f"You lower {name}.",
             _event(character, "unwield", obj, "{actor} $pconj(lower) {direct}."))
@@ -308,8 +356,11 @@ def release(obj, character=None):
     Called when a thing is dropped, given away, or destroyed. Separate from
     `unwield` because nobody chose it and there is nothing to narrate.
     """
-    if obj is not None and obj.db.wielded:
-        obj.attributes.remove("wielded")
+    if obj is not None and is_wielded(obj):
+        from world import verbs
+
+        verbs.apply_states(obj, remove=[WIELDED],
+                           world_root=_root_of(obj), announce=False)
     if character is not None:
         # Only discounted while it is still on them. Dropping and giving call
         # this once the thing has gone, and a candle set down on the floor is
@@ -370,7 +421,7 @@ def handle(caller, verb, bound, on_message):
 
     if verb == "unwield":
         # Nothing else can mean this about a thing already in hand.
-        if not obj.db.wielded:
+        if not is_wielded(obj):
             return False
         _deliver(on_message, unwield(caller, obj))
         return True

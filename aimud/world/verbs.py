@@ -106,7 +106,7 @@ VERB_SYNONYMS = {
 }
 
 
-def canonical_verb(word):
+def canonical_verb(word, world_root=None):
     """
     Fold a verb onto its canonical form.
 
@@ -121,19 +121,41 @@ def canonical_verb(word):
     That second pass is why "wearing" no longer has to be written down.  It
     was never a synonym of "wear"; it is "wear", and a suffix table that knew
     as much would also have to know about "ate".
+
+    A world may fold words of its own, through a ruleset: `forge` means `make`
+    in a world built with crafting and means nothing in particular anywhere
+    else, which is why the table above cannot hold it. Consulted **after** the
+    table and never in front of it. The table is English that is true
+    everywhere, and a ruleset that could move `get` or `look` underneath the
+    engine would be a data file rewriting the game -- the same argument that
+    keeps a seeded state group from being redefined by whatever a model
+    declares later.
     """
     word = word.lower().strip()
     folded = VERB_SYNONYMS.get(word)
     if folded is not None:
         return folded
+    if world_root is not None:
+        from world import rulesets
+
+        folded = rulesets.synonyms(world_root).get(word)
+        if folded is not None:
+            return folded
 
     root = lexicon.lemma(word, "v")
     if root != word:
-        return VERB_SYNONYMS.get(root, root)
+        folded = VERB_SYNONYMS.get(root)
+        if folded is not None:
+            return folded
+        if world_root is not None:
+            from world import rulesets
+
+            return rulesets.synonyms(world_root).get(root, root)
+        return root
     return word
 
 
-def parse(raw):
+def parse(raw, world_root=None):
     """
     Split raw input into a verb, its noun phrases by role, and how it was done.
 
@@ -172,7 +194,7 @@ def parse(raw):
     while len(words) > 1 and lexicon.is_only_adverb(words[0]):
         manner.append(words.pop(0))
 
-    verb = canonical_verb(words[0])
+    verb = canonical_verb(words[0], world_root)
     roles, prepositions = {}, {}
     current_role = "direct"
     current_word = ""
@@ -747,6 +769,125 @@ def affordances(obj):
 def states(obj):
     """The mutable conditions currently true of an object ("wet", "burning")."""
     return set(obj.db.states or [])
+
+
+# ---------------------------------------------------------------------------
+# How a thing is in the state it is in
+# ---------------------------------------------------------------------------
+#
+# A state is a word from a closed vocabulary, and that is what makes it worth
+# having: it can be grouped, made exclusive, tested by a condition, answered to
+# as an alias, and counted. What it cannot be is particular. A coat is `worn`
+# the same way every coat is worn, and "slung over one arm" has nowhere to live.
+#
+# `world.clothing` had somewhere for it -- `db.wearstyle` -- and that was the
+# last piece of storage clothes had that no other ruleset could have had. A
+# sword held point-down, a lantern raised high, a body lying where it fell and
+# a fire burning low all want the same thing, and none of them could have it.
+#
+# So: **a state may carry a phrase saying how**. One phrase per state per
+# thing, open text, cleared when the state is.
+#
+# Three rules keep it from becoming a second vocabulary nobody can test:
+#
+# * **It rides on a state and dies with it.** `apply_states` drops the style
+#   of anything it removes, so there is no way to be "slung over one arm"
+#   while not being worn. That is the whole reason it is keyed by slug rather
+#   than being a free attribute.
+# * **It may not name a state.** The same line `name_contradicts_states`
+#   draws, and for the same reason: a world that writes "burning" into a
+#   style has said something no rule can read and nothing can undo. If it
+#   matters, it is a state; if it reads well, it is a style.
+# * **Nothing tests it.** There is deliberately no `style` predicate. A
+#   substring match against open text is the bug `quantity` exists to have
+#   fixed, and re-inventing it here would be worse for having been on
+#   purpose.
+#
+# It stays inside `docs/basic-principles.md`'s rule about decorative text,
+# because it is not decoration: it is written into the events `world.memory`
+# records, it is part of what a character reads of themselves in
+# `clothing.own_appearance` and so is something they can act on, and it hangs
+# off a state every system already reads.
+
+#: Where the phrases live: {state slug: how}.
+STYLES_ATTR = "state_styles"
+
+#: How long one may be. "Tied loosely around her waist" is the case this is
+#: sized for; past about here somebody is writing a description, and a thing
+#: already has one of those.
+STYLE_MAXLENGTH = 50
+
+
+def styles(obj):
+    """{state: how} for everything this thing is in some particular way."""
+    if obj is None:
+        return {}
+    stored = getattr(obj.db, STYLES_ATTR, None) or {}
+    try:
+        return {str(slug): str(text) for slug, text in stored.items() if text}
+    except AttributeError:
+        return {}
+
+
+def style_of(obj, slug):
+    """How this thing is `slug`, as a phrase, or "" for plainly."""
+    return styles(obj).get(str(slug), "")
+
+
+def style_complaints(text, world_root=None):
+    """
+    What is wrong with a style, as short sentences; [] when nothing is.
+
+    Refuses a phrase naming a state for the reason above. Reported rather than
+    trimmed, the way `modify_complaints` reports: silently dropping the word
+    would leave whoever wrote it believing they had said something.
+    """
+    words = {word.strip(".,;:!?'\"").lower()
+             for word in str(text or "").split()}
+    known = set(vocabulary(world_root)) if world_root else set()
+    named = sorted(words & known)
+    wrong = []
+    if named:
+        wrong.append(
+            f"a style says how a thing is in a condition, not what condition "
+            f"it is in, and {', '.join(named)} "
+            f"{'is a state' if len(named) == 1 else 'are states'} -- set "
+            f"{'it' if len(named) == 1 else 'them'} instead")
+    if len(str(text or "")) > STYLE_MAXLENGTH:
+        wrong.append(f"a style is at most {STYLE_MAXLENGTH} characters")
+    return wrong
+
+
+def set_style(obj, slug, text, world_root=None):
+    """
+    Say how a thing is in one of its states. "" takes the phrase away.
+
+    Answers what was stored, which is "" for anything refused -- so a caller
+    that wants to know why asks `style_complaints` first, and one that does
+    not is simply left with the plain state, which is the safe outcome.
+    """
+    if obj is None:
+        return ""
+    slug = str(slug or "").strip().lower()
+    if not slug:
+        return ""
+    text = " ".join(str(text or "").split())
+    if text and style_complaints(text, world_root):
+        logger.log_info(f"styles: refused {text!r} for {slug!r} on {obj}")
+        return ""
+    stored = dict(styles(obj))
+    if text:
+        stored[slug] = text
+    else:
+        stored.pop(slug, None)
+    setattr(obj.db, STYLES_ATTR, stored)
+    return text
+
+
+def said_state(obj, slug):
+    """One state as it reads, style and all: "worn, slung over one arm"."""
+    how = style_of(obj, slug)
+    return f"{slug}, {how}" if how else str(slug)
 
 
 def rule_key(verb, bound=None):
@@ -2046,6 +2187,10 @@ def condition(obj, looker=None):
     current = sorted(states(obj) | derived_holds(obj, world_root))
     if not current:
         return ""
+    # With the phrase saying how, where there is one: "It is worn, slung over
+    # one arm." A style is written to be read, and this is where a thing's
+    # condition is read.
+    current = [said_state(obj, slug) for slug in current]
     from evennia.utils.utils import iter_to_str
 
     from world.quests import is_person
@@ -2178,6 +2323,16 @@ def apply_states(obj, add=(), remove=(), world_root=None, announce=True):
         current.add(slug)
 
     obj.db.states = sorted(current)
+    # And the phrases for whatever is no longer true. A style says how a thing
+    # is in a state; a thing not in the state is not in it in any manner, and
+    # a phrase that outlived its state would be a coat "slung over one arm"
+    # while folded in a drawer. Dropped here, in the one door every state
+    # change comes through, so no caller has to remember. See `styles`.
+    stale = before - current
+    if stale:
+        kept = {slug: how for slug, how in styles(obj).items()
+                if slug not in stale}
+        setattr(obj.db, STYLES_ATTR, kept)
     refresh_state_aliases(obj)
     if announce:
         announce_states(obj, before, set(current), world_root)

@@ -862,6 +862,8 @@ def _nameable(npc, room):
     is known by finds them again -- "Samuel" reaches the character whose key
     is something else entirely.
     """
+    from world import clothing
+
     from evennia.objects.objects import DefaultCharacter
 
     from world import ownership, relations
@@ -900,7 +902,8 @@ def _nameable(npc, room):
         said.append(f"{obj.key} ({', '.join(where)})")
 
     # What it is wearing is not what it can hand over.
-    carried = [obj.key for obj in npc.contents if not obj.db.worn]
+    carried = [obj.key for obj in npc.contents
+               if not clothing.is_worn(obj)]
 
     here = {
         "people": _distinct(people),
@@ -1166,6 +1169,8 @@ def _recall_cues(npc, room, room_title):
     the only one. It is still what provoked this turn, and a memory that bears
     on it is still worth having -- it is being the sole cue that was wrong.
     """
+    from world import clothing
+
     from evennia.objects.objects import DefaultCharacter
 
     from world import goals
@@ -1178,7 +1183,7 @@ def _recall_cues(npc, room, room_title):
             people.append(obj.key)
 
     for obj in npc.contents:
-        if not obj.db.worn:
+        if not clothing.is_worn(obj):
             things.append(obj.key)
 
     world_root = room.db.world_root

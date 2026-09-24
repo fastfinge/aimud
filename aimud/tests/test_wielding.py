@@ -60,19 +60,19 @@ class Wielding(GameTest):
 
     def test_wielding_a_thing_nobody_marked_wieldable(self):
         said = self.attempted("wield crowbar")
-        self.assertTrue(self.crowbar.db.wielded, said)
+        self.assertTrue(gear.is_wielded(self.crowbar), said)
         self.assertIn("in hand", said)
 
     def test_the_spellings_that_fold_onto_it(self):
         for spelling in ("brandish crowbar", "equip crowbar"):
-            self.crowbar.attributes.remove("wielded")
+            gear.unwield(self.char1, self.crowbar)
             self.attempted(spelling)
-            self.assertTrue(self.crowbar.db.wielded, spelling)
+            self.assertTrue(gear.is_wielded(self.crowbar), spelling)
 
     def test_and_lowering_it_again(self):
         self.attempted("wield crowbar")
         said = self.attempted("unwield crowbar")
-        self.assertFalse(self.crowbar.db.wielded)
+        self.assertFalse(gear.is_wielded(self.crowbar))
         self.assertIn("lower", said.lower())
 
     # -- what still declines ------------------------------------------
@@ -95,14 +95,14 @@ class Wielding(GameTest):
     def test_but_hold_takes_a_thing_this_world_calls_wieldable(self):
         self.crowbar.db.affordances = {"wield": True}
         said = self.attempted("hold crowbar")
-        self.assertTrue(self.crowbar.db.wielded, said)
+        self.assertTrue(gear.is_wielded(self.crowbar), said)
 
     # -- the limits the mechanic already had --------------------------
 
     def test_what_you_are_not_carrying_cannot_be_taken_in_hand(self):
         self.crowbar.location = self.room1
         said = self.attempted("wield crowbar")
-        self.assertFalse(self.crowbar.db.wielded)
+        self.assertFalse(gear.is_wielded(self.crowbar))
         self.assertIn("not carrying", said.lower())
 
     def test_two_hands_and_no_more(self):
@@ -115,5 +115,5 @@ class Wielding(GameTest):
             made.db.affordances = {}
             held.append(made)
             self.attempted(f"wield {name}")
-        self.assertEqual([obj for obj in held if obj.db.wielded], held[:2])
-        self.assertFalse(held[2].db.wielded)
+        self.assertEqual([obj for obj in held if gear.is_wielded(obj)], held[:2])
+        self.assertFalse(gear.is_wielded(held[2]))

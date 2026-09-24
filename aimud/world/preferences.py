@@ -80,6 +80,9 @@ CONFIRMATIONS = [
      "Things like judging suggestions cost money when you ask for them."),
     ("bulk_rules", "Changing many rules at once",
      "Suspending every dead rule touches a great many rules in one go."),
+    ("change_ruleset", "Switching a ruleset on or off in a world already made",
+     "Its rules start or stop at once, but what the world has already built "
+     "stays as it is."),
     ("reset_verb", "Resetting what a verb takes",
      "The world will be asked afresh what the verb means."),
     ("delete_tokens", "Deleting a word list",

@@ -205,7 +205,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
     if room is None:
         return
 
-    parsed = verbs.parse(raw)
+    parsed = verbs.parse(raw, getattr(room.db, "world_root", None))
     verb = parsed["verb"]
     if not verb:
         return
@@ -317,17 +317,21 @@ def _mechanics(caller, verb, parsed, bound, on_message):
     Each `handle` declines anything that is not really its business -- "draw
     the curtain", "put out the fire", "give up" -- and those go on through the
     ordinary pipeline. True when one of them took the attempt.
-    """
-    from world import becoming, clothing, gear, ownership, relations
 
+    **Which of them a world uses is a ruleset's business**, and no longer
+    settled here for everybody: clothing and wielding are decisions a world
+    makes, while where a thing is and whose it is are true wherever objects
+    and people are. See `world.mechanics`.
+    """
+    from world import becoming, mechanics
+
+    room = getattr(caller, "location", None)
+    world_root = getattr(room.db, "world_root", None) if room else None
     # What a mechanic changes, the caller changed -- and a becomes rule it sets
     # off fires once the mechanic has said what it did, not in the middle.
     with becoming.caused_by(caller):
-        handled = bool(
-            clothing.handle(caller, verb, bound, on_message)
-            or gear.handle(caller, verb, bound, on_message)
-            or ownership.handle(caller, verb, parsed, bound, on_message)
-            or relations.handle(caller, verb, parsed, bound, on_message))
+        handled = mechanics.handle(world_root, caller, verb, parsed, bound,
+                                   on_message)
     becoming.settle(cause=caller)
     return handled
 
@@ -1076,7 +1080,14 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
     for obj in list((bound or {}).values()):
         verbs.adopt_named_states(obj, world_root)
 
-    ctx = conditions.context(bound, caller, world_root, verb)
+    # What the conditions of this attempt find, shared by every phase of
+    # it. A check rule that counts out two lumps of coal files them here,
+    # and the carry-out that consumes them names the same two rather than
+    # searching again -- a second search can answer differently, and a
+    # recipe that checks one pair and burns another is the bug this
+    # closes. One dict per attempt, so nothing leaks between two.
+    found = {}
+    ctx = conditions.context(bound, caller, world_root, verb, found=found)
     book = rulebooks.for_attempt(world_root, verb, bound, caller,
                                  verb_rule=rule)
     # The after rules about this attempt are settled here, where it happens,
@@ -1119,7 +1130,8 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                     allow_effects, waiter, redirects + 1)
                 return
         extra = effects_mod.apply(caller, room, aside.get("effects") or [],
-                                  bound=bound, world_root=world_root)
+                                  bound=bound, world_root=world_root,
+                                  found=found)
         counters.note(world_root, verb, bound, caller, counters.DONE)
         release(aside.get("name") or "",
                 events_mod.Event(actor=caller, room=room, verb=verb,
@@ -1167,25 +1179,28 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
               if contest else None)
     outcome = result["outcome"] if result else "success"
 
+    # A narration already written for these things, if there is one. **The
+    # words only.** This used to be an early return -- reply with the stored
+    # sentence and go home -- and going home meant skipping `_finish`, which
+    # is where the effects are applied, the after rules run, the memory is
+    # written and the quest review happens. So the second time anybody did
+    # anything, nothing happened and they were told it had.
+    #
+    # It hid for a long time behind the preconditions. Most verbs worth doing
+    # twice are refused the second time for a reason of their own -- the lamp
+    # is already lit, the door already open -- so the refusal came first and
+    # the cache was never reached. What it takes to see it is a verb with no
+    # precondition and a real effect, which is exactly what crafting is: a
+    # soak world foraged twice, was told twice that it had found a scrap of
+    # twisted metal, and held one scrap.
+    #
+    # The cache is still worth having and still costs nothing -- it is what
+    # keeps a world from paying a model to describe the same act on the same
+    # thing for ever. It just describes; it does not decide.
+    # There was a second, correct cached path already, below `_finish`, which
+    # uses the stored words *and* runs the effects. It was simply unreachable
+    # for the commonest case, because the early return got there first.
     cached = _cached_narration(bound, verb, outcome, caller)
-    # A contested verb always runs its effects again: the player swung again,
-    # and this time it landed. Only a verb with a settled, single outcome may
-    # answer from the cache without touching the world.
-    if cached is not None and result is None and not rule.get("repeatable"):
-        # What is cached is the template, so the room line still names its
-        # actor as {actor} and has to be filled in here too -- broadcasting it
-        # raw hands a stray format placeholder to msg_contents.
-        # Counted like any other success. A verb answered from the cache is the
-        # commonest kind of working verb there is, and leaving it out would make
-        # every world look as though it refused far more than it allowed --
-        # which is the exact figure a suggester weighs its proposals by.
-        counters.note(world_root, verb, bound, caller, counters.DONE)
-        release(cached.get("actor", ""),
-                events_mod.Event(
-                    actor=caller, room=room, verb=verb, roles=bound,
-                    outcome=outcome, raw=raw,
-                    room_template=events_mod.repair(cached.get("room", ""))))
-        return
 
     # Whether this rule's own effects are the whole of the answer. Looking is
     # the case: `describe` returns the appearance, and a model asked to narrate
@@ -1222,7 +1237,7 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             and not (allow_effects is not None and _hits_everyone(e))
         ]
         extra = effects_mod.apply(caller, room, allowed, bound=bound,
-                                  world_root=world_root)
+                                  world_root=world_root, found=found)
         if speaks:
             # The effects produced the words, and they are an answer to
             # whoever acted rather than an announcement to the room: a look is
@@ -1251,14 +1266,25 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         # weightless, and the rule saying so lives on `spacecraft` rather than
         # inside `launch`.
         if outcome != "failure":
-            after_ctx = conditions.context(bound, caller, world_root, verb,
-                                           room=room)
-            following = [later for later in afters
-                         if rulebooks.guards_pass(later, after_ctx)]
-            for later in following:
+            # Each after rule keeps its own findings, and that is not the same
+            # decision as when its guards run. The guards still all run first,
+            # together, against the world as carry-out left it -- what differs
+            # is only that a set one rule's guard filed under "fuel" cannot be
+            # read by another rule that happens to use the same word. They are
+            # different rules, written by different people at different times,
+            # and a name is local to the rule that named it.
+            following = []
+            for later in afters:
+                mine = dict(found)
+                if rulebooks.guards_pass(
+                        later, conditions.context(bound, caller, world_root,
+                                                  verb, room=room,
+                                                  found=mine)):
+                    following.append((later, mine))
+            for later, mine in following:
                 extra += effects_mod.apply(
                     caller, room, later.get("effects") or [],
-                    bound=bound, world_root=world_root)
+                    bound=bound, world_root=world_root, found=mine)
 
         _remember(caller, event, actor_text)
         # A contested attempt that came out badly is still a thing that

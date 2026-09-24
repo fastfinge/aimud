@@ -43,6 +43,26 @@ class Room(ObjectParent, DefaultRoom):
             return super().return_appearance(looker, **kwargs)
         return conditions.darkness(looker, self, root)
 
+    def filter_visible(self, objects, looker, **kwargs):
+        """
+        Upstream's test, plus: something at another thing is listed by it.
+
+        A coin under a rug is in the room's own contents now -- `under` is a
+        pointer rather than containment, so the coin really is on the floor --
+        and without this it read twice over: loosely among what you see, and
+        again as "a rug (a coin under it)". The second is the one to keep,
+        because it says where the coin is.
+
+        Here rather than in `get_display_things`, because "is this one of the
+        things shown" is exactly what this hook answers, and everything else
+        that lists a room's contents asks it too.
+        """
+        from world import relations
+
+        return [obj for obj in super().filter_visible(objects, looker, **kwargs)
+                if not (relations._is_thing(obj)
+                        and relations.host_of(obj) is not None)]
+
     def get_display_things(self, looker, **kwargs):
         """
         The room's loose contents, each noting what it is holding.

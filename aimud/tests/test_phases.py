@@ -19,6 +19,23 @@ from tests.support import FakeSponsor, finishing, immediately, replying
 from world import rulebooks as R
 from world import attempt as attempt_mod
 from world import kinds, standard_rules, verb_gen, verbs
+from world import rulesets
+
+
+def _a_version_behind(root):
+    """
+    Put a world one edition behind the default ruleset, so seeding reseeds.
+
+    The lever used to be an integer attribute of its own; a world now records
+    a version per ruleset, so this sets that one back. Kept as a helper rather
+    than spelled out at six call sites, because what it means -- "this world
+    holds last week's copy" -- is the thing each of those tests is about.
+    """
+    from world import rulesets
+
+    holding = rulesets.held(root)
+    holding[rulesets.DEFAULT] = 0
+    setattr(root.db, rulesets.ATTR, holding)
 
 
 @tag("world")
@@ -312,20 +329,22 @@ class WhenTheStandardRulesThemselvesChange(RunningTheAttempt):
 
     def test_a_world_a_version_behind_gets_the_new_ones(self):
         standard_rules.seed(self.root)
-        setattr(self.root.db, standard_rules.VERSION_ATTR,
-                standard_rules.VERSION - 1)
+        _a_version_behind(self.root)
         self.assertTrue(standard_rules.seed(self.root))
+        # The default ruleset's own, not every ruleset's: a world gets
+        # clothing and wielding by default too, and `is_standard` is true of
+        # anything a world came with rather than learned.
         standing = [r for r in R.all_rules(self.root)
-                    if standard_rules.is_standard(r)]
-        self.assertEqual(len(standing), len(standard_rules.STANDARD),
+                    if rulesets.from_ruleset(r, rulesets.DEFAULT)]
+        wanted = len(rulesets.get(rulesets.DEFAULT)["rules"])
+        self.assertEqual(len(standing), wanted,
                          "the old copies should have gone, not doubled up")
 
     def test_and_keeps_what_it_wrote_for_itself(self):
         standard_rules.seed(self.root)
         R.add(self.root, R.blank(action="read", phase=R.CHECK,
                                  name="a rule this world wrote"))
-        setattr(self.root.db, standard_rules.VERSION_ATTR,
-                standard_rules.VERSION - 1)
+        _a_version_behind(self.root)
         standard_rules.seed(self.root)
         self.assertIn("a rule this world wrote",
                       [r["name"] for r in R.all_rules(self.root)])
@@ -339,8 +358,7 @@ class WhenTheStandardRulesThemselvesChange(RunningTheAttempt):
         from world import actions
 
         standard_rules.seed(self.root)
-        setattr(self.root.db, standard_rules.VERSION_ATTR,
-                standard_rules.VERSION - 1)
+        _a_version_behind(self.root)
         actions.declare(self.root, "put", [])          # the stale guess
         store = dict(getattr(self.root.db, actions.ATTR, None) or {})
         store["put"] = dict(store["put"], applies_to=[
@@ -357,7 +375,67 @@ class WhenTheStandardRulesThemselvesChange(RunningTheAttempt):
 
         standard_rules.seed(self.root)
         actions.declare(self.root, "launch", [{"role": "direct"}])
-        setattr(self.root.db, standard_rules.VERSION_ATTR,
-                standard_rules.VERSION - 1)
+        _a_version_behind(self.root)
         standard_rules.seed(self.root)
         self.assertIsNotNone(actions.spec(self.root, "launch"))
+
+
+@tag("world")
+class DoingSomethingTwice(RunningTheAttempt):
+    """
+    The soak's sharpest find: a verb worked once and said it had worked twice.
+
+    A narration is cached against the things it was written about, so a world
+    does not pay a model to describe the same act on the same thing for ever.
+    That was right. What was wrong is that the cache answered the *whole*
+    attempt: the reply returned before `_finish`, which is where effects land,
+    after rules run, memory is written and quests are reviewed. So the second
+    time anybody did anything, nothing happened and they were told it had.
+
+    It hid behind the preconditions. Most verbs worth doing twice are refused
+    the second time for a reason of their own -- the lamp is already lit, the
+    door already open -- so the refusal came first and the cache was never
+    reached. Seeing it takes a verb with no precondition and a real effect,
+    which is exactly what foraging is.
+    """
+
+    def forage_rule(self):
+        R.add(self.root, R.blank(
+            action="forage", phase=R.CARRY_OUT, scope={"world": True},
+            name="foraging turns up scrap",
+            effects=[{"type": "create_object",
+                      "name": "scrap of twisted metal",
+                      "why": "what foraging turns up", "location": "actor"}]))
+
+    def scraps(self):
+        return [obj for obj in self.char1.contents if "scrap" in obj.key]
+
+    def test_a_verb_with_no_object_runs_its_effects_every_time(self):
+        self.forage_rule()
+        for expected in (1, 2, 3):
+            self.try_it("forage")
+            self.assertEqual(len(self.scraps()), expected,
+                             f"foraging {expected} times should give "
+                             f"{expected} scraps")
+
+    def test_and_still_says_so_from_the_cache(self):
+        """
+        The cache is kept -- it is what stops a world paying to describe the
+        same act for ever. It describes; it no longer decides.
+        """
+        self.forage_rule()
+        first = self.try_it("forage")
+        again = self.try_it("forage")
+        self.assertEqual(first, again)
+
+    def test_a_verb_on_the_same_object_runs_its_effects_twice(self):
+        R.add(self.root, R.blank(
+            action="read", phase=R.CARRY_OUT, scope={"world": True},
+            name="reading wears the book a little",
+            effects=[{"type": "set_trait", "role": "actor",
+                      "trait": "tiredness", "change": 1}]))
+        from world import traits
+
+        self.try_it("read book")
+        self.try_it("read book")
+        self.assertEqual(traits.value(self.char1, "tiredness"), 2)

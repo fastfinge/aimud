@@ -79,6 +79,24 @@ def note_failure(world_root, key):
 # Would this effect make that condition true?
 # ---------------------------------------------------------------------------
 
+def _already_counting(actor, ctype):
+    """
+    What an actor has that already advances a want of this sort.
+
+    Only for the wants where having a thing is the point. Carrying a garment
+    advances wearing it -- find it, pick it up, put it on -- so a `worn` want
+    skips only what is already on, never what is merely in hand. Everything
+    else is about a particular thing rather than a number of them, and skips
+    nothing.
+    """
+    held = list(getattr(actor, "contents", []) or [])
+    if ctype == "holds":
+        return held
+    if ctype == "worn":
+        return [obj for obj in held if getattr(obj.db, "worn", False)]
+    return []
+
+
 def _effect_achieves(effect, condition, obj_name):
     """
     Whether one effect would satisfy one goal condition about `obj_name`.
@@ -273,6 +291,8 @@ def _for_condition(actor, world_root, condition, depth=0):
     with preconditions of its own -- walking somewhere and picking something up
     are mechanics, and a mechanic has no rulebook to be refused by.
     """
+    from world import clothing
+
     ctype = condition.get("type")
     name = condition.get("object", "")
 
@@ -296,7 +316,8 @@ def _for_condition(actor, world_root, condition, depth=0):
             return None, None
         if ctype == "not_holds" and obj.location is actor:
             return f"drop {obj.key}", None
-        if ctype == "not_worn" and obj.location is actor and obj.db.worn:
+        if (ctype == "not_worn" and obj.location is actor
+                and clothing.is_worn(obj)):
             return f"remove {obj.key}", None
         if ctype == "not_placed" and obj.location is not actor:
             return f"get {obj.key}", None
@@ -326,7 +347,12 @@ def _for_condition(actor, world_root, condition, depth=0):
         # set off again.
         from world.goals import find_of_kind
 
-        found = find_of_kind(world_root, actor, condition["kind"])
+        # And whichever ones already count towards it are skipped, because a
+        # want this function is planning towards is by definition not met yet.
+        # For "three apples" while holding one, the apple in hand is no step:
+        # there is nothing to do to a thing you have. See `find_of_kind`.
+        found = find_of_kind(world_root, actor, condition["kind"],
+                             skip=_already_counting(actor, ctype))
         if found is None:
             return None, None
         name = found.key
@@ -359,7 +385,7 @@ def _for_condition(actor, world_root, condition, depth=0):
             if obj.location is actor.location:
                 return f"get {obj.key}", None
             return (_step_towards_object(actor, name), None)
-        if not obj.db.worn:
+        if not clothing.is_worn(obj):
             return f"wear {obj.key}", None
         return None, None
 

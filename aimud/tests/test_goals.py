@@ -66,7 +66,7 @@ class TestingAGoal(GameTest):
         self.obj1.move_to(self.char1, quiet=True)
         want = {"type": "worn", "object": "Obj"}
         self.assertFalse(self.met(want))
-        self.obj1.db.worn = True
+        verbs.apply_states(self.obj1, add=["worn"], world_root=self.root)
         self.assertTrue(self.met(want))
 
     def test_getting_rid_of_something(self):
