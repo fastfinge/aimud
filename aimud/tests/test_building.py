@@ -1694,14 +1694,21 @@ class EveryChoiceCanBeOpened(Building):
                                 and item.kind == menus.CHOICE:
                             self.assertIsInstance(item.choices_for(ctx), list)
 
+    #: What a draft needs before a conditional field appears at all. There is
+    #: one: nothing has anything to say about *when* a bonus counts until
+    #: something is granted, and hiding those two until then is the form
+    #: being well mannered rather than a field going missing.
+    ONCE_FILLED = {"create_object": {"trait_bonuses": [{"trait": "discoveries",
+                                                        "amount": 1}]}}
+
     def test_an_effect_chosen_opens_the_fields_it_names(self):
         from world import effects
         from world.makers import rules
 
         self.furnish()
         for etype in sorted(effects.VOCABULARY):
-            ctx = menus.Context(self.char1, world_root=self.root,
-                                draft={"type": etype})
+            draft = dict({"type": etype}, **self.ONCE_FILLED.get(etype, {}))
+            ctx = menus.Context(self.char1, world_root=self.root, draft=draft)
             with self.subTest(effect=etype):
                 asked = [item.key for item in rules.NEW_EFFECT.items_for(ctx)]
                 for field in rules.EFFECT_FIELDS[etype]:
@@ -1710,6 +1717,17 @@ class EveryChoiceCanBeOpened(Building):
                     if isinstance(item, menus.Field) \
                             and item.kind == menus.CHOICE:
                         self.assertIsInstance(item.choices_for(ctx), list)
+
+    def test_and_a_field_hidden_until_it_makes_sense_stays_hidden(self):
+        """The manners the test above allows for, asserted outright."""
+        from world.makers import rules
+
+        empty = menus.Context(self.char1, world_root=self.root,
+                              draft={"type": "create_object"})
+        asked = [item.key for item in rules.NEW_EFFECT.items_for(empty)]
+        self.assertIn("trait_bonuses", asked)
+        self.assertNotIn("bonus_when", asked)
+        self.assertNotIn("bonus_while", asked)
 
     def test_and_a_goal_type_opens_the_fields_it_names(self):
         from world.makers import errands
@@ -1905,3 +1923,150 @@ class WhatARuleMakesIsWhatItWasTold(Building):
         for field in rules.EFFECT_FIELDS["create_object"]:
             self.assertIn(rules.STORED_AS.get(field, field), said)
         self.assertNotIn("why", said)
+
+
+@tag("world")
+class WhatAThingIsWorth(Building):
+    """
+    Armour, weapons and tools, made by hand and made by a rule.
+
+    `gear.py` is explicit that this is the whole of how any of them are worth
+    anything -- a breastplate is not a description of protection, it *is* the
+    protection -- and every generator has been able to declare one since long
+    before a person could. A world built by hand could make a sword and not a
+    good one.
+    """
+
+    loose_objects = 1
+
+    def setUp(self):
+        super().setUp()
+        from world import kinds, traits
+
+        traits.register(self.root, "defence", means="how well protected")
+        traits.register(self.root, "stealth", means="how unseen")
+        kinds.remember(self.root, "mail.n.03", {"wear": True})
+
+    def worth(self, **fields):
+        from world.makers import gearing
+
+        return gearing.spec(fields)
+
+    def test_what_was_filled_in_becomes_the_three_fields(self):
+        found = self.worth(
+            trait_bonuses=[{"trait": "defence", "amount": 3},
+                           {"trait": "stealth", "amount": -1}],
+            bonus_when="worn", bonus_while="whole")
+        self.assertEqual(found["trait_bonuses"],
+                         {"defence": 3, "stealth": -1})
+        self.assertEqual(found["bonus_when"], "worn")
+        self.assertEqual(found["bonus_while"], "whole")
+
+    def test_an_ordinary_thing_carries_nothing_at_all(self):
+        """
+        Not an empty map: `gear.bonuses` reads one as a claim to be worth
+        having, and most things are ordinary.
+        """
+        self.assertEqual(self.worth(), {})
+        self.assertEqual(self.worth(trait_bonuses=[]), {})
+        self.assertEqual(
+            self.worth(trait_bonuses=[{"trait": "defence", "amount": 0}]), {})
+
+    def test_a_hand_made_item_is_worth_what_it_was_given(self):
+        from world import gear
+        from world.makers import things
+
+        things.keep_item(self.draft(
+            name="Coat of Mail", description="Heavy rings.",
+            kind="mail.n.03", where="room",
+            trait_bonuses=[{"trait": "defence", "amount": 3},
+                           {"trait": "stealth", "amount": -1}],
+            bonus_when="worn"))
+        made = next(obj for obj in self.room1.contents
+                    if obj.key == "Coat of Mail")
+        self.assertEqual(gear.bonuses(made), {"defence": 3, "stealth": -1})
+        self.assertEqual(gear.condition(made), "worn")
+
+    def test_and_so_is_one_a_rule_makes(self):
+        from world import effects, gear
+        from world.makers import rules
+
+        made, _said = rules.keep_effect(self.draft(
+            type="create_object", name="Bright Blade", kind="mail.n.03",
+            trait_bonuses=[{"trait": "defence", "amount": 2}],
+            bonus_when="wielded", bonus_while="whetted"))
+        self.assertEqual(made["trait_bonuses"], {"defence": 2})
+        effects.apply(self.char1, self.room1, [made], bound={},
+                      world_root=self.root)
+        forged = next(obj for obj in self.room1.contents
+                      if obj.key == "Bright Blade")
+        self.assertEqual(gear.bonuses(forged), {"defence": 2})
+        self.assertEqual(gear.condition(forged), "wielded")
+        self.assertEqual(gear.gated_by(forged), "whetted")
+
+    def test_a_bonus_can_be_put_on_something_that_already_exists(self):
+        from world import gear
+        from world.makers import gearing
+
+        said = gearing.write(self.obj1, {
+            "trait_bonuses": [{"trait": "defence", "amount": 1}],
+            "bonus_when": "carried"})
+        self.assertEqual(gear.bonuses(self.obj1), {"defence": 1})
+        self.assertIn("defence", said)
+
+    def test_and_taken_off_again(self):
+        from world import gear
+        from world.makers import gearing
+
+        gearing.write(self.obj1, {
+            "trait_bonuses": [{"trait": "defence", "amount": 1}]})
+        gearing.write(self.obj1, {"trait_bonuses": []})
+        self.assertEqual(gear.bonuses(self.obj1), {})
+        self.assertIn("nothing in particular", gearing.said(self.obj1))
+
+    def test_what_a_thing_carries_reads_back_as_a_draft(self):
+        """So `edit item` opens on what is already true rather than empty."""
+        from world.makers import gearing
+
+        gearing.write(self.obj1, {
+            "trait_bonuses": [{"trait": "defence", "amount": 2}],
+            "bonus_when": "worn", "bonus_while": "whole"})
+        draft = gearing.drafted(self.obj1)
+        self.assertEqual(draft["trait_bonuses"],
+                         [{"trait": "defence", "amount": 2}])
+        self.assertEqual(draft["bonus_when"], "worn")
+        self.assertEqual(draft["bonus_while"], "whole")
+
+    def test_a_room_is_worth_something_to_everybody_standing_in_it(self):
+        """A forge is warm whether or not anything in it is."""
+        from world import gear
+        from world.makers import gearing
+
+        gearing.write(self.room1, {
+            "trait_bonuses": [{"trait": "defence", "amount": 1}],
+        }, present_only=True)
+        self.assertEqual(gear.bonuses(self.room1), {"defence": 1})
+        self.assertEqual(gear.condition(self.room1), "present")
+
+    def test_and_a_rooms_form_does_not_ask_when_it_counts(self):
+        """It could not be anything but present, so it is told not asked."""
+        from world.makers import gearing
+
+        keys = {item.key for item in gearing.items(present_only=True)}
+        self.assertEqual(keys, {"trait_bonuses"})
+        self.assertIn("bonus_when",
+                      {item.key for item in gearing.items()})
+
+    def test_every_form_that_makes_a_thing_can_arm_it(self):
+        from world import effects
+        from world.makers import rules, things
+
+        ctx = menus.Context(self.char1, world_root=self.root,
+                            draft={"type": "create_object"})
+        for form, where in ((things.NEW_ITEM, "create item"),
+                            (rules.NEW_EFFECT, "a rule's create_object")):
+            with self.subTest(form=where):
+                keys = {item.key for item in form.items_for(ctx)}
+                self.assertIn("trait_bonuses", keys)
+        self.assertIn("trait_bonuses",
+                      effects.VOCABULARY["create_object"]["fields"])

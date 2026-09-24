@@ -110,8 +110,10 @@ def _needs_host(ctx):
 
 
 def _item_spec(ctx):
+    from world.makers import gearing
+
     kind = str(ctx.draft.get("kind") or "").strip()
-    return {
+    spec = {
         "name": str(ctx.draft.get("name") or "").strip(),
         "description": str(ctx.draft.get("description") or "").strip(),
         "kind": kind,
@@ -119,6 +121,10 @@ def _item_spec(ctx):
         "states": list(ctx.draft.get("states") or []),
         "takeable": ctx.draft.get("takeable", True),
     }
+    # What it is worth to whoever has it, through the same three fields a
+    # generator declares and a rule's effect fills in.
+    spec.update(gearing.spec(ctx.draft))
+    return spec
 
 
 def keep_item(ctx):
@@ -169,6 +175,11 @@ def _said(complaints):
     return "This one cannot be made: " + "; ".join(complaints) + "."
 
 
+def _gearing_items(present_only=False):
+    from world.makers import gearing
+
+    return gearing.items(present_only=present_only)
+
 NEW_ITEM = menus.Form(
     key="new-item", title="Something in this room", guided=True,
     intro="A thing, made here. It is built the same way a generated one is, "
@@ -202,6 +213,7 @@ NEW_ITEM = menus.Form(
                     default=True,
                     help="Answered for the sort of thing, not only this one: "
                          "a world with forty chairs answers once."),
+        *_gearing_items(),
         menus.Field("where", "Where it goes", kind=menus.CHOICE,
                     choices=lambda ctx: [menus.Choice(v, l) for v, l in WHERE]),
         menus.Picker("host", "In or on what", options=host_options,
@@ -281,6 +293,39 @@ def thing_text(ctx):
     return "\n".join(lines)
 
 
+def _worth_draft(ctx):
+    from world.makers import gearing
+
+    obj = _target(ctx)
+    return gearing.drafted(obj) if obj is not None else {}
+
+
+def _worth_label(ctx):
+    from world.makers import gearing
+
+    obj = _target(ctx)
+    return (f"What it is worth: {gearing.said(obj)}" if obj is not None
+            else "What it is worth")
+
+
+def _keep_worth(ctx):
+    from world.makers import gearing
+
+    obj = _target(ctx)
+    if obj is None:
+        raise menus.Refuse("That is no longer here.")
+    return obj.id, gearing.write(obj, ctx.draft)
+
+
+_WORTH = menus.Form(
+    key="worth", title="What it is worth", guided=False,
+    intro="What this thing does for whoever has it. Changed here it takes "
+          "effect at once, including for whoever is holding it now.",
+    items=lambda ctx: _gearing_items() + [
+        making.keeper("keep", "Keep this", _keep_worth)],
+)
+
+
 _EDIT_THING = menus.Form(
     key="edit-thing", title=lambda ctx: f"Changing {_label(ctx)}",
     intro=thing_text,
@@ -303,6 +348,10 @@ _EDIT_THING = menus.Form(
                       show=lambda ctx, value: ", ".join(value or []) or "none",
                       help="Several, separated by spaces. A condition this "
                            "world does not keep can be made from here."),
+        menus.Submenu("worth", _worth_label, _WORTH,
+                      fresh_draft=True, draft=_worth_draft,
+                      help="What it does for whoever has it, and when that "
+                           "counts."),
     ],
 )
 
@@ -376,6 +425,8 @@ def keep_room(ctx):
     if wrong:
         raise menus.Refuse(_said(wrong))
 
+    from world.makers import gearing
+
     room = worldgen._create_room(
         title, description, [],
         getattr(root.db, "world_description", "") or "",
@@ -383,7 +434,11 @@ def keep_room(ctx):
         room_type=str(ctx.draft.get("room_type") or ""),
         category="destination",
         zone=str(ctx.draft.get("zone") or ""),
-        zone_purpose=str(ctx.draft.get("zone_purpose") or ""))
+        zone_purpose=str(ctx.draft.get("zone_purpose") or ""),
+        # What being in this place does to whoever is in it. Always for
+        # everybody present -- a forge is warm whether or not anything in it
+        # is -- so `_create_room` sets the condition itself.
+        bonuses=gearing.spec(ctx.draft).get("trait_bonuses"))
     if room is None:
         raise menus.Refuse("That room could not be made.")
     # The way there. `_create_room` makes the way back; this is the way out.
@@ -426,6 +481,7 @@ NEW_ROOM = menus.Form(
                          "what makes `only one of these in this area` "
                          "answerable, and what a rule about that sort of "
                          "place reaches."),
+        *_gearing_items(present_only=True),
         making.keeper("keep", "Make it", keep_room,
                       command=lambda ctx: "create room <direction>"),
     ],
@@ -479,6 +535,39 @@ def _room_writer(field):
     return write
 
 
+def _room_worth_draft(ctx):
+    from world.makers import gearing
+
+    room = _here(ctx)
+    return gearing.drafted(room) if room is not None else {}
+
+
+def _room_worth_label(ctx):
+    from world.makers import gearing
+
+    room = _here(ctx)
+    return (f"What being here is worth: {gearing.said(room)}"
+            if room is not None else "What being here is worth")
+
+
+def _keep_room_worth(ctx):
+    from world.makers import gearing
+
+    room = _here(ctx)
+    if room is None:
+        raise menus.Refuse("You are nowhere.")
+    return room.id, gearing.write(room, ctx.draft, present_only=True)
+
+
+_ROOM_WORTH = menus.Form(
+    key="room-worth", title="What being here is worth", guided=False,
+    intro="What being in this place does to whoever is in it, for everybody "
+          "standing here. It takes effect at once.",
+    items=lambda ctx: _gearing_items(present_only=True) + [
+        making.keeper("keep", "Keep this", _keep_room_worth)],
+)
+
+
 EDIT_ROOM = menus.Form(
     key="edit-room", title="This place", intro=room_text,
     items=[
@@ -500,6 +589,11 @@ EDIT_ROOM = menus.Form(
                     set=lambda ctx, value: _set_room_states(ctx, value),
                     parse=lambda ctx, text: _read_words(text),
                     show=lambda ctx, value: ", ".join(value or []) or "none"),
+        menus.Submenu("worth", _room_worth_label, _ROOM_WORTH,
+                      fresh_draft=True, draft=_room_worth_draft,
+                      help="What being in this place does to whoever is in "
+                           "it. A forge is warm whether or not anything in "
+                           "it is."),
     ],
 )
 

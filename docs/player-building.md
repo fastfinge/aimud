@@ -1060,6 +1060,19 @@ to `world/menus.py`. Where it differs:
   in front of a player rather than a failure at import. Found by the way out of
   a room, whose natural name is `exit` and which is the word that quits every
   menu in the game; it is called a **way** (§9.2).
+* **A thing made by hand can be worth having.** `world/makers/gearing.py`:
+  what it grants, when that counts (worn, wielded, carried, present) and what
+  condition the thing must be in first. One form, shared by `create item`,
+  `edit item`, a rule's `create_object` and a room -- because `gear.py` is
+  explicit that this is the whole of how armour, weapons and tools are worth
+  anything, and a world that could make a sword and not a good one was
+  missing the point of having them.
+
+  A room is here for the reason `present` exists: its bonuses are for
+  everybody standing in it and could not be anything else, so its form is
+  told rather than asked. And an ordinary thing carries no empty map --
+  `gear.bonuses` reads one as a claim to be worth having, and most things are
+  ordinary.
 * **An effect's form asks for everything the effect takes**, which it did
   not. Reported from play: a rule that made something could not say what
   *sort* of thing it was, so the sort was guessed from the head noun of

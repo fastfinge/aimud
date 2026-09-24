@@ -339,7 +339,7 @@ EFFECT_FIELDS = {
     "set_state": ("role", "add", "remove", "styles"),
     "set_trait": ("role", "trait", "change", "set_to", "rate"),
     "create_object": ("name", "description", "kind", "takeable", "states",
-                      "where"),
+                      "trait_bonuses", "bonus_when", "bonus_while", "where"),
     "destroy_object": ("name_role",),
     "move_object": ("name_role", "to", "preposition"),
     "move_contents": ("name_role", "to", "taken_from"),
@@ -424,6 +424,9 @@ def keep_effect(ctx):
         elif field == "styles":
             effect[field] = {str(one.get("state")): str(one.get("said"))
                              for one in value if one.get("state")}
+        elif field in ("trait_bonuses", "bonus_when", "bonus_while"):
+            continue            # written together, below
+
         else:
             effect[STORED_AS.get(field, field)] = value
 
@@ -436,6 +439,15 @@ def keep_effect(ctx):
                            "or at what rate a second.")
     if etype == "create_object" and not effect.get("name"):
         raise menus.Refuse("Say what it produces.")
+
+    if etype == "create_object":
+        # The three that are one answer: what it grants, when that counts and
+        # what it must be in first. `gearing.spec` writes nothing at all when
+        # nothing was granted, because an empty map reads to `gear.bonuses`
+        # as a claim that this is a thing worth having.
+        from world.makers import gearing
+
+        effect.update(gearing.spec(ctx.draft))
 
     # Held to what a rule's effect is held to whoever wrote it: a name says
     # what a thing is and never its condition, and a description may only ask
@@ -510,6 +522,26 @@ def _style_said(ctx, entry):
     return f"{entry.get('state')}: {entry.get('said')}"
 
 
+def _gearing():
+    """
+    What the thing a rule makes is worth, asked the way an item's is.
+
+    Locked to `create_object`, which is the one effect that makes something to
+    be worth anything. Shared with `create item` rather than written twice, so
+    a sword a rule forges and one somebody typed are armed the same way.
+    """
+    from world.makers import gearing
+
+    found = []
+    for item in gearing.items():
+        was = item.lock
+        item.lock = (lambda ctx, key=item.key, was=was:
+                     key in _effect_takes(ctx)
+                     and (was is None or was(ctx)))
+        found.append(item)
+    return found
+
+
 NEW_EFFECT = menus.Form(
     key="new-effect", title="Something that happens", guided=True,
     intro="What a rule actually does. Everything a verb changes it changes "
@@ -576,6 +608,7 @@ NEW_EFFECT = menus.Form(
                       help="Conditions it exists in from the moment it is "
                            "made: lit, wet, brewed. Several, separated by "
                            "spaces."),
+        *_gearing(),
         menus.Field("where", "Where it appears", kind=menus.CHOICE,
                     lock=_asks("where"),
                     choices=lambda ctx: [menus.Choice(v, l)

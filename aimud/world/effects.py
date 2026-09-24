@@ -501,9 +501,10 @@ VOCABULARY = {
         # with no `kind`, the sort of thing is guessed from the head noun of
         # whatever it is called.
         "takes": 'name, description, kind, takeable, states, '
+                 'trait_bonuses, bonus_when, bonus_while, '
                  'location: "room" | "actor"',
         "fields": ("name", "description", "kind", "takeable", "states",
-                   "location"),
+                   "trait_bonuses", "bonus_when", "bonus_while", "location"),
         "backwards": True, "answers": False,
     },
     "destroy_object": {
