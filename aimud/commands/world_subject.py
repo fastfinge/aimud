@@ -635,7 +635,20 @@ def new_draft(description=""):
             "guidance": {}, "rulesets": rulesets.defaults()}
 
 
-def _key_problem(caller):
+def _key_problem(caller, spec=None):
+    """
+    Why this cannot be paid for, or "".
+
+    A world that writes none of its own rooms is made without a single model
+    call -- that is the whole of what turning them off buys -- so it needs no
+    key, and demanding one refuses exactly the person the switch exists for.
+    `spec` says what is being built; with none given the question is only
+    whether a key is there at all.
+    """
+    from world import permits
+
+    if spec is not None and permits.from_spec(spec).get("rooms")             == permits.NEVER:
+        return ""
     try:
         sponsor_mod.of_account(account_of(caller)).key()
     except ValueError as err:
@@ -645,10 +658,16 @@ def _key_problem(caller):
 
 def create_run(cmd, ctx, words):
     caller = cmd.caller
+    # Said rather than refused. Whether a key is needed depends on what the
+    # wizard is about to be filled in with -- a world that writes none of its
+    # own rooms needs none -- and refusing here would shut the form before
+    # anybody could say so. Generating without one still fails, with the same
+    # sentence, at the moment it would have spent something.
     problem = _key_problem(caller)
     if problem:
-        caller.msg(problem)
-        return
+        caller.msg(f"{problem}\n|xA world that writes none of its own rooms "
+                   f"needs no key at all: turn them off under |wWhat this "
+                   f"world writes for itself|x.|n")
     from commands.subjects import verb_form
 
     menus.open_menu(caller, verb_form("create"), session=cmd.session,
@@ -794,7 +813,9 @@ def _reset(caller, root):
     if not description:
         return ("That world has no stored description, so it cannot be "
                 "rebuilt. |wdelete world|n removes it instead.")
-    problem = _key_problem(caller)
+    # Asked of the spec, so a world that writes no rooms of its own is rebuilt
+    # without a key, exactly as it was made without one.
+    problem = _key_problem(caller, spec)
     if problem:
         return problem
 

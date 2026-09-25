@@ -1060,6 +1060,17 @@ to `world/menus.py`. Where it differs:
   in front of a player rather than a failure at import. Found by the way out of
   a room, whose natural name is `exit` and which is the word that quits every
   menu in the game; it is called a **way** (§9.2).
+* **A reset keeps what you chose, and needs no key to rebuild what needed
+  none.** Two bugs in one path, reported from play. `reset world` rebuilds
+  from `lore.spec_of`, which carries the clock and the rulesets for exactly
+  this reason -- its docstring says a reset that forgot the guidance would
+  quietly undo half the wizard -- and it did not carry the permits. So a
+  world built by hand came back planning zones, naming a room, describing it
+  and putting somebody in it: the whole of what its creator had turned off.
+  And the key check ran before anything read the spec, so a world made
+  without a model could not be remade without one. `create world` now says
+  a key is missing rather than refusing to open, since whether one is needed
+  depends on what the wizard is about to be filled in with.
 * **A rule that can never fire says so.** Reported from play: two carry-out
   rules at `everywhere` for one verb, and summoning air summoned earth.
   Nothing was broken -- carry-out takes one winner, the two tied on

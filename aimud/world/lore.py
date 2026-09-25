@@ -298,12 +298,13 @@ def spec_of(root, character=None):
     This is what `edit world` opens and what `reset world` rebuilds from: a
     reset that forgot the guidance would quietly undo half the wizard.
     """
-    from world import rulesets
+    from world import permits, rulesets
 
     if root is None:
         return {"title": "", "description": "", "player_name": "",
                 "player_description": "", "guidance": {},
-                "rulesets": rulesets.defaults()}
+                "rulesets": rulesets.defaults(),
+                permits.ATTR: permits.held(None)}
     return {
         "title": root.db.world_title or "",
         "description": root.db.world_description or "",
@@ -317,6 +318,13 @@ def spec_of(root, character=None):
         # at their own defaults, since a reset is a world built again rather
         # than the one that was there carried over.
         "rulesets": rulesets.chosen(root) or rulesets.defaults(),
+        # And what this world writes for itself. A reset rebuilds from this
+        # spec, so a world whose creator turned its rooms off came back with
+        # them on -- and then planned zones, named a room, described it and
+        # put somebody in it, which is the whole of what they had turned off.
+        # Same reason as the clock and the rulesets above: a reset that
+        # forgets half the wizard is a reset that undoes it.
+        permits.ATTR: permits.held(root),
     }
 
 

@@ -413,3 +413,90 @@ class AndThenYouBuildOnIt(GameTest):
         field.store(ctx, "Shelves of jars, and a cold hearth.")
         self.assertIn("Shelves of jars", self.room.db.desc)
         self.assertNotIn("edit room", self.room.db.desc)
+
+
+@tag("world")
+class AResetKeepsWhatYouChose(GameTest):
+    """
+    Rebuilding a world does not turn its generators back on.
+
+    Reported from play, and the one place a switch of this shape most has to
+    hold: `reset world` rebuilds from the spec, and the spec is what
+    `lore.spec_of` returns. That function carries the clock and the rulesets
+    for exactly this reason -- its own docstring says a reset that forgot the
+    guidance would quietly undo half the wizard -- and it did not carry this.
+    So a world built by hand came back planning zones, naming a room,
+    describing it and putting somebody in it, which is the whole of what its
+    creator had turned off.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.root.db.world_title = "Endless Alchemy"
+        self.root.db.world_description = "A kitchen at the end of the world."
+        self.room1.db.world_root = self.root
+
+    def test_the_spec_carries_what_the_world_writes_for_itself(self):
+        from world import lore
+
+        permits.choose(self.root, "rooms", "never")
+        permits.choose(self.root, "people", "asked")
+        spec = lore.spec_of(self.root)
+        self.assertEqual(spec[permits.ATTR]["rooms"], permits.NEVER)
+        self.assertEqual(spec[permits.ATTR]["people"], permits.ASKED)
+
+    def test_and_rebuilding_from_it_writes_no_rooms(self):
+        from unittest import mock
+
+        from world import llm, lore
+        from world import sponsor as sponsor_mod
+        from world import worldgen
+
+        permits.choose(self.root, "rooms", "never")
+        spec = lore.spec_of(self.root)
+
+        def refuse(*args, **kwargs):
+            raise AssertionError("a rebuild called a model")
+
+        account = mock.Mock()
+        account.db.openrouter_api_key = "sk-test"
+        account.db.created_worlds = []
+        made = []
+        for name in ("fetch", "converse", "complete"):
+            if hasattr(llm, name):
+                patcher = mock.patch.object(llm, name, refuse)
+                patcher.start()
+                self.addCleanup(patcher.stop)
+        worldgen.generate_first_room(
+            sponsor_mod.Sponsor(world_root=None, account=account), spec,
+            made.append, lambda err: self.fail(err))
+        self.assertEqual(len(made), 1)
+        self.assertEqual(permits.setting(made[0], "rooms"), permits.NEVER)
+
+    def test_and_a_world_that_writes_its_own_still_does(self):
+        from world import lore
+
+        spec = lore.spec_of(self.root)
+        self.assertEqual(spec[permits.ATTR]["rooms"], permits.ALWAYS)
+
+    def test_rebuilding_a_hand_built_world_needs_no_key(self):
+        """
+        The other half. A world made without a model must be remakeable
+        without one, and the key check came before anything read the spec.
+        """
+        from commands.world_subject import _key_problem
+
+        permits.choose(self.root, "rooms", "never")
+        from world import lore
+
+        spec = lore.spec_of(self.root)
+        self.assertEqual(_key_problem(self.char1, spec), "")
+
+    def test_but_one_that_generates_still_does(self):
+        from commands.world_subject import _key_problem
+        from world import lore
+
+        spec = lore.spec_of(self.root)
+        self.assertIn("key", _key_problem(self.char1, spec).lower())
