@@ -1003,3 +1003,11 @@ with federation, where there would be a server to attribute to.
 **Do world-scope memories travel later?** §4 says not now and says why. The
 question is whether an innkeeper who has met people is part of the world or
 part of what happened in it.
+
+**Found and not fixed: `rulesets._undeclared` has a check that can never
+fire.** It builds `folded = {str(v) for v in doc.get("verbs") or []}` to catch
+"a rule about an action this ruleset folds but never declares", but a `verbs`
+entry is an object, so the set holds stringified dicts and no action name ever
+matches. Left alone deliberately: repairing it changes what documents load,
+every shipped ruleset would have to be re-checked against it, and that is a
+change to `rulesets` rather than to this. Worth a commit of its own.
