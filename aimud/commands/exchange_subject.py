@@ -22,11 +22,10 @@ from commands.subjects import Subject, Use, account_of, answered, asking, \
 from world import menus
 
 
-#: Where an account records which exports it wrote, so `delete export` can
-#: tell whose is whose. On the account rather than in the file: a shared
-#: document should not name anybody, and a name in it would be the one thing
-#: in the format that meant something only on the server that wrote it.
-WROTE_ATTR = "exported_worlds"
+# Which exports an account wrote is kept in `account.db.exported_worlds`, so
+# that `delete export` can tell whose is whose. On the account rather than in
+# the file: a shared document should not name anybody, and a name in one would
+# be the only thing in the format that meant something on just one server.
 
 
 def _caller(ctx):
