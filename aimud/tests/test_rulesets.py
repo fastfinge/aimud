@@ -458,7 +458,8 @@ class CraftingArrives(GameTest):
         rulesets.apply_choice(self.root, ["default", "crafting"])
         rulesets.apply_choice(self.root, ["default"])
         rulesets.apply_choice(self.root, ["default", "crafting"])
-        self.assertEqual(rulesets.held(self.root).get("crafting"), 2)
+        self.assertEqual(rulesets.held(self.root).get("crafting"),
+                         int(rulesets.get("crafting")["version"]))
         self.assertIn("combine", actions.vocabulary(self.root))
         self.assertEqual(folds.verbs_of(self.root).get("mix"), "combine")
 

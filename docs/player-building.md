@@ -725,6 +725,49 @@ little flatly. That is the trade its builder made; a silent refusal is not.
 `tests/test_summoning.py` is the whole of it, written as the world it came
 from.
 
+### 8.7 What a verb always does
+
+A declaration says what a verb *takes*. It can now also say what a rule about
+it is not finished without, and `rule_gen.validate` sends back a carry-out
+rule that falls short instead of filing it.
+
+The lever before this was the world's Rules guidance, and it reaches the rule
+writer without binding it. That is not enough here, and the reason is the
+shape of the thing rather than the model: a rule is written **once per pair of
+things and kept**, so a model that reaches for `narrate` files "and that is
+all that happens" for earth and water, and nothing ever asks again. One
+forgetful answer is permanent.
+
+`actions.MUST` is the closed list, and it is short:
+
+| name | what a rule must do | satisfied by |
+|---|---|---|
+| `makes` | bring something new into being | `create_object` |
+| `unmakes` | take something out of the world | `destroy_object` |
+
+Each is a promise a verb makes about its own result, and deliberately not a
+way of writing the rule from outside it: *what* is made, and *which* of the
+things named is consumed, are still the rule's own answer and a different one
+for every pair. That is the whole distinction that makes this safe to require.
+
+* Asked of **carry-out rules only**. `instead` says the verb means something
+  else here and leaves the doing to whatever it means; `check` only ever
+  refuses; `after` is about what follows rather than about the act.
+* The prompt says it before the first try, so the round trip is the backstop
+  rather than the mechanism.
+* `edit action` can turn it on for a verb already in use, unlike the arity --
+  because this binds rules *not yet written*, and a world wants it exactly
+  when it has just read one that did nothing.
+* A **hand-written** rule that falls short is told, not refused. §8.5 is that
+  nothing at the end of the rule form refuses a rule, and the person reading
+  the note is the one who declared the requirement.
+* Crafting ships it on `combine` and `make` (version 3). Its own sentence is
+  that things can be made out of other things, and the report this came from
+  was a crafting world where the guidance was written, the model read it, and
+  the rule it filed still changed nothing.
+
+`tests/test_must.py`.
+
 ---
 
 ## 9. Contents: items, rooms, exits, people

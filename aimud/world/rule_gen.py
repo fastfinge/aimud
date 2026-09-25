@@ -200,7 +200,7 @@ def validate(reply, offered, action, world_root=None):
     And one check that is about meaning rather than about shape, earned by
     measurement: see `_self_defeating`.
     """
-    from world import conditions
+    from world import actions, conditions
 
     scopes = {token: scope for token, _said, scope in offered}
     kept, complaints = [], []
@@ -256,6 +256,20 @@ def validate(reply, offered, action, world_root=None):
         if phase in (rulebooks.CARRY_OUT, rulebooks.AFTER) and not effects:
             complaints.append(f"a {phase} rule that changes nothing")
             continue
+        # And what this world has declared the verb always does. Sent back
+        # rather than filed, because a rule is written once per pair of things
+        # and kept: a carry-out rule for combining that only narrates settles
+        # earth-and-water as prose for the life of the world, and nothing
+        # asks again. See `actions.MUST`.
+        if phase == rulebooks.CARRY_OUT:
+            short = actions.unmet(world_root, action, effects)
+            if short:
+                complaints.append(
+                    f"a carry_out rule for {action} that does not "
+                    + " or ".join(actions.said_must(name) for name in short)
+                    + f" -- this world declares that {action} always does, so "
+                    f"the rule is not finished until it says how")
+                continue
         written = _derived_written(effects, world_root)
         if written:
             complaints.append(
@@ -648,6 +662,12 @@ def prompt(world_root, action, bound, actor, offered, hints=()):
     declared = actions.spec(world_root, action)
     if declared and declared.get("means"):
         lines.append(f'It means: {declared["means"]}')
+    required = actions.must_of(world_root, action)
+    if required:
+        lines.append(
+            "A carry_out rule for it must "
+            + " and ".join(actions.said_must(name) for name in required)
+            + ". One that does not is sent back rather than filed.")
 
     already = rulebooks.for_attempt(world_root, action, bound, actor)
     if already:

@@ -264,6 +264,22 @@ def problems(doc, known=None):
                 f"{rule.get('name')!r} becomes true on a `when`, not on "
                 f"`conditions`; `world.becoming` never reads those")
 
+    # What an action says a rule about it must do. Refused here rather than
+    # dropped by `clean_must`, for the reason the mechanics below are: a
+    # section naming something nothing knows is a promise nobody keeps, and a
+    # requirement silently dropped is the one sort of drift that looks exactly
+    # like the bug it was added to stop.
+    from world import actions as actions_mod
+
+    for entry in doc.get("actions") or []:
+        if not hasattr(entry, "keys"):
+            continue
+        for named in entry.get("must") or []:
+            if str(named) not in actions_mod.MUSTS:
+                wrong.append(
+                    f"{entry.get('action')!r} must {named!r}, which is not "
+                    f"one of {', '.join(actions_mod.MUSTS)}")
+
     # A ruleset names a mechanic; it never supplies one. Only what ships with
     # the game may be named, and a name that is not in the table is refused
     # here rather than silently doing nothing. See `world.mechanics`.
@@ -623,7 +639,8 @@ def _apply(world_root, doc, decided):
         actions.declare(world_root, str(entry.get("action") or ""),
                         applies_to=entry.get("applies_to") or (),
                         means=str(entry.get("means") or ""),
-                        despite=entry.get("despite") or ())
+                        despite=entry.get("despite") or (),
+                        must=entry.get("must") or ())
 
     added = []
     for rule in doc.get("rules") or []:

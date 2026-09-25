@@ -822,9 +822,9 @@ def phase_nudge(ctx):
     """
     What the rest of the rule says about the phase chosen. Never a choice.
 
-    Three of them, and each names a way a rule fails by doing nothing rather
-    than by breaking -- which is the failure this game is most careful about
-    everywhere else and had no way to catch here.
+    Each names a way a rule fails by doing nothing rather than by breaking --
+    which is the failure this game is most careful about everywhere else and
+    had no way to catch here.
     """
     phase = str(ctx.draft.get("phase") or "")
     effects = list(ctx.draft.get("effects") or [])
@@ -841,6 +841,17 @@ def phase_nudge(ctx):
             "|yThis rule does nothing.| A carry-out with no effects means the "
             "verb succeeds and changes nothing, which reads to a player as it "
             "having worked. Add an effect, or make it a check.|n")
+    if phase == "carry_out" and action:
+        from world import actions
+
+        short = actions.unmet(_root(ctx), action, effects)
+        if short:
+            said.append(
+                f"|yThis world declares that {action} always "
+                f"{' and '.join(actions.said_must(n) for n in short)}, and "
+                f"this rule does not.|n A rule a model wrote would be sent "
+                f"back for it; yours is kept, since you are the one who "
+                f"declared it. |wview action {action}|n says what is asked.")
     if phase in ("carry_out", "instead", "after") and ctx.draft.get(
             "conditions"):
         said.append(

@@ -123,6 +123,13 @@ def one_verb(root, verb):
             doing = {"acting": "act", "moving": "move", "speaking": "speak"}
             lines.append("  works even when you cannot "
                          + " or ".join(doing.get(g, g) for g in sorted(waived)))
+        # And what this world has declared it always does, which is the one
+        # thing on a declaration that binds rules not yet written.
+        required = actions.must_of(root, verb)
+        if required:
+            lines.append("  a carry out rule for it must "
+                         + " and ".join(actions.said_must(name)
+                                        for name in required))
         if declared.get("means"):
             lines.append(f"  |x{declared['means']}|n")
     else:

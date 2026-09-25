@@ -26,9 +26,43 @@ GATES_SAID = (
     ("speaking", "somebody who cannot speak may still do this"),
 )
 
+MUST_HELP = (
+    "What a rule about this verb is not finished without. Left empty -- "
+    "almost always -- a rule may do whatever it likes, which includes "
+    "nothing. Name something here and a rule that carries the verb out "
+    "without it is refused and asked for again, which is how a world says "
+    "\"combining two things always produces a new thing\" and is obeyed "
+    "rather than merely heard. It does not say what the new thing is: that "
+    "is still the rule's answer, and a different one for every pair."
+)
+
 
 def _root(ctx):
     return making.root_of(ctx)
+
+
+def _must_choices(ctx):
+    from world import actions
+
+    return [menus.Choice(name, said) for name, said, _e in actions.MUST]
+
+
+def _read_must(text):
+    from world import actions
+
+    wanted = [word.strip().lower() for word in str(text or "").split()]
+    bad = [word for word in wanted if word and word not in actions.MUSTS]
+    if bad:
+        return None, (f"{bad[0]} is not one of "
+                      + ", ".join(actions.MUSTS) + ".")
+    return [word for word in wanted if word], ""
+
+
+def _said_must(value):
+    from world import actions
+
+    return ", ".join(actions.said_must(name)
+                     for name in (value or [])) or "anything at all"
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +148,8 @@ def keep_action(ctx):
         applies_to=ctx.draft.get("applies_to") or (),
         sense=str(ctx.draft.get("sense") or ""),
         means=str(ctx.draft.get("means") or ""),
-        despite=ctx.draft.get("despite") or ())
+        despite=ctx.draft.get("despite") or (),
+        must=ctx.draft.get("must") or ())
     if record is None:
         raise menus.Refuse(f"|w{word}|n could not be declared.")
     takes = ", ".join(r["role"] for r in record["applies_to"]) or "nothing"
@@ -155,6 +190,10 @@ NEW_ACTION = menus.Form(
                          "is the very thing that would end such a condition "
                          "-- reviving, struggling. A dead character who can "
                          "still open doors is not dead."),
+        menus.Field("must", "What a rule about it must do", kind=menus.CHOICE,
+                    choices=_must_choices, parse=lambda ctx, t: _read_must(t),
+                    show=lambda ctx, value: _said_must(value),
+                    help=MUST_HELP),
         making.keeper("keep", "Declare this action", keep_action,
                       command=lambda ctx: "create action <verb>"),
     ],
@@ -184,6 +223,7 @@ def action_entries(root):
         takes = ", ".join(r["role"] for r in record.get("applies_to") or [])
         found.append((verb, f"{verb} -- takes {takes or 'nothing'}",
                       record.get("means") or ""))
+
     return found
 
 
@@ -211,16 +251,32 @@ def edit_action(root, verb):
         setattr(root.db, actions.ATTR, store)
         return f"{verb}: {value}"
 
+    def set_must(ctx, value):
+        # Changed on a verb already in use, deliberately. What it takes is
+        # what existing rules were written against and is not touched here;
+        # this is a condition on rules not yet written, and a world wants it
+        # exactly when it has just read one that did nothing.
+        now = actions.set_must(root, verb, value)
+        return f"{verb} must {_said_must(now)}."
+
     return menus.Form(
         key=f"edit-action-{verb}", title=f"The action {verb}",
         intro=lambda ctx: action_text(root, verb) + (
             "\n\n|xWhat it takes is what every rule about it was written "
             f"against, so it is not changed here. |wreset verb {verb}|n "
             "forgets it outright; its rules are untouched.|n"),
-        items=[menus.Field(
-            "means", "What it means", suggestible=True,
-            get=lambda ctx: (actions.spec(root, verb) or {}).get("means"),
-            set=set_means)],
+        items=[
+            menus.Field(
+                "means", "What it means", suggestible=True,
+                get=lambda ctx: (actions.spec(root, verb) or {}).get("means"),
+                set=set_means),
+            menus.Field(
+                "must", "What a rule about it must do", kind=menus.CHOICE,
+                choices=_must_choices, parse=lambda ctx, t: _read_must(t),
+                show=lambda ctx, value: _said_must(value),
+                get=lambda ctx: actions.must_of(root, verb),
+                set=set_must, help=MUST_HELP),
+        ],
     )
 
 
