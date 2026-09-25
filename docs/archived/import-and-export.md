@@ -1,6 +1,8 @@
 # Development plan: worlds that travel
 
-Status: scoped, not built.
+Status: **built**, phases 1 to 8. What each phase came to, and where it
+differs from what was scoped, is under each phase in §15. Six things were
+found in the building and are marked **as built** where they changed the plan.
 
 This covers the `future-plans.md` item "world import and export", and it is
 phase 7 of `docs/archived/player-building.md`, named there and deliberately left
@@ -150,9 +152,14 @@ Nothing in a document is a dbref. A dbref is this server's row number; it means
 nothing on another one, and it means something *different and wrong* -- some
 other object -- which is worse than meaning nothing.
 
-Every room, thing, person and way carries an `id` that is a slug of its name,
-uniqued within its own section: `the_gym`, `brass_key`, `mrs_hallow`,
-`brass_key_2`. Every reference names one:
+Every room, thing and person carries an `id` that is a slug of its name:
+`the_gym`, `brass_key`, `mrs_hallow`, `brass_key_2`. Every reference names one.
+
+**As built: one namespace for all three, not one per section.** A thing's `at`
+may name a room, a person or another thing, and a reference that has to be read
+twice to know what sort of thing it points at is a reference that will one day
+be read wrongly. A collision takes a number across the whole world. Ways carry
+no id at all, because nothing refers to one.
 
 | Reference | Lives on | Names |
 |---|---|---|
@@ -199,18 +206,32 @@ export is the world's decisions about them -- a rule suspended with
 `rules suspend` stays suspended, which `rulesets._decisions` already carries
 across a version bump for exactly this reason.
 
-**`SECTIONS` grows by three.** Word lists, pronoun sets and noun folds are
-world vocabulary, they are written through `token_lists.register`,
-`pronouns.register` and `rulesets._fold`, and a ruleset cannot currently ship
-any of them. Adding `token_lists`, `pronouns` and `folds` to `SECTIONS` makes
-rulesets strictly more useful and makes the world document one format rather
-than one-and-a-bit. It also has to be done honestly: `rulesets.py` is explicit
-that "a section nobody reads is a promise nobody keeps", and the `affordances`
-section that sat in a shipped ruleset doing nothing is the scar. Each of the
-three gets a reader in `_apply` and a test in the same commit.
+**`SECTIONS` grows by two** -- `token_lists` and `pronouns`. Both are world
+vocabulary, both are written through a register's own writer
+(`token_lists.register_many`, `pronouns.register`), and a ruleset could ship
+neither. Adding them makes rulesets strictly more useful and makes the world
+document one format rather than one-and-a-bit. It is done honestly, because
+`rulesets.py` is explicit that "a section nobody reads is a promise nobody
+keeps" and the `affordances` section that sat in a shipped ruleset doing
+nothing is the scar: each gets a reader in `_apply` in the same commit.
 
-They are shown under `lists` in §3.1 for readability; whether they are a
-sub-object or three more sections of `vocabulary` is a detail for phase 1.
+**As built: noun folds needed no section.** The plan said three. `verbs` has
+always carried both halves -- `rulesets._fold` passes `noun` straight to
+`folds.fold`, which writes to `noun_folds` instead of `verb_synonyms` -- so a
+noun fold exports as a `verbs` entry with `"noun": true` and nothing was added
+for it. Worth recording because it is the shape of most of this work: the
+register that looked like it needed a new door already had one.
+
+**As built: a condition is written out whole.** A ruleset names a state inside
+its group, which is enough when the ruleset is introducing the word. A world's
+states already have meanings, conflicts, bonuses and sometimes a definition
+(`when` makes a state worked out rather than set), so a `conditions` entry may
+now be a group *or* a state written out in full, and `_apply` reads both. A
+document carrying only the spelling would have imported a world in which
+`starving` meant nothing.
+
+They are shown under `lists` in §3.1 for readability; in the file they are two
+more sections of `vocabulary`.
 
 ### 3.4 The map half
 
@@ -262,10 +283,24 @@ whose frontier reaches zero is a world that has stopped growing. An import that
 resolved pending ways into nothing would hand somebody a sealed world; one that
 generated them would spend their money before they had walked anywhere.
 
-**Zones export verbatim.** Zone ids are already slugs of zone names, which
-`zones.py` chose so that older worlds carried over without a migration. The
-same property makes them portable, and the room records name their zone by the
-same id.
+**Zones export verbatim**, except for the room ids inside them. Zone ids are
+already slugs of zone names, which `zones.py` chose so that older worlds
+carried over without a migration; the same property makes them portable, and
+the room records name their zone by the same id. A zone record's `rooms` list
+holds dbrefs, and those become local ids like every other reference.
+
+**As built: the document is sorted, not walked.** Things, people and ways come
+out ordered by id rather than in the order the world was walked. A walk follows
+creation order, and an imported world creates its people before its things and
+its things holder-first, so the same world exported twice listed the same
+objects in two orders -- and the round-trip test would have been comparing
+arrangements rather than worlds. A sorted document also diffs.
+
+**As built: a kind exports `accepts`, not `holds`.** `kinds.remember` takes
+`accepts` and answers `holds`, which is the declared placements plus whatever
+the taxonomy already knew. Writing the answer back in as the question is exact
+rather than lossy: the floor is re-added on the way in, so a second pass
+changes nothing.
 
 ### 3.5 Things, people and errands
 
@@ -287,13 +322,27 @@ generator today:
   "owner": {"name": "Mrs Hallow", "of": "mrs_hallow"},
   "choices": {},
   "trait_bonuses": {}, "bonus_when": "", "bonus_while": "",
-  "clothing_type": "", "wearstyle": ""
+  "clothing_type": "", "styles": {}
 }
 ```
 
 `rulebooks.CREATED_FIELDS` already names what a filled-in `create_object`
-effect keeps from the item generator's answer, for exactly this purpose -- it
-is the same list, and export should read it rather than write a second copy.
+effect keeps from the item generator's answer, for exactly this purpose: it is
+very nearly this list.
+
+**As built: the relation is read from `relations.relation_of`, not from the
+`relation_to` attribute.** Only the pointer relations -- under, behind -- ever
+set that attribute. A lamp *on* a table is inside it as far as the database is
+concerned, and its preposition lives on `db.relation` with nothing pointing
+anywhere, so reading the attribute exported the lamp as merely being in the
+table and it came back in it. Found by the world-to-world half of the round
+trip in §13.1, which is exactly the failure that half exists for: both
+documents agreed, and both were wrong.
+
+**As built: `styles` rather than `wearstyle`.** How a thing is in a condition
+-- "tied loosely around her waist" -- is `verbs.styles`, a map over every
+condition, and being worn is only the one `clothing.create` takes an argument
+for. The map travels whole.
 
 A person is the same idea over the NPC writer in `world/makers/things.py`:
 name, description, pronoun set, states, traits and values, goal conditions,
@@ -308,9 +357,13 @@ them exportable at all.
 ### 3.6 What a world has learned
 
 `learned` carries the registers that are neither vocabulary nor contents:
-`attempt_counts`, `verbs_without_rules`, `declined_suggestions`,
-`rule_failures`, `standard_rules_version`, `rule_counter`, the quest counter,
-and `quests_done` for the world rather than for a player.
+`attempt_counts`, `verbs_without_rules`, `verbs_that_cannot_be_said`,
+`declined_suggestions`, `rule_failures`, `standard_rules_version`,
+`rule_counter`, the quest counter, and -- **as built** -- `verb_rules`, the
+per-verb cache from before the rulebooks, which `verb_gen.store_rule` still
+writes and which is still worth exactly what it cost. It was found by the
+attribute test in §13.2 rather than by anybody remembering it, which is the
+whole of why that test exists.
 
 These are carried rather than left, and the reason is money. `attempt_counts`
 is what has been tried and how it went; `verbs_without_rules` is the list of
@@ -390,29 +443,34 @@ calls it.
 It walks in the order §3.1 lists, because that is the order import needs and a
 document whose sections are in build order can be read straight down.
 
-**The maker table is the spine of the vocabulary half.** `making.MAKERS` has
-one entry per creatable thing with a `listing` that says what a world holds.
-What it does not have is a reader that answers in a document rather than in a
-line of menu text: `one(root, ident)` returns prose for a player. So each maker
-gains `record(root, ident)` -- the same information as a dict -- and export is
-the table walked. That is the promise `making.py` made in its own docstring
-("`export world` and `import world`, later, are this table serialised") and
-this is the shape of it.
+**As built: the maker table is not the spine, and this is where the plan was
+wrong.** It said each maker would gain a `record(root, ident)` and export
+would be the table walked. It is not. A maker's `listing` adapter exists so a
+*menu* can offer what a world holds, one prose line each; a document wants the
+register, and every register already answers with the whole of itself --
+`kinds.spec`, `traits.vocabulary`, `rulebooks.all_rules`, `quests.specs`,
+`token_lists.vocabulary`. Fourteen `record()` methods would each have
+forwarded to the reader beside it.
 
-**Four makers are room-local and need a world-wide listing.** `item`, `room`,
-`way` and `person` deliberately list only what is in front of you -- their
-`listing` is `lambda root: []` or absent, and `reached(caller)` is what they
-answer instead, because "the only room you may edit is the one you are in".
-Export needs all of them. That is a new function per maker
-(`listing_everywhere(root)`), not a change to `reached`, and it is a search
-over `search_tag(str(root.id), category="ai_world")` -- the same walk
-`clear_world` already does.
+The promise `making.py` made in its docstring -- "`export world` and `import
+world`, later, are this table serialised" -- is kept, but by the **writers**
+rather than by the readers. Nothing in §7 writes an attribute that a maker's
+form does not write through the same function; that is the half that had to be
+true, and it is. What guards the arrangement against drift is not a method on
+the table but §13.2, which catches an attribute nobody has decided about
+whether a maker exists for it or not.
 
-`tests/fixtures/export.py` should be rebased onto this once it exists rather
-than left as a second half-exporter. It has a different job -- registers only,
-prose deliberately excluded, one file per world, generations in subdirectories
--- and it keeps it; what it stops doing is maintaining its own `REGISTERS` tuple
-and its own `_plain`.
+The four room-local makers -- `item`, `room`, `way`, `person` -- therefore
+gained no `listing_everywhere` either. `exchange.rooms_of` and
+`exchange.contents_of` walk the world once, from the rooms, which is the same
+walk `clear_world` does and the only walk anything here needs.
+
+**As built: `tests/fixtures/export.py` reads `exchange.plain` and keeps
+everything else.** It has a different job -- registers only, prose
+deliberately excluded, one file per world, generations in subdirectories --
+and the plan was right that its `_plain` was a second copy and wrong that its
+`REGISTERS` tuple was. That tuple is a deliberately narrower selection than a
+world document, and saying so is the point of the module.
 
 ---
 
@@ -761,45 +819,70 @@ by a server from before them rather than imported wrongly.
 
 ## 15. Phases
 
-Each ends with the suite green and something demonstrable.
+Each ended with the suite green. What each came to is under it.
 
 **Phase 1 -- the document, and reading one out.** `world/exchange.py` with
-`document(root)`. `record()` on every maker; `listing_everywhere()` on the four
-room-local ones. The three new `SECTIONS` with their readers in
-`rulesets._apply`. No file writing, no import: the test builds a world by hand
-and asserts on the dict. Demonstrable as `view world <n> --document` or a test
-fixture; a whole world, readable, on one screen.
+`document(root)`, and `token_lists` and `pronouns` added to
+`rulesets.SECTIONS` with their readers in `_apply`.
 
-**Phase 2 -- refusing one.** `problems(doc)`, the caps, the reference check,
-`rulesets.problems` over the vocabulary half. Tests are one per fault. Nothing
-can be imported yet, so nothing can be broken by getting this wrong.
+*As built:* the makers gained no `record()` and no `listing_everywhere()`, and
+that is the one place this plan was wrong about its own architecture. A
+maker's `listing` adapter exists so a *menu* can offer what a world holds, in
+prose, one line each. A document wants the register, and every register
+already answers with the whole of itself -- `kinds.spec`, `traits.vocabulary`,
+`rulebooks.all_rules`, `quests.specs`. A `record()` per maker would have been
+fourteen functions each forwarding to the reader beside it, and the table's
+real promise ("export world and import world, later, are this table
+serialised") is kept by the *writers*: nothing here writes an attribute that a
+maker's form does not write through the same function. What guards the table
+against drift is not a method on it but §13.2, which catches an attribute
+nobody decided about whether a maker exists for it or not.
 
-**Phase 3 -- building one.** `build(...)`, the three passes, the reference
-resolution. At the end of this phase a world can be imported from a document a
-test made, and §13.1's first half passes.
+**Phase 2 -- refusing one.** `problems(doc)`: the version and kind, the shapes,
+the caps, `requires`, `rulesets.problems` over the vocabulary half, the map,
+and every reference. Sixteen refusal tests, each asserting the object count is
+unchanged as well as the complaint.
 
-**Phase 4 -- the round trip.** The world-to-world comparison helper, the
-equality assertion, and the AST test of §13.2. This is where the fields
-forgotten in phase 1 are found, and it is the phase most likely to send work
-back to phase 1. That is what it is for.
+**Phase 3 -- building one.** `build(...)`, the passes, the reference
+resolution, and `Refused` carrying every complaint rather than the first.
 
-**Phase 5 -- the restore point.** `restore` on the root, `reset world` replaying
-it, the two confirmation questions, the `view world` line, and `_key_problem`
-not asked when there is a document. Independent of the folder: settable in a
-test without a file existing.
+**Phase 4 -- the round trip.** Both halves, and it found four things phases 1
+to 3 had wrong: a lamp on a table came back in it (§3.5), the document was
+ordered by creation rather than by id (§3.4), a kind exported its answer
+instead of its question (§3.4), and an import settled word lists the original
+world had not settled yet. That last is the one worth keeping in mind: an
+import must write what the document says **and nothing else**, even where the
+thing it would otherwise do looks harmless.
 
-**Phase 6 -- the shared folder and the commands.** `WORLD_DIRS`, `export world`,
-`import world`, `view exports`, `delete export`, the menu entries, the
-confirmations, `exported_worlds` on the account, and the gitignore line.
+The AST test found two more: `verb_rules`, still written and never listed, and
+five account settings -- an API key among them -- that nothing had said a world
+does not carry.
 
-**Phase 7 -- requirements.** `requires.rulesets` checked, `requires.plugins`
-refused, and the messages that say what is missing.
+**Phase 5 -- the restore point.** `restore` on the root, `_replay` beside
+`_reset` in `world_subject`, the two confirmation questions, and the `view
+world` line saying which reset yours will do. `_key_problem` is not asked when
+there is a document to replay, which is the change that makes a reset free.
 
-**Phase 8 -- documentation.** `README.md`: the command reference under "World",
-`exchange.py` in the architecture table, a paragraph under "What is safe to
-publish" about what a world document does and does not contain, and a note
-under "Before you host this anywhere" about importing somebody else's world.
-`future-plans.md` loses the import/export item; this document is archived.
+**Phase 6 -- the shared folder and the commands.** `WORLD_DIRS`, `export world`
+and `import world` as uses on the world subject, `commands/exchange_subject.py`
+for `view exports` and `delete export`, three confirmations, `exported_worlds`
+on the account, and the gitignore line.
+
+**Phase 7 -- requirements.** `requires.rulesets` checked by name and version,
+with a higher version here accepted; `requires.plugins` refused by name.
+
+**Phase 8 -- documentation.** The README's command reference, its architecture
+table, and two honest paragraphs: one under "Before you host this anywhere"
+about an imported world's text reaching your model on your key, and one under
+"What is safe to publish" about what a world document does and does not hold.
+
+Two things this changed outside its own files, both tests that were right until
+they were not. `test_verbs` asserted `import world` was claimed by nothing,
+which stopped being true the moment a world could be imported.
+`test_token_lists` forbids any module in `world/` reading `db.desc` raw, and
+`exchange.py` is the second module allowed to -- it is writing the text down
+rather than showing it, and expanding a token here would bake one world's
+choices into every copy of it.
 
 A ninth is not a phase of this plan but is the point of it: **ship a world**.
 Hunt the wumpus is the small one and is the right first test of whether a
@@ -827,9 +910,9 @@ you imported; a world that has done neither regenerates from its setup, as
 today. One rule, three cases, no new gesture to learn. §8.
 
 **The vocabulary half is a ruleset, and `SECTIONS` grows to make it true.**
-Reusing `problems` and `_apply` is worth adding three readers for, and a
-ruleset that can ship a word list and a pronoun set is better than one that
-cannot. §3.3.
+Reusing `problems` and `_apply` is worth adding two readers for, and a ruleset
+that can ship a word list and a pronoun set is better than one that cannot.
+§3.3.
 
 **Slugs, not indices, not dbrefs.** A document that reads, and a round trip
 that can assert equality. §3.2.
@@ -837,6 +920,17 @@ that can assert equality. §3.2.
 **Carried things come back to the floor.** §4.1.
 
 **Memories do not travel.** §4.
+
+**The makers gained no `record()`.** The one architectural expectation this
+plan got wrong, kept here rather than quietly dropped: a maker's `listing` is
+for a menu and a document wants the register, which every register already
+answers with whole. The table's promise is kept by its writers, and the guard
+against drift is the attribute test rather than a method. §15, phase 1.
+
+**An import writes what the document says and nothing else.** Not what the
+writers would otherwise have worked out: not a re-settled word list, not the
+affordances a kind has since gained. Found by the round trip, and it is the
+sentence the whole of "the world as it stands" rests on. §15, phase 4.
 
 ---
 
