@@ -605,6 +605,24 @@ class TheRestorePoint(WorldTest):
         self.assertIsNotNone(stored)
         self.assertEqual(stored["title"], doc["title"])
 
+    def test_a_document_never_carries_a_document(self):
+        """
+        A world's restore point is not part of the world.
+
+        If it were, exporting a world that had been imported would write a
+        copy of the last document inside this one, and the one after that
+        would carry both. The document is built from named fields for exactly
+        this reason: nothing here sweeps up whatever a root happens to hold.
+        """
+        from world import exchange
+
+        root = self.world()
+        self.furnish(root)
+        _doc, new = self.built(root)
+        self.assertIsNotNone(exchange.restore_point(new))
+        self.assertNotIn(exchange.RESTORE_ATTR,
+                         json.dumps(exchange.document(new)))
+
     def test_a_world_that_was_never_imported_has_none(self):
         from world import exchange
 

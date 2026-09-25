@@ -192,6 +192,9 @@ LEFT = {
     "quests": "a quest in progress belongs to whoever accepted it",
     "quests_done": "the same, one step later",
     "world_creator": "the importer becomes the creator",
+    "restore": "the document a world comes back to. Never inside a document: "
+               "a world carrying its own restore point would carry a copy of "
+               "itself, and each export would carry the last one",
     "openrouter_api_key": "an account's key, and the one thing in this game "
                           "that must never be written to a file",
     "api_base_url": "where an account's key is spent",
