@@ -1060,6 +1060,22 @@ to `world/menus.py`. Where it differs:
   in front of a player rather than a failure at import. Found by the way out of
   a room, whose natural name is `exit` and which is the word that quits every
   menu in the game; it is called a **way** (§9.2).
+* **A rule that can never fire says so.** Reported from play: two carry-out
+  rules at `everywhere` for one verb, and summoning air summoned earth.
+  Nothing was broken -- carry-out takes one winner, the two tied on
+  everything `rank` compares down to which was written first, and the older
+  won every time. But it is the worst shape a mistake can take here: the rule
+  is in the book, `view rules` lists it under carry out beside the one that
+  beats it, and the world behaves as though it were not there.
+
+  So `rulecheck.shadowed` finds them -- and finds them provably, which is why
+  it is narrow: same action, same phase, same scope, same `about`, and the
+  winner unguarded, so there is no attempt that reaches one and not the other.
+  A rule shadowed only some of the time is a judgement, and `rulecheck`
+  reports facts. It is marked in `view rules`, in the firing order the phase
+  question shows while you are writing one, in `view faults`, and said
+  outright the moment the rule is filed -- with what to do about it, which is
+  a guard or a narrower scope.
 * **`~` is quick or it is nothing.** Reported from play: filling in an item's
   description ran for 160 seconds without erroring. It was not hung -- four
   rounds at the long timeout is four minutes, and a model that will not call

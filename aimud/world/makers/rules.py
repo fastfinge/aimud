@@ -859,11 +859,17 @@ def firing_order(ctx):
              if r.get("action") in (None, action)]
     mine = _draft_rule(ctx)
     lines = []
+    from world import rulecheck
+
+    dead = {gone.get("id") for gone, _winner in rulecheck.shadowed(
+        {r["id"]: r for r in rulebooks.all_rules(root)}, root)}
     for phase in rulebooks.PHASES:
         here = sorted((r for r in found if r.get("phase") == phase),
                       key=lambda r: rulebooks.rank(r, None, root))
         rows = [f"    {rulebooks.said_scope(r.get('scope'), root)} -- "
-                f"{r.get('name') or 'unnamed'}" for r in here]
+                f"{r.get('name') or 'unnamed'}"
+                + ("  |rnever fires|n" if r.get("id") in dead else "")
+                for r in here]
         if mine.get("phase") == phase:
             rows.append(f"    {rulebooks.said_scope(mine.get('scope'), root)} "
                         f"-- {mine.get('name') or 'this one'}  |g<- yours|n")
@@ -970,14 +976,14 @@ def _faults_about(root, rule):
     allowed to write a rule whose moment has not arrived yet, and `view
     faults` says the same thing later.
     """
-    from world import rulecheck
+    from world import rulebooks, rulecheck
 
     said = []
     try:
         report = set(rulecheck.scan(rulecheck.of_world(root))
                      .get("unsettable") or [])
     except Exception:
-        return ""
+        report = set()
     wanted = set()
     for clause in rule.get("conditions") or []:
         predicate, value = cond.predicate_of(clause)
@@ -988,6 +994,28 @@ def _faults_about(root, rule):
         said.append(f"|xNothing in this world can bring about "
                     f"{', '.join(stuck)}, so this rule cannot fire yet. "
                     f"|wview faults|n keeps track.|n")
+
+    # And the one worth saying loudly, at the moment it is written: a second
+    # unguarded rule at one scope, in a phase that takes one winner, is a
+    # rule that can never fire -- and nothing about playing the world would
+    # ever say so. See `rulecheck.shadowed`.
+    try:
+        book = {r["id"]: r for r in rulebooks.all_rules(root)}
+        dead = rulecheck.shadowed(book, root)
+    except Exception:
+        dead = []
+    for gone, winner in dead:
+        if gone.get("id") != rule.get("id"):
+            continue
+        said.append(
+            f"|yThis rule will never fire.|n "
+            f"|w{winner.get('name') or winner.get('id')}|n is at the same "
+            f"scope with nothing to hold it back, and "
+            f"{str(rule.get('phase', '')).replace('_', ' ')} takes one "
+            f"winner, so that one wins every time.\n"
+            f"|xGive this one a guard -- |wOnly when|x -- or a narrower "
+            f"place to apply, so the world can tell which one an attempt "
+            f"means. |wedit rule {winner.get('id')}|x reaches the other.|n")
     return "\n".join(said)
 
 

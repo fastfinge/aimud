@@ -257,6 +257,7 @@ def scan(registers):
         "writes_derived": sorted(writes_derived),
         "cause_unguarded": cause_unguarded(registers.get("rules") or {}),
         "contradictory": contradictory(registers.get("rules") or {}),
+        "shadowed": shadowed(registers.get("rules") or {}),
         "never_becomes": never_becomes(
             registers.get("rules") or {}, rules,
             registers.get("trait_vocabulary") or {}),
@@ -368,6 +369,84 @@ def pairs(one_way, unsettable, vocabulary, groups):
         for missing in sorted(unsettable):
             if group_of(missing, vocabulary) == group:
                 found.append((stuck, missing, group))
+    return found
+
+
+def shadowed(rules, world_root=None):
+    """
+    Rules in a winner-takes-all phase that another rule always beats.
+
+    `instead` and `carry_out` take one winner -- "the most specific rule that
+    says this means something else here wins outright", and "the most specific
+    rule with anything to do supplies both what happens and what it is
+    contested by". `check` accumulates, so nothing here is about it.
+
+    That makes a second unguarded rule at the same scope, about the same
+    thing, in the same phase, a rule that can never fire. Not usually, or
+    mostly: never. Both gather on every attempt that reaches either, `rank`
+    ties on everything down to which was written first, and the older one
+    wins every time.
+
+    It is the worst shape a mistake can take in this game -- the rule is in
+    the book, `view rules` lists it under carry out beside the one that beats
+    it, and a world simply behaves as though it were not there. Somebody
+    writing `summon earth` and then `summon air` finds that summoning air
+    summons earth, and nothing anywhere says why.
+
+    Provable by reading, and that is why the test is narrow. The shadowing
+    rule must have no guards, so that it applies wherever the shadowed one
+    could; the scope and the `about` must be the same, so there is no attempt
+    that reaches one and not the other. A rule shadowed only some of the time
+    is a judgement, and this reports facts.
+
+    Returns [(the rule that never fires, the rule that always beats it)].
+    """
+    from world import rulebooks
+
+    groups = {}
+    for rule in _records(rules):
+        phase = str(rule.get("phase") or "")
+        if phase not in (rulebooks.INSTEAD, rulebooks.CARRY_OUT):
+            continue
+        if not rule.get("listed", True):
+            continue
+        key = (str(rule.get("action") or ""), phase,
+               _scope_key(rule.get("scope")), str(rule.get("about") or ""))
+        groups.setdefault(key, []).append(rule)
+
+    found = []
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        ordered = sorted(members,
+                         key=lambda rule: rulebooks.rank(rule, None,
+                                                         world_root))
+        winner = None
+        for rule in ordered:
+            if winner is not None:
+                found.append((rule, winner))
+            elif not (rule.get("when") or []):
+                # The first rule with nothing to hold it back. Everything
+                # after it is dead; everything before it was guarded, and a
+                # guard is what makes two rules at one scope tell each other
+                # apart.
+                winner = rule
+    return found
+
+
+def _scope_key(scope):
+    try:
+        return tuple(sorted((str(k), str(v)) for k, v in dict(scope or {}).items()))
+    except (AttributeError, TypeError, ValueError):
+        return ()
+
+
+def _records(rules):
+    """The rule records out of whichever shape they arrived in."""
+    found = []
+    for rule in (rules.values() if hasattr(rules, "values") else rules):
+        if hasattr(rule, "get") and rule.get("phase"):
+            found.append(rule)
     return found
 
 
@@ -806,6 +885,17 @@ def report(findings, name=""):
         trouble.append(
             f"{len(names)} rules demand a condition and its opposite at once, "
             f"so they can never pass: {_listed(names)}.")
+    if findings.get("shadowed"):
+        said = [f"{rule.get('name') or rule.get('id')} "
+                f"(never fires; {winner.get('name') or winner.get('id')} "
+                f"always wins)"
+                for rule, winner in findings["shadowed"]]
+        trouble.append(
+            f"{len(said)} rules are in a phase that takes one winner and sit "
+            f"at the same scope as a rule with nothing to hold it back, so "
+            f"they can never fire: {_listed(said)}. Give each of them a "
+            f"guard, or a narrower scope, so the world can tell which one an "
+            f"attempt means.")
     if findings.get("never_becomes"):
         names = sorted({f"{name or rule_id} ({slug})"
                         for rule_id, name, slug in findings["never_becomes"]})

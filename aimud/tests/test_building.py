@@ -2249,3 +2249,125 @@ class NamingThePlaceYouAreStandingIn(Building):
                                           world_root=self.root,
                                           room=self.room1)
         self.assertTrue(wrong)
+
+
+@tag("world")
+class ARuleThatCanNeverFire(Building):
+    """
+    Two carry-out rules at one scope: the second can never fire, and says so.
+
+    Reported from play. Somebody wrote `summon earth` and then `summon air`,
+    both at everywhere, and summoning air summoned earth. Nothing was broken:
+    carry-out takes one winner, the two rules tie on everything `rank`
+    compares down to which was written first, and the older one wins every
+    time -- for ever, on every attempt.
+
+    It is the worst shape a mistake can take here. The rule is in the book,
+    `view rules` lists it under carry out beside the one that beats it, and
+    the world behaves as though it were not there.
+    """
+
+    def summon_rule(self, name, **fields):
+        from world import rulebooks
+
+        return rulebooks.add(self.root, rulebooks.blank(
+            action="summon", phase=rulebooks.CARRY_OUT, name=name,
+            effects=[{"type": "narrate"}], **fields))
+
+    def test_the_second_one_is_found(self):
+        from world import rulecheck
+
+        first = self.summon_rule("summon earth")
+        second = self.summon_rule("summon air")
+        found = rulecheck.shadowed(
+            {first["id"]: first, second["id"]: second}, self.root)
+        self.assertEqual([(gone["id"], won["id"]) for gone, won in found],
+                         [(second["id"], first["id"])])
+
+    def test_and_a_guard_is_what_saves_it(self):
+        from world import rulecheck
+
+        first = self.summon_rule("summon earth")
+        second = self.summon_rule(
+            "summon air", when=[{"subject": "direct", "kind": "air"}])
+        self.assertEqual(
+            rulecheck.shadowed({first["id"]: first, second["id"]: second},
+                               self.root), [])
+
+    def test_and_so_is_a_narrower_scope(self):
+        from world import rulecheck
+
+        first = self.summon_rule("summon earth")
+        second = self.summon_rule("summon air", scope={"kind": "air"})
+        self.assertEqual(
+            rulecheck.shadowed({first["id"]: first, second["id"]: second},
+                               self.root), [])
+
+    def test_a_check_rule_is_never_shadowed(self):
+        """Check accumulates: every rule like it applies, so none is dead."""
+        from world import rulebooks, rulecheck
+
+        book = {}
+        for name in ("you must be able to reach it", "and be able to act"):
+            rule = rulebooks.add(self.root, rulebooks.blank(
+                action="summon", phase=rulebooks.CHECK, name=name,
+                conditions=[{"subject": "actor", "able": True}]))
+            book[rule["id"]] = rule
+        self.assertEqual(rulecheck.shadowed(book, self.root), [])
+
+    def test_a_suspended_rule_shadows_nothing(self):
+        from world import rulebooks, rulecheck
+
+        first = self.summon_rule("summon earth")
+        second = self.summon_rule("summon air")
+        rulebooks.set_listed(self.root, first["id"], False)
+        book = {r["id"]: r for r in rulebooks.all_rules(self.root)}
+        self.assertEqual(rulecheck.shadowed(book, self.root), [])
+
+    def test_writing_one_says_so_at_once(self):
+        from world.makers import rules
+
+        self.summon_rule("summon earth")
+        _rule_id, said = rules.keep_rule(self.draft(
+            name="summon air", action="summon", phase="carry_out",
+            scope="world", effects=[{"type": "narrate"}]))
+        self.assertIn("will never fire", said)
+        self.assertIn("summon earth", said)
+        self.assertIn("Only when", said)
+
+    def test_and_writing_a_guarded_one_does_not(self):
+        from world.makers import rules
+
+        self.summon_rule("summon earth")
+        _rule_id, said = rules.keep_rule(self.draft(
+            name="summon air", action="summon", phase="carry_out",
+            scope="world", effects=[{"type": "narrate"}],
+            when=[{"subject": "direct", "kind": "air"}]))
+        self.assertNotIn("will never fire", said)
+
+    def test_the_listing_marks_it(self):
+        from commands.rules_subject import rule_line
+
+        self.summon_rule("summon earth")
+        second = self.summon_rule("summon air")
+        self.assertIn("never fires", rule_line(second, self.root))
+
+    def test_and_so_does_the_firing_order_while_you_write(self):
+        from world.makers import rules
+
+        self.summon_rule("summon earth")
+        self.summon_rule("summon air")
+        order = rules.firing_order(self.draft(action="summon",
+                                              phase="carry_out",
+                                              scope="world", name="a third"))
+        self.assertIn("never fires", order)
+
+    def test_and_view_faults_says_what_to_do(self):
+        from world import rulecheck
+
+        self.summon_rule("summon earth")
+        self.summon_rule("summon air")
+        said = rulecheck.report(rulecheck.scan(rulecheck.of_world(self.root)),
+                                "Endless Alchemy")
+        self.assertIn("never fire", said)
+        self.assertIn("guard", said)

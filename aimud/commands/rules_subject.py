@@ -57,6 +57,12 @@ def rule_line(rule, root):
     marks = []
     if not rule.get("listed", True):
         marks.append("suspended")
+    if _never_fires(rule, root):
+        # The mark that matters most and is hardest to see: the rule is in
+        # the book, listed under its phase beside the one that beats it, and
+        # a world behaves as though it were not there. See
+        # `rulecheck.shadowed`.
+        marks.append("|rnever fires|n")
     if standard_rules.is_standard(rule):
         marks.append("standard")
     if rule.get("source") == "derived":
@@ -77,6 +83,25 @@ def rule_line(rule, root):
     where = rulebooks.said_scope(rule.get("scope"), root)
     note = f" |x({', '.join(marks)})|n" if marks else ""
     return f"{where} -- {text}{note}"
+
+
+def _never_fires(rule, root):
+    """Whether another rule always beats this one. Cached for one listing."""
+    from world import rulecheck
+
+    if root is None or not rule.get("id"):
+        return False
+    key = f"_shadowed_{root.id}"
+    found = getattr(root.ndb, key, None)
+    if found is None:
+        from evennia.utils.dbserialize import deserialize
+        from world import rulebooks
+
+        store = dict(deserialize(getattr(root.db, rulebooks.ATTR, None)) or {})
+        found = {dead.get("id") for dead, _winner
+                 in rulecheck.shadowed(store, root)}
+        setattr(root.ndb, key, found)
+    return rule["id"] in found
 
 
 def one_verb(root, verb):
