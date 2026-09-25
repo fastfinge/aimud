@@ -2171,3 +2171,81 @@ class FillingAFieldIn(Building):
         self.assertIsNotNone(vocabulary.NEW_TOKENS.sponsor)
         self.assertIsNotNone(
             suggesting.sponsor_for(ctx, vocabulary.NEW_TOKENS))
+
+
+@tag("world")
+class NamingThePlaceYouAreStandingIn(Building):
+    """
+    `edit room` can change what this place is called, which it could not.
+
+    Reported from play, and it is the first thing anybody does: a world with
+    its rooms turned off opens as one plain room saying `edit room` gives
+    this place a name, and `edit room` refused.
+
+    The cause is one argument. `modify_complaints` takes the room a thing is
+    *in*, so that a rule cannot rename the room out from under somebody by
+    naming it as the thing it acts on -- and this passed the room as both the
+    thing being changed and the room it is in, which is the shape that check
+    exists to refuse. A room is not inside itself.
+    """
+
+    def rename(self, to):
+        from world.makers import things
+
+        self.open(things.EDIT_ROOM, world_root=self.root)
+        self.type("key")
+        return self.type(to)
+
+    def test_a_room_can_be_renamed(self):
+        said = self.rename("The Alchemist's Kitchen")
+        self.assertIn("called The Alchemist's Kitchen", said)
+        self.assertEqual(self.room1.key, "The Alchemist's Kitchen")
+
+    def test_and_its_title_goes_with_it(self):
+        self.rename("The Cellar")
+        self.assertEqual(self.room1.db.room_title, "The Cellar")
+
+    def test_and_its_description_can_be_written(self):
+        """Refused by the same argument, and not reported only because the
+        name is what somebody reaches for first."""
+        from world.makers import things
+
+        form = things.EDIT_ROOM
+        field = next(item for item in form.items if item.key == "desc")
+        ctx = menus.Context(self.char1, world_root=self.root)
+        said = field.store(ctx, "Cold, and smelling of brass.")
+        self.assertIn("changed", said)
+        self.assertIn("brass", self.room1.db.desc)
+
+    def test_a_name_that_is_a_condition_is_still_refused(self):
+        """
+        The check that was in the way is still in the way where it belongs.
+
+        Said rather than raised: a `Refuse` inside a menu is what the player
+        is told, and the field stays open for another try.
+        """
+        from world import verbs
+
+        verbs.register_state(self.root, "flooded", means="it is under water")
+        said = self.rename("The Flooded Cellar")
+        self.assertIn("condition", said)
+        self.assertNotEqual(self.room1.key, "The Flooded Cellar")
+
+    def test_and_so_is_a_description_asking_for_a_list_nothing_keeps(self):
+        from world.makers import things
+
+        field = next(item for item in things.EDIT_ROOM.items
+                     if item.key == "desc")
+        ctx = menus.Context(self.char1, world_root=self.root)
+        with self.assertRaises(menus.Refuse) as caught:
+            field.store(ctx, "It smells of {brine}.")
+        self.assertIn("brine", str(caught.exception))
+
+    def test_a_thing_in_a_room_is_still_not_the_room(self):
+        """What the argument is for, unchanged."""
+        from world import effects
+
+        wrong = effects.modify_complaints(self.room1, new_name="Anything",
+                                          world_root=self.root,
+                                          room=self.room1)
+        self.assertTrue(wrong)

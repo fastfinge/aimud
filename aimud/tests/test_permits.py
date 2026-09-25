@@ -318,3 +318,98 @@ class AWorldThatWritesNoRooms(GameTest):
                 {"title": "Ordinary", "description": "A town."},
                 lambda room: None, lambda err: None)
         planning.assert_called_once()
+
+
+@tag("world")
+class AndThenYouBuildOnIt(GameTest):
+    """
+    The first room of a hand-built world can be named and built out from.
+
+    The whole promise of turning rooms off: you are put in one plain room
+    that says `edit room` and `create room <direction>`, and those two have
+    to work or the world is a dead end with a sentence in it. Reported from
+    play that the first of them did not.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from unittest import mock
+
+        from world import llm
+
+        def refuse(*args, **kwargs):
+            raise AssertionError("a world built by hand called a model")
+
+        for name in ("fetch", "converse", "complete"):
+            if hasattr(llm, name):
+                patcher = mock.patch.object(llm, name, refuse)
+                patcher.start()
+                self.addCleanup(patcher.stop)
+
+        from unittest.mock import Mock
+
+        from world import sponsor as sponsor_mod
+        from world import worldgen
+
+        account = Mock()
+        account.db.openrouter_api_key = "sk-test"
+        account.db.created_worlds = []
+        made = []
+        worldgen.generate_first_room(
+            sponsor_mod.Sponsor(world_root=None, account=account),
+            {"title": "Endless Alchemy",
+             "description": "A kitchen at the end of the world.",
+             "generation": {"rooms": "never"}},
+            made.append, lambda err: self.fail(err),
+            creator_character=self.char1)
+        self.room = made[0]
+        self.char1.move_to(self.room, quiet=True)
+
+    def draft(self, **fields):
+        from world import menus
+
+        ctx = menus.Context(self.char1, world_root=self.room)
+        ctx.draft = dict(fields)
+        return ctx
+
+    def test_it_arrives_saying_what_to_do_next(self):
+        self.assertIn("edit room", self.room.db.desc)
+        self.assertIn("create room", self.room.db.desc)
+
+    def test_and_what_it_says_to_do_first_works(self):
+        from world import menus
+        from world.makers import things
+
+        field = next(item for item in things.EDIT_ROOM.items
+                     if item.key == "key")
+        ctx = menus.Context(self.char1, world_root=self.room)
+        said = field.store(ctx, "The Alchemist's Kitchen")
+        self.assertIn("called The Alchemist's Kitchen", said)
+        self.assertEqual(self.room.key, "The Alchemist's Kitchen")
+
+    def test_and_the_second(self):
+        from world.makers import things
+
+        ctx = self.draft()
+        offered = [value for value, _label in things.direction_options(ctx)]
+        self.assertTrue(offered, "nowhere to build, so the world is a dead end")
+
+        room_id, said = things.keep_room(self.draft(
+            direction=offered[0], name="The Cellar",
+            description="Cold, and smelling of brass.", zone="",
+            room_type="cellar"))
+        self.assertIn("The Cellar", said)
+        ways = [obj.key for obj in self.room.contents
+                if getattr(obj, "destination", None)]
+        self.assertIn(offered[0], ways)
+
+    def test_the_description_can_be_written_over(self):
+        from world import menus
+        from world.makers import things
+
+        field = next(item for item in things.EDIT_ROOM.items
+                     if item.key == "desc")
+        ctx = menus.Context(self.char1, world_root=self.room)
+        field.store(ctx, "Shelves of jars, and a cold hearth.")
+        self.assertIn("Shelves of jars", self.room.db.desc)
+        self.assertNotIn("edit room", self.room.db.desc)

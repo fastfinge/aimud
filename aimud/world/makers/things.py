@@ -517,9 +517,17 @@ def _room_writer(field):
             raise menus.Refuse("You are nowhere.")
         name = str(value or "") if field == "key" else ""
         desc = str(value or "") if field == "desc" else ""
+        # No `room=`: that argument is the room a thing is *in*, and a room is
+        # not inside itself. Passed the room as both, `_protected` reads it as
+        # "the thing being changed is the place it stands in" -- which is the
+        # very shape it exists to refuse, so that a rule cannot rename the
+        # room out from under somebody by naming it as what it acts on. Here
+        # renaming the room is the whole point, and the other two checks --
+        # a name may not carry a condition, a description may only ask for
+        # word lists this world keeps -- are as true of a room as of a cup.
         wrong = effects.modify_complaints(room, new_name=name,
                                           new_description=desc,
-                                          world_root=_root(ctx), room=room)
+                                          world_root=_root(ctx))
         if wrong:
             raise menus.Refuse(_said(wrong))
         if field == "key":

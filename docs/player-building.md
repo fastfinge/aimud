@@ -1060,6 +1060,14 @@ to `world/menus.py`. Where it differs:
   in front of a player rather than a failure at import. Found by the way out of
   a room, whose natural name is `exit` and which is the word that quits every
   menu in the game; it is called a **way** (§9.2).
+* **`edit room` can name the room you are standing in**, which it could not.
+  One argument: `modify_complaints` takes the room a thing is *in*, so that a
+  rule cannot rename the room out from under somebody by naming it as what it
+  acts on -- and the form passed the room as both the thing being changed and
+  the room it is in, which is exactly the shape that check refuses. A room is
+  not inside itself. It blocked the description as well, and reached the
+  worst possible place: a world with its rooms turned off opens as one plain
+  room whose description says `edit room` gives this place a name.
 * **`~` works on the building forms**, which it did not on any of them.
   Reported about `create room` and true of all twenty: a field is offered to
   a model only where the *form* declares who pays, §12 said `~` stays
