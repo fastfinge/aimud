@@ -141,8 +141,13 @@ class AIExit(ObjectParent, DefaultExit):
             return
 
         sponsor = _sponsor_for(traversing_object, source_room)
-        if not sponsor.answers:
-            traversing_object.msg("There is no way through yet.")
+        if not sponsor.will("rooms"):
+            # Two reasons and two sentences: nobody is paying, or this world
+            # does not grow its own map. The second is a decision somebody
+            # made and is worth saying out loud, because the answer to it is
+            # |wcreate room|n rather than an API key.
+            traversing_object.msg(sponsor.refusal("rooms")
+                                  or "There is no way through yet.")
             return
 
         # If a room already stands where this exit leads, connect to it rather

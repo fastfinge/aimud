@@ -73,6 +73,10 @@ def _toggle(name):
 
     needs = ", ".join(doc.get("requires") or [])
     help_text = doc.get("means") or ""
+    # What is actually in it, so that a ruleset which declares verbs and
+    # leaves the rules to you says so before it is switched on, rather than
+    # after somebody has gone looking for rules that were never there.
+    help_text += f" Contains: {rulesets.holds(name)}."
     if needs:
         help_text += f" Needs: {needs}, which is switched on with it."
     return menus.Field(
@@ -155,10 +159,35 @@ def view_run(cmd, ctx, words):
         return
     lines = [f"|w{len(rulesets.chosen(root))} in use|n, of "
              f"{len(rulesets.available())} this server offers."]
+    ruleless = []
     for name in sorted(rulesets.available()):
-        mark = "|gon |n" if name in rulesets.chosen(root) else "|xoff|n"
+        using = name in rulesets.chosen(root)
+        mark = "|gon |n" if using else "|xoff|n"
         lines.append(f"  {mark}  {rulesets.said(name)}")
+        lines.append(f"        |x{rulesets.holds(name)}|n")
+        if using and not ((rulesets.get(name) or {}).get("rules") or []):
+            ruleless.append((rulesets.get(name) or {}).get("title") or name)
+    if ruleless:
+        # The one question this listing exists to answer. A ruleset with no
+        # rules puts nothing in `view rules`, and looking there is the first
+        # thing anybody does after switching one on.
+        one = len(ruleless) == 1
+        lines.append(
+            f"|x{_listed(ruleless)} {'adds' if one else 'add'} no rules of "
+            f"{'its' if one else 'their'} own -- "
+            f"{'it gives' if one else 'they give'} this world the verbs and "
+            f"the vocabulary, and what any of it means is for |wcreate "
+            f"rule|x to say. |wview actions|x and |wview words|x show what "
+            f"arrived.|n")
     cmd.caller.msg("\n".join(lines))
+
+
+def _listed(names):
+    """"a", "a and b", "a, b and c"."""
+    names = list(names)
+    if len(names) < 3:
+        return " and ".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
 
 
 def view_items(ctx):

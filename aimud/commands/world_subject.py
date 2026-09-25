@@ -484,11 +484,98 @@ def open_a_way(ctx):
             f"somewhere to go again.")
 
 
+def _permits_label(ctx):
+    """The submenu's own line: what is off, or that nothing is."""
+    from world import permits
+
+    chosen = dict(permits.held(_draft_root(ctx)))
+    chosen.update(_permits_draft(ctx))
+    quiet = [name for name in permits.MADE
+             if chosen.get(name) != permits.ALWAYS]
+    if not quiet:
+        return "What this world writes for itself: all of it"
+    return (f"What this world writes for itself: not "
+            f"{', '.join(quiet)}")
+
+
+def _permit_field(making, label, off):
+    """
+    One of the five, held in the draft until the world is made or saved.
+
+    Asked here and not only in `settings` because the answer has to be known
+    *before* anything is generated: a world that does not write its own rooms
+    would otherwise be given a planned zone, a named first room and whatever
+    the contents pass put in it, and then have to be undone. See
+    world/permits.py.
+    """
+    from world import permits
+
+    def get(ctx):
+        return _permits_draft(ctx).get(making, _permits_now(ctx, making))
+
+    def put(ctx, value):
+        chosen = _permits_draft(ctx)
+        chosen[making] = value
+        ctx.draft[permits.ATTR] = chosen
+        ctx.dirty = True
+
+    return menus.Field(
+        making, label, kind=menus.CHOICE, get=get, set=put,
+        choices=lambda ctx: [
+            menus.Choice(permits.ALWAYS, "whenever anything asks",
+                         keys=("always", "on")),
+            menus.Choice(permits.ASKED, "only when a player goes looking",
+                         keys=("asked", "player", "players")),
+            menus.Choice(permits.NEVER, f"never -- {off}",
+                         keys=("never", "off", "no")),
+        ],
+        help=f"{label}. |wonly when a player goes looking|n keeps the world "
+             f"from growing while nobody is watching -- a character wandering "
+             f"through a door finds nothing where a player would find a room. "
+             f"|wnever|n means {off}.")
+
+
+def _permits_draft(ctx):
+    from world import permits
+
+    return dict(ctx.draft.get(permits.ATTR) or {})
+
+
+def _permits_now(ctx, making):
+    from world import permits
+
+    return permits.setting(_draft_root(ctx), making)
+
+
+def _permit_fields():
+    from world import permits
+
+    return [_permit_field(name, label, off)
+            for name, label, off in permits.MAKES]
+
+
 def _wizard_items(ctx):
     from commands import rulesets_subject
+    from world import permits
 
     items = (list(WIZARD_FIELDS) + list(CLOCK_FIELDS)
              + [_guidance_field(f) for f in lore.FACETS])
+    # What this world may write for itself. Its own submenu rather than five
+    # more fields in a form that already has a dozen: it is one decision made
+    # five times, and a world where the answer is "all of it" -- which is
+    # most of them -- should not have to read past it.
+    items.append(menus.Submenu(
+        permits.ATTR, _permits_label, menus.Form(
+            key="generation", title="What this world writes for itself",
+            intro="What a model may bring into being here, and on whose "
+                  "account. Everything is on until you say otherwise.\n\n"
+                  "A world with rooms turned off starts as one plain room "
+                  "for you to build out from, and costs nothing to make.",
+            items=_permit_fields()),
+        help="Whether this world grows its own rooms, items, characters, "
+             "verbs and errands -- always, only when a player goes looking, "
+             "or never. A hand-built world turns off what it means to build "
+             "itself; everything else it can still be asked for."))
     # Which bundles of rules the world is built with. The same form `edit
     # rulesets` opens, so what is offered here cannot drift from what is
     # offered there.
@@ -548,7 +635,20 @@ def new_draft(description=""):
             "guidance": {}, "rulesets": rulesets.defaults()}
 
 
-def _key_problem(caller):
+def _key_problem(caller, spec=None):
+    """
+    Why this cannot be paid for, or "".
+
+    A world that writes none of its own rooms is made without a single model
+    call -- that is the whole of what turning them off buys -- so it needs no
+    key, and demanding one refuses exactly the person the switch exists for.
+    `spec` says what is being built; with none given the question is only
+    whether a key is there at all.
+    """
+    from world import permits
+
+    if spec is not None and permits.from_spec(spec).get("rooms")             == permits.NEVER:
+        return ""
     try:
         sponsor_mod.of_account(account_of(caller)).key()
     except ValueError as err:
@@ -558,10 +658,16 @@ def _key_problem(caller):
 
 def create_run(cmd, ctx, words):
     caller = cmd.caller
+    # Said rather than refused. Whether a key is needed depends on what the
+    # wizard is about to be filled in with -- a world that writes none of its
+    # own rooms needs none -- and refusing here would shut the form before
+    # anybody could say so. Generating without one still fails, with the same
+    # sentence, at the moment it would have spent something.
     problem = _key_problem(caller)
     if problem:
-        caller.msg(problem)
-        return
+        caller.msg(f"{problem}\n|xA world that writes none of its own rooms "
+                   f"needs no key at all: turn them off under |wWhat this "
+                   f"world writes for itself|x.|n")
     from commands.subjects import verb_form
 
     menus.open_menu(caller, verb_form("create"), session=cmd.session,
@@ -707,7 +813,9 @@ def _reset(caller, root):
     if not description:
         return ("That world has no stored description, so it cannot be "
                 "rebuilt. |wdelete world|n removes it instead.")
-    problem = _key_problem(caller)
+    # Asked of the spec, so a world that writes no rooms of its own is rebuilt
+    # without a key, exactly as it was made without one.
+    problem = _key_problem(caller, spec)
     if problem:
         return problem
 

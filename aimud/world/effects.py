@@ -450,6 +450,14 @@ def _resolve(effect, key, bound, room, actor):
 #: Every effect there is, and what each one means -- the register that makes
 #: the vocabulary readable instead of only runnable.
 #:
+#: `takes` is the prose somebody reads; **`fields` is the same fact in a shape
+#: a test can walk**, and it is here because the prose drifted. `create_object`
+#: said it took `why`, which nothing has ever read, and said nothing about
+#: `kind`, which decides what sort of thing it makes -- so the menu written
+#: from it could not say, and every rule that made something got the sort
+#: guessed from the head noun of whatever it was called. One list beside the
+#: applier, and `tests/test_building.py` fails if a menu cannot reach it.
+#:
 #: This exists because a world was not examinable. `rules launch` printed what
 #: launching *required* and never what it *did*, so the one question a person
 #: most wants answered -- what will happen if I type this -- could only be
@@ -475,21 +483,34 @@ VOCABULARY = {
         "means": "puts something into a condition, or takes it out of one",
         "takes": 'role, add: [...], remove: [...], '
                  'styles: {state: how it is in it}',
+        "fields": ("role", "add", "remove", "styles"),
         "backwards": True, "answers": False,
     },
     "set_trait": {
         "means": "moves a figure kept about a person, at once or over time",
         "takes": 'role, trait, change / set_to, rate',
+        "fields": ("role", "trait", "change", "set_to", "rate"),
         "backwards": True, "answers": False,
     },
     "create_object": {
         "means": "brings something into being, here or in your hands",
-        "takes": 'name, why, description, location: "room" | "actor"',
+        # What `clothing.create` actually reads, which is what this makes.
+        # It said `why` for a long time, and nothing has ever read that --
+        # a register that names a field the applier ignores is the drift it
+        # exists to stop, and it cost a builder the one field they wanted:
+        # with no `kind`, the sort of thing is guessed from the head noun of
+        # whatever it is called.
+        "takes": 'name, description, kind, takeable, states, '
+                 'trait_bonuses, bonus_when, bonus_while, '
+                 'location: "room" | "actor"',
+        "fields": ("name", "description", "kind", "takeable", "states",
+                   "trait_bonuses", "bonus_when", "bonus_while", "location"),
         "backwards": True, "answers": False,
     },
     "destroy_object": {
         "means": "takes something out of the world for good",
         "takes": "name_role",
+        "fields": ("name_role",),
         "backwards": True, "answers": False,
     },
     "move_object": {
@@ -497,6 +518,7 @@ VOCABULARY = {
                  "inside or on another thing, or another room entirely",
         "takes": 'name_role, to: "actor" | "room" | <role> | <a room\'s name>, '
                  "preposition",
+        "fields": ("name_role", "to", "preposition"),
         "backwards": True, "answers": False,
     },
     "move_contents": {
@@ -504,31 +526,37 @@ VOCABULARY = {
                  "one thing would have gone",
         "takes": 'name_role, to: "actor" | "room" | <role> | <a room\'s name>, '
                  'preposition, from: "in" | "on" | "under" | "behind"',
+        "fields": ("name_role", "to", "from"),
         "backwards": True, "answers": False,
     },
     "set_owner": {
         "means": "makes something somebody's, or nobody's",
         "takes": 'name_role, to: "actor" | <role> | "nobody", cascade',
+        "fields": ("name_role", "to", "cascade"),
         "backwards": True, "answers": False,
     },
     "modify_object": {
         "means": "changes what something is called or what it looks like",
         "takes": "name_role, new_name, new_description, affordances",
+        "fields": ("name_role", "new_name", "new_description", "affordances"),
         "backwards": False, "answers": False,
     },
     "modify_room": {
         "means": "changes what this place is called or what it looks like",
         "takes": "new_name, new_description",
+        "fields": ("new_name", "new_description"),
         "backwards": False, "answers": False,
     },
     "move_actor": {
         "means": "takes you somewhere, by a way out or by naming the place",
         "takes": 'exit | to: <a room\'s name>',
+        "fields": ("exit", "to"),
         "backwards": True, "answers": False,
     },
     "set_exit": {
         "means": "changes where a way out of this room leads",
         "takes": 'exit, to: <a room\'s name>',
+        "fields": ("exit", "to"),
         "backwards": True, "answers": False,
     },
     "create_room": {
@@ -541,22 +569,46 @@ VOCABULARY = {
         # somebody walks into it and the generator writes one, so there is
         # nothing for a planner to aim at. A character wanting to be somewhere
         # new walks through the way, which is `move_actor` and already read.
+        "fields": ("direction", "exit", "why"),
         "backwards": False, "answers": False,
     },
     "describe": {
         "means": "shows what something looks like, and changes nothing",
         "takes": "role",
+        "fields": ("role",),
         "backwards": False, "answers": True,
     },
     "narrate": {
         "means": "does nothing beyond being seen to happen -- for a verb "
                  "whose whole result is that somebody watched you do it",
         "takes": "nothing",
+        "fields": (),
         "backwards": False, "answers": False,
     },
     "try": {
         "means": "means another verb instead, and runs it from the start",
         "takes": "action, roles",
+        "fields": ("action", "roles"),
+        "backwards": False, "answers": False,
+    },
+    "set_goal": {
+        "means": "gives somebody something to work towards, which they then "
+                 "set about on their own",
+        "takes": "role, goal: [...]",
+        "fields": ("role", "goal"),
+        # Nothing is achieved by handing somebody a want: the world is exactly
+        # as it was, and a planner reading this backwards would think a verb
+        # that sets a goal is a way of reaching it. It is the opposite -- the
+        # way of reaching it is whatever the person then does.
+        "backwards": False, "answers": False,
+    },
+    "offer_quest": {
+        "means": "asks somebody to run an errand this world has written",
+        "takes": "quest, name_role (who asks), role (who is asked)",
+        # A goal a planner could aim at is a state of the world; being offered
+        # something is a state of a conversation. Nothing to read backwards,
+        # and saying so here keeps it off the planner's list of holes.
+        "fields": ("quest", "name_role", "role"),
         "backwards": False, "answers": False,
     },
 }
@@ -723,6 +775,18 @@ def say(effect):
     if etype == "try":
         return f"means {effect.get('action') or 'something else'} instead"
 
+    if etype == "set_goal":
+        from world import goals as goals_mod
+
+        who = _role_words(effect) if effect.get("role") else "whoever it is"
+        wanted = effect.get("goal") or []
+        if not wanted:
+            return f"gives {who} a purpose"
+        return f"sets {who} to {goals_mod.describe(wanted)}"
+
+    if etype == "offer_quest":
+        return f"offers {what} the errand {effect.get('quest') or ''}".rstrip()
+
     return f"does something this game calls {etype or 'nothing'}"
 
 
@@ -779,6 +843,100 @@ def _apply_one(actor, room, effect, bound, world_root, found=None):
         ownership.claim(actor, obj)
         where = "is now here" if location is room else "is now carried"
         return f"{obj.get_numbered_name(1, None, return_string=True)} {where}."
+
+    if etype == "set_goal":
+        # Giving somebody something to work towards, written as a rule.
+        #
+        # The half a world with no model was missing. A character's goal was
+        # reachable three ways and all three needed a model: it set one for
+        # itself out of what it said (`npcs._set_goal`), it accepted an
+        # errand, or the dialogue model decided. So "ask the apprentice for
+        # steam" could be matched by a rule -- `called` sees the word -- and
+        # the rule had no way to finish the sentence.
+        #
+        # Nothing is planned here and nothing is paid for. The goal is a list
+        # of conditions the planner already knows how to test and to work
+        # backwards from: a world that has settled that combining fire and
+        # water makes steam has, in that rule's `create_object`, the step the
+        # planner needs -- so "steam exists" is a goal the apprentice can
+        # actually get to, and it gets there by combining, in the room, where
+        # everybody can see it happen.
+        from world import goals as goals_mod
+
+        to = str(effect.get("role") or "direct")
+        who = actor if to == "actor" else bound.get(to)
+        if who is None:
+            return None
+        if not getattr(who.db, "is_npc", False):
+            # A goal is what the planner works at, and nothing plans for a
+            # player. Said in the log rather than silently: a rule that sets
+            # a player a goal is a rule whose author meant somebody else.
+            logger.log_info(
+                f"goals: a rule set a goal on {who.key}, who is not a "
+                f"character this world plays -- nothing works at it")
+            return None
+        if who.db.goal_from_quest:
+            # Already promised to somebody. Abandoning that quietly would
+            # leave the errand's own bookkeeping pointing at a goal nobody is
+            # working at, and the person who asked waiting for ever.
+            logger.log_info(
+                f"goals: {who.key} was not given a new goal -- still at the "
+                f"errand {who.db.goal_from_quest}")
+            return None
+        wanted = goals_mod.sanitise(effect.get("goal") or [], owner=who)
+        if not wanted:
+            logger.log_info(
+                f"goals: a rule gave {who.key} a goal with nothing testable "
+                f"in it: {effect.get('goal')!r}")
+            return None
+        who.db.goal = wanted
+        who.db.goal_stalls = 0
+        who.db.goal_waiting = None
+        return f"{who.key} sets about it."
+
+    if etype == "offer_quest":
+        # Offering is an effect rather than a hook, so *when* an errand is
+        # offered is something a world writes as a rule -- on being greeted,
+        # on walking in, on being asked a third time -- rather than a
+        # behaviour hardcoded in the quest module. It works identically
+        # whether a person, a character or a model set it going, which is the
+        # standing rule for effects, and it is the whole of what a world with
+        # no model needs in order to hand out work.
+        from world import quests
+
+        # Who asks and who is asked, and they are two different questions.
+        # `name_role` is the giver and defaults to what is being acted on --
+        # greeting Hob offers Hob's errand -- because a rule that names only
+        # one role means the other one is the actor. Resolved apart rather
+        # than through `_resolve`'s single fallback, which would have made
+        # both of them the same person and turned the whole effect into a
+        # silent no-op.
+        to = str(effect.get("role") or "actor")
+        taker = actor if to == "actor" else bound.get(to)
+        asking = str(effect.get("name_role") or "").strip()
+        if asking:
+            giver = actor if asking == "actor" else bound.get(asking)
+        else:
+            giver = bound.get("direct") or bound.get("target")
+        record = quests.spec(world_root, effect.get("quest"))
+        if record is None:
+            logger.log_info(f"quests: a rule offers {effect.get('quest')!r}, "
+                            f"which this world does not hold")
+            return None
+        if taker is None or giver is None or taker is giver:
+            logger.log_info(
+                f"quests: {record['id']} was not offered -- "
+                f"{'nobody to ask' if giver is None else 'nobody to ask it of'}")
+            return None
+        allowed, _why = quests.available(taker, world_root, record)
+        if not allowed:
+            return None
+        own = next((said for npc, said in quests.givers_of(world_root, record)
+                    if npc is giver), "")
+        quest = quests.offer_spec(giver, taker, record, description=own)
+        if quest is None:
+            return None
+        return f"{giver.key} asks about {quest['title']}."
 
     if etype == "describe":
         # The one effect that changes nothing and only says something.
@@ -1203,6 +1361,25 @@ def schema(ctx=None):
             "cascade": {"type": "boolean",
                         "description": "set_owner: whether what it holds "
                                        "changes hands too"},
+            # Read by `offer_quest` and never offered here, so an effect
+            # naming an errand could be written by a person and not by a
+            # model. A plain identifier, so it costs the schema nothing.
+            "quest": {"type": "string",
+                      "description": "offer_quest: which errand this world "
+                                     "has already written"},
+            # `set_goal`'s own field is deliberately absent, and it is the
+            # one place in this schema where a field is withheld rather than
+            # forgotten. A goal is a list of spelled-out conditions, and this
+            # schema is already inside one list of objects inside another:
+            # rules, then effects, then goals is three deep, which Google
+            # refuses outright on a call that names the tool it must use --
+            # the last round of every loop. See
+            # `tests/test_schema_portability.py`.
+            #
+            # So `set_goal` is a person's effect for now. `rule_gen.validate`
+            # refuses one that names no goal, which is the only shape a model
+            # could write, and says so -- rather than filing a rule that
+            # hands somebody an empty purpose and does nothing for ever.
         },
         "required": ["type"],
     }

@@ -20,6 +20,13 @@ whoever made it.
 
 Only `judge` costs anything. The rest is read out of what the world already
 wrote down.
+
+**The plural is here and the singular is the maker's.** `view rules` is all of
+them and `view rule r3` is one; `edit rules` suspends and restores across the
+book while `edit rule r3` opens that one rule to be rewritten. Writing a rule
+is `create rule`, in world/makers/rules.py. Two subjects claiming one word
+would be settled by registration order, which is no way to decide what a
+command means.
 """
 
 from commands.subjects import (Subject, Use, answered, asking, builder,
@@ -50,6 +57,12 @@ def rule_line(rule, root):
     marks = []
     if not rule.get("listed", True):
         marks.append("suspended")
+    if _never_fires(rule, root):
+        # The mark that matters most and is hardest to see: the rule is in
+        # the book, listed under its phase beside the one that beats it, and
+        # a world behaves as though it were not there. See
+        # `rulecheck.shadowed`.
+        marks.append("|rnever fires|n")
     if standard_rules.is_standard(rule):
         marks.append("standard")
     if rule.get("source") == "derived":
@@ -72,6 +85,25 @@ def rule_line(rule, root):
     return f"{where} -- {text}{note}"
 
 
+def _never_fires(rule, root):
+    """Whether another rule always beats this one. Cached for one listing."""
+    from world import rulecheck
+
+    if root is None or not rule.get("id"):
+        return False
+    key = f"_shadowed_{root.id}"
+    found = getattr(root.ndb, key, None)
+    if found is None:
+        from evennia.utils.dbserialize import deserialize
+        from world import rulebooks
+
+        store = dict(deserialize(getattr(root.db, rulebooks.ATTR, None)) or {})
+        found = {dead.get("id") for dead, _winner
+                 in rulecheck.shadowed(store, root)}
+        setattr(root.ndb, key, found)
+    return rule["id"] in found
+
+
 def one_verb(root, verb):
     """What a world holds about one verb, phase by phase, in firing order."""
     from world import actions, rulebooks
@@ -91,6 +123,13 @@ def one_verb(root, verb):
             doing = {"acting": "act", "moving": "move", "speaking": "speak"}
             lines.append("  works even when you cannot "
                          + " or ".join(doing.get(g, g) for g in sorted(waived)))
+        # And what this world has declared it always does, which is the one
+        # thing on a declaration that binds rules not yet written.
+        required = actions.must_of(root, verb)
+        if required:
+            lines.append("  a carry out rule for it must "
+                         + " and ".join(actions.said_must(name)
+                                        for name in required))
         if declared.get("means"):
             lines.append(f"  |x{declared['means']}|n")
     else:
@@ -850,7 +889,13 @@ def _text(key, label, show, help, command):
 
 SUBJECTS = [
     Subject(
-        "rules", ("rules", "rule"),
+        # Plural only. The singular belongs to the maker in
+        # world/makers/rules.py, and the split reads the way it sounds:
+        # `view rules` is all of them and `view rule r3` is one, `edit rules`
+        # suspends and restores across the book while `edit rule r3` opens
+        # that one rule. Two subjects claiming one word would be settled by
+        # registration order, which is no way to decide what a command means.
+        "rules", ("rules",),
         uses={
             "view": Use(view_rules_run, _submenu(
                 "rules", "This world's rules", VIEW_RULES,

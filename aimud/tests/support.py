@@ -280,10 +280,11 @@ class FakeSponsor:
     """
     Enough of a sponsor to be handed to a generator.
 
-    A generator wants four things -- which model answers for a job, the key to
-    ask with, where to send it, and whether there is going to be an answer at
-    all -- and a real `Sponsor` reaches a database row with a password behind
-    it. This is the four, and nothing to set up.
+    A generator wants five things -- which model answers for a job, the key to
+    ask with, where to send it, whether there is going to be an answer at all,
+    and whether this world allows this sort of thing to be made -- and a real
+    `Sponsor` reaches a database row with a password behind it. This is the
+    five, and nothing to set up.
 
     It was `FakeAccount`, and it is not an account any more -- which is the
     whole point of the change it was renamed for: what pays for a call
@@ -313,6 +314,29 @@ class FakeSponsor:
     @property
     def answers(self):
         return bool(self._key)
+
+    def may(self, making):
+        """
+        Whatever this world says, or everything when there is no world.
+
+        Read through `permits` rather than answered True, so that a test which
+        turns something off gets a sponsor that agrees with it -- a stand-in
+        that always said yes would make the gates untestable through the
+        generators they guard.
+        """
+        from world import permits
+
+        return permits.allows(self.world_root, making, self.actor)
+
+    def will(self, making):
+        return self.answers and self.may(making)
+
+    def refusal(self, making):
+        from world import permits
+
+        if not self.answers:
+            return ""
+        return permits.refused(self.world_root, making, self.actor)
 
     def model_for(self, *jobs):
         from world.model_params import ModelChoice

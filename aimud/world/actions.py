@@ -96,6 +96,100 @@ DEFAULT_ACCESS = TOUCHABLE
 GATES = ("acting", "moving", "speaking")
 
 
+#: What a rule about an action may be required to do.
+#:
+#: A declaration can say that a verb is not finished until its carry-out rule
+#: does something in particular, and `rule_gen.validate` refuses one that does
+#: not -- sending it back for another round rather than filing a rule that
+#: reports the verb worked and changes nothing.
+#:
+#: Written because guidance was not enough. "Combining two things always
+#: produces a new thing" in a world's Rules guidance reaches the rule writer
+#: and does not bind it; a model that reaches for `narrate` files "and that is
+#: all that happens" for that pair, and since a rule is written once per pair
+#: and kept, one forgetful answer makes combining earth and water prose for
+#: the life of the world.
+#:
+#: Closed, and small on purpose. Each entry is a promise a verb makes about
+#: its own result, not a way of writing the rule from outside it: what the new
+#: thing is, and which of the things named is consumed, are still the rule's
+#: business and nothing here has an opinion about them.
+MUST = (
+    ("makes", "bring something new into being", ("create_object",)),
+    ("unmakes", "take something out of the world", ("destroy_object",)),
+)
+
+MUSTS = tuple(name for name, _said, _effects in MUST)
+
+#: Which effects satisfy each, by name.
+_SATISFIED_BY = {name: frozenset(effects) for name, _said, effects in MUST}
+
+
+def clean_must(must):
+    """The requirements a declaration names, with anything unknown dropped."""
+    found = []
+    for name in (must or []):
+        name = str(name or "").strip().lower()
+        if name in MUSTS and name not in found:
+            found.append(name)
+    return found
+
+
+def said_must(name):
+    """One requirement as the verb phrase it is written as."""
+    for known, said, _effects in MUST:
+        if known == name:
+            return said
+    return str(name)
+
+
+def must_of(world_root, action):
+    """What a rule carrying this verb out has to do, in declared order."""
+    return clean_must((spec(world_root, action) or {}).get("must"))
+
+
+def unmet(world_root, action, effects):
+    """
+    Which of a verb's requirements these effects do not meet.
+
+    Asked of a carry-out rule's effects and of nothing else. `instead` says
+    the verb means something else here and leaves the doing to whatever it
+    means; `check` only ever refuses; `after` is about what follows rather
+    than about the act.
+    """
+    types = set()
+    for effect in (effects or []):
+        try:
+            types.add(str(effect.get("type") or ""))
+        except AttributeError:
+            continue
+    return [name for name in must_of(world_root, action)
+            if not types & _SATISFIED_BY[name]]
+
+
+def set_must(world_root, action, must):
+    """
+    Change what a rule about this verb has to do. Answers what is now asked.
+
+    Unlike the arity, this is not what existing rules were written against:
+    it is a condition on rules not yet written, so it may be changed on a verb
+    a world is already using -- which is the whole use of it, since a world
+    discovers it wants this after reading a rule that did nothing.
+    """
+    from world import verbs
+
+    action = verbs.canonical_verb(str(action or "").strip().lower())
+    store = _store(world_root)
+    record = store.get(action)
+    if record is None or not world_root:
+        return []
+    record = dict(record)
+    record["must"] = clean_must(must)
+    store[action] = record
+    setattr(world_root.db, ATTR, store)
+    return record["must"]
+
+
 def _store(world_root):
     return dict(getattr(world_root.db, ATTR, None) or {}) if world_root else {}
 
@@ -167,7 +261,8 @@ def waives(world_root, action, gate):
         return False
 
 
-def declare(world_root, action, applies_to=(), sense="", means="", despite=()):
+def declare(world_root, action, applies_to=(), sense="", means="", despite=(),
+            must=()):
     """
     Settle what an action takes, once, and answer with what was settled.
 
@@ -198,6 +293,7 @@ def declare(world_root, action, applies_to=(), sense="", means="", despite=()):
         "means": str(means or "").strip() or lexicon.definition(sense),
         "applies_to": clean_roles(applies_to),
         "despite": clean_gates(despite),
+        "must": clean_must(must),
     }
     if world_root:
         store = _store(world_root)
@@ -446,6 +542,15 @@ def learn(sponsor, world_root, action, bound, actor, on_success,
 
     def fall_back(_why=""):
         on_success(observe(world_root, action, bound))
+
+    # A world that does not let a model settle what its verbs take falls back
+    # to what the attempt shows, exactly as one with no key does -- which is
+    # the whole reason `observe` exists. Refused rather than asked, and never
+    # refusing the verb: the declaration is the cheap half and the world
+    # manages without it.
+    if not sponsor.will("verbs"):
+        fall_back()
+        return
 
     try:
         sponsor.key()          # refuse early rather than mid-prompt

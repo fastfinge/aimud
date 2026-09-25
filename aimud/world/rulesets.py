@@ -264,6 +264,22 @@ def problems(doc, known=None):
                 f"{rule.get('name')!r} becomes true on a `when`, not on "
                 f"`conditions`; `world.becoming` never reads those")
 
+    # What an action says a rule about it must do. Refused here rather than
+    # dropped by `clean_must`, for the reason the mechanics below are: a
+    # section naming something nothing knows is a promise nobody keeps, and a
+    # requirement silently dropped is the one sort of drift that looks exactly
+    # like the bug it was added to stop.
+    from world import actions as actions_mod
+
+    for entry in doc.get("actions") or []:
+        if not hasattr(entry, "keys"):
+            continue
+        for named in entry.get("must") or []:
+            if str(named) not in actions_mod.MUSTS:
+                wrong.append(
+                    f"{entry.get('action')!r} must {named!r}, which is not "
+                    f"one of {', '.join(actions_mod.MUSTS)}")
+
     # A ruleset names a mechanic; it never supplies one. Only what ships with
     # the game may be named, and a name that is not in the table is refused
     # here rather than silently doing nothing. See `world.mechanics`.
@@ -623,7 +639,8 @@ def _apply(world_root, doc, decided):
         actions.declare(world_root, str(entry.get("action") or ""),
                         applies_to=entry.get("applies_to") or (),
                         means=str(entry.get("means") or ""),
-                        despite=entry.get("despite") or ())
+                        despite=entry.get("despite") or (),
+                        must=entry.get("must") or ())
 
     added = []
     for rule in doc.get("rules") or []:
@@ -636,7 +653,9 @@ def _apply(world_root, doc, decided):
     return [rule for rule in added if rule]
 
 
-#: Where a world keeps the verb spellings its rulesets fold.
+#: Where a world keeps the verb spellings its rulesets fold. Kept here as a
+#: name other modules import; `world.folds` owns the store now, because a
+#: player may fold a spelling too and one register cannot have two writers.
 VERBS_ATTR = "verb_synonyms"
 
 
@@ -651,22 +670,58 @@ def _fold(world_root, entry):
     """
     if not hasattr(entry, "keys"):
         return
-    word = str(entry.get("word") or "").strip().lower()
-    means = str(entry.get("means") or "").strip().lower()
-    if not word or not means or word == means:
-        return
-    stored = dict(getattr(world_root.db, VERBS_ATTR, None) or {})
-    if stored.get(word) == means:
-        return
-    stored[word] = means
-    setattr(world_root.db, VERBS_ATTR, stored)
+    from world import folds
+
+    folds.fold(world_root, entry.get("word"), entry.get("means"),
+               noun=bool(entry.get("noun")))
 
 
 def synonyms(world_root):
-    """The spellings this world's rulesets fold, as {word: canonical}."""
-    if world_root is None:
-        return {}
-    return dict(getattr(world_root.db, VERBS_ATTR, None) or {})
+    """The verb spellings this world folds, as {word: canonical}."""
+    from world import folds
+
+    return folds.verbs_of(world_root)
+
+
+#: What each section of a document is called to somebody reading it, in the
+#: singular and the plural. The names are the ones the makers use, so that
+#: "2 actions, 7 words" points at `view actions` and `view words` and not at
+#: the keys the file happens to be written with.
+SECTION_WORDS = {
+    "rules": ("rule", "rules"),
+    "actions": ("action", "actions"),
+    "verbs": ("word", "words"),
+    "kinds": ("kind", "kinds"),
+    "attributes": ("figure", "figures"),
+    "conditions": ("group of conditions", "groups of conditions"),
+    "mechanics": ("mechanic", "mechanics"),
+}
+
+
+def holds(name):
+    """
+    What is in a ruleset, as a short phrase: "2 actions, 7 words, no rules".
+
+    Worth saying, because a ruleset need not have any rules and crafting has
+    none: it declares `combine` and `make` and seven spellings for them, and
+    leaves what any of it means to the world that switched it on. Somebody who
+    did that and then went looking in `view rules` found nothing, and had no
+    way to tell a ruleset that had failed to arrive from one that was never
+    going to put anything there.
+    """
+    doc = get(name)
+    if doc is None:
+        return ""
+    said = []
+    for section in SECTIONS:
+        many = len(doc.get(section) or [])
+        if many:
+            one, more = SECTION_WORDS[section]
+            said.append(f"{many} {one if many == 1 else more}")
+    if not (doc.get("rules") or []):
+        # Said last, and said at all, because it is the surprising half.
+        said.append("no rules of its own")
+    return ", ".join(said) or "nothing"
 
 
 def said(name):

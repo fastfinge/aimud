@@ -688,3 +688,86 @@ class ChoicesPerPage(Driving):
         with mock.patch.object(menus, "account_of", return_value=account):
             self.assertEqual(menus.page_size(self.char1), 0)
         self.assertEqual(menus.page_size(self.char1), menus.PAGE_SIZE)
+
+
+@tag("unit")
+class ABrokenMenuLetsGo(Driving):
+    """
+    A menu must never be able to trap somebody, whatever breaks inside it.
+
+    Found in play, and the worst shape a bug can take here. A menu's cmdset
+    takes every line before any command sees it, so a form that raises while
+    working out what it offers does not merely fail -- it holds the player
+    with no way out at all. Not `q`, if quitting is read after the thing that
+    raised. Not `@reload`, which never becomes a command. Not disconnecting,
+    because the menu is waiting when they come back. The only way out was to
+    stop the server from a shell.
+    """
+
+    def broken_form(self):
+        def explode(ctx):
+            raise RuntimeError("this register is broken")
+
+        return menus.Form(
+            key="broken", title="A broken form",
+            items=[menus.Field("pick", "Pick one", kind=menus.CHOICE,
+                               choices=explode),
+                   menus.Field("fine", "An ordinary field")])
+
+    def test_a_field_that_cannot_list_its_choices_still_draws(self):
+        self.open(self.broken_form())
+        shown = self.type("1")
+        self.assertIn("nothing to choose from", shown.lower())
+        self.assertTrue(self.is_open)
+
+    def test_and_q_still_gets_out_of_it(self):
+        self.open(self.broken_form())
+        self.type("1")
+        self.type("q")
+        self.assertFalse(self.is_open)
+
+    def test_and_b_still_backs_out_of_it(self):
+        self.open(self.broken_form())
+        self.type("1")
+        self.type("b")
+        self.assertTrue(self.is_open)
+        self.assertIn("Pick one", self.type("l"))
+
+    def test_anything_else_that_raises_closes_the_menu(self):
+        """The net under everything: nobody is left typing into a wall."""
+        def explode(ctx):
+            raise RuntimeError("no")
+
+        form = menus.Form(key="worse", title="Worse",
+                          items=[menus.Action("go", "Go", run=explode)])
+        self.open(form)
+        said = self.type("1")
+        self.assertIn("went wrong", said)
+        self.assertIn("back in the game", said)
+        self.assertFalse(self.is_open)
+
+    def test_a_form_that_cannot_be_drawn_at_all_says_so_and_can_be_left(self):
+        """
+        The first draw happens after the cmdset is on, so failing there is
+        the one that would hold somebody with nothing on the screen.
+        """
+        def explode(ctx):
+            raise RuntimeError("no")
+
+        form = menus.Form(key="worst", title="Worst", items=explode)
+        self.open(form)
+        self.assertIn("went wrong drawing", self.last)
+        self.assertIn("q", self.last)
+        self.type("q")
+        self.assertFalse(self.is_open)
+
+    def test_a_refusal_is_still_a_refusal_and_keeps_the_menu(self):
+        """The net catches crashes, not a form saying no."""
+        def refuse(ctx):
+            raise menus.Refuse("Not like that.")
+
+        form = menus.Form(key="refusing", title="Refusing",
+                          items=[menus.Action("go", "Go", run=refuse)])
+        self.open(form)
+        self.assertIn("Not like that.", self.type("1"))
+        self.assertTrue(self.is_open)

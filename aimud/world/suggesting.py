@@ -24,6 +24,14 @@ the field. This module only asks.
 **It costs one conversation each time `~` is used, and nothing otherwise.**
 The job is `menus`, so it can be given its own model in `settings models` and
 is counted in `view rounds` like every other.
+
+**And it is quick or it is nothing.** Somebody is sitting in the form watching
+this, which is not true of any other generator in the game: a room is written
+while the player walks, a rule while they type. So a fill takes the short
+timeout and two rounds -- ask, and if the model did not answer, make it -- and
+gives up saying which setting to change. Four rounds at the long timeout, which
+is what this was, is four minutes of a progress notice on a field somebody
+could have typed in twenty seconds.
 """
 
 from world import menus as m
@@ -32,7 +40,13 @@ from world import menus as m
 JOB = "menus"
 
 #: Rounds a fill may take: enough to be told a value was refused and fix it.
-ROUNDS = 4
+#:
+#: Which is two, and was four. `converse` forces the finish tool on its last
+#: round, so two is exactly "ask, and if it did not answer, make it"; the two
+#: rounds in between were a model being asked again to do what it had already
+#: declined to do twice. At a minute each that was four minutes of somebody
+#: watching a form they are sitting in front of, which is how this was found.
+ROUNDS = 2
 
 SYSTEM = """You fill in fields of a form for a player of a text game.
 
@@ -64,7 +78,8 @@ def prompt(ctx, form, fields):
     intro = form.intro_for(ctx)
     if intro:
         lines.append(intro)
-    extra = str(m._call(form.context, ctx, "") or "").strip()
+    extra = str(m._call(form.context, ctx, "")
+                or getattr(ctx, "world_context", "") or "").strip()
     if extra:
         lines += ["", extra]
     command = str(m._call(form.command, ctx, "") or "").strip()
@@ -163,10 +178,25 @@ def fillable(ctx, form):
 
 
 def sponsor_for(ctx, form):
-    """Who pays, or None when this form cannot be filled in by a model."""
-    if form.sponsor is None:
-        return None
-    return form.sponsor(ctx)
+    """
+    Who pays, or None when this form cannot be filled in by a model.
+
+    **The form says, or whoever opened it does.** A form declaring its own
+    payer is the original arrangement and still the first answer; the second
+    exists because the building forms are all opened by one piece of code
+    (`commands/making_subject.py`) over a world that knows perfectly well
+    whose key it spends. Written on each of twenty forms it would have been
+    missing from the twenty-first, and it was: every maker form carried
+    `suggestible` fields and not one of them could be filled in, so `~` said
+    there was nothing to fill in exactly where there was most.
+
+    Still opt-in either way -- a context with no sponsor in it cannot be
+    filled from -- and a sub-form inherits it, because `Context.child` passes
+    the data down.
+    """
+    if form.sponsor is not None:
+        return form.sponsor(ctx)
+    return getattr(ctx, "sponsor", None)
 
 
 def fill(ctx, form, fields, on_done, on_error, wait=None):
@@ -192,6 +222,13 @@ def fill(ctx, form, fields, on_done, on_error, wait=None):
     llm.converse(payer, payer.model_for(JOB), prompt(ctx, form, fields), box,
                  on_done=on_done, on_error=on_error,
                  on_exhausted=lambda _last: on_error(
-                     "The model did not give values that fit."),
-                 rounds=ROUNDS, timeout=llm.SLOW_TIMEOUT, wait=wait)
+                     "The model would not fill that in. Some models cannot "
+                     "call a tool at all, which is the usual reason -- "
+                     "|wsettings models menus|n chooses which one answers "
+                     "this. Type it in yourself meanwhile."),
+                 # The quick timeout, not the slow one. `llm` names both and
+                 # says the difference is real: the slow one is for a long
+                 # answer nobody is waiting on, and this is the other case
+                 # exactly -- somebody is sitting in a form watching it.
+                 rounds=ROUNDS, timeout=llm.TIMEOUT, wait=wait)
     return None

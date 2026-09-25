@@ -100,18 +100,27 @@ THING, ROOM, ZONE, NOWHERE = "thing", "room", "zone", "nowhere"
 #: narration cache key built from one would be wrong for the life of the world.
 #: Shared by reference rather than copied, unlike `bound`, because the whole
 #: point is that what the check phase writes the carry-out phase reads.
-Context = namedtuple("Context", "bound actor world_root action room found")
-Context.__new__.__defaults__ = (None, None, None, "", None, None)
+#: `words` is what the player actually typed for each role -- {"direct": "some
+#: air"} -- kept beside `bound`, which is what those words were found to mean.
+#: The two come apart exactly when nothing answers to the word, and that is
+#: the case `called` exists for: "summon air" in a world with no air in it
+#: binds nothing, and a rule that knows how to make air has to be reachable
+#: from the sentence asking for it. Empty everywhere an attempt is not being
+#: run, and `called` then falls back to whatever is bound.
+Context = namedtuple("Context",
+                     "bound actor world_root action room found words")
+Context.__new__.__defaults__ = (None, None, None, "", None, None, None)
 
 
 def context(bound=None, actor=None, world_root=None, action="", room=None,
-            found=None):
+            found=None, words=None):
     """The world as a condition sees it."""
     if world_root is None and actor is not None:
         where = room or getattr(actor, "location", None)
         world_root = getattr(where.db, "world_root", None) if where else None
     return Context(dict(bound or {}), actor, world_root, str(action or ""),
-                   room, {} if found is None else found)
+                   room, {} if found is None else found,
+                   dict(words or {}))
 
 
 def _still_here(obj):
@@ -296,7 +305,8 @@ PREDICATES = ("is", "lacks", "affords", "kind", "not_kind", "holds",
               "not_holds", "wears", "not_wears", "owned_by", "not_owned_by",
               "placed", "not_placed", "trait", "in_room", "not_in_room",
               "exists", "gone", "able", "reachable_by", "visible_to",
-              "leads_to", "not_leads_to", "never", "unbound", "clock")
+              "leads_to", "not_leads_to", "never", "unbound", "called",
+              "clock")
 
 
 def predicate_of(condition):
@@ -729,6 +739,10 @@ OPPOSITES = {
 #: rather than a gap: `negate` refuses them, and a test fails for any
 #: predicate that is in neither table.
 UNNEGATABLE = {
+    "called": "it picks a rule out by the word somebody typed, and \"not "
+              "called earth\" is every other word there is -- it would match "
+              "a typo as readily as a sentence, in the one phase where "
+              "matching wrongly means a rule fires that nobody meant",
     "affords": "it also asks about placement, and \"cannot be done to it\" is "
                "a different question from \"nobody said it can\"",
     "reachable_by": "it answers whether this action may touch a thing, and "
@@ -1056,6 +1070,8 @@ def _abstractly(condition):
     if name == "unbound":
         return (f"nobody said {subject}" if value
                 else f"somebody said {subject}")
+    if name == "called":
+        return f"{subject} was named as {_word_said(value) or value}"
     return ""
 
 
@@ -1688,6 +1704,89 @@ def _p_unbound(subject, value, condition, ctx, mood):
     return met, ""
 
 
+def _p_called(subject, value, condition, ctx, mood):
+    """
+    Whether the word used for this role names `value`.
+
+    The one predicate that can be true of nothing. Every other one resolves a
+    subject first and answers no when there is not one; this asks about the
+    *word*, which is there whether or not anything answered to it.
+
+    That is the whole of what it is for. A world where `summon air` conjures
+    air out of the aether cannot be written any other way: the rule has to be
+    found from the sentence, and when the sentence is read there is no air to
+    find it by. `kind` and `is` are both questions about a thing, so in that
+    phase they select nothing -- and "what you act on is a air", which is the
+    shape everybody reaches for, quietly matched every summoning there was.
+
+    Both halves are answered, cheapest first:
+
+    * whatever the word was found to mean, when it was found to mean
+      something: its sort, or its name. So one rule fires on `summon air`
+      whether or not there is air here already, which is what somebody writing
+      it expects and a difference they should never have to think about.
+    * and otherwise the word itself, with articles off, with this world's own
+      spellings folded in, and with a sense read down to its lemma -- so
+      `summon some air`, a world taught that `wind` is a sort of air, and a
+      rule written against `air.n.01` all reach the same place.
+    """
+    wanted = _word_said(value)
+    if not wanted:
+        return False, ""
+
+    if subject.found and _answers_to(subject, wanted):
+        return True, ""
+
+    typed = _word_said((ctx.words or {}).get(role_of(condition)))
+    if typed:
+        if typed == wanted:
+            return True, ""
+        from world import folds
+
+        folded = folds.nouns_of(ctx.world_root).get(typed)
+        if folded and _word_said(folded) == wanted:
+            return True, ""
+
+    if mood == WANT:
+        return False, f"say {wanted}"
+    return False, ""
+
+
+def _answers_to(subject, wanted):
+    """Whether what was bound is of that sort, or goes by that name."""
+    if wanted in {_word_said(kind) for kind in subject.kinds()}:
+        return True
+    obj = subject.obj
+    if obj is None:
+        return False
+    names = [getattr(obj, "key", "")]
+    try:
+        names.extend(obj.aliases.all())
+    except AttributeError:
+        pass
+    return wanted in {_word_said(name) for name in names}
+
+
+def role_of(condition):
+    """Which role a condition is about, as a plain name, or ""."""
+    subject = condition.get("subject")
+    if subject in (None, ""):
+        return "direct"
+    return subject if isinstance(subject, str) else ""
+
+
+def _word_said(said):
+    """
+    One noun as it should be compared: no articles, no sense, no plural.
+
+    Both sides of `called` go through here, which is what lets a rule written
+    against `air.n.01` be reached by somebody who typed "some air".
+    """
+    from world import lexicon, verbs
+
+    return verbs.plain(lexicon.word_of(str(said or ""))).strip().lower()
+
+
 def _on_somebody_here(obj, here):
     """
     Whether `obj` is something a person in this room has on them.
@@ -1971,6 +2070,7 @@ _PREDICATES = {
     "never": _p_never,
     "clock": _p_clock,
     "unbound": _p_unbound,
+    "called": _p_called,
 }
 
 
@@ -2635,6 +2735,12 @@ def _leaf_schema(names, known_traits, tb, wanted=None):
                       "description": "never true: a rule nothing can pass"},
             "unbound": {"type": "boolean",
                         "description": "nobody named one"},
+            "called": {"type": "string",
+                       "description": "the word the actor used for this "
+                                      "role, true whether or not anything "
+                                      "here answers to it: how a rule is "
+                                      "reached for a thing that does not "
+                                      "exist yet"},
             "clock": {"type": "object",
                       "properties": {
                           "from": {"type": "number",

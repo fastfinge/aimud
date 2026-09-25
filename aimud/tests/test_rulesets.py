@@ -16,6 +16,7 @@ when `standard_rules.py` held the list in Python.
 import json
 import os
 import tempfile
+from types import SimpleNamespace
 
 from django.test import SimpleTestCase, tag
 
@@ -367,3 +368,124 @@ class NothingChangedForADefaultWorld(GameTest):
         rule = next(r for r in R.all_rules(self.root)
                     if r["name"] == "you may not take what is not yours")
         self.assertFalse(rule["listed"])
+
+
+@tag("unit")
+class WhatARulesetHolds(GameTest):
+    """
+    A ruleset with no rules of its own says so.
+
+    Crafting declares `combine` and `make` and seven spellings for them and
+    writes no rules at all, on purpose: what combining two things means is for
+    the world that switched it on to say. Switched on and then looked for in
+    `view rules`, that is indistinguishable from a ruleset that never
+    arrived -- which is exactly how it was reported.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+
+    def test_crafting_counts_what_it_has(self):
+        said = rulesets.holds("crafting")
+        self.assertIn("2 actions", said)
+        self.assertIn("7 words", said)
+        self.assertIn("no rules of its own", said)
+
+    def test_a_ruleset_with_rules_does_not_say_it_has_none(self):
+        said = rulesets.holds("default")
+        self.assertIn("rules", said)
+        self.assertNotIn("no rules", said)
+
+    def test_no_such_ruleset_holds_nothing(self):
+        self.assertEqual(rulesets.holds("nonesuch"), "")
+
+    def test_the_listing_says_it(self):
+        from commands import rulesets_subject
+
+        rulesets.apply_choice(self.root, ["default", "crafting"])
+        said = []
+        cmd = SimpleNamespace(caller=SimpleNamespace(
+            msg=said.append, location=self.room1))
+        rulesets_subject.view_run(cmd, None, [])
+        text = "\n".join(said)
+        self.assertIn("2 actions", text)
+        self.assertIn("adds no rules of its own", text)
+        self.assertIn("create rule", text)
+        self.assertIn("view actions", text)
+
+    def test_the_listing_is_quiet_when_every_ruleset_has_rules(self):
+        from commands import rulesets_subject
+
+        rulesets.apply_choice(self.root, ["default"])
+        said = []
+        cmd = SimpleNamespace(caller=SimpleNamespace(
+            msg=said.append, location=self.room1))
+        rulesets_subject.view_run(cmd, None, [])
+        self.assertNotIn("create rule", "\n".join(said))
+
+
+@tag("unit")
+class CraftingArrives(GameTest):
+    """
+    Switching crafting on puts its verbs in the world, and a reset keeps them.
+
+    Reported as rules that never showed up. The rules were never there to show
+    up; what has to be checked is that the two actions and the seven spellings
+    are, on the path a hand-built world is made by and again on the path
+    `reset world` rebuilds it by.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+
+    def test_choosing_it_declares_its_verbs(self):
+        from world import actions, folds
+
+        rulesets.apply_choice(self.root, ["default", "crafting"])
+        self.assertIn("combine", actions.vocabulary(self.root))
+        self.assertIn("make", actions.vocabulary(self.root))
+        self.assertEqual(folds.verbs_of(self.root).get("mix"), "combine")
+
+    def test_off_and_on_again_leaves_them_declared(self):
+        from world import actions, folds
+
+        rulesets.apply_choice(self.root, ["default", "crafting"])
+        rulesets.apply_choice(self.root, ["default"])
+        rulesets.apply_choice(self.root, ["default", "crafting"])
+        self.assertEqual(rulesets.held(self.root).get("crafting"),
+                         int(rulesets.get("crafting")["version"]))
+        self.assertIn("combine", actions.vocabulary(self.root))
+        self.assertEqual(folds.verbs_of(self.root).get("mix"), "combine")
+
+    def test_a_hand_built_world_gets_them_and_keeps_them_over_a_reset(self):
+        from world import actions, folds, lore, permits
+        from world.worldgen import first_room_by_hand
+
+        spec = {"title": "Alchemy", "description": "Endless alchemy.",
+                "rulesets": ["default", "crafting"],
+                permits.ATTR: {name: permits.NEVER
+                               for name, _label, _off in permits.MAKES}}
+        sponsor = SimpleNamespace(account=None)
+        made = {}
+        first_room_by_hand(sponsor, spec, lambda room: made.update(room=room),
+                           lambda err: made.update(err=err))
+        self.assertIsNone(made.get("err"))
+        root = made["room"]
+        self.assertIn("combine", actions.vocabulary(root))
+
+        # What `reset world` rebuilds from has to carry the choice, or a
+        # world comes back without the verbs it was built with.
+        again = {}
+        first_room_by_hand(sponsor, lore.spec_of(root),
+                           lambda room: again.update(room=room),
+                           lambda err: again.update(err=err))
+        self.assertIsNone(again.get("err"))
+        self.assertIn("crafting", rulesets.held(again["room"]))
+        self.assertIn("combine", actions.vocabulary(again["room"]))
+        self.assertEqual(folds.verbs_of(again["room"]).get("brew"), "make")
