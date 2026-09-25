@@ -258,6 +258,8 @@ def scan(registers):
         "cause_unguarded": cause_unguarded(registers.get("rules") or {}),
         "contradictory": contradictory(registers.get("rules") or {}),
         "shadowed": shadowed(registers.get("rules") or {}),
+        "untested_conditions": untested_conditions(
+            registers.get("rules") or {}),
         "never_becomes": never_becomes(
             registers.get("rules") or {}, rules,
             registers.get("trait_vocabulary") or {}),
@@ -369,6 +371,37 @@ def pairs(one_way, unsettable, vocabulary, groups):
         for missing in sorted(unsettable):
             if group_of(missing, vocabulary) == group:
                 found.append((stuck, missing, group))
+    return found
+
+
+def untested_conditions(rules):
+    """
+    Rules that require something in a phase where nothing requires anything.
+
+    Only a check rule's conditions are tested. `attempt` reads a carry-out
+    rule for its effects and its contest and nothing else, and an instead
+    rule for its effects; what either of them says it *requires* is never
+    looked at. So a carry-out rule saying "what you act on is a earth" fires
+    just as readily on air.
+
+    The field that selects in those phases is the guard -- `when` -- which
+    `gather` tests, and which `rank` rewards by sorting a guarded rule before
+    an open one. Two fields, one of them silently inert in three phases out
+    of five, and the form calls them "It requires" and "Only when": somebody
+    reaching for the first has written a rule that does nothing it says.
+
+    Returns [(rule, how many conditions are being ignored)].
+    """
+    from world import rulebooks
+
+    found = []
+    for rule in _records(rules):
+        phase = str(rule.get("phase") or "")
+        if phase in (rulebooks.CHECK, rulebooks.BECOMES):
+            continue
+        many = len(rule.get("conditions") or [])
+        if many:
+            found.append((rule, many))
     return found
 
 
@@ -885,6 +918,16 @@ def report(findings, name=""):
         trouble.append(
             f"{len(names)} rules demand a condition and its opposite at once, "
             f"so they can never pass: {_listed(names)}.")
+    if findings.get("untested_conditions"):
+        said = [f"{rule.get('name') or rule.get('id')} "
+                f"({rule.get('phase', '').replace('_', ' ')})"
+                for rule, _many in findings["untested_conditions"]]
+        trouble.append(
+            f"{len(said)} rules require something in a phase where nothing is "
+            f"required: {_listed(said)}. Only a check rule's requirements are "
+            f"tested; everywhere else the field that decides whether a rule "
+            f"applies is its guard. Move them to |wOnly when|n, or make the "
+            f"rule a check.")
     if findings.get("shadowed"):
         said = [f"{rule.get('name') or rule.get('id')} "
                 f"(never fires; {winner.get('name') or winner.get('id')} "

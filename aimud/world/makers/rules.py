@@ -834,6 +834,14 @@ def phase_nudge(ctx):
             "|yThis rule does nothing.| A carry-out with no effects means the "
             "verb succeeds and changes nothing, which reads to a player as it "
             "having worked. Add an effect, or make it a check.|n")
+    if phase in ("carry_out", "instead", "after") and ctx.draft.get(
+            "conditions"):
+        said.append(
+            "|yWhat this rule requires will never be tested.| Only a check "
+            "rule's requirements are looked at; in this phase the field that "
+            "decides whether the rule applies at all is |wOnly when|y. Move "
+            "them there, or make this a check rule and write a second one to "
+            "do the work.|n")
     if not action and phase != "becomes":
         said.append(
             "|yNo verb is named, so this rule is about every action there "
@@ -1004,6 +1012,15 @@ def _faults_about(root, rule):
         dead = rulecheck.shadowed(book, root)
     except Exception:
         dead = []
+    if str(rule.get("phase") or "") not in ("check", "becomes") \
+            and (rule.get("conditions") or []):
+        said.append(
+            f"|yWhat this rule requires is not tested.|n Only a check rule's "
+            f"requirements are; in "
+            f"{str(rule.get('phase', '')).replace('_', ' ')} the field that "
+            f"decides whether it applies is |wOnly when|n. As written it "
+            f"applies whenever it is reached.\n"
+            f"|x|wedit rule {rule.get('id')}|x can move them.|n")
     for gone, winner in dead:
         if gone.get("id") != rule.get("id"):
             continue

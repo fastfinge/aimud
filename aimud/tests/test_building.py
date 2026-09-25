@@ -2371,3 +2371,86 @@ class ARuleThatCanNeverFire(Building):
                                 "Endless Alchemy")
         self.assertIn("never fire", said)
         self.assertIn("guard", said)
+
+
+@tag("world")
+class RequiringSomethingWhereNothingIsRequired(Building):
+    """
+    Only a check rule's requirements are tested, and the rest say nothing.
+
+    Reported from play, and the half of the summoning report that was not
+    about ordering. `attempt` reads a carry-out rule for its effects and its
+    contest and nothing else; what it says it *requires* is never looked at.
+    So "what you act on is a earth" on a carry-out rule fires just as readily
+    on air, and two such rules are two rules that both apply always.
+
+    The field that decides in those phases is the guard, which `gather`
+    tests and `rank` rewards. Two fields, one of them inert in three phases
+    out of five, and the form calls them "It requires" and "Only when".
+    """
+
+    def filed(self, **fields):
+        from world.makers import rules
+
+        fields.setdefault("name", "summon earth")
+        fields.setdefault("action", "summon")
+        fields.setdefault("scope", "world")
+        fields.setdefault("effects", [{"type": "narrate"}])
+        return rules.keep_rule(self.draft(**fields))
+
+    def test_a_carry_out_rule_that_requires_something_is_told(self):
+        _rule_id, said = self.filed(
+            phase="carry_out",
+            conditions=[{"subject": "direct", "kind": "earth"}])
+        self.assertIn("not tested", said)
+        self.assertIn("Only when", said)
+
+    def test_and_so_is_an_instead_rule(self):
+        _rule_id, said = self.filed(
+            phase="instead",
+            conditions=[{"subject": "direct", "kind": "earth"}])
+        self.assertIn("not tested", said)
+
+    def test_a_check_rule_is_not(self):
+        """Requirements are exactly what a check rule is for."""
+        _rule_id, said = self.filed(
+            phase="check",
+            conditions=[{"subject": "direct", "kind": "earth"}])
+        self.assertNotIn("not tested", said)
+
+    def test_and_a_guard_is_not(self):
+        _rule_id, said = self.filed(
+            phase="carry_out",
+            when=[{"subject": "direct", "kind": "earth"}])
+        self.assertNotIn("not tested", said)
+
+    def test_the_nudge_says_it_while_the_rule_is_being_written(self):
+        from world.makers import rules
+
+        said = rules.phase_nudge(self.draft(
+            phase="carry_out", action="summon",
+            effects=[{"type": "narrate"}],
+            conditions=[{"subject": "direct", "kind": "earth"}]))
+        self.assertIn("never be tested", said)
+        self.assertIn("Only when", said)
+
+    def test_and_view_faults_lists_them(self):
+        from world import rulecheck
+
+        self.filed(phase="carry_out",
+                   conditions=[{"subject": "direct", "kind": "earth"}])
+        said = rulecheck.report(rulecheck.scan(rulecheck.of_world(self.root)))
+        self.assertIn("nothing is required", said)
+        self.assertIn("Only when", said)
+
+    def test_the_finding_names_the_rule_and_the_phase(self):
+        from world import rulecheck
+
+        rule_id, _said = self.filed(
+            phase="carry_out",
+            conditions=[{"subject": "direct", "kind": "earth"}])
+        found = rulecheck.untested_conditions(
+            {r["id"]: r for r in __import__(
+                "world.rulebooks", fromlist=["x"]).all_rules(self.root)})
+        self.assertEqual([(rule["id"], many) for rule, many in found],
+                         [(rule_id, 1)])
