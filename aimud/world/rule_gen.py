@@ -688,6 +688,21 @@ def prompt(world_root, action, bound, actor, offered, hints=()):
                      "Act on a line only if this verb genuinely does that:")
         lines += [f"  - {hint}" for hint in hints]
     lines.append("\n" + lore.description(world_root, actor))
+    # And what this world says about its own rules.
+    #
+    # The facet is called "Rules" in the wizard, its hint is "what is possible
+    # here", and its header is "The rules of this world -- what is and is not
+    # possible in it". The one generator that writes this world's rules never
+    # read a word of it: `item_gen` asked it whether a thing could be here,
+    # and that was the whole of its readership.
+    #
+    # It is the only lever a builder has over a rule they are not writing
+    # themselves -- "combining two things always produces a new thing" is a
+    # fact about this world's rules and belongs nowhere else -- and it was
+    # going to the two yes-or-no questions and not to the rule.
+    said = lore.guidance_block(world_root, "validation", actor).rstrip()
+    if said:
+        lines.append("\n" + said)
     return "\n".join(lines)
 
 
@@ -1337,6 +1352,7 @@ def learn_becoming(sponsor, world_root, slug, on_success=None,
         {"role": "system", "content": system},
         {"role": "user", "content": (
             f"World: {lore.description(world_root)}\n\n"
+            f"{lore.guidance_block(world_root, 'validation')}"
             f"The figure: {slug} -- {entry.get('name') or slug}: "
             f"{entry.get('means') or 'not described'}. It is a "
             f"{entry.get('trait_type') or 'counter'}, and it has just run "
