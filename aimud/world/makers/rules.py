@@ -361,6 +361,7 @@ EFFECT_FIELDS = {
     "narrate": (),
     "try": ("action",),
     "offer_quest": ("quest", "name_role", "role"),
+    "set_goal": ("role", "goal"),
 }
 
 #: What a form deliberately does not ask for, and why. A gap on the record
@@ -391,6 +392,35 @@ def _name_role_label(ctx):
     if str(ctx.draft.get("type") or "") == "offer_quest":
         return "Who asks"
     return "To what"
+
+
+def _role_label(ctx):
+    """And the other side of the same pair, for the effects about people."""
+    etype = str(ctx.draft.get("type") or "")
+    if etype == "set_goal":
+        return "Who sets about it"
+    if etype == "offer_quest":
+        return "Who is asked"
+    return "To what"
+
+
+def _goal_form(ctx):
+    """
+    The same form an errand's goals are written in.
+
+    Shared rather than written twice: what a character can be set to work
+    towards is one question, and a goal a rule hands out and a goal an errand
+    asks for are tested by the same code a moment later.
+    """
+    from world.makers import errands
+
+    return errands.NEW_GOAL
+
+
+def _goal_said(ctx, entry):
+    from world import goals
+
+    return goals.describe([entry])
 
 
 def _asks(field):
@@ -446,6 +476,10 @@ def keep_effect(ctx):
                            "or at what rate a second.")
     if etype == "create_object" and not effect.get("name"):
         raise menus.Refuse("Say what it produces.")
+    if etype == "set_goal" and not effect.get("goal"):
+        raise menus.Refuse(
+            "Say what they are to work towards. A purpose with nothing in it "
+            "is a character standing still.")
 
     if etype == "create_object":
         # The three that are one answer: what it grants, when that counts and
@@ -559,8 +593,15 @@ NEW_EFFECT = menus.Form(
                      help="Each says what it does in one line. An effect "
                           "nothing can read backwards -- renaming, digging -- "
                           "is one no character can ever plan towards."),
-        menus.Picker("role", "To what", options=subject_options,
-                     lock=_asks("role")),
+        menus.Picker("role", _role_label, options=subject_options,
+                     lock=_asks("role"),
+                     help=lambda ctx: (
+                         "Whose purpose this becomes. They work at it on "
+                         "their own from then on, and nothing is asked of a "
+                         "model to make them."
+                         if str(ctx.draft.get("type") or "") == "set_goal"
+                         else "Which part of what somebody typed this "
+                              "happens to.")),
         menus.Picker("name_role", _name_role_label, options=subject_options,
                      lock=_asks("name_role"),
                      help=lambda ctx: (
@@ -670,6 +711,15 @@ NEW_EFFECT = menus.Form(
                       lock=_asks("action"),
                       help="The whole attempt starts again as that verb, so "
                            "every check about it still applies."),
+        making.listing_field(
+            "goal", "What they are to work towards", _goal_form, _goal_said,
+            add_label="Add something that must become true",
+            empty="nothing -- which sets them no purpose at all",
+            help="Conditions the game can test, exactly as an errand's are. "
+                 "The character works backwards from them itself: a world "
+                 "that has settled what combining fire and water makes "
+                 "already holds the step, so |wsteam exists|n is a purpose "
+                 "somebody can actually be set."),
         making.picker("quest", "Which errand", "quest",
                       lock=_asks("quest"), make=False,
                       help="An errand this world has written. Whether it may "

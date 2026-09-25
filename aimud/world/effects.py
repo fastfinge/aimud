@@ -591,6 +591,17 @@ VOCABULARY = {
         "fields": ("action", "roles"),
         "backwards": False, "answers": False,
     },
+    "set_goal": {
+        "means": "gives somebody something to work towards, which they then "
+                 "set about on their own",
+        "takes": "role, goal: [...]",
+        "fields": ("role", "goal"),
+        # Nothing is achieved by handing somebody a want: the world is exactly
+        # as it was, and a planner reading this backwards would think a verb
+        # that sets a goal is a way of reaching it. It is the opposite -- the
+        # way of reaching it is whatever the person then does.
+        "backwards": False, "answers": False,
+    },
     "offer_quest": {
         "means": "asks somebody to run an errand this world has written",
         "takes": "quest, name_role (who asks), role (who is asked)",
@@ -764,6 +775,15 @@ def say(effect):
     if etype == "try":
         return f"means {effect.get('action') or 'something else'} instead"
 
+    if etype == "set_goal":
+        from world import goals as goals_mod
+
+        who = _role_words(effect) if effect.get("role") else "whoever it is"
+        wanted = effect.get("goal") or []
+        if not wanted:
+            return f"gives {who} a purpose"
+        return f"sets {who} to {goals_mod.describe(wanted)}"
+
     if etype == "offer_quest":
         return f"offers {what} the errand {effect.get('quest') or ''}".rstrip()
 
@@ -823,6 +843,56 @@ def _apply_one(actor, room, effect, bound, world_root, found=None):
         ownership.claim(actor, obj)
         where = "is now here" if location is room else "is now carried"
         return f"{obj.get_numbered_name(1, None, return_string=True)} {where}."
+
+    if etype == "set_goal":
+        # Giving somebody something to work towards, written as a rule.
+        #
+        # The half a world with no model was missing. A character's goal was
+        # reachable three ways and all three needed a model: it set one for
+        # itself out of what it said (`npcs._set_goal`), it accepted an
+        # errand, or the dialogue model decided. So "ask the apprentice for
+        # steam" could be matched by a rule -- `called` sees the word -- and
+        # the rule had no way to finish the sentence.
+        #
+        # Nothing is planned here and nothing is paid for. The goal is a list
+        # of conditions the planner already knows how to test and to work
+        # backwards from: a world that has settled that combining fire and
+        # water makes steam has, in that rule's `create_object`, the step the
+        # planner needs -- so "steam exists" is a goal the apprentice can
+        # actually get to, and it gets there by combining, in the room, where
+        # everybody can see it happen.
+        from world import goals as goals_mod
+
+        to = str(effect.get("role") or "direct")
+        who = actor if to == "actor" else bound.get(to)
+        if who is None:
+            return None
+        if not getattr(who.db, "is_npc", False):
+            # A goal is what the planner works at, and nothing plans for a
+            # player. Said in the log rather than silently: a rule that sets
+            # a player a goal is a rule whose author meant somebody else.
+            logger.log_info(
+                f"goals: a rule set a goal on {who.key}, who is not a "
+                f"character this world plays -- nothing works at it")
+            return None
+        if who.db.goal_from_quest:
+            # Already promised to somebody. Abandoning that quietly would
+            # leave the errand's own bookkeeping pointing at a goal nobody is
+            # working at, and the person who asked waiting for ever.
+            logger.log_info(
+                f"goals: {who.key} was not given a new goal -- still at the "
+                f"errand {who.db.goal_from_quest}")
+            return None
+        wanted = goals_mod.sanitise(effect.get("goal") or [], owner=who)
+        if not wanted:
+            logger.log_info(
+                f"goals: a rule gave {who.key} a goal with nothing testable "
+                f"in it: {effect.get('goal')!r}")
+            return None
+        who.db.goal = wanted
+        who.db.goal_stalls = 0
+        who.db.goal_waiting = None
+        return f"{who.key} sets about it."
 
     if etype == "offer_quest":
         # Offering is an effect rather than a hook, so *when* an errand is
@@ -1291,6 +1361,25 @@ def schema(ctx=None):
             "cascade": {"type": "boolean",
                         "description": "set_owner: whether what it holds "
                                        "changes hands too"},
+            # Read by `offer_quest` and never offered here, so an effect
+            # naming an errand could be written by a person and not by a
+            # model. A plain identifier, so it costs the schema nothing.
+            "quest": {"type": "string",
+                      "description": "offer_quest: which errand this world "
+                                     "has already written"},
+            # `set_goal`'s own field is deliberately absent, and it is the
+            # one place in this schema where a field is withheld rather than
+            # forgotten. A goal is a list of spelled-out conditions, and this
+            # schema is already inside one list of objects inside another:
+            # rules, then effects, then goals is three deep, which Google
+            # refuses outright on a call that names the tool it must use --
+            # the last round of every loop. See
+            # `tests/test_schema_portability.py`.
+            #
+            # So `set_goal` is a person's effect for now. `rule_gen.validate`
+            # refuses one that names no goal, which is the only shape a model
+            # could write, and says so -- rather than filing a rule that
+            # hands somebody an empty purpose and does nothing for ever.
         },
         "required": ["type"],
     }

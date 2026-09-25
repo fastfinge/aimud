@@ -270,6 +270,16 @@ def validate(reply, offered, action, world_root=None):
                     + f" -- this world declares that {action} always does, so "
                     f"the rule is not finished until it says how")
                 continue
+        empty = [e for e in effects
+                 if str(e.get("type") or "") == "set_goal"
+                 and not e.get("goal")]
+        if empty:
+            complaints.append(
+                "a set_goal effect with no goal in it -- what somebody is to "
+                "work towards is a list of conditions, which this schema "
+                "cannot carry, so write what the verb itself does and leave "
+                "setting anybody to work to a rule written by hand")
+            continue
         written = _derived_written(effects, world_root)
         if written:
             complaints.append(

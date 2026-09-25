@@ -768,6 +768,64 @@ for every pair. That is the whole distinction that makes this safe to require.
 
 `tests/test_must.py`.
 
+### 8.8 Setting somebody to work
+
+`set_goal` gives a character something to work towards, and is the effect a
+world with no model was missing.
+
+A goal was reachable three ways and every one of them needed a model: a
+character set one for itself out of what it had just said
+(`npcs._set_goal` → `quest_gen.formalise_goal`), it accepted an errand, or the
+dialogue model decided. So `ask the apprentice for steam` could be *matched* by
+a rule -- §8.6's `called` sees the word whether or not any steam exists -- and
+the rule had no way to finish the sentence.
+
+    role   whose purpose it becomes
+    goal   what has to become true, in the same conditions an errand uses
+
+Nothing here plans and nothing here is paid for. The goal is a list of
+conditions the planner already tests and already reads backwards, so a world
+that has settled that combining fire and water makes steam **already holds the
+step**: that rule's `create_object` is what `conditions.achieves` matches, and
+"steam exists" becomes a purpose the apprentice can actually get to -- by
+combining, in the room, where everybody can see it happen.
+
+The form shares `errands.NEW_GOAL` rather than growing a second one: what a
+character can be set to work towards is one question, and a goal a rule hands
+out and a goal an errand asks for are tested by the same code a moment later.
+
+Four things it declines to do, each for a reason:
+
+* **A player is never given one.** Nothing plans for a player, so the goal
+  would sit unread. Logged rather than silent, because a rule that sets a
+  player a goal is a rule whose author meant somebody else.
+* **An errand already promised is not thrown over.** A goal that came from a
+  quest is owed to whoever asked, and replacing it would leave the errand's
+  bookkeeping pointing at a goal nobody is working at.
+* **A goal with nothing testable in it sets none.** `goals.sanitise` is the
+  same door an errand's goals come through.
+* **It is not read backwards** (`backwards: False`). Handing somebody a want
+  changes nothing about the world, and a planner that read it as progress
+  would think setting a goal were a way of reaching it.
+
+**It is a person's effect, and that is a limit rather than a choice.** A goal
+is a list of spelled-out conditions, and an effect's schema already sits
+inside a list of effects inside a list of rules: rules, then effects, then
+goals is three deep, which Google refuses outright on a call that names the
+tool it must use -- the last round of every rule-learning loop. So `goal` is
+withheld from `effects.schema`, which is the one field in it withheld rather
+than forgotten, and `tests/test_schema_portability.py` is what says so. The
+only shape a model could write is an empty one, so `rule_gen.validate`
+refuses a `set_goal` naming no goal and says what to do instead. Lifting this
+wants the goal flattened into something a leaf can carry, and that is a
+change to `goals.schema` rather than to this effect.
+
+`offer_quest`'s `quest` was missing from the schema for a different reason --
+simply forgotten -- and is there now. It is a plain identifier, so it costs
+the nesting nothing.
+
+`tests/test_set_goal.py`.
+
 ---
 
 ## 9. Contents: items, rooms, exits, people
