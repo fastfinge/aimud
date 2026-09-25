@@ -66,8 +66,24 @@ DEFAULT = "default"
 #: in a shipped ruleset doing precisely nothing, and the only symptom was a
 #: soak world where combining refused everything. A section nobody reads is a
 #: promise nobody keeps.
+#:
+#: `token_lists` and `pronouns` arrived with `world.exchange`, which needed a
+#: world's whole vocabulary in this shape and found two registers a ruleset
+#: could not ship. They are read by `_apply` like the rest, and a ruleset that
+#: can give a world its word lists is strictly more useful than one that
+#: cannot. Noun folds needed no section: `verbs` has always carried them, with
+#: `noun` set on the entry.
 SECTIONS = ("actions", "verbs", "kinds", "attributes",
-            "conditions", "rules", "mechanics")
+            "conditions", "rules", "mechanics",
+            "token_lists", "pronouns")
+
+#: What a `conditions` entry may say about a group. Named here rather than
+#: passed through as `**entry`, because a group record read back out of a
+#: world carries whatever `register_group` has learned to store since, and a
+#: document written by a later aimud must not crash an earlier one on a
+#: keyword it does not take.
+GROUP_FIELDS = ("default", "exclusive", "ends_on_move", "prevents_acting",
+                "prevents_moving", "prevents_speaking")
 
 #: What a document may have besides its sections.
 HEADER = ("name", "title", "version", "means", "requires", "conflicts",
@@ -604,13 +620,20 @@ def _apply(world_root, doc, decided):
                         trait_type=entry.pop("trait_type", "counter"),
                         **entry)
 
+    # Groups first, then the states in them: a state names its group, and the
+    # group has to behave as declared before anything joins it. A document may
+    # write them in either order and this reads the groups out first, so an
+    # exported world -- which writes every group and then every state -- and a
+    # hand-written ruleset both land the same way.
     for entry in doc.get("conditions") or []:
-        if not hasattr(entry, "keys"):
+        if not hasattr(entry, "keys") or "state" in entry:
             continue
         entry = dict(entry)
         members = entry.pop("states", None) or []
-        group = verbs.register_group(world_root, entry.pop("group", ""),
-                                     **entry)
+        group = verbs.register_group(
+            world_root, entry.pop("group", ""),
+            **{name: value for name, value in entry.items()
+               if name in GROUP_FIELDS})
         # And the states that belong to it, by name.
         #
         # `apply_states` registers a slug it has never seen on the way in,
@@ -622,6 +645,24 @@ def _apply(world_root, doc, decided):
         for slug in members:
             verbs.register_state(world_root, str(slug), group=group)
 
+    # A condition written out in full rather than named inside a group. What
+    # `world.exchange` writes, because a world's states already have meanings,
+    # conflicts and sometimes a definition, and a document carrying only the
+    # spelling would import a world where `starving` meant nothing. A ruleset
+    # may say it the same way.
+    for entry in doc.get("conditions") or []:
+        if not hasattr(entry, "keys") or "state" not in entry:
+            continue
+        entry = dict(entry)
+        verbs.register_state(
+            world_root, str(entry.get("state") or ""),
+            means=str(entry.get("means") or ""),
+            conflicts=entry.get("conflicts") or (),
+            group=entry.get("group") or None,
+            when=entry.get("when"),
+            bonuses=entry.get("bonuses"),
+            of=entry.get("of"))
+
     for entry in doc.get("kinds") or []:
         if not hasattr(entry, "keys"):
             continue
@@ -629,6 +670,24 @@ def _apply(world_root, doc, decided):
                        entry.get("affordances") or {},
                        accepts=entry.get("accepts") or (),
                        under=str(entry.get("under") or ""))
+
+    # A word list may name another, so they are declared together and
+    # `register_many` checks the references and the productivity of all of
+    # them at once. Before the descriptions that use them, which is every
+    # description a world has.
+    lists = [dict(entry) for entry in doc.get("token_lists") or []
+             if hasattr(entry, "keys")]
+    if lists:
+        from world import token_lists
+
+        token_lists.register_many(world_root, lists)
+
+    for entry in doc.get("pronouns") or []:
+        if not hasattr(entry, "keys"):
+            continue
+        from world import pronouns
+
+        pronouns.register(world_root, dict(entry))
 
     for entry in doc.get("verbs") or []:
         _fold(world_root, entry)
@@ -695,6 +754,8 @@ SECTION_WORDS = {
     "attributes": ("figure", "figures"),
     "conditions": ("group of conditions", "groups of conditions"),
     "mechanics": ("mechanic", "mechanics"),
+    "token_lists": ("word list", "word lists"),
+    "pronouns": ("pronoun set", "pronoun sets"),
 }
 
 

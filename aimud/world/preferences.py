@@ -86,6 +86,12 @@ CONFIRMATIONS = [
     ("change_ruleset", "Switching a ruleset on or off in a world already made",
      "Its rules start or stop at once, but what the world has already built "
      "stays as it is."),
+    ("export_world", "Writing a world to the shared folder",
+     "Everybody here can build a world from it, and a reset goes back to it."),
+    ("import_world", "Building a world somebody else exported",
+     "Its text reaches your model on your key when you play it."),
+    ("delete_export", "Taking a world out of the shared folder",
+     "Nobody can build it here afterwards."),
     ("reset_verb", "Resetting what a verb takes",
      "The world will be asked afresh what the verb means."),
     ("delete_tokens", "Deleting a word list",

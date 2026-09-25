@@ -43,7 +43,13 @@ class NamingASubject(SimpleTestCase):
         self.assertEqual(rest, "2 yes")
 
     def test_a_verb_only_answers_for_its_own_subjects(self):
-        self.assertFalse(subjects.claims("import", "world"))
+        # `import` reaches a world and the commonsense lexicon, and nothing
+        # else. This was `import world` until a world could be imported, which
+        # is the way this assertion is meant to change: a pair stops being an
+        # example the moment the pair becomes real.
+        self.assertFalse(subjects.claims("import", "rules"))
+        self.assertFalse(subjects.claims("import", "tokens"))
+        self.assertTrue(subjects.claims("import", "world"))
 
 
 class _Verbs(GameTest):
