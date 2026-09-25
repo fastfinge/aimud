@@ -1,8 +1,10 @@
 # Development plan: worlds that travel
 
 Status: **built**, phases 1 to 8. What each phase came to, and where it
-differs from what was scoped, is under each phase in §15. Six things were
-found in the building and are marked **as built** where they changed the plan.
+differs from what was scoped, is under each phase in §15. Everything the
+building found is marked **as built** where it changed the plan; there is a
+good deal of it, and the largest is §5 -- the maker table is not the spine of
+export after all.
 
 This covers the `future-plans.md` item "world import and export", and it is
 phase 7 of `docs/archived/player-building.md`, named there and deliberately left
