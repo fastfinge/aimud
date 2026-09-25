@@ -101,6 +101,9 @@ PREDICATE_GROUPS = (
         ("gone", "is no longer in the world", "flag"),
         ("unbound", "was not named at all", "flag"),
     )),
+    ("word", "The word that was used", (
+        ("called", "was named by a particular word", "text"),
+    )),
     ("reach", "Reach, sight and being able", (
         ("reachable_by", "can be touched by whoever is acting", "flag"),
         ("visible_to", "can be seen by whoever is acting", "flag"),
@@ -310,7 +313,11 @@ NEW_CONDITION = menus.Form(
         menus.Field("who", "Whose", lock=_wants("who"),
                     help="A role -- actor -- or somebody's name."),
         menus.Field("text", "Which", lock=_wants("text", "clock", "thing"),
-                    help="Named as it is actually called here."),
+                    help="Named as it is actually called here. For |wwas "
+                         "named by a particular word|n it is the word itself, "
+                         "and the one condition that does not need the thing "
+                         "to exist: it is how |wsummon air|n reaches a rule "
+                         "that makes air, in a world with no air in it yet."),
         making.keeper("keep", "Keep this condition", keep_condition),
     ],
 )

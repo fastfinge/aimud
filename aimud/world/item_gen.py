@@ -560,6 +560,16 @@ def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False,
         on_refused(complaint)
         return
 
+    # Asked before the first thing that costs, and not where it used to be.
+    # `ask_for_item` has the same gate, but it is two model calls further on:
+    # a world that writes none of its own items still paid a decision call to
+    # be told a thing could plausibly be here, and was then refused for a
+    # reason that was known before either question was put. The player saw
+    # |rCould not resolve earth: ...|n -- an error, in red, for typing a noun.
+    if not sponsor.will("items"):
+        on_refused(sponsor.refusal("items") or f"You see no {phrase} here.")
+        return
+
     if not _acquire_gen_lock(room, phrase.lower()):
         on_refused("Something is already appearing there.")
         return

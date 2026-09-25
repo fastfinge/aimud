@@ -494,6 +494,7 @@ handful of questions a person actually asks:
 | where it is | `placed`, `not_placed`, `in_room`, `not_in_room`, `leads_to` |
 | a figure about somebody | `trait` |
 | whether it is there at all | `exists`, `gone`, `unbound` |
+| the word that was used | `called` (§8.6) |
 | the time | `clock` |
 | reach and sight | `reachable_by`, `visible_to`, `able` |
 | never | `never` |
@@ -665,6 +666,64 @@ what already exists:
 None of these refuse the rule. They are shown, the rule is kept, and
 `view faults` says the same thing later. A builder who knows what they are
 doing is allowed to write a rule whose moment has not arrived yet.
+
+### 8.6 A rule for a thing that does not exist yet
+
+Every other predicate resolves a subject and then asks it something, so every
+other predicate answers *no* about a word that named nothing. That is the
+right answer almost always, and it made one world unwritable.
+
+`summon air`, in a world whose air has not been made yet. The rule that makes
+air has to be found from the sentence, and at the moment the sentence is read
+there is no air to find it by. Worse, the pipeline had already acted: an
+unmatched noun goes to `item_gen.conjure`, which either refuses (a world that
+writes no items of its own) or invents one -- and then the rule fires and
+makes a second. Both were reported from play, one after the other, and the
+answer given at the time was that it could not be expressed.
+
+Three things, which are one change:
+
+* **`called` asks about the word.** `{"subject": "direct", "called": "air"}`
+  is true when the word used for that role names air -- whatever it was found
+  to mean if it was found to mean anything, and otherwise the word itself,
+  with articles off, this world's noun folds applied, and a sense read down to
+  its lemma. So one rule fires on `summon air` whether or not there is already
+  air in the room, which is the difference somebody writing it should never
+  have to think about. It rides on `conditions.Context.words`, which is what
+  the player typed, kept beside `bound`, which is what it was found to mean.
+  The two come apart exactly when nothing answers, which is the case this is
+  for.
+* **The rulebooks are consulted before the noun is conjured.** "You see no
+  earth here" is right up until a rule exists that knows how to make one --
+  the same argument `attempt._redirect_waiting` already makes one step later
+  about "Launch what?". `_knows_the_word` is deliberately narrow: a rule
+  counts only if it is selected *by the word*, through a `called` guard about
+  a role that failed to bind, and only if it survived `gather`. Nothing
+  written before `called` existed can match, so no world in play changes.
+  The same test lets the arity question ("Summon what?") step aside.
+* **`called` has no opposite.** It is in `UNNEGATABLE` with the reason: "not
+  called earth" is every other word there is, and it would match a typo as
+  readily as a sentence, in the one phase where matching wrongly means a rule
+  fires that nobody meant.
+
+Two things that were in the way came out with it, both for the same reason --
+they are asked **after** a rule has been found, and neither is the question
+"what does this verb mean", which somebody has already answered by writing it
+down:
+
+* whether that sort of thing admits the verb at all (`verb_gen.ask_admission`);
+* how to describe what happened (`verb_gen.narrate`).
+
+In a world that writes no verbs of its own, both used to come back as a
+refusal, which threw away the rule and every effect with it, in red. Now the
+first proceeds -- the rule's own checks stand, and nothing is remembered, so a
+world given a key later still gets to ask properly -- and the second falls
+back to the player's own sentence: `summon earth` reads "You summon earth."
+A world built by hand and paid for with nothing runs its own rules and reads a
+little flatly. That is the trade its builder made; a silent refusal is not.
+
+`tests/test_summoning.py` is the whole of it, written as the world it came
+from.
 
 ---
 
@@ -1087,6 +1146,15 @@ to `world/menus.py`. Where it differs:
   question shows while you are writing one, in `view faults`, and said
   outright the moment the rule is filed -- with what to do about it, which is
   a guard or a narrower scope.
+* **And then the rule that was wanted could be written.** The same report,
+  followed all the way: the two rules were tied because the only field that
+  could have told them apart -- what the verb was being done *to* -- was about
+  a thing that did not exist yet. `called`, and the rulebooks being consulted
+  before an unmatched noun is conjured, are what make `summon air` expressible
+  at all. §8.6 is the whole of it, including the two questions asked after a
+  rule is found (whether its object admits the verb, and how to describe what
+  happened) that used to refuse the attempt outright in a world with no model
+  to answer them.
 * **`~` is quick or it is nothing.** Reported from play: filling in an item's
   description ran for 160 seconds without erroring. It was not hung -- four
   rounds at the long timeout is four minutes, and a model that will not call
