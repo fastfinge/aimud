@@ -129,15 +129,20 @@ command surface; `world_subject.py` gains two `Use` entries.
   },
 
   "setup":      { "...": "lore.spec_of, less the player's own name and look" },
-  "vocabulary": { "...": "a ruleset document: kinds, attributes, conditions," },
-  "lists":      { "...": "word lists, pronoun sets, noun folds" },
-  "map":        { "zones": {}, "rooms": [], "ways": [] },
+  "vocabulary": { "...": "a ruleset document, plus `decided`: see 3.3" },
+  "map":        { "plan": {}, "zones": {}, "rooms": [], "ways": [] },
   "things":     [],
   "people":     [],
   "errands":    [],
   "learned":    { "...": "what this world has already worked out" }
 }
 ```
+
+*As built*, `vocabulary` holds these sections: `kinds`, `attributes`,
+`conditions`, `actions`, `verbs`, `token_lists`, `pronouns`, `rules`, and
+`decided` -- which rules of its rulesets this world had switched off. The
+first eight are a ruleset document exactly; `decided` is the one thing a
+ruleset has no need of and is taken out before the rest is judged as one.
 
 `aimud` is the document version and the first thing read. A document from a
 later version than this server knows is refused by number rather than by the
@@ -250,16 +255,23 @@ more sections of `vocabulary`.
       "category": "destination",
       "kinds": ["gymnasium.n.01"],
       "states": [],
+      "styles": {},
       "trait_bonuses": {},
       "bonus_when": ""
     }
   ],
   "ways": [
-    {"id": "north", "from": "the_corridor", "to": "the_gym", "name": "north"},
-    {"id": "east",  "from": "the_gym", "pending": true, "hint": "changing rooms"}
+    {"name": "north", "from": "the_corridor", "to": "the_gym",
+     "aliases": ["n"]},
+    {"name": "east", "from": "the_gym", "pending": true,
+     "hint": "changing rooms", "aliases": ["e"]}
   ]
 }
 ```
+
+*As built*, a way carries no id of its own -- nothing refers to a way -- and it
+carries its aliases, because `n` for north is put on by `direction_aliases`
+where a room is built and an import builds no room from anywhere.
 
 Four things in there are not obvious.
 
@@ -345,14 +357,24 @@ condition, and being worn is only the one `clothing.create` takes an argument
 for. The map travels whole.
 
 A person is the same idea over the NPC writer in `world/makers/things.py`:
-name, description, pronoun set, states, traits and values, goal conditions,
-what they are wearing and carrying (things whose `at` is their id), and who
-they are following.
+name, description, manner, pronoun set, kinds, states, styles, their figures
+and what each stands at, what they want, what they are wearing and carrying
+(things whose `at` is their id), and who they are following.
+
+**As built: what somebody wants is `goal`, and the form that wrote it was
+wrong.** `create person` wrote it to `goal_conditions`, which nothing anywhere
+reads, while `npc_gen` writes `goal` through `goals.sanitise` -- which is what
+the planner, `view score` and every goal condition ask. So a character
+somebody typed wanted something no system in the game knew about. Fixed in
+`makers/things.py` rather than carried in both, which is how it was found:
+this document had to say which of the two a person's want *is*, and there was
+only one honest answer.
 
 An errand is `quests.blank_spec` verbatim, with `givers[].npc` rewritten to a
-person id. Errands already live on the world root rather than on the character
-who offers them -- `player-building.md` §10 settled that -- which is what makes
-them exportable at all.
+person id and its id moved to `key` so that a rebuilt world's errands are the
+same errands. Errands already live on the world root rather than on the
+character who offers them -- `player-building.md` §10 settled that -- which is
+what makes them exportable at all.
 
 ### 3.6 What a world has learned
 
@@ -508,9 +530,19 @@ imported and the file is not touched.
 
 ## 7. Building a world from a document
 
-`exchange.build(doc, account, character, on_success, on_error)`. Synchronous
-apart from the courtesy of not blocking a big world on the reactor thread --
-there is no model call in it, so it has nothing to wait for.
+*As built:* `exchange.build(doc, account, character)`, and it answers with the
+world's first room rather than taking callbacks. There is no model call in it,
+so there is nothing to wait for and nothing to be called back about; the
+callback pair in the plan was copied from `generate_first_room`, which has a
+network request in the middle and needs them.
+
+It raises `Refused`, carrying every complaint rather than the first, and
+`problems` runs to completion before anything is made. **As built**, there is
+a second guard behind that: an unexpected failure part-way through the
+building -- a fault in this code rather than in the document -- tears down
+what it had made and raises `Refused` as well. Somebody left owning half a
+world with no first room has no way to say so, and `clear_world` is the one
+that knows how to take a world away.
 
 ### 7.1 The world, first
 
