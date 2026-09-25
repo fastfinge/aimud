@@ -1060,6 +1060,20 @@ to `world/menus.py`. Where it differs:
   in front of a player rather than a failure at import. Found by the way out of
   a room, whose natural name is `exit` and which is the word that quits every
   menu in the game; it is called a **way** (§9.2).
+* **`~` works on the building forms**, which it did not on any of them.
+  Reported about `create room` and true of all twenty: a field is offered to
+  a model only where the *form* declares who pays, §12 said `~` stays
+  available throughout, and not one maker form said it -- so the key that
+  exists to help somebody write a description reported that there was nothing
+  to fill in, in the form most likely to want one.
+
+  Written on each form it would have gone missing again, which is what had
+  happened. So a form says who pays *or whoever opened it does*: one piece of
+  code opens all of them, over a world that knows whose key it spends, and it
+  says so once. Still opt-in either way -- a context with no sponsor fills
+  nothing in -- and a sub-form inherits it, because a child context carries
+  the data down. `~` spends the world's own key, which is the only thing on
+  these forms that spends anything at all.
 * **A thing made by hand can be worth having.** `world/makers/gearing.py`:
   what it grants, when that counts (worn, wielded, carried, present) and what
   condition the thing must be in first. One form, shared by `create item`,

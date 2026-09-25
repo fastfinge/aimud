@@ -376,6 +376,36 @@ def word_form(key, title, label, keep, help="", intro="", prompt=None):
     )
 
 
+def paying(caller):
+    """
+    Who pays when `~` fills a field in on a building form.
+
+    The world's own sponsor: its creator's key, as every generator in it is
+    paid by. Building itself costs nothing and must keep costing nothing --
+    `~` is the one key on a form that spends anything, and it spends the same
+    money the world already spends on itself.
+    """
+    from world import sponsor
+
+    return sponsor.of(caller)
+
+
+def about(caller):
+    """What a model filling a field in should know about where it is."""
+    from world import lore
+
+    room = getattr(caller, "location", None)
+    root = getattr(room.db, "world_root", None) if room is not None else None
+    if root is None:
+        return ""
+    said = [f"The world is {lore.title(root)}: "
+            f"{(lore.raw_description(root) or '').strip()}"]
+    if room is not None:
+        here = getattr(room.db, "room_title", "") or room.key
+        said.append(f"This is being built in {here}.")
+    return " ".join(said)
+
+
 def caller_of(ctx):
     return ctx.character or ctx.caller
 

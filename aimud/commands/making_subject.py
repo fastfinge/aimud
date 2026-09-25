@@ -23,6 +23,21 @@ from commands.subjects import (Subject, Use, answered, asking, in_world,
 from world import making, menus
 
 
+def _opened(caller, root):
+    """
+    What every building menu is opened with.
+
+    `sponsor` is who pays if `~` is used -- the world's own, so filling a
+    field in spends the same key the world spends on itself, and nothing
+    else on these forms spends anything. `world_context` is what a model
+    would need to know to fill one in sensibly. Passed here rather than
+    written on each form because one piece of code opens all of them, and
+    a form is exactly the place this was forgotten twenty times over.
+    """
+    return {"world_root": root, "sponsor": making.paying(caller),
+            "world_context": making.about(caller)}
+
+
 def _caller(ctx):
     return ctx.character or ctx.caller
 
@@ -114,7 +129,8 @@ def _create_run(maker):
         from commands.subjects import verb_form
 
         menus.open_menu(caller, verb_form("create"), session=cmd.session,
-                        path=[maker.key], world_root=root, opening=draft)
+                        path=[maker.key], opening=draft,
+                        **_opened(caller, root))
 
     return run
 
@@ -256,7 +272,7 @@ def _edit_run(maker):
             return
         if maker.sole:
             menus.open_menu(caller, maker.edit(root, None),
-                            session=cmd.session, world_root=root)
+                            session=cmd.session, **_opened(caller, root))
             return
         if maker.reached is not None:
             return _edit_reached(maker, cmd, root, words)
@@ -265,7 +281,7 @@ def _edit_run(maker):
                 caller,
                 _choose_form(maker, "edit", f"Change which {maker.key}?",
                              _edit_items(maker)),
-                session=cmd.session, world_root=root)
+                session=cmd.session, **_opened(caller, root))
             return
         ident = " ".join(words)
         form = maker.edit(root, ident)
@@ -273,7 +289,7 @@ def _edit_run(maker):
             caller.msg(f"This world holds no {maker.key} called "
                        f"|w{ident}|n.")
             return
-        menus.open_menu(caller, form, session=cmd.session, world_root=root)
+        menus.open_menu(caller, form, session=cmd.session, **_opened(caller, root))
 
     return run
 
@@ -292,14 +308,14 @@ def _edit_reached(maker, cmd, root, words):
             caller,
             _reached_form(maker, "edit", f"Change which {maker.key}?",
                           _reached_edit_items(maker)),
-            session=cmd.session, world_root=root)
+            session=cmd.session, **_opened(caller, root))
         return
     found, complaint = maker.find(caller, " ".join(words))
     if found is None:
         caller.msg(complaint or f"Which {maker.key}?")
         return
     menus.open_menu(caller, maker.edit(root, str(found.id)),
-                    session=cmd.session, world_root=root, target=found)
+                    session=cmd.session, target=found, **_opened(caller, root))
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +368,7 @@ def _delete_run(maker):
                 caller,
                 _choose_form(maker, "delete", f"Delete which {maker.key}?",
                              _delete_items(maker)),
-                session=cmd.session, world_root=root)
+                session=cmd.session, **_opened(caller, root))
             return
         ident = " ".join(words)
         asking(cmd, _delete_question(maker, root, ident), f"delete_{maker.key}",
@@ -369,7 +385,7 @@ def _delete_reached(maker, cmd, root, words, yes):
             caller,
             _reached_form(maker, "delete", f"Delete which {maker.key}?",
                           _reached_delete_items(maker)),
-            session=cmd.session, world_root=root)
+            session=cmd.session, **_opened(caller, root))
         return
     said = " ".join(words)
     found, complaint = maker.find(caller, said)
@@ -419,7 +435,7 @@ def _reset_run(maker):
                 caller,
                 _choose_form(maker, "reset", f"Forget which {maker.key}?",
                              _reset_items(maker)),
-                session=cmd.session, world_root=root)
+                session=cmd.session, **_opened(caller, root))
             return
         ident = " ".join(words)
         asking(cmd, _reset_question(maker, root, ident),

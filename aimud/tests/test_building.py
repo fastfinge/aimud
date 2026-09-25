@@ -2070,3 +2070,104 @@ class WhatAThingIsWorth(Building):
                 self.assertIn("trait_bonuses", keys)
         self.assertIn("trait_bonuses",
                       effects.VOCABULARY["create_object"]["fields"])
+
+
+@tag("world")
+class FillingAFieldIn(Building):
+    """
+    `~` works on the building forms, which it did not on any of them.
+
+    Reported from play about `create room`, and true of all twenty. `~` is
+    offered only where the form declares who pays, and not one maker form
+    did -- so the key that exists to help somebody write a description said
+    there was nothing to fill in, in the form most in need of one.
+
+    Writing it on each form was how it would have gone missing again. One
+    piece of code opens all of them and knows whose key the world spends, so
+    it says once, and this test says it stays said.
+    """
+
+    def opening(self):
+        from commands.making_subject import _opened
+
+        return _opened(self.char1, self.root)
+
+    def test_every_form_that_can_be_filled_in_has_somebody_to_pay(self):
+        from world import suggesting
+
+        for maker in making.registered():
+            if maker.new is None:
+                continue
+            ctx = menus.Context(self.char1, **self.opening())
+            with self.subTest(maker=maker.key):
+                fillable = suggesting.fillable(ctx, maker.new)
+                if not fillable:
+                    continue
+                self.assertIsNotNone(
+                    suggesting.sponsor_for(ctx, maker.new),
+                    f"{maker.key} has fields a model could fill and nobody "
+                    f"to pay for it, so ~ says there is nothing to fill in")
+
+    def test_a_rooms_description_is_one_of_them(self):
+        from world import suggesting
+        from world.makers import things
+
+        ctx = menus.Context(self.char1, **self.opening())
+        keys = {field.key for field
+                in suggesting.fillable(ctx, things.NEW_ROOM)}
+        self.assertIn("description", keys)
+        self.assertIsNotNone(suggesting.sponsor_for(ctx, things.NEW_ROOM))
+
+    def test_and_the_menu_offers_the_key(self):
+        from world.makers import things
+
+        self.open(things.NEW_ROOM, **self.opening())
+        # Guided, so it opens at the first required field. That one is a
+        # direction and not fillable; the summary behind it is.
+        self.type("b")
+        self.assertIn("~", self.type("l"))
+
+    def test_and_the_description_is_on_the_list_it_offers(self):
+        """
+        Reached from the summary rather than from inside the field: a long
+        description opens the line editor when it is chosen, so `~` is typed
+        before choosing it rather than after.
+        """
+        from world.makers import things
+
+        self.open(things.NEW_ROOM, **self.opening())
+        self.type("b")
+        shown = self.type("~")
+        self.assertIn("Fill in which?", shown)
+        self.assertIn("What it looks like", shown)
+
+    def test_a_form_opened_with_nobody_paying_still_cannot(self):
+        """Opt-in either way: a context with no sponsor fills nothing in."""
+        from world import suggesting
+        from world.makers import things
+
+        ctx = menus.Context(self.char1, world_root=self.root)
+        self.assertIsNone(suggesting.sponsor_for(ctx, things.NEW_ROOM))
+
+    def test_a_sub_form_inherits_who_is_paying(self):
+        """`Context.child` passes it down, so a nested wizard can fill in too."""
+        from world import suggesting
+        from world.makers import errands
+
+        ctx = menus.Context(self.char1, **self.opening())
+        child = ctx.child(extra=1)
+        self.assertIsNotNone(suggesting.sponsor_for(child, errands.NEW_GIVER))
+
+    def test_the_model_is_told_where_it_is_building(self):
+        said = making.about(self.char1)
+        self.assertIn("A test world", said)
+
+    def test_and_a_form_with_its_own_payer_keeps_it(self):
+        """The original arrangement is still the first answer."""
+        from world import suggesting
+        from world.makers import vocabulary
+
+        ctx = menus.Context(self.char1, **self.opening())
+        self.assertIsNotNone(vocabulary.NEW_TOKENS.sponsor)
+        self.assertIsNotNone(
+            suggesting.sponsor_for(ctx, vocabulary.NEW_TOKENS))

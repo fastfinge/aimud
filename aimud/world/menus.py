@@ -59,6 +59,13 @@ or an agent driving a command gets told what the command needed and what it
 could have been, in words it can act on. `open_menu` makes that decision, so
 no command has to.
 
+**Who pays for `~` is the form's to say, or the opener's.** A `Form` with a
+`sponsor` names its own; a form without one can still be filled in when the
+context it was opened with carries a sponsor. The second exists because one
+piece of code opens every building form over a world that knows whose key it
+spends, and written on each form it was missing from all twenty -- see
+`world/suggesting.py` `sponsor_for`.
+
 Sounds, MXP and OOB come later, through `PRESENTER`. Every place a protocol
 would want to hear from a menu calls it, and today every call does nothing.
 """
@@ -1048,13 +1055,13 @@ class GameMenu(EvMenu):
 
     def _suggestible(self, frame):
         """Whether `~` means anything here."""
+        from world import suggesting
+
         base = self._underlying(frame)
-        if base.form.sponsor is None:
+        if suggesting.sponsor_for(base.ctx, base.form) is None:
             return False
         if frame.kind == "field":
             return frame.item.suggestible
-        from world import suggesting
-
         return bool(suggesting.fillable(base.ctx, base.form))
 
     # -- filling in with a model --------------------------------------------

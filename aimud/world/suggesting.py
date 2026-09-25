@@ -64,7 +64,8 @@ def prompt(ctx, form, fields):
     intro = form.intro_for(ctx)
     if intro:
         lines.append(intro)
-    extra = str(m._call(form.context, ctx, "") or "").strip()
+    extra = str(m._call(form.context, ctx, "")
+                or getattr(ctx, "world_context", "") or "").strip()
     if extra:
         lines += ["", extra]
     command = str(m._call(form.command, ctx, "") or "").strip()
@@ -163,10 +164,25 @@ def fillable(ctx, form):
 
 
 def sponsor_for(ctx, form):
-    """Who pays, or None when this form cannot be filled in by a model."""
-    if form.sponsor is None:
-        return None
-    return form.sponsor(ctx)
+    """
+    Who pays, or None when this form cannot be filled in by a model.
+
+    **The form says, or whoever opened it does.** A form declaring its own
+    payer is the original arrangement and still the first answer; the second
+    exists because the building forms are all opened by one piece of code
+    (`commands/making_subject.py`) over a world that knows perfectly well
+    whose key it spends. Written on each of twenty forms it would have been
+    missing from the twenty-first, and it was: every maker form carried
+    `suggestible` fields and not one of them could be filled in, so `~` said
+    there was nothing to fill in exactly where there was most.
+
+    Still opt-in either way -- a context with no sponsor in it cannot be
+    filled from -- and a sub-form inherits it, because `Context.child` passes
+    the data down.
+    """
+    if form.sponsor is not None:
+        return form.sponsor(ctx)
+    return getattr(ctx, "sponsor", None)
 
 
 def fill(ctx, form, fields, on_done, on_error, wait=None):
