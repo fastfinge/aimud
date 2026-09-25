@@ -1060,6 +1060,20 @@ to `world/menus.py`. Where it differs:
   in front of a player rather than a failure at import. Found by the way out of
   a room, whose natural name is `exit` and which is the word that quits every
   menu in the game; it is called a **way** (§9.2).
+* **`~` is quick or it is nothing.** Reported from play: filling in an item's
+  description ran for 160 seconds without erroring. It was not hung -- four
+  rounds at the long timeout is four minutes, and a model that will not call
+  the tool takes all of them. `converse` forces the finish tool on its last
+  round, so two rounds is exactly "ask, and if it did not answer, make it";
+  the two in between were asking a model again to do what it had already
+  declined to do twice. Two rounds at the short timeout: a minute at worst,
+  and giving up says which setting to change and to type it in meanwhile.
+
+  Worth saying why it was wrong rather than only that it was. Every other
+  generator runs while nobody is looking at it -- a room is written while the
+  player walks on, a rule while they type the next thing -- and the timeouts
+  were chosen for that. `~` is the one that has somebody sitting in a form
+  watching it, and it had inherited the settings of the others.
 * **`edit room` can name the room you are standing in**, which it could not.
   One argument: `modify_complaints` takes the room a thing is *in*, so that a
   rule cannot rename the room out from under somebody by naming it as what it
