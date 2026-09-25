@@ -666,6 +666,47 @@ def synonyms(world_root):
     return folds.verbs_of(world_root)
 
 
+#: What each section of a document is called to somebody reading it, in the
+#: singular and the plural. The names are the ones the makers use, so that
+#: "2 actions, 7 words" points at `view actions` and `view words` and not at
+#: the keys the file happens to be written with.
+SECTION_WORDS = {
+    "rules": ("rule", "rules"),
+    "actions": ("action", "actions"),
+    "verbs": ("word", "words"),
+    "kinds": ("kind", "kinds"),
+    "attributes": ("figure", "figures"),
+    "conditions": ("group of conditions", "groups of conditions"),
+    "mechanics": ("mechanic", "mechanics"),
+}
+
+
+def holds(name):
+    """
+    What is in a ruleset, as a short phrase: "2 actions, 7 words, no rules".
+
+    Worth saying, because a ruleset need not have any rules and crafting has
+    none: it declares `combine` and `make` and seven spellings for them, and
+    leaves what any of it means to the world that switched it on. Somebody who
+    did that and then went looking in `view rules` found nothing, and had no
+    way to tell a ruleset that had failed to arrive from one that was never
+    going to put anything there.
+    """
+    doc = get(name)
+    if doc is None:
+        return ""
+    said = []
+    for section in SECTIONS:
+        many = len(doc.get(section) or [])
+        if many:
+            one, more = SECTION_WORDS[section]
+            said.append(f"{many} {one if many == 1 else more}")
+    if not (doc.get("rules") or []):
+        # Said last, and said at all, because it is the surprising half.
+        said.append("no rules of its own")
+    return ", ".join(said) or "nothing"
+
+
 def said(name):
     """One ruleset as a line somebody should read."""
     doc = get(name)
