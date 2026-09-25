@@ -715,6 +715,27 @@ class TheSharedFolder(WorldTest):
             with self.assertRaises(exchange.Refused):
                 exchange.read("../../etc/shadow")
 
+    def test_a_world_this_server_cannot_build_still_lists(self):
+        """
+        Listed, and said to be unbuildable. Not hidden.
+
+        A folder that quietly dropped what it could not build would leave
+        somebody looking for a world they know is there, with nothing saying
+        why it is not. The listing is read from `requires` without parsing the
+        document whole, which is the whole reason that field is in the header.
+        """
+        import json as _json
+
+        from world import exchange
+
+        doc = exchange.document(self.world())
+        doc["requires"]["rulesets"]["moons"] = 1
+        with override_settings(WORLD_DIRS=[self.folder]):
+            name = exchange.write(doc)
+            listed = exchange.available()
+        self.assertEqual(listed[name]["missing"], ["moons"])
+        self.assertIn("moons", listed[name]["requires"])
+
     def test_a_file_that_is_not_a_world_is_not_listed(self):
         from world import exchange
 
