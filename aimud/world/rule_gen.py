@@ -200,7 +200,7 @@ def validate(reply, offered, action, world_root=None):
     And one check that is about meaning rather than about shape, earned by
     measurement: see `_self_defeating`.
     """
-    from world import conditions
+    from world import actions, conditions
 
     scopes = {token: scope for token, _said, scope in offered}
     kept, complaints = [], []
@@ -255,6 +255,30 @@ def validate(reply, offered, action, world_root=None):
             continue
         if phase in (rulebooks.CARRY_OUT, rulebooks.AFTER) and not effects:
             complaints.append(f"a {phase} rule that changes nothing")
+            continue
+        # And what this world has declared the verb always does. Sent back
+        # rather than filed, because a rule is written once per pair of things
+        # and kept: a carry-out rule for combining that only narrates settles
+        # earth-and-water as prose for the life of the world, and nothing
+        # asks again. See `actions.MUST`.
+        if phase == rulebooks.CARRY_OUT:
+            short = actions.unmet(world_root, action, effects)
+            if short:
+                complaints.append(
+                    f"a carry_out rule for {action} that does not "
+                    + " or ".join(actions.said_must(name) for name in short)
+                    + f" -- this world declares that {action} always does, so "
+                    f"the rule is not finished until it says how")
+                continue
+        empty = [e for e in effects
+                 if str(e.get("type") or "") == "set_goal"
+                 and not e.get("goal")]
+        if empty:
+            complaints.append(
+                "a set_goal effect with no goal in it -- what somebody is to "
+                "work towards is a list of conditions, which this schema "
+                "cannot carry, so write what the verb itself does and leave "
+                "setting anybody to work to a rule written by hand")
             continue
         written = _derived_written(effects, world_root)
         if written:
@@ -648,6 +672,12 @@ def prompt(world_root, action, bound, actor, offered, hints=()):
     declared = actions.spec(world_root, action)
     if declared and declared.get("means"):
         lines.append(f'It means: {declared["means"]}')
+    required = actions.must_of(world_root, action)
+    if required:
+        lines.append(
+            "A carry_out rule for it must "
+            + " and ".join(actions.said_must(name) for name in required)
+            + ". One that does not is sent back rather than filed.")
 
     already = rulebooks.for_attempt(world_root, action, bound, actor)
     if already:
@@ -688,6 +718,21 @@ def prompt(world_root, action, bound, actor, offered, hints=()):
                      "Act on a line only if this verb genuinely does that:")
         lines += [f"  - {hint}" for hint in hints]
     lines.append("\n" + lore.description(world_root, actor))
+    # And what this world says about its own rules.
+    #
+    # The facet is called "Rules" in the wizard, its hint is "what is possible
+    # here", and its header is "The rules of this world -- what is and is not
+    # possible in it". The one generator that writes this world's rules never
+    # read a word of it: `item_gen` asked it whether a thing could be here,
+    # and that was the whole of its readership.
+    #
+    # It is the only lever a builder has over a rule they are not writing
+    # themselves -- "combining two things always produces a new thing" is a
+    # fact about this world's rules and belongs nowhere else -- and it was
+    # going to the two yes-or-no questions and not to the rule.
+    said = lore.guidance_block(world_root, "validation", actor).rstrip()
+    if said:
+        lines.append("\n" + said)
     return "\n".join(lines)
 
 
@@ -699,6 +744,10 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
     model that says it cannot express something has answered, and the world
     goes on without a rule rather than with a wrong one.
     """
+    if not sponsor.will("verbs"):
+        on_error(sponsor.refusal("verbs")
+                 or "Nothing new of that sort happens here.")
+        return
     try:
         sponsor.key()          # refuse early rather than mid-prompt
     except ValueError as err:
@@ -1333,6 +1382,7 @@ def learn_becoming(sponsor, world_root, slug, on_success=None,
         {"role": "system", "content": system},
         {"role": "user", "content": (
             f"World: {lore.description(world_root)}\n\n"
+            f"{lore.guidance_block(world_root, 'validation')}"
             f"The figure: {slug} -- {entry.get('name') or slug}: "
             f"{entry.get('means') or 'not described'}. It is a "
             f"{entry.get('trait_type') or 'counter'}, and it has just run "
@@ -1428,6 +1478,6 @@ def ask_when_it_runs_out(character, slug, world_root):
         if slug in becoming.thresholds_of_rule(world_root, rule):
             return
     payer = sponsor_mod.of_world(world_root, actor=character)
-    if not payer.answers:
+    if not payer.will("verbs"):
         return
     learn_becoming(payer, world_root, slug)

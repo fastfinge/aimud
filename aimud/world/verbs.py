@@ -136,9 +136,9 @@ def canonical_verb(word, world_root=None):
     if folded is not None:
         return folded
     if world_root is not None:
-        from world import rulesets
+        from world import folds as folds_mod
 
-        folded = rulesets.synonyms(world_root).get(word)
+        folded = folds_mod.verbs_of(world_root).get(word)
         if folded is not None:
             return folded
 
@@ -148,9 +148,9 @@ def canonical_verb(word, world_root=None):
         if folded is not None:
             return folded
         if world_root is not None:
-            from world import rulesets
+            from world import folds as folds_mod
 
-            return rulesets.synonyms(world_root).get(root, root)
+            return folds_mod.verbs_of(world_root).get(root, root)
         return root
     return word
 

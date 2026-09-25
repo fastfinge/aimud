@@ -296,3 +296,87 @@ class HelpFromTheHelpSystem(GameTest):
         item = menus.Action("x", "Notices", run=lambda ctx: None,
                             help="Mine.", topic="busy")
         self.assertEqual(item.help_for(menus.Context(self.char1)), "Mine.")
+
+
+@tag("unit")
+class AFillIsQuickOrItIsNothing(GameTest):
+    """
+    How long `~` may take, which is the one thing it had never been held to.
+
+    Reported from play: filling in an item's description ran for 160 seconds
+    without erroring. It was not hung. Four rounds at the long timeout is four
+    minutes, and a model that will not call the tool takes all of them -- on a
+    field somebody sitting in the form could have typed in twenty seconds.
+
+    Nothing else in the game is watched while it runs: a room is written while
+    the player walks on, a rule while they type the next thing. This one has
+    somebody looking at it, so it is the one that has to be quick.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+
+    def form(self):
+        return menus.Form(
+            key="quick", title="A form",
+            sponsor=lambda ctx: FakeSponsor(),
+            items=[menus.Field("note", "Note", suggestible=True,
+                               help="Anything at all.")])
+
+    def fill(self, *replies):
+        form = self.form()
+        ctx = menus.Context(self.char1, world_root=self.root)
+        fields = suggesting.fillable(ctx, form)
+        got, errs = [], []
+        with immediately(), replying(*replies) as recorder:
+            suggesting.fill(ctx, form, fields, got.append, errs.append)
+        return recorder, got, errs
+
+    def test_a_model_that_answers_is_asked_once(self):
+        recorder, got, errs = self.fill(
+            tool_reply(tool_call("fill", note="Written.")))
+        self.assertEqual(len(recorder.prompts), 1)
+        self.assertEqual(got, [{"note": "Written."}])
+        self.assertEqual(errs, [])
+
+    def test_one_that_does_not_is_made_to_and_then_given_up_on(self):
+        recorder, got, errs = self.fill("I could write you one.")
+        self.assertEqual(len(recorder.prompts), suggesting.ROUNDS)
+        self.assertEqual(len(recorder.prompts), 2)
+        self.assertEqual(got, [])
+
+    def test_and_the_last_round_makes_it_rather_than_asking(self):
+        """Two rounds is exactly ask, then insist. Any more is asking twice."""
+        recorder, _got, _errs = self.fill("No thank you.")
+        self.assertIsNone(recorder.tool_choice(0))
+        self.assertIsNotNone(recorder.tool_choice(1))
+
+    def test_giving_up_says_which_setting_to_change(self):
+        _recorder, _got, errs = self.fill("No thank you.")
+        self.assertIn("settings models menus", errs[0])
+        self.assertIn("Type it in yourself", errs[0])
+
+    def test_it_waits_the_short_time_somebody_watching_would_wait(self):
+        from world import llm
+
+        form = self.form()
+        ctx = menus.Context(self.char1, world_root=self.root)
+        seen = {}
+
+        def converse(sponsor, model, messages, box, **kwargs):
+            seen.update(kwargs)
+
+        with mock.patch.object(llm, "converse", converse):
+            suggesting.fill(ctx, form, suggesting.fillable(ctx, form),
+                            lambda _v: None, lambda _e: None)
+        self.assertEqual(seen["timeout"], llm.TIMEOUT)
+        self.assertNotEqual(llm.TIMEOUT, llm.SLOW_TIMEOUT)
+
+    def test_the_worst_it_can_cost_somebody_is_a_minute(self):
+        """The number the report was about, asserted rather than reasoned."""
+        from world import llm
+
+        self.assertLessEqual(suggesting.ROUNDS * llm.TIMEOUT, 60)

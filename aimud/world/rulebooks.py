@@ -318,7 +318,7 @@ class Attempt:
 
 
 def gather(world_root, action, bound=None, actor=None, phase=None,
-           guarded=True):
+           guarded=True, words=None):
     """
     Every rule that applies to this attempt, most specific first.
 
@@ -329,11 +329,16 @@ def gather(world_root, action, bound=None, actor=None, phase=None,
     phase: which after rules are about an attempt is settled where it
     happened, and whether each follows is asked once carry-out has run. See
     docs/becoming-and-time.md 6.8.
+
+    `words` is what the player typed for each role, which a guard may ask
+    about with `called`. It is the only way a rule can be selected for a thing
+    that does not exist: everything else here resolves a role to an object
+    first. See `conditions._p_called`.
     """
     from world import conditions
 
     attempt = Attempt(world_root, action, bound, actor)
-    ctx = conditions.context(bound, actor, world_root, action)
+    ctx = conditions.context(bound, actor, world_root, action, words=words)
     found = []
     for rule in _store(world_root).values():
         if not rule.get("listed", True):
@@ -598,7 +603,7 @@ def from_verb_rule(rule, action, world_root=None):
 
 
 def for_attempt(world_root, action, bound=None, actor=None, verb_rule=None,
-                phase=None, guarded=True):
+                phase=None, guarded=True, words=None):
     """
     Every rule an attempt runs, in order: the world's own, plus the learned.
 
@@ -610,7 +615,7 @@ def for_attempt(world_root, action, bound=None, actor=None, verb_rule=None,
 
     standard_rules.seed(world_root)
     found = gather(world_root, action, bound, actor, phase=phase,
-                   guarded=guarded)
+                   guarded=guarded, words=words)
     if verb_rule is None:
         return found
 

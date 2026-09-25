@@ -393,6 +393,10 @@ def ask_for_item(sponsor, object_name, on_spec, on_error, room=None,
     `room` is where somebody reached for it, when they did. A rule's thing is
     made wherever the rule fires, so it is asked about with the world alone.
     """
+    if not sponsor.will("items"):
+        on_error(sponsor.refusal("items")
+                 or "Nothing new of that sort happens here.")
+        return
     model = sponsor.model_for("items")
     try:
         sponsor.key()          # refuse early rather than mid-prompt
@@ -554,6 +558,16 @@ def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False,
         return
     if complaint:
         on_refused(complaint)
+        return
+
+    # Asked before the first thing that costs, and not where it used to be.
+    # `ask_for_item` has the same gate, but it is two model calls further on:
+    # a world that writes none of its own items still paid a decision call to
+    # be told a thing could plausibly be here, and was then refused for a
+    # reason that was known before either question was put. The player saw
+    # |rCould not resolve earth: ...|n -- an error, in red, for typing a noun.
+    if not sponsor.will("items"):
+        on_refused(sponsor.refusal("items") or f"You see no {phrase} here.")
         return
 
     if not _acquire_gen_lock(room, phrase.lower()):

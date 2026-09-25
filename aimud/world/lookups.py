@@ -17,7 +17,7 @@ whose choices would be empty.
 MODULES = (
     "traits", "pronouns", "token_lists", "verbs", "lexicon", "commonsense",
     "rule_gen", "rulebooks", "kinds", "relations", "npc_gen", "zones", "goals",
-    "actions", "memory", "rulecheck",
+    "actions", "memory", "rulecheck", "quests",
 )
 
 

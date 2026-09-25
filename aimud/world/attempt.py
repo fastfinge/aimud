@@ -290,7 +290,19 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
             if _mechanics(caller, verb, parsed, bound, on_message):
                 return
             _with_bindings(caller, room, sponsor, raw, verb, bound,
-                           on_message, allow_effects, waiter)
+                           on_message, allow_effects, waiter,
+                           words=parsed["roles"])
+
+        if _knows_the_word(_world_root(room), verb, bound, caller,
+                           parsed["roles"], unbound):
+            # ...unless this world has written a rule about the word itself,
+            # in which case the noun is not a fixture waiting to be found but
+            # something the rule is about to bring into being. Conjuring one
+            # first is how `summon earth` came to produce two earths.
+            _with_bindings(caller, room, sponsor, raw, verb, bound,
+                           on_message, allow_effects, waiter,
+                           words=parsed["roles"])
+            return
 
         # A noun that is not an object yet may still be real -- fixtures live
         # in the room description until something reaches for them.
@@ -301,7 +313,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
         return
 
     _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
-                   allow_effects, waiter)
+                   allow_effects, waiter, words=parsed["roles"])
 
 
 def _mechanics(caller, verb, parsed, bound, on_message):
@@ -629,7 +641,7 @@ def _once(callback, on_stage=None):
 
 
 def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
-                   allow_effects, waiter=None, redirects=0):
+                   allow_effects, waiter=None, redirects=0, words=None):
     world_root = _world_root(room)
 
     # A verb the game already answers is never learned, however it got here.
@@ -745,7 +757,7 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
         """Once the verb's meaning is settled, ask whether this sort admits it."""
         _admitted(caller, room, sponsor, raw, verb, bound, known_rule,
                   release, allow_effects, world_root, waiter, guarded,
-                  redirects)
+                  redirects, words)
 
     def begin():
         # What this verb takes, settled once, and the first of the two
@@ -774,7 +786,10 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
             # no redirect waiting, which is almost all of them: the sentence the
             # player reads is the same one, from the same place.
             wanted = actions.missing_role(world_root, verb, bound)
-            if wanted and _redirect_waiting(world_root, verb, bound, caller):
+            if wanted and (_redirect_waiting(world_root, verb, bound, caller,
+                                             words)
+                           or _knows_the_word(world_root, verb, bound, caller,
+                                              words, [wanted])):
                 wanted = ""
             if wanted:
                 # The count the spaceship needs. "launch what?" eleven times
@@ -815,7 +830,7 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
         key = verbs.rule_key(verb, bound)
         learned_rule = verb_gen.get_rule(world_root, key)
         book = rulebooks.for_attempt(world_root, verb, bound, caller,
-                                     verb_rule=learned_rule)
+                                     verb_rule=learned_rule, words=words)
         settled = learned_rule is not None or any(
             r["phase"] in (rulebooks.CARRY_OUT, rulebooks.INSTEAD)
             for r in book)
@@ -863,7 +878,8 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
 
 
 def _admitted(caller, room, sponsor, raw, verb, bound, rule, release,
-              allow_effects, world_root, waiter, guarded, redirects=0):
+              allow_effects, world_root, waiter, guarded, redirects=0,
+              words=None):
     """
     Whether this sort of thing can be verbed at all, and then get on with it.
 
@@ -884,7 +900,8 @@ def _admitted(caller, room, sponsor, raw, verb, bound, rule, release,
         # frozen the answer for ever, where a check rule on `visible_to` says
         # the same thing per object and can change its mind.
         _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
-                   allow_effects, world_root, waiter, guarded, redirects)
+                   allow_effects, world_root, waiter, guarded, redirects,
+                   words)
         return
 
     # What is being acted on -- and deliberately not `_anchor(bound, caller)`,
@@ -905,7 +922,8 @@ def _admitted(caller, room, sponsor, raw, verb, bound, rule, release,
 
     def proceed():
         _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
-                   allow_effects, world_root, waiter, guarded, redirects)
+                   allow_effects, world_root, waiter, guarded, redirects,
+                   words)
 
     def refuse():
         name = (anchor.get_numbered_name(1, None, return_string=True)
@@ -923,6 +941,15 @@ def _admitted(caller, room, sponsor, raw, verb, bound, rule, release,
         return
     if settled is False:
         refuse()
+        return
+
+    if not _will_answer(sponsor):
+        # Nobody to ask, and a rule that says what to do. Proceeding for the
+        # same reason the no-kinds branch above does: the rule's own checks
+        # stand, and they are what a hand-built world has instead of this
+        # question. Nothing is remembered, so a world that is given a key
+        # later still gets to ask properly.
+        proceed()
         return
 
     def answered(allowed, _reason):
@@ -996,7 +1023,50 @@ def _with_specifics(rule, bound, verb, actor=None):
     return merged
 
 
-def _redirect_waiting(world_root, verb, bound, caller):
+def _knows_the_word(world_root, verb, bound, caller, words, roles=None):
+    """
+    Whether a rule here is written about the word that matched nothing.
+
+    "You see no earth here" is the right answer right up until a rule exists
+    that knows how to make one -- the same argument `_redirect_waiting` makes
+    one step further on, about "Launch what?". A world where `summon earth`
+    conjures earth out of the aether has exactly such a rule, and until now
+    nothing could reach it: an unmatched noun went straight to `conjure`, and
+    a world that writes none of its own items was refused there, in red,
+    before the rulebooks were opened.
+
+    Narrow on purpose, because the cost of being wrong is that a fixture the
+    room describes stops being promoted. A rule counts only if it is **chosen
+    by the word itself** -- a `called` guard, about one of the roles that
+    failed to bind -- and only if it survived `gather`, which tests that guard
+    against what was typed. Nothing written before `called` existed can match,
+    so no world in play changes behaviour.
+    """
+    from world import conditions, rulebooks
+
+    if not words:
+        return False
+    roles = {str(role) for role in (roles or [])}
+    try:
+        book = (rulebooks.for_attempt(world_root, verb, bound, caller,
+                                      phase=rulebooks.INSTEAD, words=words)
+                + rulebooks.for_attempt(world_root, verb, bound, caller,
+                                        phase=rulebooks.CARRY_OUT,
+                                        words=words))
+    except Exception:
+        return False
+    for rule in book:
+        for guard in (rule.get("when") or []):
+            for leaf, _optional in conditions.leaves(guard):
+                name, _value = conditions.predicate_of(leaf)
+                if name != "called":
+                    continue
+                if not roles or conditions.role_of(leaf) in roles:
+                    return True
+    return False
+
+
+def _redirect_waiting(world_root, verb, bound, caller, words=None):
     """
     Whether some `instead` rule would send this attempt somewhere else.
 
@@ -1009,7 +1079,7 @@ def _redirect_waiting(world_root, verb, bound, caller):
 
     try:
         book = rulebooks.for_attempt(world_root, verb, bound, caller,
-                                     phase=rulebooks.INSTEAD)
+                                     phase=rulebooks.INSTEAD, words=words)
     except Exception:
         return False
     for rule in book:
@@ -1070,7 +1140,7 @@ def _redirect(effect, bound, caller, world_root):
 
 def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                allow_effects, world_root, waiter=None, guarded=None,
-               redirects=0):
+               redirects=0, words=None):
     from world import conditions, rulebooks
 
     # Before anything is checked: a thing is in whatever conditions its name
@@ -1087,16 +1157,17 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
     # recipe that checks one pair and burns another is the bug this
     # closes. One dict per attempt, so nothing leaks between two.
     found = {}
-    ctx = conditions.context(bound, caller, world_root, verb, found=found)
+    ctx = conditions.context(bound, caller, world_root, verb, found=found,
+                             words=words)
     book = rulebooks.for_attempt(world_root, verb, bound, caller,
-                                 verb_rule=rule)
+                                 verb_rule=rule, words=words)
     # The after rules about this attempt are settled here, where it happens,
     # and their guards are not tested yet. A guard on an after rule is a
     # question about how things came out, and until carry-out has run the only
     # answer available is how they were. See docs/becoming-and-time.md 6.8.
     afters = rulebooks.for_attempt(world_root, verb, bound, caller,
                                    verb_rule=rule, phase=rulebooks.AFTER,
-                                   guarded=False)
+                                   guarded=False, words=words)
 
     # INSTEAD. The most specific rule that says this means something else
     # here wins outright, and processing ends. One winner, never a merge:
@@ -1279,7 +1350,7 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                 if rulebooks.guards_pass(
                         later, conditions.context(bound, caller, world_root,
                                                   verb, room=room,
-                                                  found=mine)):
+                                                  found=mine, words=words)):
                     following.append((later, mine))
             for later, mine in following:
                 extra += effects_mod.apply(
@@ -1322,6 +1393,21 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         _finish("", "")
         return
 
+    if not _will_answer(sponsor):
+        # Nobody is going to write prose for this, and that is not a reason
+        # for it not to happen. The rule has already said what the verb means
+        # here -- somebody wrote it -- so the only thing missing is the
+        # sentence, and a plain one is a better answer than a red refusal
+        # that also swallows the effects.
+        #
+        # It is what the permit says on its face: turning verbs off means "a
+        # verb nobody has written a rule for does nothing", and this is a verb
+        # somebody has. A world built by hand, with no key at all, runs its
+        # own rules and reads a little flatly, which is the trade its builder
+        # made. See world/permits.py.
+        _finish(_said_plainly(raw), "")
+        return
+
     if waiter:
         waiter("seeing what happens")
     # `_finish` changes the world -- effects land, quests are reviewed -- and
@@ -1336,6 +1422,41 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         on_error=lambda err: release(f"|r{err}|n"),
         result=result,
     )
+
+
+def _will_answer(sponsor):
+    """
+    Whether a model is going to answer about this verb, here, now.
+
+    Two questions ask it -- whether a sort of thing admits the verb at all,
+    and how to describe what happened -- and both are asked *after* a rule has
+    been found. Neither is "what does this verb mean": that was settled, by
+    somebody who wrote the rule. So when the answer is no, both step aside and
+    the attempt goes on, rather than refusing an action the world has already
+    decided it allows.
+    """
+    try:
+        if not sponsor.will("verbs"):
+            return False
+        sponsor.key()
+    except (AttributeError, ValueError):
+        return False
+    return True
+
+
+def _said_plainly(raw):
+    """
+    What happened, in the words it was asked for. No model, no round trip.
+
+    The player's own sentence rather than one assembled from the roles,
+    because the roles have been folded and bound by now -- "brew a potion"
+    would come back as "you make potion" -- and what somebody typed is the one
+    description of the act that is certainly about what they meant.
+    """
+    said = str(raw or "").strip()
+    if not said:
+        return ""
+    return "You " + said[0].lower() + said[1:] + "."
 
 
 def _remember(caller, event, actor_text):

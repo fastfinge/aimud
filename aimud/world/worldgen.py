@@ -674,6 +674,14 @@ def ensure_frontier(world_root, near=None):
     """
     if world_root is None or frontier(world_root) > 0:
         return None
+    # A world that does not grow its own map is not closed off by accident;
+    # it is finished where its builder stopped, and opening a door onto
+    # nothing would be this function disagreeing with them. |wcreate room|n
+    # opens the next one.
+    from world import permits
+
+    if permits.setting(world_root, "rooms") == permits.NEVER:
+        return None
 
     room, directions = _room_for_new_way(world_root, near)
     if room is None:
@@ -1356,6 +1364,8 @@ def populate_room(sponsor, room):
     any NPC appear in the room as they are created.  Errors are swallowed --
     an unfurnished room is a small loss, a stranded player is not.
     """
+    if not sponsor.will("items"):
+        return
     try:
         sponsor.key()          # refuse early rather than mid-prompt
     except ValueError:
@@ -1442,6 +1452,56 @@ def populate_room(sponsor, room):
 # Public async API
 # ---------------------------------------------------------------------------
 
+#: What a world that writes its own rooms says when it has none yet. Not the
+#: world's description: that is the paragraph every generator is shown, and
+#: reading it as what is in front of you would be the wrong text in the wrong
+#: place. This says what to do next instead, which is the only thing that is
+#: true of a room nobody has written.
+BARE_DESCRIPTION = (
+    "Nothing has been written here yet.\n\n"
+    "|wedit room|n gives this place a name and a description. "
+    "|wcreate room <direction>|n opens the next one, and |wcreate|n on its "
+    "own lists everything else this world can be made of."
+)
+
+
+def first_room_by_hand(sponsor, spec, on_success, on_error,
+                       creator_character=None):
+    """
+    The first room of a world that does not write its own. No model, no wait.
+
+    Everything `generate_first_room` does around the three calls it makes --
+    the world's text, its clock, its rulesets, who owns it, where it sits on
+    the map -- still has to happen, because those are what make a room a
+    world rather than a room. What is skipped is the three calls, the zone
+    plan, the contents pass and the frontier: a world built by hand is not
+    closed off by accident at the edge its builder stopped at.
+    """
+    from world import lore
+    from world import sponsor as sponsor_mod
+
+    title = (spec.get("title") or "").strip()
+    try:
+        room = _create_room(
+            title or "The First Room", BARE_DESCRIPTION, [],
+            (spec.get("description") or "").strip(), None, None,
+            creator=sponsor.account, room_type="", category="threshold",
+            zone="", plan={},
+        )
+        # `lore.store` writes the permits with the rest of the spec, so the
+        # world knows its own answer before anything asks it one.
+        lore.store(room, spec)
+        lore.apply_to_player(room, creator_character, spec)
+        if sponsor.account is not None:
+            created = sponsor.account.db.created_worlds or []
+            created.append(room.id)
+            sponsor.account.db.created_worlds = created
+            sponsor_mod.claim(room, sponsor.account)
+        on_success(room)
+    except Exception as exc:
+        on_error(str(exc))
+
+
 def generate_first_room(sponsor, spec, on_success, on_error,
                         creator_character=None):
     """
@@ -1459,6 +1519,17 @@ def generate_first_room(sponsor, spec, on_success, on_error,
     world_description = (spec.get("description") or "").strip()
     # Read off the spec: the world does not exist yet to be asked.
     rooms_guidance = _guide(spec, "rooms")
+
+    # A world whose creator has said it does not write its own rooms gets one
+    # plain room and no model call at all -- not a generated room they then
+    # have to undo. There is nowhere to read the choice from yet, so it comes
+    # off the spec that is making the world. See world/permits.py.
+    from world import permits
+
+    if permits.from_spec(spec).get("rooms") == permits.NEVER:
+        first_room_by_hand(sponsor, spec, on_success, on_error,
+                           creator_character=creator_character)
+        return
 
     model = sponsor.model_for("rooms")
     try:

@@ -15,6 +15,16 @@ That is what lets one description serve three readers: a player moving through
 it, a command line that reaches the same point in one go, and later a model
 filling a field in (`~`), which needs every field's label, help and value.
 
+**A form may grow what it offers while it is open.** A `Picker` lists what a
+world already holds and ends with "none of these -- make one", which opens the
+form that makes one; that form answers with `Picked`, and the engine sets the
+picker to what came back. A `Submenu` opened with `into=` answers its opener's
+draft the same way, adding to a list there when `append`. Those two are the
+whole of it, and they are here rather than in a helper because a register that
+can be added to from inside a menu is what
+docs/player-building.md is built on -- a rule's scope, a condition's state, an
+item's kind, an NPC's pronouns.
+
 **Two kinds of form.** An *edit* form changes something over several steps,
 and holds the player's input until they finish or quit. A *view* form is
 there to be read -- `score`, `quests` -- and shows what it is for at once,
@@ -33,10 +43,28 @@ whichever of session, account or character the input arrived on, and closing
 cleanly. `GameMenu` keeps all of that and replaces what a menu looks like and
 how input is read.
 
+**A menu can never trap anybody.** Whatever breaks inside a form -- a listing
+that raises, an action that throws, a set of items that cannot be built at all
+-- the player gets their game back. A menu's cmdset takes every line before any
+command sees it, so a form that fails while working out what it offers does not
+merely fail: without this it holds somebody with no way out, `q` included if
+quitting is read after the thing that raised, and `@reload` included because it
+never becomes a command. Two nets, and both are needed: `render` catches what
+breaks while drawing (the first draw happens after the cmdset is on), and
+`parse_input` catches what breaks while reading and closes the menu. `Refuse` is
+not caught by either -- a form saying no is not a form breaking.
+
 **Nobody without a session is shown a menu.** An NPC, a script, a batch file
 or an agent driving a command gets told what the command needed and what it
 could have been, in words it can act on. `open_menu` makes that decision, so
 no command has to.
+
+**Who pays for `~` is the form's to say, or the opener's.** A `Form` with a
+`sponsor` names its own; a form without one can still be filled in when the
+context it was opened with carries a sponsor. The second exists because one
+piece of code opens every building form over a world that knows whose key it
+spends, and written on each form it was missing from all twenty -- see
+`world/suggesting.py` `sponsor_for`.
 
 Sounds, MXP and OOB come later, through `PRESENTER`. Every place a protocol
 would want to hear from a menu calls it, and today every call does nothing.
@@ -454,6 +482,81 @@ class Field(Item):
         return text, ""
 
 
+class Picker(Field):
+    """
+    A field answered from what the world already has, or by making one.
+
+    `options(ctx)` is what exists -- `(value, label)` or `(value, label, help)`
+    -- and the entry after them opens `make`, whose own last action answers
+    with a `Picked`. The engine then sets this field to what came back.
+
+    That is the whole of "offer what is there, and the chance to make one when
+    none of it fits", and it is engine work rather than a helper in one module
+    because six forms in docs/player-building.md want it: a rule's scope, a
+    condition's state, an item's kind, an NPC's pronouns, a quest's giver, an
+    attribute's group. Each lists a register that is allowed to grow while
+    somebody is standing in the middle of using it, which is exactly the case
+    a fixed `choices` list cannot serve.
+    """
+
+    def __init__(self, key, label, options=None, make=None, make_data=None,
+                 make_draft=None, none="None of these -- make a new one",
+                 **kwargs):
+        kwargs.setdefault("kind", CHOICE)
+        super().__init__(key, label, **kwargs)
+        self.options = options
+        # `make(ctx)` is the form that makes one. None -- or a function
+        # answering None -- means this picker only offers what is there, which
+        # is right for a register somebody else fills.
+        self.make = make
+        self.make_data = make_data
+        self.make_draft = make_draft
+        self.none = none
+
+    def choices_for(self, ctx):
+        found = []
+        for option in _call(self.options, ctx, []) or []:
+            if isinstance(option, Choice):
+                found.append(option)
+                continue
+            value, label, helped = (tuple(option) + ("", ""))[:3]
+            found.append(Choice(value, label, help=helped))
+        return found
+
+    def make_form(self, ctx):
+        return _call(self.make, ctx, None)
+
+    def none_label(self, ctx):
+        return str(_call(self.none, ctx, "") or "")
+
+
+class Picked:
+    """
+    What an action answers with when something below it was waiting for a value.
+
+    A `Picker` opens a maker's own form from inside a field; that form finishes
+    with an action returning one of these, and the engine writes the value
+    where the picker was waiting and comes back to it. A `Submenu` opened with
+    `into=` does the same into its opener's draft.
+
+    Returned with nothing waiting, it behaves as `after=BACK` with a message,
+    which is what it means: the form answered, and there was nobody to answer.
+    """
+
+    def __init__(self, value, said=""):
+        self.value = value
+        self.said = said
+
+
+#: Stands in a picker's list for "none of these -- make one". One object for
+#: every picker; the label lives on the entry, as every other label does.
+MAKE_NEW = "__make_new__"
+
+#: What `_answer` says when a `Picked` came back and nothing had asked for it.
+#: Not None, which is what every other handler here returns to mean "drawn".
+_NOBODY_WAITING = object()
+
+
 class Action(Item):
     """
     Something that happens when chosen.
@@ -485,15 +588,20 @@ class Submenu(Item):
     """
 
     def __init__(self, key, label, form, data=None, fresh_draft=False,
-                 prepare=None, draft=None, **kwargs):
+                 prepare=None, draft=None, into=None, append=False, **kwargs):
         super().__init__(key, label, **kwargs)
         self.form = form
         self.data = data
-        self.fresh_draft = fresh_draft or draft is not None
+        self.fresh_draft = fresh_draft or draft is not None or into is not None
         self.prepare = prepare
         # `draft(ctx)` fills the fresh draft in: editing a world starts from
         # what the world was set up with.
         self.draft = draft
+        # `into` names a key in the OPENER's draft that this submenu answers,
+        # with `Picked`. `append` adds to a list there rather than replacing
+        # it, which is how a rule collects conditions one at a time.
+        self.into = into
+        self.append = append
 
     def context(self, ctx):
         data = _call(self.data, ctx, {}) or {}
@@ -573,7 +681,11 @@ def _filtered(entries, text):
     if not text:
         return entries
     return [entry for entry in entries
-            if text in strip_ansi(entry.label).lower()
+            # A picker's "make one" survives every filter. Somebody who has
+            # narrowed a long list down to nothing is the likeliest person in
+            # the game to need it.
+            if entry.target is MAKE_NEW
+            or text in strip_ansi(entry.label).lower()
             or any(text in name for name in entry.names)]
 
 
@@ -589,15 +701,39 @@ def _pick(entries, text):
     return None
 
 
+def _step_of(form, ctx, field):
+    """
+    "(2 of 5)" for a field in a wizard, or None.
+
+    Found **by key** and not by identity. A form whose `items` is a function
+    of the context builds a fresh `Field` every time it is asked, so the field
+    a caller is holding is never the same object as the one in the next
+    listing -- which made this raise on `open_menu` and quietly give up on the
+    step count everywhere else. Every form in world/makers builds its items
+    that way, because what they offer depends on what the world holds.
+    """
+    if not form.guided:
+        return None
+    required = [item for item in form.items_for(ctx)
+                if isinstance(item, Field) and item.required]
+    for number, item in enumerate(required, 1):
+        if item.key == field.key:
+            return (number, len(required))
+    return None
+
+
 class _Frame:
     """One level of the stack: a form, a field being set, a question."""
 
-    def __init__(self, kind, form, ctx, item=None, step=None):
+    def __init__(self, kind, form, ctx, item=None, step=None, into=None):
         self.kind = kind          # "form", "field", "confirm" or "help"
         self.form = form
         self.ctx = ctx
         self.item = item
         self.step = step
+        # What this frame answers when an action in it returns `Picked`:
+        # ("field", the field frame) or ("draft", the form frame, key, append).
+        self.into = into
         self.filter = ""
         self.page = 0
         self.question = None      # what a confirmation asks
@@ -644,22 +780,38 @@ class GameMenu(EvMenu):
         self.goto("show", "")
 
     def render(self):
+        # The other half of never trapping anybody. `parse_input` catches what
+        # breaks while *reading*; this catches what breaks while *drawing*,
+        # which includes the very first draw -- before which the cmdset is
+        # already installed, so a form that cannot be drawn at all would
+        # otherwise leave somebody holding a menu that can never show them
+        # anything. A screen saying so, with `q` on it, beats a blank wall.
+        try:
+            return PRESENTER.shown(self, self._drawn())
+        except Exception:
+            from evennia.utils import logger
+
+            logger.log_trace(f"menus: {getattr(self.top.form, 'key', '')} "
+                             f"could not be drawn")
+            return ("|rSomething went wrong drawing this menu.|n\n\n"
+                    "Type |wq|n to leave it and go back to the game. "
+                    "|xWhat happened is in the server log.|n")
+
+    def _drawn(self):
         frame = self.top
         if frame.kind == "field":
-            text = self._render_field(frame)
-        elif frame.kind == "confirm":
-            text = self._render_confirm(frame)
-        elif frame.kind == "help":
-            text = self._render_help(frame)
-        elif frame.kind == "suggest":
-            text = self._render_suggest(frame)
-        elif frame.kind == "proposal":
-            text = self._render_proposal(frame)
-        elif frame.form.kind == VIEW:
-            text = self._render_view(frame)
-        else:
-            text = self._render_form(frame)
-        return PRESENTER.shown(self, text)
+            return self._render_field(frame)
+        if frame.kind == "confirm":
+            return self._render_confirm(frame)
+        if frame.kind == "help":
+            return self._render_help(frame)
+        if frame.kind == "suggest":
+            return self._render_suggest(frame)
+        if frame.kind == "proposal":
+            return self._render_proposal(frame)
+        if frame.form.kind == VIEW:
+            return self._render_view(frame)
+        return self._render_form(frame)
 
     def nodetext_formatter(self, nodetext):
         return nodetext
@@ -686,10 +838,32 @@ class GameMenu(EvMenu):
 
     def _choice_entries(self, frame):
         entries = []
-        for choice in frame.item.choices_for(frame.ctx):
+        # Where a broken list of choices stops. A field's choices are worked
+        # out from whatever the game holds, and one that raises used to take
+        # the menu down in front of whoever chose that line -- and leave it
+        # open, so everything typed afterwards hit the same wall and even
+        # quitting looked broken. Logged loudly and drawn short instead.
+        # Nothing else guards this: a caller asking a field what it offers
+        # gets the exception, which is what a test wants.
+        try:
+            offered = frame.item.choices_for(frame.ctx)
+        except Exception:
+            from evennia.utils import logger
+
+            logger.log_trace(f"menus: {frame.item.key} could not work out "
+                             f"what it offers")
+            offered = []
+        for choice in offered:
             label = str(_call(choice.label, frame.ctx, ""))
             names = choice.keys + (str(choice.value).lower(),)
             entries.append(_Entry(choice, label, names))
+        field = frame.item
+        # A picker's last entry, always last however the list is filtered:
+        # somebody who has typed to narrow a long list to nothing is exactly
+        # the person who needs to be able to make one.
+        if isinstance(field, Picker) and field.make_form(frame.ctx) is not None:
+            entries.append(_Entry(MAKE_NEW, field.none_label(frame.ctx),
+                                  ("new", "make", "none", "other")))
         return entries
 
     def _size(self, frame=None):
@@ -733,6 +907,12 @@ class GameMenu(EvMenu):
         if self._suggestible(frame):
             said.append("~ fills it in for you" if entry
                         else "~ fills one in for you")
+        if paged and isinstance(frame.item, Picker) \
+                and frame.item.make_form(frame.ctx) is not None:
+            # On the last page, where the entry itself is. Said anyway,
+            # because the entry is numbered on one page out of twenty and the
+            # word works from all of them.
+            said.append("new makes one that is not listed")
         if paged:
             said.append("n and p turn the page")
         if filterable:
@@ -818,6 +998,8 @@ class GameMenu(EvMenu):
             entries = self._choice_entries(frame)
             filterable = len(entries) > FILTER_FROM
             visible, shown, start, notes = self._page(frame, entries)
+            if not entries:
+                lines.append("|yThere is nothing to choose from here.|n")
             for number, entry in enumerate(shown, start + 1):
                 lines.append(f"{number}. {entry.label}")
             lines += [""] + notes if notes else [""]
@@ -873,13 +1055,13 @@ class GameMenu(EvMenu):
 
     def _suggestible(self, frame):
         """Whether `~` means anything here."""
+        from world import suggesting
+
         base = self._underlying(frame)
-        if base.form.sponsor is None:
+        if suggesting.sponsor_for(base.ctx, base.form) is None:
             return False
         if frame.kind == "field":
             return frame.item.suggestible
-        from world import suggesting
-
         return bool(suggesting.fillable(base.ctx, base.form))
 
     # -- filling in with a model --------------------------------------------
@@ -1062,6 +1244,58 @@ class GameMenu(EvMenu):
                 self._proposal_input(frame, text)
         except Refuse as refusal:
             self.say(str(refusal))
+        except Exception:
+            self._let_go()
+
+    def _let_go(self):
+        """
+        Something broke while reading input. Say so, and let the player go.
+
+        **A menu must never be able to trap somebody**, and this is the line
+        that guarantees it. A menu's cmdset takes every line typed before any
+        command sees it, so a form that raises while working out what it
+        offers does not merely fail -- it holds the player with no way out.
+        Not `q`, if quitting is reached after the thing that raised; not
+        `quit`; not `@reload`, which never gets to be a command at all; not
+        disconnecting, because the menu is waiting when they come back. The
+        only way out was to stop the server from a shell, which is not
+        something a player of somebody else's game can do.
+
+        So whatever it was, it ends here: logged with its traceback for
+        whoever has to fix it, said plainly to whoever hit it, and the menu
+        closed. Losing a half-filled form is a small harm; the alternative is
+        a player who cannot type anything at all.
+        """
+        from evennia.utils import logger
+
+        where = ""
+        try:
+            frame = self.top
+            where = getattr(frame.form, "key", "") or ""
+            if frame.item is not None:
+                where = f"{where}.{frame.item.key}"
+        except Exception:
+            pass
+        logger.log_trace(f"menus: {where or 'a menu'} broke while reading "
+                         f"input; closing it rather than trapping anybody")
+        try:
+            self.msg(
+                "|rSomething went wrong in that menu, so it has been closed "
+                "and you are back in the game.|n\n"
+                "|xWhatever you had entered is lost. It has been written to "
+                "the server log.|n")
+        except Exception:
+            pass
+        try:
+            self.close_menu(why="broke")
+        except Exception:
+            # Even closing failed. Take the cmdset off by hand, because the
+            # whole point of being here is that the player gets their game
+            # back whatever else is true.
+            try:
+                self.caller.cmdset.remove(self._menutree)
+            except Exception:
+                logger.log_trace("menus: could not close a broken menu")
 
     def _refuse(self, text=None):
         said = text or ("That is not one of the choices. l lists them again, "
@@ -1168,6 +1402,14 @@ class GameMenu(EvMenu):
         escaped = text.startswith(ESCAPE) and len(text) > 1
         literal = text[1:] if escaped else text
 
+        # Getting out comes before everything that could go wrong. A choice
+        # field works out what it offers before it reads what was typed, so
+        # `q` used to be unreachable in exactly the field that had broken --
+        # the one place somebody most needs it. Cheap, and it changes nothing
+        # else: these two words mean this in every frame already.
+        if not escaped and text.lower() in QUIT_WORDS + BACK_WORDS:
+            return self._navigate(frame, text)
+
         if field.kind in (CHOICE, BOOLEAN):
             entries = self._choice_entries(frame)
             if not escaped:
@@ -1175,6 +1417,8 @@ class GameMenu(EvMenu):
                     return self._set_filter(frame, "")
                 chosen = _pick(_filtered(entries, frame.filter), text)
                 if chosen is not None:
+                    if chosen.target is MAKE_NEW:
+                        return self._make_new(frame)
                     return self._set_field(frame, chosen.target.value)
                 if (text.lower() in CLEAR_WORDS and not field.required
                         and field.is_set(ctx)):
@@ -1198,14 +1442,56 @@ class GameMenu(EvMenu):
             return self._refuse(complaint)
         return self._set_field(frame, value)
 
-    def _enter(self, form, ctx):
+    def _enter(self, form, ctx, into=None):
         """Push a form, and its first question if it is a wizard."""
-        base = _Frame("form", form, ctx)
+        base = _Frame("form", form, ctx, into=into)
         self.stack.append(base)
         if form.guided:
             first = form.unset_required(ctx)
             if first is not None:
                 self.stack.append(self._field_frame(base, first))
+        self.refresh()
+
+    def _make_new(self, frame):
+        """A picker's last entry: make one, and come back with it."""
+        field = frame.item
+        form = field.make_form(frame.ctx)
+        if form is None:
+            return self._refuse("There is no way to make one of those here.")
+        child = frame.ctx.child(**(_call(field.make_data, frame.ctx, {}) or {}))
+        child.draft = dict(_call(field.make_draft, frame.ctx, {}) or {})
+        child.dirty = False
+        return self._enter(form, child, into=("field", frame))
+
+    def _answer(self, frame, picked, action=None):
+        """
+        An action supplied the value something further down was waiting for.
+
+        Nothing waiting is not an error: a maker's form is the same form
+        whether a picker opened it or `create kind` did, and answers with the
+        same `Picked` either way. `_NOBODY_WAITING` says so, and the caller
+        then treats the action as the ordinary action it is.
+        """
+        waiting = next((f.into for f in reversed(self.stack)
+                        if f.into is not None), None)
+        if waiting is None:
+            return _NOBODY_WAITING
+        target = waiting[1]
+        try:
+            at = self.stack.index(target)
+        except ValueError:
+            return _NOBODY_WAITING
+        self.stack = self.stack[:at + 1]
+        self.say(picked.said)
+        if waiting[0] == "field":
+            return self._set_field(target, picked.value)
+        key, append = waiting[2], waiting[3]
+        draft = target.ctx.draft
+        if append:
+            draft[key] = list(draft.get(key) or []) + [picked.value]
+        else:
+            draft[key] = picked.value
+        target.ctx.dirty = True
         self.refresh()
 
     def _set_field(self, frame, value, confirmed=False):
@@ -1318,13 +1604,8 @@ class GameMenu(EvMenu):
     # -- choosing ------------------------------------------------------------
 
     def _field_frame(self, base, field):
-        step = None
-        if base.form.guided:
-            required = [item for item in base.form.items_for(base.ctx)
-                        if isinstance(item, Field) and item.required]
-            if field in required:
-                step = (required.index(field) + 1, len(required))
-        return _Frame("field", base.form, base.ctx, item=field, step=step)
+        return _Frame("field", base.form, base.ctx, item=field,
+                      step=_step_of(base.form, base.ctx, field))
 
     def choose(self, frame, item):
         # A field reports being chosen when it is set, not when it is opened.
@@ -1337,14 +1618,16 @@ class GameMenu(EvMenu):
             return self.refresh()
         if isinstance(item, Submenu):
             child = item.context(frame.ctx)
+            into = (("draft", frame, item.into, item.append)
+                    if item.into else None)
             if item.prepare is None:
-                return self._enter(item.form, child)
+                return self._enter(item.form, child, into=into)
 
             def proceed():
                 # The fetch may finish after the player has left the menu, or
                 # moved elsewhere in it. Only enter if they are still here.
                 if self.caller.ndb._evmenu is self and self.top is frame:
-                    self._enter(item.form, child)
+                    self._enter(item.form, child, into=into)
 
             return item.prepare(child, proceed, self._refuse)
         if isinstance(item, Action):
@@ -1369,6 +1652,15 @@ class GameMenu(EvMenu):
             said = action.run(ctx)
         except Refuse as refusal:
             return self.say(str(refusal))
+        if isinstance(said, Picked):
+            answered = self._answer(frame, said, action)
+            if answered is not _NOBODY_WAITING:
+                return answered
+            # Nothing was waiting, so the action behaves as it says it does:
+            # a maker's form opened on its own closes when it is finished and
+            # hands the value back when a picker opened it, which is one
+            # action doing one thing in two places rather than two actions.
+            said = said.said
         self.say(said)
 
         if action.after == CLOSE:
@@ -1527,7 +1819,10 @@ def open_menu(caller, form, session=None, draft=None, path=(),
         if isinstance(item, Submenu):
             # Anything a submenu has to fetch first is the opener's to have
             # fetched; a path is followed in one go.
-            stack.append(_Frame("form", item.form, item.context(frame.ctx)))
+            stack.append(_Frame(
+                "form", item.form, item.context(frame.ctx),
+                into=(("draft", frame, item.into, item.append)
+                      if item.into else None)))
         elif isinstance(item, Field) and item.kind != LONG_TEXT:
             stack.append(_Frame("field", frame.form, frame.ctx, item=item))
         else:
@@ -1536,11 +1831,8 @@ def open_menu(caller, form, session=None, draft=None, path=(),
     if len(stack) == 1 and form.guided:
         first = form.unset_required(ctx)
         if first is not None:
-            required = [item for item in form.items_for(ctx)
-                        if isinstance(item, Field) and item.required]
             stack.append(_Frame("field", form, ctx, item=first,
-                                step=(required.index(first) + 1,
-                                      len(required))))
+                                step=_step_of(form, ctx, first)))
 
     return GameMenu(runner, stack, session=session)
 

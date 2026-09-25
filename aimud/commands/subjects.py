@@ -34,6 +34,12 @@ SUBJECT_MODULES = [
     "commands.settings_subject",
     "commands.score_subject",
     "commands.rulesets_subject",
+    "commands.term_subject",
+    # Every maker in world/making.py, as one subject each. Last, so a maker
+    # can never take a word one of the hand-written subjects above already
+    # answers to: `named` prefers the longest match, and registration order
+    # settles a tie.
+    "commands.making_subject",
 ]
 
 
@@ -267,3 +273,69 @@ def said(caller, text):
     """Send text if there is any: a helper for handlers that return prose."""
     if text:
         caller.msg(text)
+
+
+# ---------------------------------------------------------------------------
+# Finding what somebody meant, among what they can reach
+# ---------------------------------------------------------------------------
+
+def reachable(caller, people=None):
+    """
+    Everything the caller could be talking about: what is in reach, and no more.
+
+    The one rule the building commands keep and the reason they keep it:
+    `edit item lamp` in a world with forty lamps edits the one in front of you
+    or asks which, and can never silently edit one on the other side of the
+    map. There is no search of the world by name anywhere in building.
+
+    Reach already follows containment and already stops at a closed lid, so
+    "the coin in the chest" resolves and the coin in the shut box does not.
+    """
+    from world import relations
+
+    try:
+        found = [obj for obj in relations.reachable(caller) if obj is not caller]
+    except Exception:
+        location = getattr(caller, "location", None)
+        found = [obj for obj in (getattr(location, "contents", None) or [])
+                 if obj is not caller]
+    if people is True:
+        return [obj for obj in found if _is_person(obj)]
+    if people is False:
+        return [obj for obj in found
+                if not _is_person(obj) and not _is_exit(obj)]
+    return found
+
+
+def _is_person(obj):
+    from world import quests
+
+    return quests.is_person(obj)
+
+
+def _is_exit(obj):
+    return bool(getattr(obj, "destination", None))
+
+
+def thing_here(caller, phrase, people=None):
+    """
+    (what `phrase` names among what is in reach, a complaint).
+
+    Matched by `naming.resemblance`, the same measure the parser uses, so a
+    slip of the finger or of the ear reaches the right thing and a merely
+    plausible match is offered back rather than guessed at. Nothing here
+    conjures: building acts on what is already there.
+    """
+    from world import naming
+
+    candidates = reachable(caller, people=people)
+    if not candidates:
+        return None, "There is nothing here to work on."
+    phrase = str(phrase or "").strip()
+    if not phrase:
+        return None, ""
+    found, score = naming.best_match(caller, phrase, candidates=candidates)
+    if found is None:
+        return None, (f"You see no {phrase} here. Building only reaches what "
+                      f"is in front of you.")
+    return found, ""

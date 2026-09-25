@@ -601,3 +601,53 @@ class TheGambleTheCutoverDropped(SimpleTestCase):
                           "add": ["forced"]}],
              "contest": {"sort of hard": True}})
         self.assertIsNone(kept[0]["contest"])
+
+
+@tag("unit")
+class TheWorldsOwnRules(GameTest):
+    """
+    The `Rules` guidance reaches the generator that writes this world's rules.
+
+    It did not. The facet's hint is "what is possible here", its header is
+    "The rules of this world -- what is and is not possible in it", and its
+    entire readership was `item_gen`'s two yes-or-no questions: could this
+    thing be in this room, and can it be picked up. The prompt that decides
+    what a verb *does* here never saw a word of it.
+
+    Which made it the one lever a builder had over a rule they were not
+    writing themselves -- "combining two things always produces a new thing"
+    is a fact about this world's rules and belongs nowhere else -- and the
+    lever was not connected to anything.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+        self.root.db.world_description = "A world of endless alchemy."
+        self.root.db.world_guidance = {
+            "validation": "Combining two things always produces a new thing.",
+            "items": "Everything here is a substance.",
+        }
+
+    def asked(self):
+        return rule_gen.prompt(self.root, "combine", {}, self.char1,
+                               [("world", "everywhere", {"world": True})])
+
+    def test_it_is_in_the_prompt(self):
+        self.assertIn("always produces a new thing", self.asked())
+
+    def test_under_the_heading_that_says_what_it_is(self):
+        self.assertIn("The rules of this world", self.asked())
+
+    def test_another_facet_is_not(self):
+        """Guidance goes to the generator it names and to no other."""
+        self.assertNotIn("Everything here is a substance", self.asked())
+
+    def test_a_world_that_says_nothing_gains_no_heading(self):
+        self.root.db.world_guidance = {}
+        self.assertNotIn("The rules of this world", self.asked())
+
+    def test_the_description_is_still_there(self):
+        self.assertIn("endless alchemy", self.asked())

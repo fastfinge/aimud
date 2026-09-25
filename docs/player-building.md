@@ -1,6 +1,8 @@
 # Development plan: building by hand
 
-Status: scoped, not built.
+Status: built, phases 1 to 6. Phase 7 (export and import) is still a plan of
+its own. What each phase actually came to, and where it differs, is under
+each phase in §15.
 
 This covers the `future-plans.md` item "full menu-based building of worlds for
 players who want to create something fun without having to use AI", and the two
@@ -492,6 +494,7 @@ handful of questions a person actually asks:
 | where it is | `placed`, `not_placed`, `in_room`, `not_in_room`, `leads_to` |
 | a figure about somebody | `trait` |
 | whether it is there at all | `exists`, `gone`, `unbound` |
+| the word that was used | `called` (§8.6) |
 | the time | `clock` |
 | reach and sight | `reachable_by`, `visible_to`, `able` |
 | never | `never` |
@@ -663,6 +666,165 @@ what already exists:
 None of these refuse the rule. They are shown, the rule is kept, and
 `view faults` says the same thing later. A builder who knows what they are
 doing is allowed to write a rule whose moment has not arrived yet.
+
+### 8.6 A rule for a thing that does not exist yet
+
+Every other predicate resolves a subject and then asks it something, so every
+other predicate answers *no* about a word that named nothing. That is the
+right answer almost always, and it made one world unwritable.
+
+`summon air`, in a world whose air has not been made yet. The rule that makes
+air has to be found from the sentence, and at the moment the sentence is read
+there is no air to find it by. Worse, the pipeline had already acted: an
+unmatched noun goes to `item_gen.conjure`, which either refuses (a world that
+writes no items of its own) or invents one -- and then the rule fires and
+makes a second. Both were reported from play, one after the other, and the
+answer given at the time was that it could not be expressed.
+
+Three things, which are one change:
+
+* **`called` asks about the word.** `{"subject": "direct", "called": "air"}`
+  is true when the word used for that role names air -- whatever it was found
+  to mean if it was found to mean anything, and otherwise the word itself,
+  with articles off, this world's noun folds applied, and a sense read down to
+  its lemma. So one rule fires on `summon air` whether or not there is already
+  air in the room, which is the difference somebody writing it should never
+  have to think about. It rides on `conditions.Context.words`, which is what
+  the player typed, kept beside `bound`, which is what it was found to mean.
+  The two come apart exactly when nothing answers, which is the case this is
+  for.
+* **The rulebooks are consulted before the noun is conjured.** "You see no
+  earth here" is right up until a rule exists that knows how to make one --
+  the same argument `attempt._redirect_waiting` already makes one step later
+  about "Launch what?". `_knows_the_word` is deliberately narrow: a rule
+  counts only if it is selected *by the word*, through a `called` guard about
+  a role that failed to bind, and only if it survived `gather`. Nothing
+  written before `called` existed can match, so no world in play changes.
+  The same test lets the arity question ("Summon what?") step aside.
+* **`called` has no opposite.** It is in `UNNEGATABLE` with the reason: "not
+  called earth" is every other word there is, and it would match a typo as
+  readily as a sentence, in the one phase where matching wrongly means a rule
+  fires that nobody meant.
+
+Two things that were in the way came out with it, both for the same reason --
+they are asked **after** a rule has been found, and neither is the question
+"what does this verb mean", which somebody has already answered by writing it
+down:
+
+* whether that sort of thing admits the verb at all (`verb_gen.ask_admission`);
+* how to describe what happened (`verb_gen.narrate`).
+
+In a world that writes no verbs of its own, both used to come back as a
+refusal, which threw away the rule and every effect with it, in red. Now the
+first proceeds -- the rule's own checks stand, and nothing is remembered, so a
+world given a key later still gets to ask properly -- and the second falls
+back to the player's own sentence: `summon earth` reads "You summon earth."
+A world built by hand and paid for with nothing runs its own rules and reads a
+little flatly. That is the trade its builder made; a silent refusal is not.
+
+`tests/test_summoning.py` is the whole of it, written as the world it came
+from.
+
+### 8.7 What a verb always does
+
+A declaration says what a verb *takes*. It can now also say what a rule about
+it is not finished without, and `rule_gen.validate` sends back a carry-out
+rule that falls short instead of filing it.
+
+The lever before this was the world's Rules guidance, and it reaches the rule
+writer without binding it. That is not enough here, and the reason is the
+shape of the thing rather than the model: a rule is written **once per pair of
+things and kept**, so a model that reaches for `narrate` files "and that is
+all that happens" for earth and water, and nothing ever asks again. One
+forgetful answer is permanent.
+
+`actions.MUST` is the closed list, and it is short:
+
+| name | what a rule must do | satisfied by |
+|---|---|---|
+| `makes` | bring something new into being | `create_object` |
+| `unmakes` | take something out of the world | `destroy_object` |
+
+Each is a promise a verb makes about its own result, and deliberately not a
+way of writing the rule from outside it: *what* is made, and *which* of the
+things named is consumed, are still the rule's own answer and a different one
+for every pair. That is the whole distinction that makes this safe to require.
+
+* Asked of **carry-out rules only**. `instead` says the verb means something
+  else here and leaves the doing to whatever it means; `check` only ever
+  refuses; `after` is about what follows rather than about the act.
+* The prompt says it before the first try, so the round trip is the backstop
+  rather than the mechanism.
+* `edit action` can turn it on for a verb already in use, unlike the arity --
+  because this binds rules *not yet written*, and a world wants it exactly
+  when it has just read one that did nothing.
+* A **hand-written** rule that falls short is told, not refused. §8.5 is that
+  nothing at the end of the rule form refuses a rule, and the person reading
+  the note is the one who declared the requirement.
+* Crafting ships it on `combine` and `make` (version 3). Its own sentence is
+  that things can be made out of other things, and the report this came from
+  was a crafting world where the guidance was written, the model read it, and
+  the rule it filed still changed nothing.
+
+`tests/test_must.py`.
+
+### 8.8 Setting somebody to work
+
+`set_goal` gives a character something to work towards, and is the effect a
+world with no model was missing.
+
+A goal was reachable three ways and every one of them needed a model: a
+character set one for itself out of what it had just said
+(`npcs._set_goal` → `quest_gen.formalise_goal`), it accepted an errand, or the
+dialogue model decided. So `ask the apprentice for steam` could be *matched* by
+a rule -- §8.6's `called` sees the word whether or not any steam exists -- and
+the rule had no way to finish the sentence.
+
+    role   whose purpose it becomes
+    goal   what has to become true, in the same conditions an errand uses
+
+Nothing here plans and nothing here is paid for. The goal is a list of
+conditions the planner already tests and already reads backwards, so a world
+that has settled that combining fire and water makes steam **already holds the
+step**: that rule's `create_object` is what `conditions.achieves` matches, and
+"steam exists" becomes a purpose the apprentice can actually get to -- by
+combining, in the room, where everybody can see it happen.
+
+The form shares `errands.NEW_GOAL` rather than growing a second one: what a
+character can be set to work towards is one question, and a goal a rule hands
+out and a goal an errand asks for are tested by the same code a moment later.
+
+Four things it declines to do, each for a reason:
+
+* **A player is never given one.** Nothing plans for a player, so the goal
+  would sit unread. Logged rather than silent, because a rule that sets a
+  player a goal is a rule whose author meant somebody else.
+* **An errand already promised is not thrown over.** A goal that came from a
+  quest is owed to whoever asked, and replacing it would leave the errand's
+  bookkeeping pointing at a goal nobody is working at.
+* **A goal with nothing testable in it sets none.** `goals.sanitise` is the
+  same door an errand's goals come through.
+* **It is not read backwards** (`backwards: False`). Handing somebody a want
+  changes nothing about the world, and a planner that read it as progress
+  would think setting a goal were a way of reaching it.
+
+**It is a person's effect, and that is a limit rather than a choice.** A goal
+is a list of spelled-out conditions, and an effect's schema already sits
+inside a list of effects inside a list of rules: rules, then effects, then
+goals is three deep, which Google refuses outright on a call that names the
+tool it must use -- the last round of every rule-learning loop. So `goal` is
+withheld from `effects.schema`, which is the one field in it withheld rather
+than forgotten, and `tests/test_schema_portability.py` is what says so. The
+only shape a model could write is an empty one, so `rule_gen.validate`
+refuses a `set_goal` naming no goal and says what to do instead. Lifting this
+wants the goal flattened into something a leaf can carry, and that is a
+change to `goals.schema` rather than to this effect.
+
+`offer_quest`'s `quest` was missing from the schema for a different reason --
+simply forgotten -- and is there now. It is a plain identifier, so it costs
+the nesting nothing.
+
+`tests/test_set_goal.py`.
 
 ---
 
@@ -1014,17 +1176,254 @@ both already work and any behaviour change is a bug.
 now, and a `Picker` in a test form can open a maker's `new` form and come back
 with the value.
 
+*Built.* `world/making.py`, `commands/making_subject.py`, and the two additions
+to `world/menus.py`. Where it differs:
+
+* **`tokens` and `pronouns` were ported after all**, and it was worth doing
+  for a reason the plan did not anticipate. Twelve new makers prove the table
+  can carry what it was shaped around; a subject it was *not* shaped around is
+  what tells you what it had assumed. Three things were missing, all of them
+  general rather than concessions to word lists:
+
+  * **`Maker.opens`** -- a command line that fills more than one field.
+    `create tokens smell: what it is for = brine | tar` fills three, and
+    `opens_with` was only ever the short way of writing the common case.
+  * **`Maker.extras`** -- an entry in a view menu that is about the register
+    rather than about any one thing in it. `view tokens try <text>` is the
+    case, and it would have been lost.
+  * **`Maker.owner`** -- a maker anybody standing here may use. A pronoun set
+    is a fact about the person choosing it rather than about the world, and
+    refusing a guest one would be the world deciding how they are spoken
+    about. Everything else the world is built out of stays its owner's.
+
+  And it found three things quietly wrong, which is the part that earned the
+  churn:
+
+  * **A complete command line opened a menu anyway.** "Give all the arguments
+    and there is no menu" (§4 of docs/commands-and-settings.md) was true of
+    the hand-written `create tokens` and of nothing the table generated. It is
+    everybody's now: a line whose draft leaves no required field unset runs
+    the form's finishing action and says what happened. A line that gives only
+    part of it opens the menu there, and for a caller with no menu says which
+    fields are still missing -- which the old command did for word lists and
+    the general path had stopped doing.
+  * **`Picked` swallowed the action's `after`.** A maker's form answers with
+    the same `Picked` whether a picker opened it or `create tokens` did; with
+    nobody waiting it has to behave as the ordinary action it is, and instead
+    every form that said `after=CLOSE` had quietly stopped closing.
+  * **A picker could not make a pronoun set.** That form answered with a
+    string, so the set was registered and then dropped on the floor and the
+    picker stayed empty -- which is what the "add a pronoun set" entry on a
+    hand-built character did. It answers with its name now.
+* **A maker refuses a reserved word at registration.** `menus.Item` already
+  refuses one, but only when the list holding it is drawn -- which is a crash
+  in front of a player rather than a failure at import. Found by the way out of
+  a room, whose natural name is `exit` and which is the word that quits every
+  menu in the game; it is called a **way** (§9.2).
+* **A reset keeps what you chose, and needs no key to rebuild what needed
+  none.** Two bugs in one path, reported from play. `reset world` rebuilds
+  from `lore.spec_of`, which carries the clock and the rulesets for exactly
+  this reason -- its docstring says a reset that forgot the guidance would
+  quietly undo half the wizard -- and it did not carry the permits. So a
+  world built by hand came back planning zones, naming a room, describing it
+  and putting somebody in it: the whole of what its creator had turned off.
+  And the key check ran before anything read the spec, so a world made
+  without a model could not be remade without one. `create world` now says
+  a key is missing rather than refusing to open, since whether one is needed
+  depends on what the wizard is about to be filled in with.
+* **A rule that can never fire says so.** Reported from play: two carry-out
+  rules at `everywhere` for one verb, and summoning air summoned earth.
+  Nothing was broken -- carry-out takes one winner, the two tied on
+  everything `rank` compares down to which was written first, and the older
+  won every time. But it is the worst shape a mistake can take here: the rule
+  is in the book, `view rules` lists it under carry out beside the one that
+  beats it, and the world behaves as though it were not there.
+
+  So `rulecheck.shadowed` finds them -- and finds them provably, which is why
+  it is narrow: same action, same phase, same scope, same `about`, and the
+  winner unguarded, so there is no attempt that reaches one and not the other.
+  A rule shadowed only some of the time is a judgement, and `rulecheck`
+  reports facts. It is marked in `view rules`, in the firing order the phase
+  question shows while you are writing one, in `view faults`, and said
+  outright the moment the rule is filed -- with what to do about it, which is
+  a guard or a narrower scope.
+* **And then the rule that was wanted could be written.** The same report,
+  followed all the way: the two rules were tied because the only field that
+  could have told them apart -- what the verb was being done *to* -- was about
+  a thing that did not exist yet. `called`, and the rulebooks being consulted
+  before an unmatched noun is conjured, are what make `summon air` expressible
+  at all. §8.6 is the whole of it, including the two questions asked after a
+  rule is found (whether its object admits the verb, and how to describe what
+  happened) that used to refuse the attempt outright in a world with no model
+  to answer them.
+* **`~` is quick or it is nothing.** Reported from play: filling in an item's
+  description ran for 160 seconds without erroring. It was not hung -- four
+  rounds at the long timeout is four minutes, and a model that will not call
+  the tool takes all of them. `converse` forces the finish tool on its last
+  round, so two rounds is exactly "ask, and if it did not answer, make it";
+  the two in between were asking a model again to do what it had already
+  declined to do twice. Two rounds at the short timeout: a minute at worst,
+  and giving up says which setting to change and to type it in meanwhile.
+
+  Worth saying why it was wrong rather than only that it was. Every other
+  generator runs while nobody is looking at it -- a room is written while the
+  player walks on, a rule while they type the next thing -- and the timeouts
+  were chosen for that. `~` is the one that has somebody sitting in a form
+  watching it, and it had inherited the settings of the others.
+* **`edit room` can name the room you are standing in**, which it could not.
+  One argument: `modify_complaints` takes the room a thing is *in*, so that a
+  rule cannot rename the room out from under somebody by naming it as what it
+  acts on -- and the form passed the room as both the thing being changed and
+  the room it is in, which is exactly the shape that check refuses. A room is
+  not inside itself. It blocked the description as well, and reached the
+  worst possible place: a world with its rooms turned off opens as one plain
+  room whose description says `edit room` gives this place a name.
+* **`~` works on the building forms**, which it did not on any of them.
+  Reported about `create room` and true of all twenty: a field is offered to
+  a model only where the *form* declares who pays, §12 said `~` stays
+  available throughout, and not one maker form said it -- so the key that
+  exists to help somebody write a description reported that there was nothing
+  to fill in, in the form most likely to want one.
+
+  Written on each form it would have gone missing again, which is what had
+  happened. So a form says who pays *or whoever opened it does*: one piece of
+  code opens all of them, over a world that knows whose key it spends, and it
+  says so once. Still opt-in either way -- a context with no sponsor fills
+  nothing in -- and a sub-form inherits it, because a child context carries
+  the data down. `~` spends the world's own key, which is the only thing on
+  these forms that spends anything at all.
+* **A thing made by hand can be worth having.** `world/makers/gearing.py`:
+  what it grants, when that counts (worn, wielded, carried, present) and what
+  condition the thing must be in first. One form, shared by `create item`,
+  `edit item`, a rule's `create_object` and a room -- because `gear.py` is
+  explicit that this is the whole of how armour, weapons and tools are worth
+  anything, and a world that could make a sword and not a good one was
+  missing the point of having them.
+
+  A room is here for the reason `present` exists: its bonuses are for
+  everybody standing in it and could not be anything else, so its form is
+  told rather than asked. And an ordinary thing carries no empty map --
+  `gear.bonuses` reads one as a claim to be worth having, and most things are
+  ordinary.
+* **An effect's form asks for everything the effect takes**, which it did
+  not. Reported from play: a rule that made something could not say what
+  *sort* of thing it was, so the sort was guessed from the head noun of
+  whatever it was called -- a Wisp of Steam becomes a wisp, and every rule
+  filed against the sort it was meant to be misses it.
+
+  The cause is worth more than the symptom. §8.4 said effects were read out
+  of `effects.VOCABULARY` so there would be no second list to keep level --
+  but what that register carried was a line of *prose*, and prose drifts: it
+  said `create_object` takes `why`, which nothing has ever read, and said
+  nothing about `kind`, `takeable` or `states`, which it does. The menu was
+  written from it and inherited the gap, and six other effects had it too.
+
+  So the register now carries `fields` beside `takes`: the same fact in a
+  shape a test can walk. Three tests hold it -- every field an effect takes
+  is asked for, nothing is asked for that no effect takes, and the prose
+  names everything the list does. A field left out on purpose goes in
+  `NOT_ASKED` with its reason, so a gap is a decision somebody wrote down
+  rather than one nobody saw. There is one: a redirect's `roles`.
+* **A finished form closes, and stops calling itself unsaved.** It could not
+  before: a maker's form had to stay open so a picker could take the value
+  back, so every one of them said `after=STAY` and you had to quit a form
+  whose whole job was already done -- and then answer "throw away what you
+  have entered?" about a kind that was in the register. Asking somebody to
+  confirm the loss of something that is not lost is worse than not asking,
+  because it teaches them to answer yes unread. `Picked` learning to say
+  "nobody was waiting" is what let both be true at once: with a picker
+  waiting the value goes back and the form stays; with nobody waiting the
+  form closes, and the draft is marked written rather than dirty.
+* **A menu can no longer trap anybody, whatever breaks inside it.** The worst
+  shape a bug in this game can take, and it took it. A menu's cmdset takes
+  every line typed before any command sees it, so a form that raises while
+  working out what it offers does not merely fail -- it holds the player with
+  nothing that works: not `q`, because a choice field builds its list before
+  it reads what was typed; not `@reload`, which never becomes a command; not
+  disconnecting, because the menu is waiting on the way back in. The only way
+  out was stopping the server from a shell, which is not something a player of
+  somebody else's world can do. Three lines now make it impossible: `render`
+  catches what breaks while drawing, `parse_input` catches what breaks while
+  reading and closes the menu, and `q` is read before anything that could
+  raise. A `Refuse` is still a refusal -- a form saying no is not a form
+  breaking.
+* **A listing that raises no longer takes the menu with it.** Found in play:
+  `actions.vocabulary` answers a sorted *list* of verbs where four of the six
+  registers answer a map, so the action picker raised the moment it was
+  opened -- and because the field frame was already on the stack, every input
+  after it hit the same wall and even `@reload` never reached a command.
+  Caught at the one place a menu is *drawn* (`menus._choice_entries`), which
+  is deliberately not the same place as the listing itself: guarding the
+  listing too would have made the guard untestable, and the first version of
+  this did exactly that and hid the bug from the test written for it.
+* **Drawing a form is not enough to know its fields work.** A picker with no
+  value yet shows "not set" without ever asking what it could be set to, so
+  `EveryFormDraws` walked straight past a listing that could not run.
+  `EveryChoiceCanBeOpened` walks *into* every choice field of every maker
+  form, in an empty world and a furnished one, and does it again for each
+  predicate, each effect type and each goal type -- which is what a player
+  does and what the first test did not.
+* **A bug in `guided` forms was found and fixed.** A form whose `items` is a
+  function of the context builds a fresh `Field` every time it is asked, so
+  "(2 of 5)" was looked up by identity against a different object: it gave up
+  silently everywhere and raised in `open_menu`. `menus._step_of` matches by
+  key. Every form in `world/makers` builds its items that way, because what
+  they offer depends on what the world holds.
+* **`listing_field`** joined the two engine additions as a caller of them: a
+  list kept in a draft, with one form to add to it and an entry per member to
+  take one out. A rule's conditions, a rule's effects, an action's roles, a
+  kind's affordances, an NPC's traits and an errand's givers are all it.
+* **A maker names the field the command line fills**, rather than the subject
+  working it out as "the first required field". Same reason as the step count
+  above: there is often no list of items to look in, and "first required"
+  would silently become a different field the day one was added over it.
+* **`settings confirmations` is generated from the table too**, which is a
+  fifth reader of it. Every maker that deletes or forgets something asks
+  first, §8 says every confirmation has a setting, and a hand-written list
+  would have been missing one the day somebody added a maker -- leaving a
+  confirmation nobody could turn off, which is the register not knowing about
+  it rather than the player having chosen to keep it.
+
 **Phase 2: the vocabulary.** Kinds and affordances, attributes, conditions and
 groups, word folds (§11c), and `view term`. The sense and anchor pickers.
 *Done when:* a world with no API key can be given a new kind, a new attribute
 and a new pair of exclusive states from menus, and `view faults` has nothing to
 say about any of them.
 
+*Built.* `world/makers/vocabulary.py`, `world/folds.py` and
+`commands/term_subject.py`. Where it differs:
+
+* **Folds own the verb table now.** `rulesets._fold` wrote `verb_synonyms`
+  directly; both halves live in `world/folds.py`, and `rulesets` and
+  `verbs.canonical_verb` are callers. A noun fold reads through
+  `naming.best_match` as another name the thing answers to, beside the aliases
+  a conjured object already carries.
+* **A picker may offer "type your own".** An affordance is any verb, and a
+  closed list of two dozen would be the game deciding what a world may be
+  about. `making.word_form` is the one-question form behind that entry.
+* **`view term` shows what this world has done with the word too**, not only
+  what the dictionaries say -- whether it is already a kind here, a verb, a
+  condition, an attribute, or another word for one of them.
+
 **Phase 3: actions and verbs.** `create action`, `reset action`, `create verb`,
 `reset kind`; the dependant reporting in §6.4.
 *Done when:* an action declared by hand is taken by the parser and bound the
 same way a model-declared one is, and `reset kind` names what it will forget
 before it forgets it.
+
+*Built.* `world/makers/doing.py`, and `reset` as a fifth verb on the maker
+table. Where it differs:
+
+* **`reset action` is still `reset verb`**, which already existed and already
+  said the right things. A second name for it would have been tidiness at the
+  cost of a word players have learned.
+* **`reset kind` drops the narrations written about things of that sort**, by
+  the same `effects.forget_narrations` a modified object goes through. They
+  were written about what the kind used to afford.
+* **Finding what is of a kind was wrong and is fixed.** The `ai_world` tag is
+  on rooms, not on the things in them, so a search by tag alone found the
+  places and none of their contents -- the wrong half for a question about
+  kinds. It walks the rooms' contents now.
 
 **Phase 4: rules.** The rule form, the condition builder, the effect builder,
 and the checks in §8.5. The biggest phase by a distance; worth splitting at the
@@ -1037,9 +1436,41 @@ That last criterion is the real test of this plan. The rulesets are hand-written
 documents that say everything a world could say for itself; if the menus cannot
 reproduce them, the menus are missing something.
 
+*Built.* `world/makers/rules.py`. Where it differs:
+
+* **Byte-equal was the wrong test and coverage is the right one.** A seeded
+  rule carries an id, a `born` timestamp and a `source` mark that a rule
+  somebody writes cannot and should not reproduce. What the criterion was
+  really asking is whether the menus can *say* everything the documents say,
+  and that is held by three tests instead: every effect in
+  `effects.VOCABULARY`, every predicate in `conditions.PREDICATES`, and every
+  goal type in `goals.CONDITION_TYPES` is reachable from a menu. A vocabulary
+  entry no menu can reach is exactly the hole byte-equality was looking for,
+  and these name it directly.
+* **Two effect fields are asked under another name.** `exit` quits every menu,
+  and `location` reads as a place rather than as a choice between two;
+  `STORED_AS` maps them back on the way in.
+* **The phase question shows firing order as it is answered**, which §8.4 asked
+  for, and its three nudges read the rest of the rule -- which is what asking
+  it last buys.
+
 **Phase 5: contents.** Items, rooms, exits, people. The `thing_here` matcher.
 *Done when:* a small world -- four rooms, a few items, one NPC -- can be built
 end to end with no model, and playing it works.
+
+*Built.* `world/makers/things.py`, and `subjects.reachable` / `thing_here`.
+Where it differs:
+
+* **`create npc` and `create person` are two commands, not one fork.** The
+  generated one costs money and runs asynchronously; the hand-built one costs
+  nothing and finishes at once, and folding them into one menu would have hidden
+  that difference behind a submenu. Each one's help names the other.
+* **A way out is a `way`**, for the reason in phase 1.
+* **`modify_complaints` checks a thing being made, not only one being
+  changed.** Its two rules -- a name says what a thing is and never its
+  condition, a description may only ask for word lists this world keeps -- are
+  just as true of a new thing, so the thing being made is given the shape the
+  checker reads rather than the rules being written out a second time.
 
 **Phase 6: quests.** The spec store, `offer_quest`, chains and repeats,
 `quest_gen` refactored onto the same writer, and the pool offered to both
@@ -1049,6 +1480,60 @@ sides -- `quests.lookup_tools`, the `use_quest` answer, and the player's
 non-repeatable one is not offered again, and a generated NPC asked for work in
 a world that already holds a fitting errand hands that one out instead of
 writing another.
+
+*Built.* The spec store in `world/quests.py`, the `offer_quest` effect in
+`world/effects.py`, `world/makers/errands.py`, and `use_quest` in
+`world/quest_gen.py`. Where it differs:
+
+* **`create quest` writes the rule that offers it, and says so.** The default
+  is that greeting the giver asks; declining leaves the errand written and
+  unoffered. The effect does all the deciding -- already done, too soon,
+  something else first, hands full -- so the rule it writes can be one line and
+  still be right.
+* **A goal is written in the goal vocabulary**, not the condition vocabulary.
+  They are different closed lists: `goals.satisfied` can only test its own, and
+  a goal it cannot test would hang the errand for ever rather than fail it.
+* **`greet` is declared if the world has not got it**, since the default rule
+  is about being greeted.
+* **Who asks and who is asked are resolved apart.** `effects._resolve` falls
+  back from `name_role` to `role`, which for this one effect would make the
+  giver and the taker the same person and turn the whole thing into a silent
+  no-op. The giver defaults to what is being acted on -- greeting somebody
+  offers their errand -- and an offer that cannot happen says why in the log.
+* The last criterion is held by `use_quest` being offered and enumerating this
+  world's specs; whether a model *prefers* it is a live test, not a free one.
+
+**Phase 6a: what a world writes for itself.** Not in this plan, and needed by
+it. `create world` plans zones, names a room, describes it, fills it with
+things and puts somebody in it -- every one of which a hand-built world has to
+undo before it can start, and pays for twice. So `world/permits.py`: five
+things a model may be asked for (rooms, items, people, verbs, errands), three
+answers each (whenever anything asks, only when a player goes looking, never),
+and `Sponsor.will(making)` as the one question a generator asks. It is the
+`future-plans.md` item about configuring what models may do, which turned out
+to be a prerequisite rather than a successor.
+
+*Built.* Where it differs from what that item said:
+
+* **Five things, not "each type of thing".** Rooms, items, people, verbs and
+  errands is what a generator can actually be pointed at. "Descriptions" and
+  "names" are part of making one of the five, and a world that could have a
+  room but not its description would have a nameless room rather than a saved
+  call.
+* **`asked` turns on a session**, not on the shape of the call. "A player's
+  own action" means somebody is at the keyboard; a body left standing in a
+  room is exactly the case the setting exists to stop.
+* **The default is what the game already did.** Everything `always`, stored
+  with the world's spec so `reset world` keeps a creator's decision, and no
+  world in play changes because a register gained a default.
+* **Rooms off means no model call at all.** `worldgen.first_room_by_hand`
+  makes one plain room that says what to do next, and skips the zone plan,
+  the naming call, the description call, the contents pass and the frontier.
+  `ensure_frontier` also stops opening doors onto nothing: a world built by
+  hand is not closed off by accident at the edge its builder stopped at.
+* **It is not about characters thinking.** Turning people off stops new ones
+  arriving; whoever is already there still talks. NPC autonomy is its own
+  `future-plans.md` item and stays there.
 
 **Phase 7 (separate plan): export and import.** A world as a document, over the
 same maker table. Named here so phases 1 to 6 build for it; scoped when they

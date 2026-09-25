@@ -23,8 +23,13 @@ from evennia.utils import logger
 
 _SYSTEM = """You turn a character's request into a quest a game can check.
 
-Answer by calling write_quest. The title is three or four words naming the
-errand.
+Answer by calling write_quest, or by calling use_quest when this world has
+already written an errand that fits -- list_errands shows them, and reusing one
+is better than writing another like it, because a world where every errand is
+worded and measured differently is one nothing can keep straight. When you
+reuse one, give description in this character's own words.
+
+The title is three or four words naming the errand.
 
 goal is what must become true for the errand to be done. Each entry is one of:
 {"type": "holds",     "object": "brass key"}   (or "kind": "key" for any)                  they are carrying it
@@ -141,6 +146,10 @@ def formalise(sponsor, npc, target, request, offer, consequence, on_success, on_
     Calls on_success({"title", "goal", "reward", "punishment"}) or
     on_error(msg) in the main thread.
     """
+    if not sponsor.will("quests"):
+        on_error(sponsor.refusal("quests")
+                 or "Nothing new of that sort happens here.")
+        return
     model = sponsor.model_for("quests", "commands")
     try:
         sponsor.key()          # refuse early rather than mid-prompt
@@ -178,6 +187,10 @@ def formalise(sponsor, npc, target, request, offer, consequence, on_success, on_
             "goal": _listed(data.get("goal")),
             "reward": _listed(data.get("reward")),
             "punishment": _listed(data.get("punishment")),
+            # Set only by `use_quest`: which written errand this is, so that
+            # "once ever" means it and a chain's `after` can read it.
+            "spec": str(data.get("spec") or ""),
+            "description": str(data.get("description") or ""),
         })
 
     from world import lookups
@@ -185,7 +198,8 @@ def formalise(sponsor, npc, target, request, offer, consequence, on_success, on_
 
     # Rounds out, the last quest is offered as it stands: `quests.offer` still
     # refuses one with no testable goal, and logs it, as it always did.
-    box = tb.Toolbox([quest_tool()] + lookups.named(*QUEST_LOOKUPS),
+    box = tb.Toolbox([quest_tool(), use_quest_tool()]
+                     + lookups.named(*QUEST_LOOKUPS),
                      tb.ToolContext(world_root=room.db.world_root if room
                                     else None, room=room, actor=npc,
                                     sponsor=sponsor, job="quests"))
@@ -230,6 +244,10 @@ def formalise_goal(sponsor, npc, want, on_success, on_error):
 
     Calls on_success([condition, ...]) or on_error(msg) in the main thread.
     """
+    if not sponsor.will("quests"):
+        on_error(sponsor.refusal("quests")
+                 or "Nothing new of that sort happens here.")
+        return
     model = sponsor.model_for("quests", "commands")
     try:
         sponsor.key()          # refuse early rather than mid-prompt
@@ -280,9 +298,10 @@ QUEST_ROUNDS = 8
 GOAL_ROUNDS = 6
 
 #: What either may look up: the trait register the prompts used to paste in,
-#: the rooms a goal may name, and the states a condition may ask for.
+#: the rooms a goal may name, the states a condition may ask for, and the
+#: errands this world has already written.
 QUEST_LOOKUPS = ("list_traits", "show_trait", "find_rooms", "list_states",
-                 "examine")
+                 "examine", "list_errands")
 
 
 def _listed(value):
@@ -377,6 +396,58 @@ def quest_tool():
 
     return tb.Tool("write_quest", "Write the request as a checkable quest.",
                    parameters, handler, finishes=True)
+
+
+def use_quest_tool():
+    """
+    `use_quest`: hand out an errand this world already holds.
+
+    The other complete answer to "what does this character want", and much the
+    cheaper one. What it reuses is the half that is hard to get right and
+    expensive to produce -- a goal `goals.satisfied` can actually test, with
+    every object named as it is really called. What it does not reuse is the
+    asking: `description` is this character's own way of putting it, so an
+    errand three people give is not the same sentence three times. See
+    world/quests.py and docs/player-building.md 10.2.
+    """
+    from world import quests
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        held = sorted(quests.specs(ctx.world_root))
+        return tb.params({
+            "quest": {"type": "string", "enum": held or ["none"],
+                      "description": "Which written errand to hand out, by "
+                                     "its id from list_errands"},
+            "description": {"type": "string",
+                            "description": "How THIS character asks for it, "
+                                           "in their own words. Leave it out "
+                                           "to use the errand's own wording."},
+        }, ["quest"])
+
+    def handler(ctx, args, answer):
+        record = quests.spec(ctx.world_root, args.get("quest"))
+        if record is None:
+            answer(tb.complain(
+                f"This world holds no errand called "
+                f"{args.get('quest')!r}. list_errands shows the ones it does; "
+                f"write_quest makes a new one."))
+            return
+        answer(tb.accept({
+            "title": record.get("title"),
+            "goal": list(record.get("goal") or []),
+            "reward": list(record.get("reward") or []),
+            "punishment": list(record.get("punishment") or []),
+            "spec": record.get("id"),
+            "description": str(args.get("description") or ""),
+        }))
+
+    return tb.Tool("use_quest",
+                   "Hand out an errand this world has already written, "
+                   "instead of writing a new one. Prefer this whenever one of "
+                   "them fits what the character wants.",
+                   parameters, handler, finishes=True,
+                   available=lambda ctx: bool(quests.specs(ctx.world_root)))
 
 
 def goal_tool(owner):
