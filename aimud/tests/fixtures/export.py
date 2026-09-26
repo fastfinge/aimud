@@ -15,6 +15,13 @@ Run it from the game directory, with the virtualenv's python:
 It is idempotent and safe to re-run: each world is written to its own file,
 named by position rather than by title, and anything already there is replaced.
 
+This is **not** `export world`. A world document (`world/exchange.py`) is a
+whole world -- its rooms, its prose, its people -- written so that it can be
+built again somewhere else. This is a corpus: the registers alone, from every
+world in a development database, so that a rule test can assert against real
+generated data. The two share `plain` and nothing else, and `REGISTERS` below
+is deliberately narrower than a document.
+
 **What is taken, and what is deliberately left.** Only the machine-readable
 registers -- the rules, the kinds, the words a world invented. Not prose: no
 room descriptions, no world description, no character names, no narrations. That
@@ -74,17 +81,20 @@ def _setup():
 
 
 def _plain(value):
-    """An Attribute's contents as plain JSON-able Python."""
-    from evennia.utils.dbserialize import deserialize
+    """
+    An Attribute's contents as plain JSON-able Python.
 
-    value = deserialize(value)
-    if isinstance(value, dict):
-        return {str(k): _plain(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_plain(v) for v in value]
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    return str(value)          # a dbref or anything else: its name will do
+    `world.exchange.plain` now, rather than a second copy of it. The two
+    differ in one place and it is worth knowing which you are reading: a
+    world document answers `None` for an object, because a document that
+    quietly said "<Room: The Gym>" where an id belonged would import as a
+    world with a piece of English in a field a rule reads. A corpus is read
+    by a test and by a person, so a name is more use here than a blank.
+    """
+    from world.exchange import plain
+
+    found = plain(value)
+    return found if found is not None or value is None else str(value)
 
 
 def export(generation=""):

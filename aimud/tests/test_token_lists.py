@@ -232,13 +232,23 @@ class NoPromptReadsARawDescription(SimpleTestCase):
     The structural guard. A description keeps its tokens, so a module that
     puts `db.desc` straight into a prompt hands a model "{color}" -- and the
     model invents one. Writes are fine; reads go through `tokens.text_of`.
+
+    Two modules read it raw on purpose. `tokens.py` is the one doing the
+    expanding. `exchange.py` is writing a world down rather than showing it to
+    anybody: a document carries the text with its tokens intact and the
+    choices already made beside it, so that an imported world smells of the
+    same thing the original did. Expanding here would bake one world's choices
+    into every copy of it.
     """
+
+    #: The two that read it raw, and the reason each is allowed to.
+    EXPANDING = ("tokens.py", "exchange.py")
 
     def test_nothing_in_world_reads_desc_directly(self):
         read = re.compile(r"\.db\.desc\b(?!\s*=[^=])")
         offences = []
         for path in sorted((GAME / "world").glob("*.py")):
-            if path.name == "tokens.py":
+            if path.name in self.EXPANDING:
                 continue
             for number, line in enumerate(
                     path.read_text(encoding="utf-8").splitlines(), 1):

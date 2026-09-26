@@ -102,7 +102,7 @@ All in-game entities are Python classes that inherit from Evennia defaults. The 
 - `command.py` — base `Command` class; all game commands subclass this
 - `default_cmdsets.py` — four cmdset classes (`CharacterCmdSet`, `AccountCmdSet`, `UnloggedinCmdSet`, `SessionCmdSet`) that wrap Evennia defaults; add/override commands in `at_cmdset_creation()`
 - `verbs.py` — the eight verb commands: `create`, `edit`, `delete`, `reset`, `view`, `import`, `export`, `enter`. Each only finds a subject and hands over the rest of the line.
-- `subjects.py` — the subject registry, and helpers every subject shares (`require_world`, `require_owner`, `answered`, `asking`). `SUBJECT_MODULES` lists the modules that define subjects: `world_subject.py`, `rules_subject.py`, `contents_subject.py`, `upkeep_subject.py`, `settings_subject.py`, `score_subject.py`.
+- `subjects.py` — the subject registry, and helpers every subject shares (`require_world`, `require_owner`, `answered`, `asking`). `SUBJECT_MODULES` lists the modules that define subjects: `world_subject.py`, `rules_subject.py`, `contents_subject.py`, `upkeep_subject.py`, `settings_subject.py`, `score_subject.py`, `rulesets_subject.py`, `term_subject.py`, `exchange_subject.py`, and `making_subject.py` last.
 - `settings_cmds.py` — `settings`, over the register in `world/preferences.py`.
 
 **Adding something a player makes, changes or reads belongs in a subject, not a
@@ -137,7 +137,17 @@ inside another form. A maker writes through the function the generators already
 call (`kinds.remember`, `traits.register`, `rulebooks.add`, `clothing.create`)
 and never touches an attribute itself -- that is what keeps a world somebody
 typed and a world a model wrote the same world. The forms live in
-`world/makers/`. See docs/player-building.md.
+`world/makers/`. See docs/archived/player-building.md.
+
+**A world is one document.** `world/exchange.py` writes a world out as
+validated JSON and builds one from it: `export world` puts it in the shared
+folder (`WORLD_DIRS`), `import world` builds it, and `reset world` replays it
+when a world has one. Nothing in a document is a dbref, a path or an account;
+everything it says goes in through the same writer a maker's form uses. Adding
+an attribute anywhere in `world/`, `typeclasses/` or `commands/` means adding
+it to `exchange.CARRIED` or `exchange.LEFT` with the reason -- an AST test
+(`tests/test_exchange.py`, `AttributesAreAccountedFor`) fails until you do, so
+that export cannot rot quietly. See docs/archived/import-and-export.md.
 
 **Nothing in building calls a model.** `~` is the only paid key and it is
 always optional. A test (`tests/test_building.py`, `NoModels`) drives the forms

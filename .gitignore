@@ -24,3 +24,13 @@ wheels/
 # file on the machine that will use it, and it never leaves.
 data/conceptnet.sqlite3
 data/conceptnet.sqlite3.building
+
+# Worlds players have exported, and worlds somebody put on the machine to be
+# imported. The shared folder is `WORLD_DIRS` in server/conf/settings.py.
+#
+# A world document is somebody's world: their rooms, their descriptions, the
+# characters they wrote. It is safe to hand to another aimud -- it contains no
+# key, no account and no path -- but it is not this repository's to publish,
+# and a world exported on a development machine would otherwise land in a
+# commit. See world/exchange.py.
+aimud/worlds/

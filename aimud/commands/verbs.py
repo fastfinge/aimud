@@ -162,6 +162,14 @@ class CmdImport(VerbCommand):
 
     Usage:
       import
+      import world <name>
+      import commonsense
+
+    |wimport world|n builds a world somebody here exported, from the shared
+    folder |wview exports|n lists. It becomes yours -- you own it and you pay
+    for it -- and building it costs nothing at all. Its text reaches your model
+    on your key once you play it, which is worth knowing before you build one
+    somebody else wrote.
     """
 
     key = "import"
@@ -174,6 +182,11 @@ class CmdExport(VerbCommand):
 
     Usage:
       export
+      export world [<number or title>]
+
+    Writes a world to the shared folder, where anybody on this server can build
+    it. It also makes today's state the one |wreset world|n comes back to, so
+    exporting is how you save a world you like the state of. Costs nothing.
     """
 
     key = "export"
