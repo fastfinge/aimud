@@ -486,7 +486,11 @@ Beyond that:
 | `enter world [<n or title>]` | Go into one of your worlds, back where you last were. |
 | `enter start` | Back to Limbo, the room everybody starts in. `enter limbo` works too. |
 | `edit world [<n or title>]` | Change a world's text without rebuilding it. |
-| `reset world [<n or title>] [yes]` | Wipe and regenerate from the same setup. Asks first unless you add `yes`. |
+| `reset world [<n or title>] [yes]` | Put a world back. A world you have imported or exported goes back to *that* -- free, instant, and exactly as it was. A world that has done neither is wiped and regenerated from the same setup, which costs model calls. `view world <n>` says which yours will do. Asks first unless you add `yes`. |
+| `export world [<n or title>] [yes]` | Write a world to the shared folder, where anybody on this server can build it. Also makes today's state the one `reset world` comes back to. Costs nothing. |
+| `import world <name>` | Build a world somebody here exported. It becomes yours -- you own it, you pay for it -- and building it costs nothing at all. |
+| `view exports` | What is in the shared folder: each world's title, how big it is, when it was taken, and whether this server has what it needs. |
+| `delete export <name> [yes]` | Take a world out of the shared folder. Whoever put it there, or a builder. |
 | `delete world [<n or title>] [yes]` | Delete a world permanently. Asks first unless you add `yes`. |
 | `edit world` → Open a way on | Open a way on, in a world that has built itself into a corner and has nowhere unexplored left. |
 | `create world` / `edit world` → What this world writes for itself | Whether this world grows its own rooms, items, characters, verbs and errands — **whenever anything asks**, **only when a player goes looking**, or **never**. `settings world <what> <how>` changes it later. Everything is on until you say otherwise, so no world you already have changes. |
@@ -740,6 +744,13 @@ That is not modesty about the code — it is a specific and honest assessment:
   default permissions.
 - Worlds are per account and are not shared, but that separation has not been
   tested adversarially either.
+- **An imported world is text somebody else wrote, reaching your model on your
+  key.** `import world` builds a world from a document in the shared folder,
+  and that world's descriptions, its guidance and its characters' words all go
+  into prompts when you play it. The document itself is validated and contains
+  no code, no paths and no accounts, and building it spends nothing; what has
+  *not* been explored is what somebody could talk a model into by writing a
+  room description. Import worlds from people you would take a file from.
 
 If you want to play with friends: run it on a machine you control, for people
 you trust, and have everyone use their own key with a spending limit set on it.
@@ -747,9 +758,18 @@ you trust, and have everyone use their own key with a spending limit set on it.
 ### What is safe to publish
 
 This repository contains **code only**. The database (`server/evennia.db3`),
-`server/conf/secret_settings.py`, the log files and the per-character memory
-banks under `server/memory/` are all gitignored and have never been committed.
-Your API key lives in the database and nowhere else.
+`server/conf/secret_settings.py`, the log files, the per-character memory
+banks under `server/memory/` and the exported worlds under `worlds/` are all
+gitignored and have never been committed. Your API key lives in the database
+and nowhere else.
+
+A **world document** — what `export world` writes — is the one file in this
+game meant to be handed to somebody. It is safe to: it holds a world's rooms,
+things, people, rules and vocabulary, and by construction it holds no API key,
+no account, no filesystem path, no database id and nothing executable. What it
+*does* hold is everything you wrote — your world's description, its guidance to
+the generators, its characters and what they say — so it is yours to share and
+not ours to publish.
 
 If you fork this, keep it that way: check `git status` before you commit, and
 never `git add -f` anything under `server/`.
@@ -810,6 +830,7 @@ The interesting half is `world/`:
 | `naming.py` | Recognising the thing somebody meant, so a typo is not a new object |
 | `hints.py` | Giving a player the same help an NPC gets |
 | `memory.py` | Per-character memory, written and recalled by relevance |
+| `exchange.py` | A world as a document: writing one out, refusing a bad one, building one |
 | `fact_gen.py` | Turning what a character has been through into what it knows |
 
 Two ideas run through all of it and explain most of the design:

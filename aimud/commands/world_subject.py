@@ -21,7 +21,7 @@ back to the form.
 
 from django.conf import settings
 
-from commands.subjects import Subject, Use, names_for, owns
+from commands.subjects import Subject, Use, answered, asking, names_for, owns
 from world import lore, menus
 from world import sponsor as sponsor_mod
 
@@ -120,13 +120,17 @@ def clear_world(root, account, destination=None, message=None):
     for room in rooms:
         room.delete()
 
-    created = account.db.created_worlds or []
-    if root_id in created:
-        created.remove(root_id)
-        account.db.created_worlds = created
-    locations = account.db.world_last_locations or {}
-    locations.pop(str(root_id), None)
-    account.db.world_last_locations = locations
+    # A world nobody owns is a real case: `exchange.build` takes away a world
+    # it half made, and a test may build one with no account behind it. The
+    # rooms still have to go.
+    if account is not None:
+        created = account.db.created_worlds or []
+        if root_id in created:
+            created.remove(root_id)
+            account.db.created_worlds = created
+        locations = account.db.world_last_locations or {}
+        locations.pop(str(root_id), None)
+        account.db.world_last_locations = locations
     return len(rooms)
 
 
@@ -808,6 +812,12 @@ def _reset(caller, root):
     account = account_of(caller)
     if not owns(account, root):
         return "Only whoever made a world can reset it."
+    # A world that was imported, or exported, has somewhere to go back to, and
+    # a reset means that place rather than a world generated again from the
+    # same description. It also costs nothing and needs no key, which is why
+    # this comes before `_key_problem`. See docs/archived/import-and-export.md 8.
+    if _restore_point(root) is not None:
+        return _replay(caller, root)
     spec = lore.spec_of(root, caller)
     description = spec["description"]
     if not description:
@@ -847,7 +857,49 @@ def _reset(caller, root):
             f"first...")
 
 
+def _restore_point(root):
+    from world import exchange
+
+    return exchange.restore_point(root)
+
+
+def _replay(caller, root):
+    """
+    Put an imported world back as it arrived, and only then remove the old.
+
+    The same shape as a generated reset -- build the new one, move everybody
+    into it, destroy the old -- and for the same reason: a reset that
+    destroyed first would take somebody's world away and then discover it
+    could not make another. What is different is that this cannot fail for
+    want of a key, and takes no time at all.
+    """
+    from world import exchange
+
+    account = account_of(caller)
+    doc = _restore_point(root)
+    title = lore.title(root)
+    try:
+        new_root = exchange.build(doc, account, caller)
+    except exchange.Refused as refusal:
+        return (f"|r{title} could not be put back: {refusal}|n\n"
+                f"Your existing world was left untouched.")
+    removed = clear_world(root, account, destination=new_root,
+                          message="|yThe world is being put back as it was.|n")
+    if caller.location is not new_root:
+        caller.move_to(new_root, quiet=False)
+    else:
+        caller.execute_cmd("look")
+    return (f"|g{title} is back as it was, {removed} old room(s) removed.|n")
+
+
 def _reset_question(root, count):
+    doc = _restore_point(root)
+    if doc is not None:
+        taken = str(doc.get("exported") or "")
+        return (f"Put {lore.title(root)} back as it was"
+                + (f" on {taken}" if taken else "")
+                + f", destroying all {count} of its rooms as they are now? "
+                  f"Nothing is generated and nothing is spent.")
     return (f"Destroy all {count} rooms of {lore.title(root)}, with everything "
             f"in them, and generate the world again from its setup? The old "
             f"world is only removed once the new one is ready.")
@@ -923,6 +975,13 @@ def _world_detail(root, count, number):
     lines.append(f"It is {clock.exactly(root)}"
                  + (f", {' and '.join(period)}" if period else "")
                  + (", real time." if clock.is_real(root) else "."))
+    # Whether a reset means "back to this" or "generated again", said here
+    # rather than left for the confirmation to spring on somebody.
+    doc = _restore_point(root)
+    if doc is not None:
+        taken = str(doc.get("exported") or "")
+        lines.append(f"|wreset world {number}|n puts it back as it was"
+                     + (f" on {taken}." if taken else "."))
     lines.append(f"|wenter world {number}|n goes there.")
     return "\n".join(lines)
 
@@ -1078,6 +1137,218 @@ def enter_start_items(ctx):
 
 
 # ---------------------------------------------------------------------------
+# export world, import world
+# ---------------------------------------------------------------------------
+#
+# Two more things done to a world, so two more uses here rather than a subject
+# of their own. What is left over -- the folder itself, and taking something
+# out of it -- is `commands/exchange_subject.py`.
+#
+# Neither calls a model. An export is a read and an import is a build, and a
+# server with no API key does both. See docs/archived/import-and-export.md 12.
+
+EXPORT_QUESTION = ("Write {title} to the shared folder, where anybody here "
+                   "can build a world from it, and make this the state "
+                   "|wreset world|n comes back to?")
+
+
+def _export(caller, root):
+    from commands import exchange_subject
+    from world import exchange
+
+    account = account_of(caller)
+    if not owns(account, root):
+        return "Only whoever made a world can export it."
+    doc = exchange.document(root)
+    wrong = exchange.problems(doc)
+    if wrong:
+        # Refused rather than written. A document this server cannot read back
+        # is not an export, it is a file; and the fault is ours, so it is
+        # logged where somebody can find it as well as said here.
+        from evennia.utils import logger
+
+        logger.log_err(f"exchange: {lore.title(root)} exported wrongly: "
+                       f"{'; '.join(wrong)}")
+        return (f"|r{lore.title(root)} could not be written down: "
+                f"{wrong[0]}|n")
+    try:
+        name = exchange.write(doc)
+    except exchange.Refused as refusal:
+        return f"|r{refusal}|n"
+    exchange_subject.wrote(account, name)
+    exchange.remember(root, doc)
+    carried = _carried_note(caller, root)
+    return (f"|g{lore.title(root)} is in the shared folder as |w{name}|g, "
+            f"{doc['rooms']} room(s). |wreset world|g now puts it back as it "
+            f"is today.|n" + carried)
+
+
+def _carried_note(caller, root):
+    """
+    Said when somebody exported a world while holding some of it.
+
+    A world missing its crowbar is broken and a world with a crowbar on the
+    floor is not, so what a player is carrying is written down where they were
+    standing. Nobody would guess that, so it is said. See
+    docs/archived/import-and-export.md 4.1.
+    """
+    from evennia.objects.objects import DefaultCharacter
+    from world import exchange
+
+    held = []
+    for room in exchange.rooms_of(root):
+        for obj in room.contents:
+            if isinstance(obj, DefaultCharacter) and not obj.db.is_npc:
+                held.extend(thing for thing in obj.contents
+                            if getattr(thing, "destination", None) is None)
+    if not held:
+        return ""
+    return (f"\n|x{len(held)} thing(s) somebody was carrying were written "
+            f"down where they were standing: a world missing them would be "
+            f"broken, and one with them on the floor is not.|n")
+
+
+def _export_entry(number, root, count, current):
+    return menus.Action(
+        f"world{root.id}", _world_line(root, count, current),
+        run=lambda ctx: _export(ctx.character or ctx.caller, root),
+        confirm="export_world",
+        question=EXPORT_QUESTION.format(title=lore.title(root)),
+        after=menus.CLOSE, aliases=names_for(lore.title(root)),
+        command=lambda ctx: f"export world {number}")
+
+
+EXPORT_WHICH = _which_world_form("export", _export_entry,
+                                 "You have no worlds to export.")
+
+
+def export_run(cmd, ctx, words):
+    from commands.subjects import verb_form
+
+    caller = cmd.caller
+    words, yes = answered(words)
+    if not words:
+        menus.open_menu(caller, verb_form("export"), session=cmd.session,
+                        path=["world"])
+        return
+    picked = _pick_world(caller, words)
+    if picked is None:
+        return
+    root, _count, number = picked
+    asking(cmd, EXPORT_QUESTION.format(title=lore.title(root)),
+           "export_world", f"export world {number}",
+           lambda: caller.msg(_export(caller, root)), already=yes)
+
+
+def export_items(ctx):
+    return [menus.Submenu("world", "A world you made", EXPORT_WHICH, help=(
+        "Write a world to the shared folder, and make today's state the one "
+        "|wreset world|n comes back to."))]
+
+
+IMPORT_QUESTION = ("Build a world from {name}, {rooms} room(s), made by "
+                   "somebody else? Its descriptions and its characters' words "
+                   "are sent to your model on your key when you play it.")
+
+
+def _import(caller, name):
+    from world import exchange
+
+    account = account_of(caller)
+    if account is None:
+        return "Only an account can hold a world."
+    try:
+        doc = exchange.read(name)
+        root = exchange.build(doc, account, caller)
+    except exchange.Refused as refusal:
+        return ("|r" + str(refusal.complaints[0]) + "|n"
+                + ("".join(f"\n|r  {said}|n"
+                           for said in refusal.complaints[1:6])))
+    number = len(resolve_worlds(account))
+    return (f"|g{lore.title(root)} is yours, "
+            f"{len(exchange.rooms_of(root))} room(s). "
+            f"|wenter world {number}|g goes there, and |wreset world "
+            f"{number}|g puts it back as it is now.|n")
+
+
+def _import_entry(name, heading):
+    return menus.Action(
+        f"import-{name}",
+        f"{heading['title'] or name} -- {heading['rooms']} room"
+        f"{'s' if heading['rooms'] != 1 else ''}"
+        + (f", |rneeds {', '.join(heading['missing'])}|n"
+           if heading["missing"] else ""),
+        run=lambda ctx: _import(ctx.character or ctx.caller, name),
+        confirm="import_world",
+        question=IMPORT_QUESTION.format(name=heading["title"] or name,
+                                        rooms=heading["rooms"]),
+        after=menus.CLOSE, aliases=names_for(name, heading["title"]),
+        command=lambda ctx: f"import world {name}")
+
+
+IMPORT_WHICH = menus.Form(
+    key="import-world", title="Build a world from which document?",
+    intro=lambda ctx: _import_intro(),
+    items=lambda ctx: _import_entries(),
+    command=lambda ctx: "import world",
+)
+
+
+def _import_intro():
+    from commands import exchange_subject
+
+    if not exchange_subject.exports():
+        return ("The shared folder is empty. |wexport world|n puts one of "
+                "yours in it for everybody here.")
+    return ("A world somebody here exported. It becomes yours: you own it, "
+            "you pay for it, and its text reaches your model.")
+
+
+def _import_entries():
+    from commands import exchange_subject
+
+    return [_import_entry(name, heading)
+            for name, heading in sorted(exchange_subject.exports().items())]
+
+
+def import_run(cmd, ctx, words):
+    from commands.subjects import verb_form
+
+    caller = cmd.caller
+    words, yes = answered(words)
+    if not words:
+        menus.open_menu(caller, verb_form("import"), session=cmd.session,
+                        path=["world"])
+        return
+    from commands import exchange_subject
+
+    said = " ".join(words).strip()
+    found = exchange_subject.exports()
+    # By the name the folder uses, or by the world's own title: nobody types
+    # `import world the_school` having read "The School" in the listing.
+    name, heading = said, found.get(said)
+    if heading is None:
+        matches = [(made, entry) for made, entry in found.items()
+                   if entry["title"].lower() == said.lower()]
+        if len(matches) == 1:
+            name, heading = matches[0]
+    if heading is None:
+        caller.msg(f"There is no world called {said} in the shared folder. "
+                   f"|wview exports|n lists what is.")
+        return
+    asking(cmd, IMPORT_QUESTION.format(name=heading["title"] or name,
+                                       rooms=heading["rooms"]),
+           "import_world", f"import world {name}",
+           lambda: caller.msg(_import(caller, name)), already=yes)
+
+
+def import_items(ctx):
+    return [menus.Submenu("world", "One from the shared folder", IMPORT_WHICH,
+                          help=("Build a world somebody here exported. It "
+                                "becomes yours, and costs nothing to build."))]
+
+
+# ---------------------------------------------------------------------------
 # The subjects
 # ---------------------------------------------------------------------------
 
@@ -1099,6 +1370,8 @@ SUBJECTS = [
             "delete": Use(delete_run, delete_items, offered=_has_account),
             "reset": Use(reset_run, reset_items, offered=_has_account),
             "view": Use(view_run, view_items, offered=_has_account),
+            "export": Use(export_run, export_items, offered=_has_account),
+            "import": Use(import_run, import_items, offered=_has_account),
             "enter": Use(enter_world_run, enter_world_items,
                          offered=_has_account),
         },

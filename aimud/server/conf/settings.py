@@ -62,6 +62,14 @@ TEST_RUNNER = "server.conf.test_runner.Runner"
 # replaces it. See world/rulesets.py.
 RULESET_DIRS = [os.path.join(GAME_DIR, "server", "conf", "rulesets")]
 
+# Directories holding exported worlds. The first is also where `export world`
+# writes, and it is the shared folder players import each other's worlds from.
+# A world document is validated JSON and never code, exactly as a ruleset is,
+# and its filename comes from the world's title through `exchange.slug` --
+# nothing a player types ever becomes a path. Add a directory here to offer
+# worlds somebody put on the machine by hand. See world/exchange.py.
+WORLD_DIRS = [os.path.join(GAME_DIR, "worlds")]
+
 
 ######################################################################
 # Settings given in secret_settings.py override those in this file.

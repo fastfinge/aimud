@@ -801,7 +801,15 @@ def keep_npc(ctx):
         npc.db.states = sorted({str(word).lower() for word in states})
     goal = list(ctx.draft.get("goal") or [])
     if goal:
-        npc.db.goal_conditions = goal
+        # `goal`, and through `sanitise`, exactly as `npc_gen` writes one. It
+        # was `goal_conditions`, which nothing anywhere read: a hand-built
+        # character wanted something no system knew about, so `view score`
+        # said nothing about them and no rule could test it. Found while
+        # writing world/exchange.py, which had to carry both and could not
+        # say what the difference was.
+        from world import goals
+
+        npc.db.goal = goals.sanitise(goal, owner=npc)
     room.msg_contents(f"|g{npc.key} has arrived.|n")
     return npc.id, (f"|w{npc.key}|n is here. |xThey will not act on their own "
                     f"without a model; what they can still do is hand out an "

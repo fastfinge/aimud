@@ -24,12 +24,15 @@ the builders. Just depend on AIML here maybe? But replace support for JavaScript
 * do something interesting with the web interface. Web editor? Examine stats in the browser? Prettier looking interface
 for playing in browser? Ability to read help files and documentation online, with hyperlinks?
 * let characters use Evennia's built-in discord/IRC support so characters can reach out of their world
-* world import and export: **scoped, see docs/import-and-export.md**. A world as one validated JSON document with no
-dbrefs, paths or accounts in it, imported through the same writers the generators call; a shared folder on the server
-players export to and import from; and a restore point, so `reset world` goes back to the import rather than paying a
-model for a different world. Worlds say which rulesets they require, and refuse a document requiring a plugin (§14).
-Still open there, and named as its own problem: how a player gets a file to the server at all -- one question with MSP
-sounds, resource packs, and worlds fetched from another instance, not three.
+* how a player gets a file to the server, and gets one off it: one problem, not three. MSP sounds, resource packs, and
+worlds from another aimud all want it. **World import and export is built** (docs/archived/import-and-export.md) and
+takes the shared folder as given, which answers player-to-player on one server and nothing else; moving a document
+between servers still means somebody with shell access moving a file. Two shapes worth investigating, from that plan's
+§17: a *fetch* rather than an upload (`import world from <url>`, the gesture `import commonsense` already uses, and one
+basic-principles.md permits as a scoped network surface), which inverts the hard part because the server pulls from
+somewhere a player names rather than accepting bytes from a connection; or federation, which is a much bigger plan.
+Whatever eventually carries files, a world is already one self-contained validated document with no dbrefs, paths,
+accounts or code in it.
 * affect plugins: let players write Python code that can be added to worlds as unique affects the other systems can use,
  expanding the hardcoded menu. Let them share plugins with other aimud owners. All the hardcoded lists and vocabularies
 should be extendable via plugin, so worlds can become unique in ways our models can't make them. Installing or enabling a plugin should require admin on the mud, plus access to the machine outside of the mud. Nobody just feeds the mud Python and has it run, not even admins. They have to put the files in the correct directory first.
