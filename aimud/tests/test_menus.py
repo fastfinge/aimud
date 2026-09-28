@@ -771,3 +771,53 @@ class ABrokenMenuLetsGo(Driving):
         self.open(form)
         self.assertIn("Not like that.", self.type("1"))
         self.assertTrue(self.is_open)
+
+
+@tag("unit")
+class AFormThatOpensHoldingSomething(Driving):
+    """
+    `Form.draft`, which is what lets a form that *changes* something be the
+    same form that makes one.
+
+    `Submenu.draft` came first and is not enough on its own: a form reached
+    three ways -- a command with an id, a list of what the world holds, a
+    thing in front of you -- cannot rely on each opener remembering to pass a
+    draft, and the one that forgets does not fail. It opens empty, and saving
+    writes the empty over what was there.
+    """
+
+    def holding(self, **kwargs):
+        return menus.Form(
+            key="holds", title="Editing something",
+            draft=lambda ctx: {"title": "what it already says"},
+            items=[menus.Field("title", "Title")], **kwargs)
+
+    def test_it_opens_holding_it(self):
+        self.open(self.holding())
+        self.assertEqual(self.char1.ndb._evmenu.stack[0].ctx.draft,
+                         {"title": "what it already says"})
+
+    def test_a_draft_the_opener_passed_wins(self):
+        """A caller handing one in has already decided."""
+        self.open(self.holding(), draft={"title": "the opener's"})
+        self.assertEqual(self.char1.ndb._evmenu.stack[0].ctx.draft,
+                         {"title": "the opener's"})
+
+    def test_and_a_form_without_one_still_opens_empty(self):
+        self.open(a_form())
+        self.assertEqual(self.char1.ndb._evmenu.stack[0].ctx.draft, {})
+
+    def test_it_holds_its_own_when_a_submenu_opens_it(self):
+        """
+        The case that made this a form's business rather than a submenu's:
+        chosen off a list, whose own draft means nothing here and must not be
+        written into.
+        """
+        outer = menus.Form(
+            key="which", title="Change which?",
+            items=[menus.Submenu("one", "The first one", self.holding())])
+        self.open(outer)
+        self.type("one")
+        inner = self.char1.ndb._evmenu.stack[-1]
+        self.assertEqual(inner.ctx.draft, {"title": "what it already says"})
+        self.assertEqual(self.char1.ndb._evmenu.stack[0].ctx.draft, {})

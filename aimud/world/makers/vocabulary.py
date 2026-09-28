@@ -442,6 +442,11 @@ TRAIT_KINDS = (
     ("static", "a fixed figure only deliberate change moves"),
 )
 
+#: What an attribute is when its register entry does not say. First in the
+#: list above rather than a second spelling of it, so the form's default and
+#: the register's cannot drift apart.
+DEFAULT_ATTRIBUTE_TYPE = TRAIT_KINDS[0][0]
+
 
 def keep_attribute(ctx):
     from world import traits
@@ -471,15 +476,34 @@ def keep_attribute(ctx):
     return used, f"This world now keeps the attribute |w{used}|n."
 
 
-NEW_ATTRIBUTE = menus.Form(
-    key="new-attribute", title="Something measurable about a person",
-    guided=True,
-    intro="A figure kept about a character: stamina, standing, fuel. A rule "
-          "can require one, an effect can move one, and a quest can ask for "
-          "one.",
-    discard="Throw away this attribute?",
-    items=[
+#: The register fields the form asks about, and the only ones it writes.
+#: `descs` -- a figure's own words for where it stands -- and `mod` are in the
+#: register and not here, which is why saving MERGES rather than replaces: a
+#: world whose generator wrote bands for `hunger` must not lose them because
+#: somebody opened the attribute to fix its description.
+ASKED = ("name", "means", "trait_type", "base", "min", "max", "rate")
+
+#: What is not asked when the attribute already exists, and why. The word is
+#: the name every rule, every effect and every quest uses to reach the figure;
+#: changing it here would leave all of them pointing at nothing, and doing so
+#: silently is the failure this game is most careful about. `delete attribute`
+#: is the honest way to be rid of one.
+SETTLED = "slug"
+
+
+def _attribute_items(ctx):
+    """
+    What an attribute has, asked once and read by both forms.
+
+    A second list for editing was what this replaces, and it had already
+    drifted: `trait_type` was missing from it, so a world could make a gauge
+    and never afterwards decide it was a counter. A field left out of a second
+    list does not merely go unasked -- on a form that writes what it holds, it
+    goes unwritten.
+    """
+    return [
         menus.Field("slug", "The word", required=True, suggestible=True,
+                    lock=lambda ctx: not ctx.draft.get("_slug"),
                     help="One lower-case word, as a rule will name it: "
                          "stamina, standing, discoveries."),
         menus.Field("name", "What it is called", suggestible=True,
@@ -504,9 +528,77 @@ NEW_ATTRIBUTE = menus.Form(
                          "poison drains and a rest restores. Leave it empty "
                          "for a figure that only changes when something "
                          "changes it."),
-        making.keeper("keep", "Keep this attribute", keep_attribute,
-                      command=lambda ctx: "create attribute <word>"),
-    ],
+        making.keeper("keep", _attribute_keep_label, _attribute_keeper(ctx),
+                      command=_attribute_keep_command),
+    ]
+
+
+def _attribute_keep_label(ctx):
+    return ("Save the changes" if ctx.draft.get("_slug")
+            else "Keep this attribute")
+
+
+def _attribute_keep_command(ctx):
+    settled = str(ctx.draft.get("_slug") or "")
+    return (f"edit attribute {settled}" if settled
+            else "create attribute <word>")
+
+
+def _attribute_keeper(ctx):
+    settled = str(ctx.draft.get("_slug") or "")
+    return save_attribute if settled else keep_attribute
+
+
+def save_attribute(ctx):
+    """
+    Write the draft over an attribute the register already holds.
+
+    Merged into what is there rather than written over it, because the form
+    does not ask about everything a register entry may carry: a figure's own
+    words for where it stands (`descs`) are written by a generator and are not
+    this form's to lose. Whatever the form *does* ask, it writes -- including
+    clearing a number back to nothing, which is a thing somebody may mean.
+    """
+    from world import traits
+
+    root = _root(ctx)
+    slug = str(ctx.draft.get("_slug") or "").strip()
+    entry = dict(traits.known(root, slug) or {})
+    if not entry:
+        raise menus.Refuse(
+            f"This world no longer keeps an attribute called |w{slug}|n. "
+            f"Nothing was changed.")
+    wanted = str(ctx.draft.get("trait_type") or "").strip()
+    entry["trait_type"] = (wanted if wanted in traits.TRAIT_TYPES
+                           else entry.get("trait_type")
+                           or traits.DEFAULT_TRAIT_TYPE)
+    entry["name"] = (str(ctx.draft.get("name") or "").strip()
+                     or slug.replace("_", " ").title())
+    entry["means"] = str(ctx.draft.get("means") or "").strip()
+    for field in ("base", "min", "max", "rate"):
+        if ctx.draft.get(field) is None:
+            entry.pop(field, None)
+        else:
+            entry[field] = ctx.draft[field]
+
+    vocab = dict(root.db.trait_vocabulary or {})
+    vocab[slug] = entry
+    root.db.trait_vocabulary = vocab
+    return slug, (f"|w{slug}|n is changed: a "
+                  f"{entry['trait_type']}.\n"
+                  f"|xCharacters who already have it keep what they were "
+                  f"given -- the register says what somebody gaining it "
+                  f"gets, and `traits.ensure` reads it once.|n")
+
+
+NEW_ATTRIBUTE = menus.Form(
+    key="new-attribute", title="Something measurable about a person",
+    guided=True,
+    intro="A figure kept about a character: stamina, standing, fuel. A rule "
+          "can require one, an effect can move one, and a quest can ask for "
+          "one.",
+    discard="Throw away this attribute?",
+    items=_attribute_items,
 )
 
 
@@ -527,9 +619,22 @@ def attribute_text(root, slug):
     entry = traits.known(root, slug)
     if not entry:
         return ""
-    lines = [f"|w{slug}|n -- {entry.get('name')}",
+    return _attribute_lines(slug, entry)
+
+
+def _attribute_lines(slug, entry):
+    """
+    One attribute as somebody reads it, from the entry rather than the word.
+
+    Split so the edit form can show the attribute *being written* rather than
+    the one still in the register. The same split `rules.rule_lines` and
+    `errands.quest_lines` are, and for the same reason: showing the stored one
+    under a form that is changing it is showing the wrong thing at exactly the
+    moment somebody is checking their work.
+    """
+    lines = [f"|w{slug}|n -- {entry.get('name') or slug}",
              f"  {entry.get('means') or 'nothing written about it'}",
-             f"  a {entry.get('trait_type', 'counter')}"]
+             f"  a {entry.get('trait_type') or DEFAULT_ATTRIBUTE_TYPE}"]
     for field, said in (("base", "starts at"), ("min", "lowest"),
                         ("max", "highest"), ("rate", "drifts by")):
         if entry.get(field) is not None:
@@ -537,48 +642,66 @@ def attribute_text(root, slug):
     return "\n".join(lines)
 
 
+def attribute_draft(slug, entry):
+    """The register's entry for one attribute, as a draft to fill in."""
+    entry = dict(entry or {})
+    drafted = {"_slug": slug, "slug": slug}
+    for field in ASKED:
+        drafted[field] = entry.get(field)
+    drafted["trait_type"] = (entry.get("trait_type")
+                             or DEFAULT_ATTRIBUTE_TYPE)
+    return drafted
+
+
+
 def edit_attribute(root, slug):
+    """
+    The attribute form, opened on an attribute this world keeps.
+
+    It used to be six fields with their own readers and writers, and being a
+    second list of what an attribute has it had already drifted from the
+    first: `trait_type` was missing, so a world could make a gauge and never
+    afterwards decide it was a counter. Reusing `_attribute_items` is what
+    stops that happening again.
+
+    The word itself is not offered. Every rule, effect and quest that names
+    this figure names it by that word, so changing it here would leave all of
+    them pointing at nothing -- and doing that silently is the failure this
+    game is most careful about everywhere else. See `SETTLED`.
+    """
     from world import traits
 
     slug = traits.resolve(root, str(slug or "").strip())
     if not traits.known(root, slug):
         return None
-
-    def writer(field):
-        def write(ctx, value):
-            vocab = dict(root.db.trait_vocabulary or {})
-            entry = dict(vocab.get(slug) or {})
-            if value in (None, ""):
-                entry.pop(field, None)
-            else:
-                entry[field] = value
-            vocab[slug] = entry
-            root.db.trait_vocabulary = vocab
-            return f"{slug}: {field} is now {value if value else 'unset'}."
-
-        return write
-
-    def reader(field):
-        return lambda ctx: (traits.known(root, slug) or {}).get(field)
-
     return menus.Form(
         key=f"edit-attribute-{slug}", title=f"The attribute {slug}",
-        intro=lambda ctx: attribute_text(root, slug),
-        items=[
-            menus.Field("name", "What it is called", get=reader("name"),
-                        set=writer("name")),
-            menus.Field("means", "What it is for", get=reader("means"),
-                        set=writer("means"), suggestible=True),
-            menus.Field("base", "Where it starts", kind=menus.NUMBER,
-                        get=reader("base"), set=writer("base")),
-            menus.Field("min", "Lowest it goes", kind=menus.NUMBER,
-                        get=reader("min"), set=writer("min")),
-            menus.Field("max", "Highest it goes", kind=menus.NUMBER,
-                        get=reader("max"), set=writer("max")),
-            menus.Field("rate", "Drift a second", kind=menus.NUMBER,
-                        get=reader("rate"), set=writer("rate")),
-        ],
+        intro=_attribute_intro(root, slug),
+        discard="Throw away the changes to this attribute?",
+        draft=lambda ctx: attribute_draft(slug, traits.known(root, slug)),
+        items=_attribute_items,
     )
+
+
+def _attribute_intro(root, slug):
+    """The attribute as the draft has it, and what changing it does not do."""
+    def intro(ctx):
+        from world import traits
+
+        entry = dict(traits.known(root, slug) or {})
+        drafted = {field: ctx.draft.get(field) for field in ASKED}
+        lines = [_attribute_lines(slug, dict(entry, **drafted))]
+        lines.append(
+            "|xThe word itself cannot change here: every rule, effect and "
+            "errand that names this figure names it by that word. And "
+            "characters who already have it keep what they were given -- the "
+            "register says what somebody *gaining* it gets.|n")
+        if any(entry.get(field) != drafted.get(field) for field in ASKED):
+            lines.append("|xNot saved yet. |wSave the changes|x writes this "
+                         "into the register; |wq|x leaves it as it was.|n")
+        return "\n\n".join(lines)
+
+    return intro
 
 
 # ---------------------------------------------------------------------------

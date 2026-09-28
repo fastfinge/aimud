@@ -1235,9 +1235,11 @@ blow -- but only if its "when" also says there must be one:
 {"subject": "cause", "unbound": false}. A figure that ran down on its own has
 no cause.
 
-Never use "try" or "describe" here: nobody is doing anything, and nobody asked
-to look. A state that is worked out from other conditions cannot be set by an
-effect; the tools say which those are.
+Never use "try", "describe" or "narrate" here: nobody is doing anything, nobody
+asked to look, and nothing narrates a rule that fires because the world
+changed -- what people read is "report", written out in full. A state that is
+worked out from other conditions cannot be set by an effect; the tools say
+which those are.
 """
 
 
@@ -1328,6 +1330,18 @@ def validate_becoming(reply, world_root=None):
         if refused:
             complaints.append(f"{', '.join(refused)} cannot follow from "
                               f"something becoming true")
+            continue
+        # And the third, which needs its own sentence because the answer to
+        # it is a different field rather than a different effect. `narrate`
+        # says the narration is the whole of what happens -- and the
+        # narration is the report phase of an attempt, which does not run
+        # here: nobody tried anything. A becomes rule's words are `report`,
+        # written out once, because a clock cannot pay a model every tick.
+        if any(str(e.get("type")) == "narrate" for e in effects_given):
+            complaints.append(
+                "narrate cannot follow from something becoming true -- it "
+                "asks the report phase for a sentence and there is no report "
+                "phase here; put what people read in \"report\"")
             continue
         written = _derived_written(effects_given, world_root)
         if written:

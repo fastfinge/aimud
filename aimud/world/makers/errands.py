@@ -291,7 +291,9 @@ def keep_quest(ctx):
     })
     if record is None:
         raise menus.Refuse("That errand could not be written.")
-    said = [f"|w{record['id']}|n is written: {record['title']}."]
+    changed = bool(str(ctx.draft.get("_id") or ""))
+    said = [f"|w{record['id']}|n is "
+            f"{'changed' if changed else 'written'}: {record['title']}."]
     if not record["givers"]:
         said.append("|xNobody hands it out yet, so nothing offers it. "
                     f"|wedit quest {record['id']}|n adds somebody.|n")
@@ -391,14 +393,30 @@ def _quest_items(ctx):
             rule_forms.condition_line, add_label="Add a condition",
             empty="always",
             help="Anything else that must be true before it is on offer."),
+        # Asked once, when the errand is written. On an errand that already
+        # exists the rules that offer it were written the first time, and
+        # answering yes again would give one errand a greeting rule per edit
+        # -- so the question is not asked a second time rather than asked and
+        # quietly ignored. `view rules greet` reads what it wrote.
         menus.Field("wire", "Offer it when somebody greets them?",
                     kind=menus.BOOLEAN, default=True,
+                    lock=lambda ctx: not ctx.draft.get("_id"),
                     help="Writes the rule that hands it over. No leaves the "
                          "errand written and unoffered, for a world that "
                          "wants to ask for it some other way."),
-        making.keeper("keep", "Write this errand", keep_quest,
-                      command=lambda ctx: "create quest <name>"),
+        making.keeper("keep", _keep_label, keep_quest,
+                      command=_keep_command),
     ]
+
+
+def _keep_label(ctx):
+    return ("Save the changes" if ctx.draft.get("_id")
+            else "Write this errand")
+
+
+def _keep_command(ctx):
+    written = str(ctx.draft.get("_id") or "")
+    return f"edit quest {written}" if written else "create quest <name>"
 
 
 NEW_QUEST = menus.Form(
@@ -430,9 +448,22 @@ def quest_text(root, spec_id):
     record = quests_mod.spec(root, str(spec_id or "").strip())
     if record is None:
         return ""
+    return quest_lines(root, record)
+
+
+def quest_lines(root, record):
+    """
+    One errand as somebody reads it, from the record rather than from its id.
+
+    Split so that the edit form can show the errand *being written* rather
+    than the one still in the register. Showing the stored one under a form
+    that is changing it is showing the wrong thing at exactly the moment
+    somebody is checking their work. The same split `rules.rule_lines` is.
+    """
     from world import effects as fx
 
-    lines = [f"|w{record['id']}|n {record['title']}"]
+    lines = [f"|w{record.get('id') or 'this errand'}|n "
+             f"{record.get('title') or ''}".rstrip()]
     if record.get("description"):
         lines.append(f"  {record['description']}")
     lines.append(f"  finished when: {goals.describe(record.get('goal'))}")
@@ -466,40 +497,84 @@ def quest_text(root, spec_id):
     return "\n".join(lines)
 
 
+def quest_draft(record):
+    """
+    A written errand as the draft the errand form is filled in with.
+
+    `_id` is what tells `keep_quest` to write over the errand rather than
+    make another, and `wire` is off because the rules that offer it were
+    written the first time: wiring again on every save would give one errand
+    a greeting rule per edit.
+    """
+    record = dict(record or {})
+    return {
+        "_id": record["id"],
+        "title": record.get("title"),
+        "description": record.get("description"),
+        "goal": list(record.get("goal") or []),
+        "reward": list(record.get("reward") or []),
+        "punishment": list(record.get("punishment") or []),
+        "time_limit": record.get("time_limit"),
+        "givers": list(record.get("givers") or []),
+        "repeatable": bool(record.get("repeatable")),
+        "cooldown": record.get("cooldown"),
+        "after": list(record.get("after") or []),
+        "only_when": list(record.get("only_when") or []),
+        "wire": False,
+    }
+
+
 def edit_quest(root, spec_id):
+    """
+    The errand form, opened on an errand.
+
+    It used to be a form holding one entry -- "Change it" -- whose only job
+    was to carry the draft into `NEW_QUEST`, because a form had no way to say
+    what it opened holding and a submenu did. `menus.Form.draft` is that way,
+    so the wrapper is gone and `edit quest q1` is the form itself rather than
+    a menu offering to show you one.
+    """
     record = quests_mod.spec(root, str(spec_id or "").strip())
     if record is None:
         return None
-
-    def draft_of(ctx):
-        return {
-            "_id": record["id"],
-            "title": record.get("title"),
-            "description": record.get("description"),
-            "goal": list(record.get("goal") or []),
-            "reward": list(record.get("reward") or []),
-            "punishment": list(record.get("punishment") or []),
-            "time_limit": record.get("time_limit"),
-            "givers": list(record.get("givers") or []),
-            "repeatable": bool(record.get("repeatable")),
-            "cooldown": record.get("cooldown"),
-            "after": list(record.get("after") or []),
-            "only_when": list(record.get("only_when") or []),
-            "wire": False,
-        }
-
     return menus.Form(
-        key=f"edit-quest-{record['id']}", title=f"The errand {record['id']}",
-        intro=lambda ctx: quest_text(root, record["id"]) + (
-            "\n\n|xChanging what finishes it changes it for everybody who "
-            "gives it. What each of them says about it is their own.|n"
-            if len(quests_mod.givers_of(root, record)) > 1 else ""),
-        items=[menus.Submenu(
-            "change", "Change it", NEW_QUEST, fresh_draft=True,
-            draft=draft_of,
-            data=lambda ctx: {"world_root": root},
-            help="The same form it was written with, filled in.")],
+        key=f"edit-quest-{record['id']}",
+        title=f"The errand {record['id']}",
+        intro=_editing_intro(root, record["id"]),
+        discard="Throw away the changes to this errand?",
+        draft=lambda ctx: quest_draft(
+            quests_mod.spec(root, record["id"]) or record),
+        items=_quest_items,
     )
+
+
+#: What `edit quest` compares to decide whether anything has been changed:
+#: the fields the form writes, and no bookkeeping. `_id` never moves and
+#: `wire` is not asked on an errand that exists.
+EDITABLE = ("title", "description", "goal", "reward", "punishment",
+            "time_limit", "givers", "repeatable", "cooldown", "after",
+            "only_when")
+
+
+def _editing_intro(root, spec_id):
+    """The errand as the draft has it, and a word when that is not saved."""
+    def intro(ctx):
+        from world.exchange import plain
+
+        drafted = dict(ctx.draft, id=spec_id)
+        lines = [quest_lines(root, drafted)]
+        stored = quests_mod.spec(root, spec_id) or {}
+        if len(quests_mod.givers_of(root, stored)) > 1:
+            lines.append("|xChanging what finishes it changes it for "
+                         "everybody who gives it. What each of them says "
+                         "about it is their own.|n")
+        if any(plain(stored.get(field)) != plain(drafted.get(field))
+               for field in EDITABLE):
+            lines.append("|xNot saved yet. |wSave the changes|x writes this "
+                         "over what is written; |wq|x leaves it as it was.|n")
+        return "\n\n".join(lines)
+
+    return intro
 
 
 def remove_quest(root, spec_id):

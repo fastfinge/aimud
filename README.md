@@ -520,7 +520,7 @@ opens a menu when you leave the rest out.
 | `view groups` / `create group` | Conditions that answer one question about a thing, so that one can put another out -- which is what makes wetting a burning thing work. |
 | `view actions` / `create action [<verb>]` | What a verb takes: which nouns, and how near you must be to each. Declared once, because every rule about it is written against the answer. |
 | `view words` / `create word` / `delete word <word>` | Another spelling for something this world knows: that a blaster is a raygun, that forging is making. The parser then finds it. |
-| `view rules` / `create rule [<name>]` / `edit rule <id>` / `delete rule <id>` | What happens when somebody tries something, what has to be true first, and what follows. The conditions and the effects are built from menus of what this world holds; what *kind* of rule it is is the last question, and it shows you where the rule would sit in firing order as you answer it. |
+| `view rules` / `create rule [<name>]` / `edit rule <id>` / `delete rule <id>` | What happens when somebody tries something, what has to be true first, and what follows. The conditions and the effects are built from menus of what this world holds; what *kind* of rule it is is the last question, and it shows you where the rule would sit in firing order as you answer it. `edit rule` opens that same form on a rule already in the book — every field of it, including taking it out of force — and nothing is written until you save, so a half-changed rule is never briefly the rule. The rule keeps its id, and with it its place in firing order. |
 | `create item [<name>]` / `edit item [<what>]` / `delete item <what>` | A thing, here — its sort, what condition it starts in, whether it can be picked up, and what it is worth to whoever has it. Editing reaches only what is in front of you — what is in the room, in your hands, or in something you can reach — so `edit item lamp` can never mean a lamp on the other side of the world. |
 | `create room <direction>` / `edit room` | Somewhere new, opening off this one. `edit room` always means the room you are standing in. A room can be worth something to everybody standing in it: a forge is warm whether or not anything in it is. |
 | `create way [<name>]` / `delete way <name>` | A way out onto a room that already exists: a stair, a portal, a door the map could not express. |
@@ -529,6 +529,26 @@ opens a menu when you leave the rest out.
 | `view tokens [<list>]` / `view tokens try <text>` | The word lists this world keeps, one of them in full, or what some text comes to here. A description that writes `{smell}` has one entry chosen for it and keeps that choice, which is how twenty rooms written from one description differ. |
 | `create tokens <list>[: <what for>] = <entry> \| <entry>` / `delete tokens <list>` | Add or remove a word list. |
 | `create pronouns` | Add a pronoun set this world does not have, and go by it. The one of these anybody here may use, not only whoever made the world: how you are spoken about is yours. |
+
+A rule can write its own words. **What people see** is one sentence, rendered
+for each reader — `{actor} $pconj(haul) the lever down` gives the room *Hob
+hauls the lever down* and gives Hob *You haul the lever down* — and it is read
+instead of a narration, so nothing is asked of a model and nothing is charged.
+Without it a world with no key at all hands back the line that was typed;
+with it, such a world reads as prose. It is offered in the three kinds of rule
+that answer somebody: what the verb does here, what happens instead, and what
+happens when something becomes true. Edit the rule and the room reads the edit
+at once — these words are never cached, because they are not bought.
+
+A rule can make its verb a gamble. **Contested by** asks which figure of the
+actor's decides it and what opposes that — somebody else's figure, a fixed
+number, or nothing in particular — and the form prints the odds as you fill it
+in, so a verb nobody can pass and a verb nobody can fail are told apart by
+reading rather than by trying it eleven times. The roll is made by the game and
+never by a model, which is why a rule can carry one at all: asked "did they
+succeed?", a model says yes, and says something else the second time. Only what
+a verb *does* can be contested — a refusal is not a gamble — so it is asked on
+a carry-out rule.
 
 Armour, weapons and tools are worth something rather than saying they are: a
 thing can grant attributes — `defence +3`, `stealth -1` — while it is worn,

@@ -149,7 +149,13 @@ def as_verb_rule(rule):
             # Carried across so that `inert` can tell the two silences apart: a
             # check rule with no effects is doing its job, and a carry-out with
             # none is the fault this scan exists to name.
-            "phase": rule.get("phase")}
+            "phase": rule.get("phase"),
+            # And the third silence, which is not one: a carry-out that
+            # changes nothing and *says* something is how a world with no key
+            # writes a purely expressive verb. Without this the scan could not
+            # see the words -- the translation dropped them -- and counted
+            # every such rule as doing nothing at all.
+            "report": rule.get("report")}
 
 
 def _both_shapes(registers):
@@ -299,6 +305,14 @@ def _should_do_something(rule, learned):
     """
     if learned:
         return True
+    if str(rule.get("phase") or "") == "carry_out" \
+            and str(rule.get("report") or "").strip():
+        # A carry-out that changes nothing and says something is the shape a
+        # world with no key writes a purely expressive verb in: somebody
+        # smiles, the room reads the sentence its author wrote, and nothing
+        # moves. `narrate` is the same decision with a model to write the
+        # words. Neither is the silent success this count is looking for.
+        return False
     return str(rule.get("phase") or "") in ("carry_out", "after")
 
 
