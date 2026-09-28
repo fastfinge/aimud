@@ -56,8 +56,44 @@ SUBJECTS = (
 )
 
 
+#: The roles that are never a person, and so never anybody an effect about
+#: people can be about. `here` and `world` are not merely unlikely: a role is
+#: looked up in what the parser bound, and neither is ever bound at all --
+#: `conditions.Context` works them out when a condition asks, and `effects`
+#: does not. So `bound.get("here")` is None, every time, and an effect naming
+#: one is a no-op the moment it is written. See `effects.apply`, `set_goal`.
+NEVER_A_PERSON = ("here", "world")
+
+
 def subject_options(ctx):
     return [(value, f"{value} -- {said}") for value, said in SUBJECTS]
+
+
+def person_options(ctx):
+    """
+    The same roles, for an effect that can only be about somebody.
+
+    Whether a role turns out to hold a person is not knowable when the rule is
+    written -- `what you act on` is a character when you greet one and a crate
+    when you open one -- so this cannot be narrowed to what will work. What it
+    can do is leave out the two that can never work, which were offered and
+    quietly did nothing.
+    """
+    return [(value, f"{value} -- {said}") for value, said in SUBJECTS
+            if value not in NEVER_A_PERSON]
+
+
+def opposing_options(ctx):
+    """
+    Who may oppose a contest: somebody in the sentence who is not the actor.
+
+    `checks.clean` drops an `against` naming the actor, because a verb
+    contested by the figure of the person attempting it is a rule that means
+    nothing -- the same number on both sides. Left off the list rather than
+    accepted and quietly thrown away.
+    """
+    return [(value, label) for value, label in person_options(ctx)
+            if value != "actor"]
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +440,22 @@ def _role_label(ctx):
     return "To what"
 
 
+#: The effects whose roles are somebody rather than something. A purpose and
+#: an errand are both things only a character this world plays can be given,
+#: and `effects.apply` says so -- it logs and drops a goal handed to anything
+#: else. Which is right, and was invisible: the menu offered `this place` and
+#: `this world` alongside the rest, so a rule could be written that could
+#: never do anything and nothing anywhere said so.
+ABOUT_PEOPLE = frozenset(["set_goal", "offer_quest"])
+
+
+def _role_options(ctx):
+    """Which roles this effect's `role` and `name_role` may name."""
+    if str(ctx.draft.get("type") or "") in ABOUT_PEOPLE:
+        return person_options(ctx)
+    return subject_options(ctx)
+
+
 def _goal_form(ctx):
     """
     The same form an errand's goals are written in.
@@ -480,6 +532,16 @@ def keep_effect(ctx):
         raise menus.Refuse(
             "Say what they are to work towards. A purpose with nothing in it "
             "is a character standing still.")
+    if etype in ABOUT_PEOPLE:
+        named = sorted({str(effect.get(field))
+                        for field in ("role", "name_role")
+                        if str(effect.get(field) or "") in NEVER_A_PERSON})
+        if named:
+            raise menus.Refuse(
+                f"{' and '.join(named)} never names anybody -- it is a place "
+                f"rather than a role somebody typed, and nothing is ever "
+                f"bound to it. Name whoever this is about: |wactor|n, or the "
+                f"part of the sentence they are.")
 
     if etype == "create_object":
         # The three that are one answer: what it grants, when that counts and
@@ -583,26 +645,62 @@ def _gearing():
     return found
 
 
+EFFECT_INTRO = ("What a rule actually does. Everything a verb changes it "
+                "changes through one of these.")
+
+#: What an effect that asks for nothing has to say for itself.
+#:
+#: `narrate` was the one effect somebody could choose and then be shown no
+#: questions at all, with no word anywhere about why -- which reads as a
+#: half-built form rather than as the decision it is. The sentence it produces
+#: is the narration every verb already gets, written when the verb is used;
+#: there is nothing to type here because the words are not written in advance.
+#:
+#: And the one place that is not true is said too, because it is exactly where
+#: somebody reaches for this and gets silence: nothing narrates a becomes
+#: rule. See `effects.apply` and `becoming._report`.
+EFFECT_NOTES = {
+    "narrate": (
+        "|xThis one asks for nothing, and that is the whole of it. The "
+        "sentence everybody reads is the narration the verb already gets, "
+        "written when somebody uses it rather than now -- so what this says "
+        "is that being seen is all that happens.\n"
+        "Where the words come from is the rule's own business, not this "
+        "effect's: fill in |wWhat people see|x and they are yours, for "
+        "nothing; leave it empty and a model writes them, or, in a world "
+        "with no key, the game echoes back what was typed.\n"
+        "Nothing narrates a |wwhen something becomes true|x rule, though, so "
+        "there this effect does nothing at all and |wWhat people see|x is "
+        "the only way to say anything.|n"),
+}
+
+
+def effect_intro(ctx):
+    note = EFFECT_NOTES.get(str(ctx.draft.get("type") or "").strip())
+    return f"{EFFECT_INTRO}\n\n{note}" if note else EFFECT_INTRO
+
+
 NEW_EFFECT = menus.Form(
     key="new-effect", title="Something that happens", guided=True,
-    intro="What a rule actually does. Everything a verb changes it changes "
-          "through one of these.",
+    intro=effect_intro,
     items=[
         menus.Picker("type", "What happens", options=effect_options,
                      required=True,
                      help="Each says what it does in one line. An effect "
                           "nothing can read backwards -- renaming, digging -- "
                           "is one no character can ever plan towards."),
-        menus.Picker("role", _role_label, options=subject_options,
+        menus.Picker("role", _role_label, options=_role_options,
                      lock=_asks("role"),
                      help=lambda ctx: (
                          "Whose purpose this becomes. They work at it on "
                          "their own from then on, and nothing is asked of a "
-                         "model to make them."
+                         "model to make them. It has to land on somebody "
+                         "this world plays: a purpose given to a crate is "
+                         "dropped, since nothing works at it."
                          if str(ctx.draft.get("type") or "") == "set_goal"
                          else "Which part of what somebody typed this "
                               "happens to.")),
-        menus.Picker("name_role", _name_role_label, options=subject_options,
+        menus.Picker("name_role", _name_role_label, options=_role_options,
                      lock=_asks("name_role"),
                      help=lambda ctx: (
                          "Whoever is doing the asking. Left empty, whatever "
@@ -758,6 +856,192 @@ def effect_line(ctx, effect):
 
 
 # ---------------------------------------------------------------------------
+# What it is contested by
+# ---------------------------------------------------------------------------
+#
+# The last thing a model could write that a person could not. A contest is one
+# record -- whose figure decides it, and what opposes it -- declared once on a
+# carry-out rule and rolled by `world/checks.py` for ever after, never by a
+# model. So there was nothing costly about it and nothing hard about it: it
+# was simply missing from the form, and a world built by hand was a world in
+# which nothing could be failed at.
+#
+# Written in the shape `checks.clean` reads, and put through it before it is
+# kept, so a contest nobody can roll is refused here rather than stored and
+# quietly ignored at the door. See `rule_gen.validate`, which does the same to
+# a model's.
+
+#: What a contest can be measured against. `checks._target` reads them in this
+#: order -- a present opponent with the figure beats a fixed number, which is
+#: what makes a veteran guard harder to fight than a starving one.
+OPPOSED_BY = (
+    ("role", "somebody else's figure -- their swordsmanship against yours"),
+    ("difficulty", "a fixed number, the same every time"),
+    ("even", "nothing in particular -- even odds for somebody untrained"),
+)
+
+
+def _opposed(*wanted):
+    return lambda ctx: str(ctx.draft.get("opposed") or "") in wanted
+
+
+def contest_intro(ctx):
+    """
+    What this contest would come to, as it stands.
+
+    The same service `firing_order` does for the phase: a number typed into a
+    form is not a feeling, and a verb nobody can pass and a verb nobody can
+    fail look identical from the inside until somebody prints the odds.
+    Answered for whoever is building, against their own figures, because they
+    are the one person certainly standing here.
+    """
+    from world import checks
+
+    said = ["Not every verb is a gamble, and most are not. Give one to a verb "
+            "a capable person could plausibly fail at, where the failure "
+            "would be worth reading."]
+    spec = _contest_spec(ctx)
+    chance = None
+    if spec:
+        try:
+            chance = checks.prospect(_caller(ctx), spec, {}, _root(ctx))
+        except Exception:
+            chance = None
+    if chance:
+        said += ["", f"  As it stands, for you: "
+                     f"{checks.said_prospect(chance)}",
+                 "  |xAgainst somebody else's figure this is only an "
+                 "example: the number moves with whoever is opposing.|n"]
+    return "\n".join(said)
+
+
+def _contest_spec(ctx):
+    """The draft as `checks.clean` wants it, cleaned, or None."""
+    from world import checks
+
+    trait = str(ctx.draft.get("trait") or "").strip()
+    opposed = str(ctx.draft.get("opposed") or "")
+    spec = {"trait": trait}
+    if opposed == "role" and ctx.draft.get("role"):
+        spec["against"] = {
+            "role": str(ctx.draft.get("role")),
+            "trait": str(ctx.draft.get("against_trait") or "").strip() or trait,
+        }
+    elif opposed == "difficulty" and ctx.draft.get("difficulty") is not None:
+        spec["difficulty"] = ctx.draft.get("difficulty")
+    return checks.clean(spec)
+
+
+def keep_contest(ctx):
+    spec = _contest_spec(ctx)
+    if spec is None:
+        raise menus.Refuse(
+            "A contest needs something to decide it: a figure of theirs, "
+            "somebody to be up against, or a number to beat.")
+    if str(ctx.draft.get("opposed") or "") == "role" \
+            and not ctx.draft.get("role"):
+        raise menus.Refuse("Say who is opposing it.")
+    if str(ctx.draft.get("opposed") or "") == "difficulty" \
+            and ctx.draft.get("difficulty") is None:
+        raise menus.Refuse(
+            "Say what number decides it. Ten is even odds for somebody with "
+            "none of the figure, and every point of the figure is one face of "
+            "the die.")
+    return spec, f"Contested: {contest_line(ctx, spec)}"
+
+
+def _not_a_gamble(ctx):
+    """Take the contest off again. The one way back out of this form."""
+    return menus.Picked(None, "It simply works, or it is refused.")
+
+
+def contest_line(ctx, spec):
+    """One contest in a line, for a label and for `view rule`."""
+    from world import checks
+
+    spec = checks.clean(spec)
+    if not spec:
+        return "not a gamble -- it works or it is refused"
+    trait = str(spec.get("trait") or "").replace("_", " ")
+    figure = f"their {trait}" if trait else "an untrained attempt"
+    against = spec.get("against")
+    if against:
+        theirs = str(against.get("trait") or "").replace("_", " ")
+        return (f"{figure} against {against.get('role')}'s "
+                f"{theirs or trait or 'figure'}")
+    if spec.get("difficulty") is not None:
+        return f"{figure} against {float(spec['difficulty']):g}"
+    return f"{figure} against even odds"
+
+
+CONTEST = menus.Form(
+    key="rule-contest", title="What it is contested by", guided=True,
+    intro=contest_intro,
+    discard="Throw away this contest?",
+    items=[
+        making.picker("trait", "Which figure of theirs decides it",
+                      "attribute", options=trait_options, required=True,
+                      help="The actor's own. Each point of it is one more "
+                           "face of the twenty that go their way."),
+        menus.Field("opposed", "What it is up against", kind=menus.CHOICE,
+                    required=True,
+                    choices=lambda ctx: [menus.Choice(v, l)
+                                         for v, l in OPPOSED_BY],
+                    help="A person, a number, or nothing -- and a person "
+                         "wins over a number whenever they are really there "
+                         "with the figure, which is what makes one guard "
+                         "harder to get past than another."),
+        menus.Picker("role", "Whose figure opposes it",
+                     options=opposing_options, lock=_opposed("role"),
+                     help="Which part of the sentence they are. Never the "
+                          "actor: a verb contested by the figure of whoever "
+                          "is attempting it is the same number on both "
+                          "sides."),
+        making.picker("against_trait", "Which figure of theirs", "attribute",
+                      options=trait_options, lock=_opposed("role"),
+                      help="Left empty, the same figure as the actor's -- "
+                           "swordsmanship against swordsmanship, which is "
+                           "the usual shape."),
+        menus.Field("difficulty", "The number to beat", kind=menus.NUMBER,
+                    lock=_opposed("difficulty"),
+                    help="Ten is even odds for somebody with none of the "
+                         "figure. Fourteen is hard for a novice and fair for "
+                         "somebody with four of it."),
+        menus.Action("none", "Not a gamble -- it simply works",
+                     run=_not_a_gamble, after=menus.CLOSE,
+                     help="Takes the contest off the rule again. Most verbs "
+                          "have none, and that is the ordinary answer."),
+        making.keeper("keep", "Keep this contest", keep_contest),
+    ],
+)
+
+
+def _contest_label(ctx):
+    spec = ctx.draft.get("contest")
+    if not spec:
+        return "Contested by: |xnothing -- it works or it is refused|n"
+    return f"Contested by: {contest_line(ctx, spec)}"
+
+
+def _contest_draft(ctx):
+    """What the sub-form opens holding, when there is already a contest."""
+    from world import checks
+
+    spec = checks.clean(ctx.draft.get("contest"))
+    if not spec:
+        return {}
+    against = spec.get("against")
+    if against:
+        return {"trait": spec.get("trait"), "opposed": "role",
+                "role": against.get("role"),
+                "against_trait": against.get("trait")}
+    if spec.get("difficulty") is not None:
+        return {"trait": spec.get("trait"), "opposed": "difficulty",
+                "difficulty": spec.get("difficulty")}
+    return {"trait": spec.get("trait"), "opposed": "even"}
+
+
+# ---------------------------------------------------------------------------
 # Where a rule applies
 # ---------------------------------------------------------------------------
 
@@ -784,6 +1068,17 @@ def scope_options(ctx):
         if entry not in {value for value, _label in found}:
             found.append((entry, f"anything of the sort {kind}"))
     found.append(("world", "everywhere in this world"))
+    # And whatever this rule is scoped to now, when that is not already on the
+    # list. A rule about a lamp in another room is being edited from wherever
+    # the builder happens to be standing, and a picker that could not say its
+    # scope back would offer only scopes that are not it -- so leaving it out
+    # would move the rule the moment somebody opened it to change its name.
+    from world import rulebooks
+
+    mine = str(ctx.draft.get("scope") or "")
+    if mine and mine not in {value for value, _label in found}:
+        found.insert(0, (mine, f"{rulebooks.said_scope(_scope_dict(mine), root)}"
+                               f" |x(where it is now)|n"))
     return found
 
 
@@ -822,6 +1117,28 @@ def _scope_dict(said):
         except ValueError:
             return {"world": True}
     return {which: value}
+
+
+def _scope_said(scope):
+    """
+    The other way: a stored scope as the picker's value.
+
+    So that editing a rule opens on the scope it already has rather than on
+    "everywhere", which is what a form that could not say a scope back would
+    quietly change it to.
+    """
+    from world import rulebooks
+
+    try:
+        scope = dict(scope or {})
+    except (TypeError, ValueError):
+        return "world"
+    for key in rulebooks.SCOPES:
+        if key == rulebooks.WORLD:
+            continue
+        if key in scope:
+            return f"{key}:{scope[key]}"
+    return "world"
 
 
 ABOUT = (
@@ -886,11 +1203,13 @@ def phase_nudge(ctx):
             "-- refusing can set a condition -- and is usually a slip: a check "
             "rule runs while the world decides whether to let the action "
             "happen at all.|n")
-    if phase in ("carry_out", "instead") and not effects:
+    written = str(ctx.draft.get("report") or "").strip()
+    if phase in ("carry_out", "instead") and not effects and not written:
         said.append(
             "|yThis rule does nothing.| A carry-out with no effects means the "
             "verb succeeds and changes nothing, which reads to a player as it "
-            "having worked. Add an effect, or make it a check.|n")
+            "having worked. Add an effect, or write |wWhat people see|y, or "
+            "make it a check.|n")
     if phase == "carry_out" and action:
         from world import actions
 
@@ -920,7 +1239,81 @@ def phase_nudge(ctx):
         said.append(
             "|yA becomes rule has no verb| -- it runs because the world "
             "changed. The verb will be dropped.|n")
+    quiet = silent_becoming(phase, effects, written)
+    if quiet:
+        said.append(quiet)
+    left = stranded(phase, written, ctx.draft.get("contest"))
+    if left:
+        said.append(left)
+    if ctx.draft.get("contest") and written and phase == "carry_out":
+        said.append(
+            "|yThese words are read only when the verb works.| A contest has "
+            "four answers and |wWhat people see|y is one sentence, so a "
+            "failed roll is narrated the ordinary way rather than told that "
+            "it succeeded.|n")
     return "\n".join(said)
+
+
+def stranded(phase, report=None, contest=None):
+    """
+    Fields filled in under one phase and left behind by a change of phase.
+
+    Reachable only one way, which is why it is worth saying: both are locked
+    out of the phases that cannot use them, so what this catches is somebody
+    who filled one in under carry-out and then changed their mind. What they
+    wrote is kept -- changing back restores it -- and the rule is filed,
+    because a builder is allowed to have a draft. It is not kept *quietly*,
+    which is the whole of the difference.
+    """
+    from world import checks
+
+    said = []
+    if str(report or "").strip() and str(phase or "") not in WRITES_ITS_OWN:
+        said.append(
+            f"|yWhat you have written under |wWhat people see|y will never "
+            f"be read.| Only the phases that answer somebody narrate: what "
+            f"the verb does here, what happens instead, and what happens "
+            f"when something becomes true. A "
+            f"{str(phase).replace('_', ' ')} rule speaks through the action "
+            f"it belongs to.|n")
+    if checks.clean(contest) and str(phase or "") != "carry_out":
+        said.append(
+            f"|yThis contest will never be rolled.| Only what a verb *does* "
+            f"is a gamble: the roll is made once, from the carry-out rule "
+            f"that won. A {str(phase).replace('_', ' ')} rule either applies "
+            f"or it does not.|n")
+    return "\n".join(said)
+
+
+def silent_becoming(phase, effects, report):
+    """
+    A becomes rule that leans on `narrate`, which will never speak for it.
+
+    The two narrations are not the same thing and only one of them is a model
+    call. A verb's is written when somebody uses it, which is what `narrate`
+    declares is all that happens; a becomes rule's is `report`, a template the
+    world wrote once, because a clock that paid a model every tick is not a
+    clock anybody can afford. So `narrate` in a becomes rule asks a phase that
+    does not run here for a sentence nobody will write, and `becoming._report`
+    -- correctly, having nothing to say -- says nothing.
+
+    Answered here rather than refused, like every other nudge: what this is is
+    a rule whose author meant `What people see`, and telling them so is worth
+    more than a wall. `rule_gen.validate_becoming` does refuse it, because a
+    model cannot be told twice.
+    """
+    if str(phase or "") != "becomes":
+        return ""
+    if not any(str(e.get("type") or "") == "narrate" for e in effects or []):
+        return ""
+    said = ("|yNothing narrates a becomes rule.| |wnarrate|y asks the report "
+            "phase for a sentence, and there is no report phase here -- "
+            "nobody tried anything. What people read is |wWhat people see|y, "
+            "written out in full.")
+    if str(report or "").strip():
+        return said + " You have written one, so the effect is doing nothing "\
+                      "besides.|n"
+    return said + " As written this rule is silent.|n"
 
 
 def firing_order(ctx):
@@ -963,6 +1356,12 @@ def _draft_rule(ctx):
     action = str(ctx.draft.get("action") or "").strip() or None
     if phase == rulebooks.BECOMES:
         action = None
+    # Through `checks.clean`, exactly as `rule_gen.validate` puts a model's
+    # through it: a contest nothing can roll must leave the verb
+    # deterministic -- which is what it was before the rule existed -- rather
+    # than sit in the book as a malformed roll.
+    from world import checks
+
     return rulebooks.blank(
         action=action, phase=phase,
         scope=_scope_dict(ctx.draft.get("scope")),
@@ -971,6 +1370,7 @@ def _draft_rule(ctx):
         when=list(ctx.draft.get("when") or []),
         conditions=list(ctx.draft.get("conditions") or []),
         effects=list(ctx.draft.get("effects") or []),
+        contest=checks.clean(ctx.draft.get("contest")),
         source="hand",
         report=str(ctx.draft.get("report") or ""))
 
@@ -1025,10 +1425,12 @@ def keep_rule(ctx):
 
     root = _root(ctx)
     record = _draft_rule(ctx)
-    if not record.get("effects") and not record.get("conditions"):
+    if not record.get("effects") and not record.get("conditions") \
+            and not str(record.get("report") or "").strip():
         raise menus.Refuse(
-            "A rule that requires nothing and does nothing would never be "
-            "noticed. Give it something to require, or something to do.")
+            "A rule that requires nothing, does nothing and says nothing "
+            "would never be noticed. Give it something to require, something "
+            "to do, or something to say.")
     stored = rulebooks.add(root, record)
     if stored is None:
         raise menus.Refuse("That rule could not be filed.")
@@ -1055,6 +1457,17 @@ def _faults_about(root, rule):
     from world import rulebooks, rulecheck
 
     said = []
+    # First, because it is about this rule alone and needs no scan. The phase
+    # is asked last but the effects can be added after it, so the nudge in the
+    # phase form is not on the only path to writing this down.
+    quiet = silent_becoming(rule.get("phase"), rule.get("effects"),
+                            rule.get("report"))
+    if quiet:
+        said.append(quiet)
+    left = stranded(rule.get("phase"), rule.get("report"),
+                    rule.get("contest"))
+    if left:
+        said.append(left)
     try:
         report = set(rulecheck.scan(rulecheck.of_world(root))
                      .get("unsettable") or [])
@@ -1104,6 +1517,49 @@ def _faults_about(root, rule):
     return "\n".join(said)
 
 
+#: The phases where a rule may write its own words, and the only ones where
+#: writing them would be read. Narration belongs to the two phases that
+#: produce an answer -- what the verb does here, and what happens instead --
+#: plus `becomes`, which has no narrator at all. A check rule's answer is its
+#: refusal and an after rule speaks through the action it followed, so a
+#: report on either would be written and never shown, which is the sort of
+#: silence this menu exists to prevent. See world/attempt.py.
+WRITES_ITS_OWN = ("carry_out", "instead", "becomes")
+
+#: What the field says in each of them. Three phases, two reasons: a becomes
+#: rule has no narrator and must say its own piece; a verb rule has one and is
+#: choosing not to use it.
+REPORT_HELP = {
+    "becomes": ("What everybody present is told when this fires. A becomes "
+                "rule has no narrator -- nobody tried anything, and a world's "
+                "clock cannot pay a model every tick -- so these are the only "
+                "words there are. Left empty it happens silently."),
+}
+
+_REPORT_VERB_HELP = (
+    "What everybody present reads, in your words instead of a narrator's. "
+    "Left empty a model writes it; filled in, nothing is asked and nothing "
+    "is charged, and what you write is read every time rather than cached. "
+    "It is how a world with no key at all reads as prose rather than as an "
+    "echo of whatever was typed.")
+
+#: How a template is written, which is the same everywhere one is. Said in
+#: the field rather than left to be discovered: a report is rendered for each
+#: reader, so `{direct}` is "the lever" to the room and the actor's own name
+#: resolves to "you", and a bare conjugated verb agrees with nobody.
+TEMPLATE_HELP = (
+    "|xWritten once and read by everybody in their own words: |w{actor}|x "
+    "and |w{direct}|x for whoever acted and what they acted on, and "
+    "|w$pconj(pull)|x for a verb that has to agree -- so one sentence gives "
+    "the room |wHob pulls the lever|x and gives Hob |wYou pull the "
+    "lever|x.|n")
+
+
+def report_help(ctx):
+    phase = str(ctx.draft.get("phase") or "")
+    return f"{REPORT_HELP.get(phase, _REPORT_VERB_HELP)}\n\n{TEMPLATE_HELP}"
+
+
 def _rule_items(ctx):
     from world import rulebooks
 
@@ -1142,11 +1598,20 @@ def _rule_items(ctx):
             add_label="Add a guard", empty="always",
             help="Guards: whether this rule is consulted at all. Different "
                  "from what it requires, which is what it refuses for."),
+        menus.Submenu("contest", _contest_label, CONTEST,
+                      into="contest", fresh_draft=True, draft=_contest_draft,
+                      lock=lambda ctx: str(ctx.draft.get("phase") or "")
+                      == rulebooks.CARRY_OUT,
+                      help="Whether the verb is a gamble here. A contest is "
+                           "declared once and rolled by the game for ever "
+                           "after -- no model is ever asked whether somebody "
+                           "succeeded, which is the whole reason a rule can "
+                           "be one. Only what the verb does can be "
+                           "contested: a refusal is not a gamble."),
         menus.Field("report", "What people see", kind=menus.LONG_TEXT,
                     lock=lambda ctx: str(ctx.draft.get("phase") or "")
-                    == rulebooks.BECOMES,
-                    help="What is said when this fires. Only a becomes rule "
-                         "needs one: everything else is narrated already."),
+                    in WRITES_ITS_OWN, suggestible=True,
+                    help=report_help),
         menus.Submenu("phase", _phase_label, PHASE_FORM,
                       help="What else runs. Asked last, because it is the one "
                            "field that is about the rest of the rule."),
@@ -1190,7 +1655,21 @@ def rule_text(root, rule_id):
     rule = rulebooks.get(root, str(rule_id or "").strip())
     if rule is None:
         return ""
-    lines = [f"|w{rule['id']}|n {rule.get('name') or ''}",
+    return rule_lines(root, rule)
+
+
+def rule_lines(root, rule):
+    """
+    One rule as somebody reads it, from the record rather than from its id.
+
+    Split from `rule_text` so that the edit form can show the rule *being
+    written* rather than the one still in the book. Showing the stored one
+    under a form that is changing it is showing the wrong thing at exactly
+    the moment somebody is checking their work.
+    """
+    from world import rulebooks
+
+    lines = [f"|w{rule.get('id') or 'this rule'}|n {rule.get('name') or ''}",
              f"  {rule.get('phase', '').replace('_', ' ')}"
              + (f", when somebody tries {rule['action']}" if rule.get("action")
                 else ", for every action"),
@@ -1207,46 +1686,164 @@ def rule_text(root, rule_id):
     if rule.get("effects"):
         lines.append("  then:")
         lines += [f"    {fx.say(e)}" for e in rule["effects"]]
+    if rule.get("contest"):
+        lines.append(f"  contested: {contest_line(None, rule['contest'])}")
     if rule.get("report"):
         lines.append(f"  says: {rule['report']}")
     return "\n".join(lines)
 
 
+def rule_draft(rule):
+    """
+    A filed rule as the draft the rule form is filled in with.
+
+    The inverse of `_draft_rule`, and the reason editing one is the same form
+    as writing one: a second list of what a rule has would be wrong the first
+    time a field was added, and it would be wrong in the direction that loses
+    whatever it forgot to carry across.
+    """
+    rule = dict(rule or {})
+    return {
+        "name": str(rule.get("name") or ""),
+        "action": str(rule.get("action") or ""),
+        "scope": _scope_said(rule.get("scope")),
+        "about": str(rule.get("about") or "direct"),
+        "conditions": [dict(c) for c in (rule.get("conditions") or [])],
+        "effects": [dict(e) for e in (rule.get("effects") or [])],
+        "when": [dict(c) for c in (rule.get("when") or [])],
+        "contest": dict(rule["contest"]) if rule.get("contest") else None,
+        "report": str(rule.get("report") or ""),
+        "phase": str(rule.get("phase") or ""),
+        "listed": bool(rule.get("listed", True)),
+    }
+
+
+def _save_rule(root, rule_id):
+    """Write the draft back over the rule it was opened from."""
+    from world import rulebooks
+
+    def keep(ctx):
+        record = _draft_rule(ctx)
+        record["listed"] = bool(ctx.draft.get("listed", True))
+        if not record.get("effects") and not record.get("conditions") \
+                and not str(record.get("report") or "").strip():
+            raise menus.Refuse(
+                "A rule that requires nothing, does nothing and says nothing "
+                "would never be noticed. Give it something to require, "
+                "something to do, or something to say.")
+        stored = rulebooks.replace(root, rule_id, record)
+        if stored is None:
+            raise menus.Refuse(
+                f"|w{rule_id}|n is not in this world's book any more. Nothing "
+                f"was changed.")
+        said = [f"|w{stored['id']}|n is changed: "
+                f"{rulebooks.said_scope(stored['scope'], root)}, "
+                f"{stored['phase'].replace('_', ' ')}"
+                + (f", when somebody tries {stored['action']}"
+                   if stored["action"] else ", for every action")
+                + "."]
+        if not stored.get("listed", True):
+            said.append("|ySuspended|n -- it stays readable and does nothing.")
+        warning = _faults_about(root, stored)
+        if warning:
+            said += ["", warning]
+        return stored["id"], "\n".join(said)
+
+    return keep
+
+
+def _edit_items(root, rule_id):
+    """
+    The same fields the rule form has, with saving instead of filing.
+
+    Everything but the last item is `_rule_items`, unread and unchanged, so a
+    field added to one is in the other the same day. What differs is the end:
+    a rule already in the book is changed rather than added, and whether it is
+    in force is a question only an existing rule has.
+    """
+    def items(ctx):
+        found = [item for item in _rule_items(ctx)
+                 if not getattr(item, "keeps", False)]
+        found.append(menus.Field(
+            "listed", "In force?", kind=menus.BOOLEAN,
+            help="A suspended rule stays readable and does nothing. This is "
+                 "how a rule is taken back without losing what it said."))
+        found.append(making.keeper(
+            "keep", "Save the changes", _save_rule(root, rule_id),
+            command=lambda ctx: f"edit rule {rule_id}"))
+        return found
+
+    return items
+
+
 def edit_rule(root, rule_id):
+    """
+    Change a filed rule, all of it, keeping its id.
+
+    It used to offer two fields -- the name, and whether it was in force --
+    which meant that changing anything a rule actually *did* was deleting it
+    and writing it again. That is not the same thing: the id goes, and with it
+    the rule's place in the tie-break that decides which of two rules at one
+    scope fired first, and every suggestion and log line that named it. So a
+    world's rules could not be revised, only replaced, and a builder who
+    mistyped one condition paid for it by retyping the other nine.
+
+    Nothing is written until it is saved, unlike the two fields this replaces,
+    which wrote as they were typed. A rule is one statement and half of one is
+    not a smaller statement -- it is a different rule, in force, while
+    somebody is still deciding.
+    """
     from world import rulebooks
 
     rule = rulebooks.get(root, str(rule_id or "").strip())
     if rule is None:
         return None
-
-    def rename(ctx, value):
-        store = dict(getattr(root.db, rulebooks.ATTR, None) or {})
-        record = dict(store.get(rule["id"]) or {})
-        record["name"] = str(value or "")
-        store[rule["id"]] = record
-        setattr(root.db, rulebooks.ATTR, store)
-        return f"{rule['id']}: {value}"
-
-    def listing(ctx, value):
-        rulebooks.set_listed(root, rule["id"], bool(value))
-        return ("In force again." if value
-                else "Suspended. It stays readable and does nothing.")
-
+    stored_id = rule["id"]
     return menus.Form(
-        key=f"edit-rule-{rule['id']}", title=f"Rule {rule['id']}",
-        intro=lambda ctx: rule_text(root, rule["id"]),
-        items=[
-            menus.Field("name", "What to call it",
-                        get=lambda ctx: (rulebooks.get(root, rule["id"]) or {})
-                        .get("name"), set=rename),
-            menus.Field("listed", "In force?", kind=menus.BOOLEAN,
-                        get=lambda ctx: (rulebooks.get(root, rule["id"]) or {})
-                        .get("listed", True), set=listing,
-                        help="A suspended rule stays readable and does "
-                             "nothing. This is how a rule is taken back "
-                             "without losing what it said."),
-        ],
+        key=f"edit-rule-{stored_id}",
+        title=lambda ctx: f"Rule {stored_id}",
+        intro=_editing_intro(root, stored_id),
+        discard="Throw away the changes to this rule?",
+        draft=lambda ctx: rule_draft(rulebooks.get(root, stored_id) or rule),
+        items=_edit_items(root, stored_id),
     )
+
+
+def _editing_intro(root, stored_id):
+    """The rule as the draft has it, and a word when that is not yet saved."""
+    def intro(ctx):
+        from world import rulebooks
+
+        record = dict(_draft_rule(ctx), id=stored_id,
+                      listed=bool(ctx.draft.get("listed", True)))
+        lines = [rule_lines(root, record)]
+        stored = rulebooks.get(root, stored_id)
+        if stored is not None and _differs(stored, record):
+            lines.append("|xNot saved yet. |wSave the changes|x writes this "
+                         "over what is in the book; |wq|x leaves it as it "
+                         "was.|n")
+        return "\n\n".join(lines)
+
+    return intro
+
+
+#: What `edit rule` compares to decide whether anything has been changed. The
+#: fields a person can reach in the form and no others: `born` and `source`
+#: are facts about the rule's past that editing never touches, and comparing
+#: whole records would call every rule changed the moment one was opened.
+EDITABLE = ("name", "action", "scope", "about", "conditions", "effects",
+            "when", "contest", "report", "phase", "listed")
+
+
+def _differs(stored, drafted):
+    # Through `exchange.plain`, because what comes back out of an Evennia
+    # attribute is a _SaverDict and a _SaverList, and neither compares equal
+    # to the plain dict and list the draft holds -- so every rule would read
+    # as changed the moment it was opened.
+    from world.exchange import plain
+
+    return any(plain(stored.get(field)) != plain(drafted.get(field))
+               for field in EDITABLE)
 
 
 def remove_rule(root, rule_id):
@@ -1258,9 +1855,9 @@ def remove_rule(root, rule_id):
         return f"This world holds no rule called |w{rule_id}|n."
     store.pop(rule_id)
     setattr(root.db, rulebooks.ATTR, store)
-    return (f"|w{rule_id}|n is gone. |xIf you only meant to take it out of "
-            f"force, |wedit rule|n suspends one instead and keeps what it "
-            f"said.|n")
+    return (f"|w{rule_id}|n is gone. |xIf you meant to change it rather than "
+            f"lose it, |wedit rule|n rewrites one in place -- including "
+            f"taking it out of force without deleting it.|n")
 
 
 MAKERS = [

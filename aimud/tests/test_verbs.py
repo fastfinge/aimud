@@ -334,8 +334,14 @@ class TheWizard(_Worlds):
         def editor(caller, loadfunc, savefunc, quitfunc, **kwargs):
             captured.update(load=loadfunc, save=savefunc, quit=quitfunc)
 
+        # Asked first, because this world has somebody to pay and a
+        # description is exactly the paragraph a player might want a draft
+        # of. `~` is offered on this form and the line editor is not a menu,
+        # so without the question it would be advertised and unreachable on
+        # the one field that most wants it. See tests/test_suggesting.py.
+        self.assertIn("Write it yourself", self.type("description"))
         with mock.patch("evennia.utils.eveditor.EvEditor", editor):
-            self.type("description")
+            self.type("1")
         self.assertIsNone(self.account.ndb._evmenu)
         captured["save"](self.char1, "A city under the sea.\n")
         captured["quit"](self.char1)

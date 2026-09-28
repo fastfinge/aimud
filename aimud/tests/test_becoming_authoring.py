@@ -50,6 +50,22 @@ class HoldingAnAnswerToWhatABecomesRuleMustBe(SimpleTestCase):
         self.assertEqual(kept, [])
         self.assertTrue(any("try" in c for c in complaints))
 
+    def test_narrate_cannot_follow_from_something_becoming_true_either(self):
+        """
+        And for its own reason, which is why it gets its own sentence: the
+        answer to it is a different field rather than a different effect.
+        `narrate` asks the report phase for a sentence, and the report phase
+        belongs to an attempt -- nobody tried anything here. A becomes rule's
+        words are `report`, written out once, because a clock that paid a
+        model every tick is not a clock anybody can afford.
+        """
+        kept, complaints = self.keep(
+            name="x", when=[{"subject": "direct", "is": ["wet"]}],
+            effects=[{"type": "narrate"}])
+        self.assertEqual(kept, [])
+        self.assertTrue(any("narrate" in c and "report" in c
+                            for c in complaints), complaints)
+
     def test_a_cause_nobody_asked_for_is_refused(self):
         kept, complaints = self.keep(
             name="renown", when=[{"subject": "direct", "trait": "health",

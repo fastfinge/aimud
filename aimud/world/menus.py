@@ -609,6 +609,13 @@ class Submenu(Item):
         if self.fresh_draft:
             child.draft = dict(self.draft(child) if self.draft else {})
             child.dirty = False
+        elif getattr(self.form, "draft", None) is not None:
+            # The form says what it opens holding, so it holds that and never
+            # the opener's draft. An edit form reached from a list of what the
+            # world holds must open on the rule it is about, and the list it
+            # was chosen from has a draft of its own that means nothing here.
+            child.draft = self.form.opening_draft(child)
+            child.dirty = False
         return child
 
 
@@ -622,14 +629,24 @@ class Form:
     `guided` walks a new draft through its required fields one at a time
     before showing the summary, which is how a wizard feels without being a
     different thing from a form.
+
+    `draft(ctx)` is what the form opens holding, and is what lets a form that
+    *changes* something be the same form that makes one. A maker's new-form
+    opens on an empty draft and writes a record at the end; an edit form is
+    that form opened on the record, so the fields cannot drift apart -- which
+    is the same argument `effects.VOCABULARY` makes about the effect menu, one
+    level up. `Submenu.draft` is this for a submenu, and came first; a form
+    reached three ways (a command, a list of what the world holds, a thing in
+    front of you) cannot rely on each opener remembering to pass one.
     """
 
     def __init__(self, key, title, items=(), intro="", kind=EDIT,
                  guided=False, command=None, on_close=None,
                  discard="Throw away what you have entered?",
                  choices_line="For one of them:",
-                 sponsor=None, context=None):
+                 sponsor=None, context=None, draft=None):
         self.key = key
+        self.draft = draft
         # `sponsor(ctx)` is who pays when `~` asks a model to fill a field in;
         # a form without one cannot be filled in. `context(ctx)` is anything
         # the model should know beyond the fields themselves.
@@ -644,6 +661,10 @@ class Form:
         self.on_close = on_close
         self.discard = discard
         self.choices_line = choices_line
+
+    def opening_draft(self, ctx):
+        """What this form opens holding, or {} when it opens empty."""
+        return dict(_call(self.draft, ctx, {}) or {})
 
     def items_for(self, ctx):
         found = _call(self.items, ctx, []) or []
@@ -801,6 +822,8 @@ class GameMenu(EvMenu):
         frame = self.top
         if frame.kind == "field":
             return self._render_field(frame)
+        if frame.kind == "long":
+            return self._render_long(frame)
         if frame.kind == "confirm":
             return self._render_confirm(frame)
         if frame.kind == "help":
@@ -1022,6 +1045,56 @@ class GameMenu(EvMenu):
                      + " To type one of those as it is, start with /.")
         return "\n".join(lines)
 
+    #: The two ways to fill a paragraph in, and the words that reach each.
+    #: Written as entries so `_pick` numbers and names them the way it does
+    #: every other list in this file.
+    def _long_entries(self, frame):
+        return [_Entry("write", "Write it yourself",
+                       ("write", "type", "edit", "me")),
+                _Entry("fill", "Have a model write a first draft",
+                       ("fill", "draft", "model"))]
+
+    def _render_long(self, frame):
+        """
+        A paragraph: written, or asked for.
+
+        The one field where choosing it used to end the menu. `~` is offered
+        everywhere a form can be filled in and said so in the keys line, and
+        then the field most worth filling in handed the screen to the line
+        editor -- where `~` is not a key at all, only the first character of a
+        paragraph. So it was advertised and unreachable at the same time.
+        """
+        ctx, field = frame.ctx, frame.item
+        lines = [f"|w{field.label_for(ctx)}|n"]
+        helped = field.help_for(ctx)
+        if helped:
+            lines.append(helped)
+        if field.is_set(ctx):
+            lines += ["", "|xIt already says:|n",
+                      str(field.value(ctx))]
+        lines.append("")
+        for number, entry in enumerate(self._long_entries(frame), 1):
+            lines.append(f"{number}. {entry.label}")
+        # `entry=True` for the wording: this frame is about one field, so `~`
+        # fills *it* in rather than one of several, and `?` says more about
+        # it rather than explaining a choice.
+        lines += ["", "Choose by number. "
+                  + self._keys_line(frame, False, False, entry=True)]
+        return "\n".join(lines)
+
+    def _long_input(self, frame, text):
+        base = self._underlying(frame)
+        field = frame.item
+        chosen = _pick(self._long_entries(frame), text)
+        if chosen is None:
+            if self._navigate(frame, text):
+                return None
+            return self._refuse()
+        self.stack.pop()
+        if chosen.target == "fill":
+            return self._fill(base, [field])
+        return self._edit_at_length(base, field)
+
     def _render_confirm(self, frame):
         question = _call(frame.question, frame.ctx, "") or "Are you sure?"
         return "\n".join([question, "", "1. No (the default)", "2. Yes", "",
@@ -1049,7 +1122,7 @@ class GameMenu(EvMenu):
                 if entry.target.help_for(base.ctx)]
 
     def _has_help(self, frame):
-        if frame.kind == "field":
+        if frame.kind in ("field", "long"):
             return bool(frame.item.help_for(frame.ctx))
         return bool(self._helped_entries(frame))
 
@@ -1060,9 +1133,17 @@ class GameMenu(EvMenu):
         base = self._underlying(frame)
         if suggesting.sponsor_for(base.ctx, base.form) is None:
             return False
-        if frame.kind == "field":
+        if frame.kind in ("field", "long"):
             return frame.item.suggestible
         return bool(suggesting.fillable(base.ctx, base.form))
+
+    def _can_fill(self, frame, field):
+        """Whether `~` could write this particular field, here and now."""
+        from world import suggesting
+
+        base = self._underlying(frame)
+        return bool(field.suggestible
+                    and suggesting.sponsor_for(base.ctx, base.form) is not None)
 
     # -- filling in with a model --------------------------------------------
 
@@ -1073,7 +1154,12 @@ class GameMenu(EvMenu):
         base = self._underlying(frame)
         if not self._suggestible(frame):
             return self.say("Nothing here can be filled in for you.")
-        if frame.kind == "field" and not asked:
+        if frame.kind in ("field", "long") and not asked:
+            if frame.kind == "long":
+                # Leave first, so what comes back is offered against the form
+                # and the player is left where a typed value would have left
+                # them. The question has been answered either way.
+                self.stack.pop()
             return self._fill(base, [frame.item])
 
         fields = suggesting.fillable(base.ctx, base.form)
@@ -1234,6 +1320,8 @@ class GameMenu(EvMenu):
                 self._form_input(frame, text)
             elif frame.kind == "field":
                 self._field_input(frame, text)
+            elif frame.kind == "long":
+                self._long_input(frame, text)
             elif frame.kind == "confirm":
                 self._confirm_input(frame, text)
             elif frame.kind == "help":
@@ -1459,7 +1547,14 @@ class GameMenu(EvMenu):
         if form is None:
             return self._refuse("There is no way to make one of those here.")
         child = frame.ctx.child(**(_call(field.make_data, frame.ctx, {}) or {}))
-        child.draft = dict(_call(field.make_draft, frame.ctx, {}) or {})
+        # The same rule the other two openers keep: what the opener says wins,
+        # and otherwise the form says what it opens holding. A picker only
+        # ever opens a maker's *new* form, which declares no draft -- so this
+        # changes nothing today and stops the third door being the one that
+        # behaves differently.
+        child.draft = (dict(_call(field.make_draft, frame.ctx, {}) or {})
+                       if field.make_draft is not None
+                       else form.opening_draft(child))
         child.dirty = False
         return self._enter(form, child, into=("field", frame))
 
@@ -1563,7 +1658,7 @@ class GameMenu(EvMenu):
     # -- help ----------------------------------------------------------------
 
     def _ask_help(self, frame):
-        if frame.kind == "field":
+        if frame.kind in ("field", "long"):
             helped = frame.item.help_for(frame.ctx)
             self.say(helped or "There is no more to say about this one.")
             return self._redraw()
@@ -1577,7 +1672,7 @@ class GameMenu(EvMenu):
 
     def _explain(self, frame, asked):
         base = self._underlying(frame)
-        if frame.kind == "field" and not asked:
+        if frame.kind in ("field", "long") and not asked:
             return self._ask_help(frame)
         entries = self._form_entries(base)
         chosen = _pick(_filtered(entries, base.filter), asked)
@@ -1613,6 +1708,15 @@ class GameMenu(EvMenu):
             PRESENTER.chose(self, item)
         if isinstance(item, Field):
             if item.kind == LONG_TEXT:
+                # Straight to the editor, unless a model could write it. The
+                # editor is not a menu -- it takes the screen and the menu
+                # closes -- so `~` cannot be typed once it is open, and a
+                # paragraph is exactly the sort of field somebody wants a
+                # first draft of. Asked here, where they reached for it.
+                if self._can_fill(frame, item):
+                    self.stack.append(
+                        _Frame("long", frame.form, frame.ctx, item=item))
+                    return self.refresh()
                 return self._edit_at_length(frame, item)
             self.stack.append(self._field_frame(frame, item))
             return self.refresh()
@@ -1797,6 +1901,10 @@ def open_menu(caller, form, session=None, draft=None, path=(),
     tests.
     """
     ctx = Context(caller, session=session, draft=draft, **data)
+    if draft is None and form.draft is not None:
+        # What the form says it opens holding. Only when the opener did not
+        # say: a caller handing a draft in has already decided.
+        ctx.draft = form.opening_draft(ctx)
     runner = ctx.account or caller
 
     if interactive_only and not interactive(runner):

@@ -1204,10 +1204,20 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                                   bound=bound, world_root=world_root,
                                   found=found)
         counters.note(world_root, verb, bound, caller, counters.DONE)
-        release(aside.get("name") or "",
-                events_mod.Event(actor=caller, room=room, verb=verb,
-                                 roles=bound, raw=raw,
-                                 room_template=" ".join(extra).strip()))
+        # What the rule says happens, when its author wrote it out. Without
+        # one this phase answers with the rule's *name* -- "the lever is
+        # welded shut" -- which is a line about the rule rather than about the
+        # room, and the only thing there was. With one, the room reads a
+        # narration and the effect lines follow it as quotes, exactly as they
+        # do for a carry-out.
+        said = str(aside.get("report") or "").strip()
+        event = events_mod.Event(
+            actor=caller, room=room, verb=verb, roles=bound, raw=raw,
+            effects=list(extra) if said else [],
+            room_template=(events_mod.repair(said) if said
+                           else " ".join(extra).strip()))
+        release(events_mod.render(event.room_template, caller, event) if said
+                else (aside.get("name") or ""), event)
         return
 
     # CHECK. Every gathered rule, cumulatively, in specificity order. The
@@ -1234,6 +1244,16 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         "repeatable": bool(rule.get("repeatable")),
     }
 
+    # What this rule says people read, when its author wrote it out rather
+    # than leaving it to a narrator. The half a world with no key was
+    # missing: `permits` already lets such a world run its own rules, and the
+    # answer to "nobody is going to write prose for this" was to echo back
+    # what the player typed -- a trade the builder had no way to decline.
+    # This is how they decline it. Costs nothing, never cached, and beats a
+    # narration cached before it was written, so editing the rule changes
+    # what the room reads at once. See world/permits.py and `_said_plainly`.
+    written = str((doing or {}).get("report") or "").strip()
+
     # What this particular thing does, and how hard it is on this particular
     # thing. The rule says what the verb means for everything of its sort; the
     # specifics say how this door differs from that door, and were written by
@@ -1249,6 +1269,20 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
     result = (checks.resolve(caller, contest, bound, world_root)
               if contest else None)
     outcome = result["outcome"] if result else "success"
+
+    # And words written for a verb working are not words about it failing. A
+    # report is one sentence where a contest has four answers, so a rolled
+    # failure reading them would say the lever came down while
+    # `checks.effects_for` fired nothing -- the silent lie this design is
+    # most careful about, with prose on top of it. Dropped rather than
+    # refused, so such an attempt is narrated the ordinary way.
+    #
+    # Not reachable from the menu: the hand-built form asks for no contest,
+    # and `rule_gen.validate` writes no report. This is for a document
+    # somebody edited by hand, which is a door this game deliberately leaves
+    # open. See world/exchange.py.
+    if outcome not in checks.GOOD:
+        written = ""
 
     # A narration already written for these things, if there is one. **The
     # words only.** This used to be an early return -- reply with the stored
@@ -1291,9 +1325,12 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         #
         # Nothing is cached for a rule that speaks for itself: there is no
         # model reply to save, and the effect will say it again for nothing
-        # next time -- which is the point of it.
+        # next time -- which is the point of it. Nor for a rule whose words
+        # its author wrote, and there the cache would be worse than useless:
+        # a template stored under these objects would go on being read after
+        # the rule it came from had been edited.
         room_text = events_mod.repair(room_text)
-        if not speaks:
+        if not speaks and not written:
             _store_narration(bound, verb, outcome,
                              {"actor": actor_text, "room": room_text}, caller)
         # Whatever the same reply said this thing does differently, kept
@@ -1327,6 +1364,19 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             outcome=outcome, effects=list(extra), raw=raw,
             contested=result is not None,
             room_template=events_mod.repair(room_text))
+        if written and not actor_text:
+            # One sentence, read by everybody in their own words -- which is
+            # the whole reason a template is a template. `show_the_room`
+            # leaves the actor out, so rendering it for them here is the only
+            # way they read anything at all, and it is what turns
+            # "{actor} $pconj(pull) the lever" into "You pull the lever."
+            #
+            # The narration alone, not `event.template()`: the effect lines
+            # are the room's, and an actor narrated by a model does not read
+            # them either. Matching that is the point -- a world that writes
+            # its own prose should not read differently in shape from one
+            # that pays for it.
+            actor_text = events_mod.render(event.room_template, caller, event)
         # AFTER. What follows from it having worked. Every after rule's guards
         # are tested together, against the world as carry-out left it, and
         # only then does any of them land -- so a guard can ask how things
@@ -1383,14 +1433,22 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         from world.quests import review_room
         review_room(room)
 
-    if cached is not None:
-        _finish(cached.get("actor", ""), cached.get("room", ""))
-        return
-
     # No narrator for a rule that speaks for itself, and no round trip: the
     # whole reason looking can be an action is that it costs nothing to run.
     if speaks:
         _finish("", "")
+        return
+
+    # Nor for one that says what it says. Ahead of the cache on purpose: a
+    # world that was paying for prose and has since written its own must read
+    # the rule rather than a sentence bought before it existed, and a builder
+    # who edits the words has to see the edit.
+    if written:
+        _finish("", written)
+        return
+
+    if cached is not None:
+        _finish(cached.get("actor", ""), cached.get("room", ""))
         return
 
     if not _will_answer(sponsor):

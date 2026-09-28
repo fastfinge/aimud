@@ -380,3 +380,149 @@ class AFillIsQuickOrItIsNothing(GameTest):
         from world import llm
 
         self.assertLessEqual(suggesting.ROUNDS * llm.TIMEOUT, 60)
+
+
+def a_long_form(sponsor=None):
+    """A form with the one field kind `~` could be advertised on and not used."""
+    return menus.Form(
+        key="hold", title="A cargo hold", intro="What is down there.",
+        sponsor=(lambda ctx: sponsor) if sponsor else None,
+        items=[
+            menus.Field("desc", "What it looks like", kind=menus.LONG_TEXT,
+                        suggestible=True, help="Two or three sentences."),
+            menus.Field("log", "The tally", kind=menus.LONG_TEXT,
+                        help="Only the player writes this."),
+        ])
+
+
+@tag("world")
+class AParagraphSomebodyWantsWritten(_Menu):
+    """
+    `~` on a long-text field, which is the one place it was out of reach.
+
+    The line editor is not a menu: it takes the screen, and the menu closes
+    while it has it. So choosing a long-text field ended the menu, and `~` --
+    advertised in the keys line one screen earlier -- became the first
+    character of a paragraph. The field most worth a first draft was the only
+    one that could not have one, and `create person` is where that was found:
+    a description is a paragraph, and writing an NPC by hand is exactly when
+    somebody wants help with it.
+
+    Typing `~ desc` from the summary always worked. Nothing said so, and
+    nobody reaches for a form of words they have not been shown.
+    """
+
+    def setUp(self):
+        super().setUp()
+        menus.open_menu(self.char1, a_long_form(FakeSponsor()),
+                        interactive_only=False)
+
+    def test_choosing_it_asks_rather_than_opening_the_editor(self):
+        self.type("1")
+        self.assertIn("Write it yourself", self.heard[-1])
+        self.assertIn("first draft", self.heard[-1])
+        self.assertIsNotNone(self.char1.ndb._evmenu)
+
+    def test_and_the_model_writes_it_from_there(self):
+        self.type("1")
+        self.type("2", tool_reply(tool_call("fill", desc="A low, wet hold.")))
+        self.assertIn("A low, wet hold.", self.heard[-1])
+        self.type("yes")
+        self.assertEqual(self.draft["desc"], "A low, wet hold.")
+
+    def test_tilde_does_the_same_from_there(self):
+        """It is a field frame like any other now, so the key works on it."""
+        self.type("1")
+        self.type("~", tool_reply(tool_call("fill", desc="A low, wet hold.")))
+        self.type("yes")
+        self.assertEqual(self.draft["desc"], "A low, wet hold.")
+
+    def test_and_afterwards_the_player_is_back_at_the_form(self):
+        self.type("1")
+        self.type("~", tool_reply(tool_call("fill", desc="A low, wet hold.")))
+        self.type("yes")
+        self.assertEqual(self.char1.ndb._evmenu.top.kind, "form")
+
+    def test_writing_it_yourself_still_hands_over_to_the_editor(self):
+        self.type("1")
+        self.type("1")
+        self.assertIsNone(self.char1.ndb._evmenu)
+        self.assertIsNotNone(self.char1.ndb._eveditor)
+
+    def test_a_long_field_nothing_can_fill_goes_straight_there(self):
+        """No extra step for a field `~` was never going to write."""
+        self.type("2")
+        self.assertIsNone(self.char1.ndb._evmenu)
+        self.assertIsNotNone(self.char1.ndb._eveditor)
+
+    def test_the_question_says_what_is_already_written(self):
+        self.draft["desc"] = "A low, wet hold."
+        self.type("1")
+        self.assertIn("It already says", self.heard[-1])
+        self.assertIn("A low, wet hold.", self.heard[-1])
+
+    def test_it_explains_itself_and_backs_out(self):
+        self.type("1")
+        self.type("?")
+        self.assertIn("Two or three sentences", self.heard[-1])
+        self.type("b")
+        self.assertEqual(self.char1.ndb._evmenu.top.kind, "form")
+
+
+@tag("world")
+class AParagraphWithNobodyToPay(_Menu):
+
+    def test_goes_straight_to_the_editor_as_it_always_did(self):
+        menus.open_menu(self.char1, a_long_form(), interactive_only=False)
+        self.char1.ndb._evmenu.parse_input("1")
+        self.assertIsNone(self.char1.ndb._evmenu)
+        self.assertIsNotNone(self.char1.ndb._eveditor)
+
+
+@tag("world")
+class WritingSomebodyByHand(GameTest):
+    """
+    `create person` and `edit person`, which is where this was reported.
+
+    A character written by hand costs nothing and needs no model to exist --
+    only to think, and only to be described well. So the description is the
+    field a builder most wants a first draft of, and it is a paragraph, which
+    is the one shape `~` could not reach.
+    """
+
+    loose_objects = 0
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.root.db.world_root = self.root
+        self.root.db.is_ai_room = True
+        self.heard = []
+        self.char1.msg = lambda text="", **kw: self.heard.append(
+            str(text[0] if isinstance(text, tuple) else text))
+
+    def opened(self, form, **data):
+        from commands.making_subject import _opened
+
+        menus.open_menu(self.char1, form, interactive_only=False,
+                        **dict(_opened(self.char1, self.root), **data))
+
+    def test_a_new_persons_description_can_be_asked_for(self):
+        from world.makers import things
+
+        self.opened(things.NEW_NPC)
+        self.char1.ndb._evmenu.parse_input("b")        # out of the name
+        self.char1.ndb._evmenu.parse_input("description")
+        self.assertIn("first draft", self.heard[-1])
+
+    def test_and_so_can_a_persons_who_is_already_here(self):
+        from evennia import create_object
+        from world.makers import things
+
+        npc = create_object("typeclasses.npcs.NPC", key="Hob",
+                            location=self.room1)
+        npc.db.is_npc = True
+        self.opened(things.EDIT_PERSON, target=npc)
+        self.char1.ndb._evmenu.parse_input("new_description")
+        self.assertIn("first draft", self.heard[-1])

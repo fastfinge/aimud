@@ -492,6 +492,162 @@ class MakingVocabulary(Building):
 
 
 @tag("unit")
+class ChangingAnAttribute(Building):
+    """
+    `edit attribute` is the attribute form opened on an attribute.
+
+    It was six fields with readers and writers of their own -- a second list
+    of what an attribute has -- and being a second list it had already
+    drifted: `trait_type` was missing from it, so a world could make a gauge
+    and never afterwards decide it was a counter. That is the failure a second
+    list makes: a field left out of it does not merely go unasked, it goes
+    unwritten for ever.
+    """
+
+    def kept(self, **fields):
+        from world.makers import vocabulary
+
+        fields.setdefault("slug", "stamina")
+        fields.setdefault("name", "Stamina")
+        fields.setdefault("means", "how much go they have left")
+        fields.setdefault("trait_type", "gauge")
+        return vocabulary.keep_attribute(self.draft(**fields))[0]
+
+    def editing(self, slug):
+        from world.makers import vocabulary
+
+        form = vocabulary.edit_attribute(self.root, slug)
+        self.assertIsNotNone(form)
+        self.open(form, world_root=self.root)
+        return form, self.char1.ndb._evmenu.stack[0].ctx
+
+    def test_it_opens_holding_what_the_register_already_says(self):
+        slug = self.kept(base=10, max=10)
+        _form, ctx = self.editing(slug)
+        self.assertEqual(ctx.draft["_slug"], "stamina")
+        self.assertEqual(ctx.draft["name"], "Stamina")
+        self.assertEqual(ctx.draft["trait_type"], "gauge")
+        self.assertEqual(ctx.draft["base"], 10)
+
+    def test_how_it_behaves_can_be_changed_which_it_could_not_before(self):
+        """The field the second list had lost. The whole point of this class."""
+        from world import traits
+        from world.makers import vocabulary
+
+        slug = self.kept()
+        _form, ctx = self.editing(slug)
+        self.assertIn("trait_type",
+                      [item.key for item in
+                       vocabulary.NEW_ATTRIBUTE.items_for(ctx)])
+        ctx.draft["trait_type"] = "counter"
+        vocabulary.save_attribute(ctx)
+        self.assertEqual(traits.known(self.root, slug)["trait_type"],
+                         "counter")
+
+    def test_the_word_is_not_offered_because_every_rule_names_it(self):
+        from world.makers import vocabulary
+
+        slug = self.kept()
+        _form, ctx = self.editing(slug)
+        self.assertNotIn("slug", [item.key for item in
+                                  vocabulary.NEW_ATTRIBUTE.items_for(ctx)])
+
+    def test_and_still_is_when_one_is_being_made(self):
+        from world.makers import vocabulary
+
+        fresh = menus.Context(self.char1, world_root=self.root, draft={})
+        self.assertIn("slug", [item.key for item in
+                               vocabulary.NEW_ATTRIBUTE.items_for(fresh)])
+
+    def test_what_the_form_never_asks_about_survives_a_save(self):
+        """
+        A figure's own words for where it stands are written by a generator
+        and are not this form's to lose. Merged rather than written over,
+        which is the difference between editing a record and replacing it.
+        """
+        from world import traits
+        from world.makers import vocabulary
+
+        slug = self.kept()
+        vocab = dict(self.root.db.trait_vocabulary or {})
+        vocab[slug] = dict(vocab[slug], descs={0: "spent"}, mod=2)
+        self.root.db.trait_vocabulary = vocab
+
+        _form, ctx = self.editing(slug)
+        ctx.draft["means"] = "what is left in them"
+        vocabulary.save_attribute(ctx)
+        entry = traits.known(self.root, slug)
+        self.assertEqual(entry["means"], "what is left in them")
+        self.assertEqual(dict(entry["descs"]), {0: "spent"})
+        self.assertEqual(entry["mod"], 2)
+
+    def test_a_number_cleared_back_to_nothing_is_cleared(self):
+        """Which is a thing somebody may mean, and a merge must still allow."""
+        from world import traits
+        from world.makers import vocabulary
+
+        slug = self.kept(base=10)
+        _form, ctx = self.editing(slug)
+        ctx.draft["base"] = None
+        vocabulary.save_attribute(ctx)
+        self.assertNotIn("base", traits.known(self.root, slug))
+
+    def test_nothing_is_written_until_it_is_saved(self):
+        from world import traits
+
+        slug = self.kept()
+        form, ctx = self.editing(slug)
+        self.assertNotIn("Not saved yet", form.intro_for(ctx))
+        ctx.draft["trait_type"] = "counter"
+        self.assertEqual(traits.known(self.root, slug)["trait_type"], "gauge")
+        self.assertIn("Not saved yet", form.intro_for(ctx))
+
+    def test_and_the_intro_shows_the_attribute_being_written(self):
+        slug = self.kept()
+        form, ctx = self.editing(slug)
+        ctx.draft["trait_type"] = "counter"
+        self.assertIn("a counter", form.intro_for(ctx))
+
+    def test_it_says_what_changing_it_does_not_do(self):
+        """
+        `traits.ensure` reads the register once, when somebody first gains
+        the figure. Everybody who already has it keeps what they were given,
+        and a builder has no way to know that from the form alone.
+        """
+        slug = self.kept()
+        form, ctx = self.editing(slug)
+        self.assertIn("already have it keep", form.intro_for(ctx))
+
+    def test_one_forgotten_while_it_was_open_is_not_written_back(self):
+        from world.makers import vocabulary
+
+        slug = self.kept()
+        _form, ctx = self.editing(slug)
+        self.root.db.trait_vocabulary = {}
+        with self.assertRaises(menus.Refuse):
+            vocabulary.save_attribute(ctx)
+        self.assertEqual(dict(self.root.db.trait_vocabulary or {}), {})
+
+    def test_editing_one_this_world_has_not_got_offers_no_form(self):
+        from world.makers import vocabulary
+
+        self.assertIsNone(vocabulary.edit_attribute(self.root, "nonesuch"))
+
+    def test_making_one_still_goes_through_the_maker(self):
+        """The other half of sharing the items: creating is unchanged."""
+        from world import traits
+        from world.makers import vocabulary
+
+        self.open(vocabulary.NEW_ATTRIBUTE, world_root=self.root)
+        self.type("discoveries")            # the word, asked first
+        self.type("counter")                # how it behaves
+        self.type("keep")
+        self.assertIn("discoveries", traits.vocabulary(self.root))
+        self.assertEqual(traits.known(self.root, "discoveries")["trait_type"],
+                         "counter")
+
+
+@tag("unit")
 class FoldedWordsAreFound(GameTest):
     """A folded noun reads as another name the thing answers to."""
 
@@ -626,6 +782,154 @@ class MakingARule(Building):
         rule_id, _said = rules.keep_rule(ctx)
         self.assertIsNone(rulebooks.get(self.root, rule_id)["action"])
 
+    def test_a_becomes_rule_that_leans_on_narrate_is_told_so(self):
+        """
+        The two narrations are different things, and only the menu could say
+        which one this is. A verb's is written when somebody uses it, and
+        `narrate` declares that being seen is the whole of what happens; a
+        becomes rule's is `report`, because a clock cannot pay a model every
+        tick. So `narrate` here asks a phase that does not run for a sentence
+        nobody will write, and `becoming._report` -- having nothing to say --
+        says nothing. Filed by a builder who asked for it, and never silently.
+        """
+        from world.makers import rules
+
+        ctx = self.draft(name="at ten discoveries", phase="becomes",
+                         scope="world",
+                         when=[{"subject": "actor", "trait": "discoveries",
+                                "min": 10}],
+                         effects=[{"type": "narrate"}])
+        self.assertIn("Nothing narrates a becomes rule",
+                      rules.phase_nudge(ctx))
+        _rule_id, said = rules.keep_rule(ctx)
+        self.assertIn("Nothing narrates a becomes rule", said)
+        self.assertIn("What people see", said)
+        self.assertIn("silent", said)
+
+    def test_and_one_with_words_of_its_own_is_told_only_half_of_it(self):
+        from world.makers import rules
+
+        ctx = self.draft(name="at ten discoveries", phase="becomes",
+                         scope="world",
+                         when=[{"subject": "actor", "trait": "discoveries",
+                                "min": 10}],
+                         effects=[{"type": "narrate"}],
+                         report="{direct} $pconj(look) up.")
+        said = rules.phase_nudge(ctx)
+        self.assertIn("Nothing narrates a becomes rule", said)
+        self.assertNotIn("silent", said)
+
+    def test_a_verb_rule_that_narrates_is_left_alone(self):
+        """Which is what the effect is for: the report phase does run there."""
+        from world.makers import rules
+
+        ctx = self.draft(name="smiling", action="smile", phase="carry_out",
+                         scope="world", effects=[{"type": "narrate"}])
+        self.assertNotIn("Nothing narrates", rules.phase_nudge(ctx))
+        _rule_id, said = rules.keep_rule(ctx)
+        self.assertNotIn("Nothing narrates", said)
+
+    def test_the_effect_form_says_where_the_words_come_from(self):
+        """
+        `narrate` was the one effect that opened no fields at all, with
+        nothing said about why -- which reads as a form half built rather
+        than as the decision it is.
+        """
+        from world.makers import rules
+
+        ctx = menus.Context(self.char1, world_root=self.root,
+                            draft={"type": "narrate"})
+        intro = rules.NEW_EFFECT.intro_for(ctx)
+        self.assertIn("asks for nothing", intro)
+        self.assertIn("What people see", intro)
+
+        plain = menus.Context(self.char1, world_root=self.root,
+                              draft={"type": "set_state"})
+        self.assertNotIn("asks for nothing",
+                         rules.NEW_EFFECT.intro_for(plain))
+
+    def test_what_people_see_is_offered_in_the_phases_that_narrate(self):
+        """
+        The three that answer somebody. A check rule's answer is its refusal
+        and an after rule speaks through the action it followed, so words
+        written in either would be written and never read.
+        """
+        from world.makers import rules
+
+        def offered(phase):
+            ctx = menus.Context(self.char1, world_root=self.root,
+                                draft={"phase": phase})
+            return [item.key for item in rules.NEW_RULE.items_for(ctx)]
+
+        for phase in ("carry_out", "instead", "becomes"):
+            with self.subTest(phase=phase):
+                self.assertIn("report", offered(phase))
+        for phase in ("check", "after"):
+            with self.subTest(phase=phase):
+                self.assertNotIn("report", offered(phase))
+
+    def test_and_says_a_different_thing_in_each_kind_of_phase(self):
+        """
+        Two reasons, not one: a becomes rule has no narrator and must speak
+        for itself; a verb rule has one and is declining to use it.
+        """
+        from world.makers import rules
+
+        def help_for(phase):
+            return rules.report_help(
+                menus.Context(self.char1, world_root=self.root,
+                              draft={"phase": phase}))
+
+        self.assertIn("has no narrator", help_for("becomes"))
+        self.assertIn("instead of a narrator's", help_for("carry_out"))
+        for phase in ("becomes", "carry_out"):
+            # How a template is written is the same everywhere one is.
+            self.assertIn("$pconj", help_for(phase))
+
+    def test_a_rule_whose_whole_content_is_its_words_is_filed(self):
+        """
+        Which is how a world with no key writes a purely expressive verb:
+        somebody smiles, the room reads the sentence, nothing moves.
+        """
+        from world import rulebooks
+        from world.makers import rules
+
+        ctx = self.draft(name="smiling", action="smile", phase="carry_out",
+                         scope="world",
+                         report="{actor} $pconj(smile).")
+        rule_id, _said = rules.keep_rule(ctx)
+        self.assertEqual(rulebooks.get(self.root, rule_id)["report"],
+                         "{actor} $pconj(smile).")
+
+    def test_and_is_not_nudged_for_doing_nothing(self):
+        from world.makers import rules
+
+        ctx = self.draft(name="smiling", action="smile", phase="carry_out",
+                         scope="world", report="{actor} $pconj(smile).")
+        self.assertNotIn("This rule does nothing",
+                         rules.phase_nudge(ctx))
+
+        silent = self.draft(name="smiling", action="smile",
+                            phase="carry_out", scope="world")
+        self.assertIn("This rule does nothing", rules.phase_nudge(silent))
+
+    def test_but_words_in_a_phase_that_never_narrates_are(self):
+        """
+        One way in: the field is locked out of check and after, so what this
+        catches is words written under carry-out by somebody who then changed
+        their mind. Said when the phase is chosen and again when it is filed,
+        because the phase is asked last but is not the last thing changed.
+        """
+        from world.makers import rules
+
+        ctx = self.draft(name="holding it", action="light", phase="check",
+                         scope="world",
+                         conditions=[{"subject": "actor", "holds": "lamp"}],
+                         report="{actor} $pconj(smile).")
+        self.assertIn("will never be read", rules.phase_nudge(ctx))
+        _rule_id, said = rules.keep_rule(ctx)
+        self.assertIn("will never be read", said)
+
     def test_the_phase_nudges_without_choosing(self):
         from world.makers import rules
 
@@ -665,6 +969,497 @@ class MakingARule(Building):
         offered = [value for value, _label
                    in rules.scope_options(_Ctx(self.char1))]
         self.assertEqual(offered[-1], "world")
+
+
+# ---------------------------------------------------------------------------
+# Changing a rule that is already filed
+# ---------------------------------------------------------------------------
+
+@tag("unit")
+class ChangingARule(Building):
+    """
+    `edit rule` is the rule form opened on a rule, which is the whole design.
+
+    It used to offer two fields -- the name, and whether it was in force -- so
+    changing what a rule actually did meant deleting it and writing it again,
+    and a builder who mistyped one condition paid by retyping the other nine.
+    Reusing `_rule_items` rather than writing a second list of what a rule has
+    is what stops the two drifting: a field added to one is in the other the
+    same day, and a field forgotten by a second list would silently *erase*
+    what it forgot on every save.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from world import traits, verbs
+
+        traits.register(self.root, "might", means="how strong they are")
+        verbs.register_state(self.root, "lit", means="it is giving light")
+
+    def filed(self, **fields):
+        from world import rulebooks
+
+        fields.setdefault("action", "light")
+        fields.setdefault("phase", "check")
+        fields.setdefault("name", "you must be holding it")
+        fields.setdefault("conditions",
+                          [{"subject": "actor", "holds": "lamp"}])
+        return rulebooks.add(self.root, rulebooks.blank(**fields))
+
+    def editing(self, rule):
+        from world.makers import rules
+
+        form = rules.edit_rule(self.root, rule["id"])
+        self.assertIsNotNone(form)
+        self.open(form, world_root=self.root)
+        return self.char1.ndb._evmenu.stack[0].ctx
+
+    def test_it_opens_holding_what_the_rule_already_says(self):
+        rule = self.filed(report="", about="direct")
+        draft = self.editing(rule).draft
+        self.assertEqual(draft["name"], "you must be holding it")
+        self.assertEqual(draft["action"], "light")
+        self.assertEqual(draft["phase"], "check")
+        self.assertEqual(draft["scope"], "world")
+        self.assertEqual(draft["conditions"],
+                         [{"subject": "actor", "holds": "lamp"}])
+        self.assertTrue(draft["listed"])
+
+    def test_every_field_the_form_writes_is_a_field_it_reads_back(self):
+        """
+        The invariant the two functions exist for. What `_draft_rule` writes
+        into a record, `rule_draft` must take back out -- anything it misses
+        is a field that would be quietly wiped the first time somebody opened
+        a rule to change its name.
+        """
+        from world.makers import rules
+
+        made = self.draft(
+            name="forcing it", action="force", phase="carry_out",
+            scope="world", about="direct",
+            when=[{"subject": "actor", "is": ["lit"]}],
+            conditions=[],
+            effects=[{"type": "set_state", "role": "direct", "add": ["lit"]}],
+            contest={"trait": "might", "against": None, "difficulty": 14},
+            report="{actor} $pconj(force) it.")
+        record = rules._draft_rule(made)
+        back = rules.rule_draft(record)
+        # Round-tripped once more, so the comparison is record to record and
+        # not draft to draft: the draft spells a scope and the record holds a
+        # dict, and it is the record that has to survive.
+        again = rules._draft_rule(_Draft(back, self.root, self.char1))
+        for field in rules.EDITABLE:
+            if field == "listed":
+                continue
+            with self.subTest(field=field):
+                self.assertEqual(again.get(field), record.get(field))
+
+    def test_saving_changes_the_rule_and_keeps_its_id(self):
+        from world import rulebooks
+        from world.makers import rules
+
+        rule = self.filed()
+        ctx = self.editing(rule)
+        ctx.draft["name"] = "a lit lamp cannot be lit again"
+        ctx.draft["conditions"] = [{"subject": "direct", "lacks": ["lit"]}]
+        rules._save_rule(self.root, rule["id"])(ctx)
+        stored = rulebooks.get(self.root, rule["id"])
+        self.assertEqual(stored["name"], "a lit lamp cannot be lit again")
+        self.assertEqual(stored["conditions"],
+                         [{"subject": "direct", "lacks": ["lit"]}])
+        self.assertEqual(len(rulebooks.all_rules(self.root)), 1)
+
+    def test_and_can_change_what_it_does_which_is_the_point(self):
+        from world import rulebooks
+        from world.makers import rules
+
+        rule = self.filed(phase="carry_out", conditions=[],
+                          effects=[{"type": "set_state", "role": "direct",
+                                    "add": ["lit"]}])
+        ctx = self.editing(rule)
+        ctx.draft["effects"] = [{"type": "set_state", "role": "direct",
+                                 "remove": ["lit"]}]
+        ctx.draft["contest"] = {"trait": "might", "against": None,
+                                "difficulty": 14}
+        ctx.draft["report"] = "{actor} $pconj(snuff) it out."
+        rules._save_rule(self.root, rule["id"])(ctx)
+        stored = rulebooks.get(self.root, rule["id"])
+        self.assertEqual(stored["effects"][0]["remove"], ["lit"])
+        self.assertEqual(stored["contest"]["difficulty"], 14)
+        self.assertIn("snuff", stored["report"])
+
+    def test_nothing_is_written_until_it_is_saved(self):
+        """
+        Unlike the two fields this replaces, which wrote as they were typed.
+        A rule is one statement, and half of one is not a smaller statement --
+        it is a different rule, in force, while somebody is still deciding.
+        """
+        from world import rulebooks
+
+        rule = self.filed()
+        ctx = self.editing(rule)
+        ctx.draft["name"] = "something else entirely"
+        ctx.draft["listed"] = False
+        self.assertEqual(rulebooks.get(self.root, rule["id"])["name"],
+                         "you must be holding it")
+        self.assertTrue(rulebooks.get(self.root, rule["id"])["listed"])
+
+    def test_and_the_form_says_so_while_it_is_unsaved(self):
+        from world.makers import rules
+
+        rule = self.filed()
+        form = rules.edit_rule(self.root, rule["id"])
+        self.open(form, world_root=self.root)
+        ctx = self.char1.ndb._evmenu.stack[0].ctx
+        self.assertNotIn("Not saved yet", form.intro_for(ctx))
+        ctx.draft["name"] = "something else entirely"
+        self.assertIn("Not saved yet", form.intro_for(ctx))
+
+    def test_a_rule_deleted_while_it_was_open_is_not_resurrected(self):
+        from world import rulebooks
+        from world.makers import rules
+
+        rule = self.filed()
+        ctx = self.editing(rule)
+        rules.remove_rule(self.root, rule["id"])
+        with self.assertRaises(menus.Refuse):
+            rules._save_rule(self.root, rule["id"])(ctx)
+        self.assertEqual(rulebooks.all_rules(self.root), [])
+
+    def test_suspending_it_is_part_of_the_same_save(self):
+        from world import rulebooks
+        from world.makers import rules
+
+        rule = self.filed()
+        ctx = self.editing(rule)
+        ctx.draft["listed"] = False
+        _id, said = rules._save_rule(self.root, rule["id"])(ctx)
+        self.assertFalse(rulebooks.get(self.root, rule["id"])["listed"])
+        self.assertIn("Suspended", said)
+
+    def test_the_scope_it_has_is_offered_even_from_another_room(self):
+        """
+        A rule about one lamp is edited from wherever the builder happens to
+        be standing. A picker that could not say its scope back would offer
+        only scopes that are not it -- and moving the rule to `everywhere`
+        would be the cost of opening it to fix a typo.
+        """
+        from world.makers import rules
+
+        rule = self.filed(scope={"object": 99999})
+        draft = self.editing(rule).draft
+        self.assertEqual(draft["scope"], "object:99999")
+        ctx = menus.Context(self.char1, world_root=self.root, draft=draft)
+        offered = [value for value, _label in rules.scope_options(ctx)]
+        self.assertIn("object:99999", offered)
+
+    def test_a_scope_is_said_back_in_the_pickers_own_words(self):
+        from world.makers import rules
+
+        for said, stored in (("world", {"world": True}),
+                             ("kind:lamp.n.01", {"kind": "lamp.n.01"}),
+                             ("object:12", {"object": 12}),
+                             ("room:7", {"room": 7}),
+                             ("zone:the_gym", {"zone": "the_gym"})):
+            with self.subTest(scope=said):
+                self.assertEqual(rules._scope_dict(said), stored)
+                self.assertEqual(rules._scope_said(stored), said)
+
+    def test_editing_one_that_is_gone_offers_no_form(self):
+        from world.makers import rules
+
+        self.assertIsNone(rules.edit_rule(self.root, "r99"))
+
+
+# ---------------------------------------------------------------------------
+# Whether a verb is a gamble
+# ---------------------------------------------------------------------------
+
+@tag("unit")
+class MakingItAGamble(Building):
+    """
+    The last thing a model could write that a person could not.
+
+    A contest is declared once and rolled by `world/checks.py` for ever after,
+    never by a model -- so there was nothing costly or hard about offering it,
+    and it was simply missing from the form. A world built by hand was a world
+    in which nothing could be failed at, which `checks` opens by saying is not
+    a game.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from world import traits
+
+        traits.register(self.root, "might", means="how strong they are")
+        traits.register(self.root, "guile", means="how sly they are")
+
+    def contest(self, **fields):
+        from world.makers import rules
+
+        return rules.keep_contest(self.draft(**fields))
+
+    def test_a_fixed_number_to_beat(self):
+        spec, said = self.contest(trait="might", opposed="difficulty",
+                                  difficulty=14)
+        self.assertEqual(spec["trait"], "might")
+        self.assertEqual(spec["difficulty"], 14)
+        self.assertIsNone(spec["against"])
+        self.assertIn("14", said)
+
+    def test_somebody_elses_figure(self):
+        spec, _said = self.contest(trait="might", opposed="role",
+                                   role="direct", against_trait="guile")
+        self.assertEqual(spec["against"],
+                         {"role": "direct", "trait": "guile"})
+
+    def test_and_theirs_defaults_to_the_same_figure(self):
+        """Swordsmanship against swordsmanship, which is the usual shape."""
+        spec, _said = self.contest(trait="might", opposed="role",
+                                   role="direct")
+        self.assertEqual(spec["against"], {"role": "direct", "trait": "might"})
+
+    def test_even_odds_against_nobody(self):
+        spec, _said = self.contest(trait="might", opposed="even")
+        self.assertIsNone(spec["against"])
+        self.assertIsNone(spec["difficulty"])
+        self.assertEqual(spec["trait"], "might")
+
+    def test_a_contest_with_nothing_to_decide_it_is_refused(self):
+        with self.assertRaises(menus.Refuse):
+            self.contest(trait="", opposed="even")
+
+    def test_and_one_naming_nobody_to_be_up_against(self):
+        with self.assertRaises(menus.Refuse):
+            self.contest(trait="might", opposed="role")
+
+    def test_and_one_with_no_number(self):
+        with self.assertRaises(menus.Refuse):
+            self.contest(trait="might", opposed="difficulty")
+
+    def test_the_actor_is_never_offered_as_the_opposition(self):
+        """
+        `checks.clean` drops it -- the same number on both sides is a rule
+        that means nothing -- so offering it would be offering something the
+        game throws away.
+        """
+        from world.makers import rules
+
+        ctx = menus.Context(self.char1, world_root=self.root, draft={})
+        offered = [value for value, _label in rules.opposing_options(ctx)]
+        self.assertNotIn("actor", offered)
+        self.assertNotIn("here", offered)
+        self.assertIn("direct", offered)
+
+    def test_it_reaches_the_rule_through_the_field_checks_reads(self):
+        from world import checks, rulebooks
+        from world.makers import rules
+
+        spec, _said = self.contest(trait="might", opposed="difficulty",
+                                   difficulty=14)
+        rule_id, _said = rules.keep_rule(self.draft(
+            name="forcing it", action="force", phase="carry_out",
+            scope="world", contest=spec,
+            effects=[{"type": "set_state", "role": "direct",
+                      "add": ["forced"]}]))
+        stored = rulebooks.get(self.root, rule_id)
+        # `attempt` reads the rule's `contest` into `check`, which is what
+        # `checks.wanted` asks for. Asserted through that pair rather than on
+        # the spelling, because the spelling is the thing that could drift.
+        self.assertIsNotNone(checks.wanted({"check": stored["contest"]}))
+
+    def test_it_is_offered_only_where_it_would_be_rolled(self):
+        """
+        One roll per attempt, made from the carry-out rule that won. A check
+        rule either applies or it does not.
+        """
+        from world.makers import rules
+
+        def offered(phase):
+            ctx = menus.Context(self.char1, world_root=self.root,
+                                draft={"phase": phase})
+            return [item.key for item in rules.NEW_RULE.items_for(ctx)]
+
+        self.assertIn("contest", offered("carry_out"))
+        for phase in ("check", "instead", "after", "becomes"):
+            with self.subTest(phase=phase):
+                self.assertNotIn("contest", offered(phase))
+
+    def test_one_left_behind_by_a_change_of_phase_is_said_out_loud(self):
+        from world.makers import rules
+
+        ctx = self.draft(name="forcing it", action="force", phase="instead",
+                         scope="world",
+                         contest={"trait": "might", "difficulty": 14},
+                         effects=[{"type": "set_state", "role": "direct",
+                                   "add": ["forced"]}])
+        self.assertIn("never be rolled", rules.phase_nudge(ctx))
+        _rule_id, said = rules.keep_rule(ctx)
+        self.assertIn("never be rolled", said)
+
+    def test_words_and_a_contest_together_are_said_out_loud_too(self):
+        """
+        A contest has four answers and written words are one sentence, so the
+        words are read when it works and the narrator takes it when it does
+        not. See tests/test_written_narration.py.
+        """
+        from world.makers import rules
+
+        ctx = self.draft(name="forcing it", action="force", phase="carry_out",
+                         scope="world",
+                         contest={"trait": "might", "difficulty": 14},
+                         report="{actor} $pconj(force) it open.",
+                         effects=[{"type": "set_state", "role": "direct",
+                                   "add": ["forced"]}])
+        self.assertIn("only when the verb works", rules.phase_nudge(ctx))
+
+    def test_the_form_shows_what_the_odds_would_be(self):
+        """
+        The service `firing_order` does for the phase. A number typed into a
+        form is not a feeling, and a verb nobody can pass and a verb nobody
+        can fail look identical from the inside until somebody prints them.
+        """
+        from world.makers import rules
+
+        ctx = menus.Context(self.char1, world_root=self.root,
+                            draft={"trait": "might", "opposed": "difficulty",
+                                   "difficulty": 14})
+        self.assertIn("chances in 20", rules.contest_intro(ctx))
+
+    def test_and_says_nothing_about_odds_before_there_is_a_contest(self):
+        from world.makers import rules
+
+        ctx = menus.Context(self.char1, world_root=self.root, draft={})
+        self.assertNotIn("chances in", rules.contest_intro(ctx))
+
+    def test_it_is_typed_through_the_rule_form_and_lands_in_the_draft(self):
+        """
+        Driven a line at a time rather than by calling the keeper, because
+        the submenu answering its opener is the part that could be wired
+        wrong -- a form that keeps a perfectly good contest into a draft
+        nobody reads is a menu doing nothing, silently.
+        """
+        from world.makers import rules
+
+        self.open(rules.NEW_RULE, world_root=self.root,
+                  draft={"phase": "carry_out"})
+        self.type("contest")            # the submenu, guided from here
+        self.type("might")              # whose figure decides it
+        self.type("difficulty")         # what it is up against
+        self.type("difficulty")         # and, from the summary, the number
+        self.type("14")
+        self.type("keep")
+        draft = self.char1.ndb._evmenu.stack[0].ctx.draft
+        self.assertEqual(draft["contest"]["trait"], "might")
+        self.assertEqual(draft["contest"]["difficulty"], 14)
+        self.assertIsNone(draft["contest"]["against"])
+
+    def test_and_can_be_taken_off_again(self):
+        """
+        Most verbs are not gambles, so there has to be a way back. `Picked`
+        with nothing in it is how a submenu says "none".
+        """
+        from world.makers import rules
+
+        self.open(rules.NEW_RULE, world_root=self.root,
+                  draft={"phase": "carry_out",
+                         "contest": {"trait": "might", "against": None,
+                                     "difficulty": 14}})
+        self.type("contest")
+        self.type("none")
+        draft = self.char1.ndb._evmenu.stack[0].ctx.draft
+        self.assertIsNone(draft["contest"])
+
+    def test_an_existing_contest_opens_the_form_holding_it(self):
+        """
+        Editing one means seeing what it already says, which is the whole
+        point of `draft=` on the submenu.
+        """
+        from world.makers import rules
+
+        ctx = menus.Context(
+            self.char1, world_root=self.root,
+            draft={"contest": {"trait": "might", "against": None,
+                               "difficulty": 14}})
+        self.assertEqual(rules._contest_draft(ctx),
+                         {"trait": "might", "opposed": "difficulty",
+                          "difficulty": 14})
+
+        opposed = menus.Context(
+            self.char1, world_root=self.root,
+            draft={"contest": {"trait": "might",
+                               "against": {"role": "direct",
+                                           "trait": "guile"},
+                               "difficulty": None}})
+        self.assertEqual(rules._contest_draft(opposed),
+                         {"trait": "might", "opposed": "role",
+                          "role": "direct", "against_trait": "guile"})
+
+
+# ---------------------------------------------------------------------------
+# The two effects that are about somebody
+# ---------------------------------------------------------------------------
+
+@tag("unit")
+class AnEffectThatCanOnlyBeAboutAPerson(Building):
+    """
+    A purpose and an errand are given to characters, and to nothing else.
+
+    `effects.apply` has always known it -- a goal handed to a crate is logged
+    and dropped, because nothing works at it -- and the menu did not: it
+    offered `this place` and `this world` for "Who sets about it" alongside
+    the roles that can hold somebody. Neither is ever *bound* to anything at
+    all, so an effect naming one was a no-op from the moment it was written,
+    and nothing anywhere said so.
+    """
+
+    def offered(self, etype):
+        from world.makers import rules
+
+        ctx = menus.Context(self.char1, world_root=self.root,
+                            draft={"type": etype})
+        return [value for value, _label in rules._role_options(ctx)]
+
+    def test_the_roles_that_are_never_anybody_are_not_offered(self):
+        for etype in ("set_goal", "offer_quest"):
+            with self.subTest(effect=etype):
+                offered = self.offered(etype)
+                self.assertNotIn("here", offered)
+                self.assertNotIn("world", offered)
+                self.assertIn("actor", offered)
+                self.assertIn("direct", offered)
+
+    def test_and_every_other_effect_is_offered_all_of_them(self):
+        """
+        Narrowed for the two, not for the menu. `describe what you act on`
+        and `move what it comes from` are ordinary answers.
+        """
+        from world.makers import rules
+
+        self.assertEqual(self.offered("move_object"),
+                         [value for value, _said in rules.SUBJECTS])
+
+    def test_one_written_anyway_is_refused(self):
+        """
+        Belt and braces, and not only that: the picker is one door and a
+        draft typed on one line is another.
+        """
+        from world.makers import rules
+
+        ctx = self.draft(type="set_goal", role="here",
+                         goal=[{"type": "state", "object": "lamp",
+                               "is": ["lit"]}])
+        with self.assertRaises(menus.Refuse):
+            rules.keep_effect(ctx)
+
+    def test_and_a_role_that_could_hold_somebody_is_kept(self):
+        from world.makers import rules
+
+        ctx = self.draft(type="set_goal", role="direct",
+                         goal=[{"type": "state", "object": "lamp",
+                               "is": ["lit"]}])
+        effect, _said = rules.keep_effect(ctx)
+        self.assertEqual(effect["role"], "direct")
 
 
 # ---------------------------------------------------------------------------
@@ -764,8 +1559,8 @@ class _Draft:
 # Errands
 # ---------------------------------------------------------------------------
 
-@tag("unit")
-class MakingAnErrand(Building):
+class _AnErrand(Building):
+    """One errand and somebody to hand it out. Shared, and holds no test."""
 
     def setUp(self):
         super().setUp()
@@ -785,6 +1580,10 @@ class MakingAnErrand(Building):
                                       "description": ""}])
         fields.setdefault("wire", False)
         return errands.keep_quest(_Draft(fields, self.root, self.char1))
+
+
+@tag("unit")
+class MakingAnErrand(_AnErrand):
 
     def test_an_errand_is_written_and_kept_on_the_world(self):
         from world import quests
@@ -937,6 +1736,112 @@ class MakingAnErrand(Building):
         schema = tool.parameters(_Ctx())
         self.assertIn(spec_id,
                       schema["properties"]["quest"]["enum"])
+
+
+@tag("unit")
+class ChangingAnErrand(_AnErrand):
+    """
+    `edit quest` is the errand form opened on an errand, and had no test.
+
+    It used to be a form holding one entry -- "Change it" -- whose only job
+    was to carry the draft into `NEW_QUEST`, because a form had no way to say
+    what it opened holding and a submenu did. `menus.Form.draft` is that way,
+    so the wrapper is gone and the form is what `edit quest q1` opens.
+    """
+
+    def editing(self, spec_id):
+        from world.makers import errands
+
+        form = errands.edit_quest(self.root, spec_id)
+        self.assertIsNotNone(form)
+        self.open(form, world_root=self.root)
+        return form, self.char1.ndb._evmenu.stack[0].ctx
+
+    def test_it_opens_holding_what_the_errand_already_says(self):
+        spec_id, _said = self.write(description="Bring it to the schoolroom.")
+        _form, ctx = self.editing(spec_id)
+        self.assertEqual(ctx.draft["_id"], spec_id)
+        self.assertEqual(ctx.draft["title"], "Fetch the chalk")
+        self.assertEqual(ctx.draft["description"],
+                         "Bring it to the schoolroom.")
+        self.assertEqual(ctx.draft["goal"],
+                         [{"type": "holds", "object": "chalk"}])
+
+    def test_it_is_the_form_itself_and_not_a_menu_offering_one(self):
+        """
+        The wrapper is what `Form.draft` removed. A form whose only entry
+        opens another form is a level somebody has to walk through to reach
+        the thing they asked for.
+        """
+        from world.makers import errands
+
+        _form, ctx = self.editing(self.write()[0])
+        keys = [item.key for item in errands.edit_quest(
+            self.root, ctx.draft["_id"]).items_for(ctx)]
+        self.assertIn("title", keys)
+        self.assertIn("goal", keys)
+        self.assertNotIn("change", keys)
+
+    def test_saving_writes_over_the_errand_rather_than_making_another(self):
+        from world import quests
+        from world.makers import errands
+
+        spec_id, _said = self.write()
+        _form, ctx = self.editing(spec_id)
+        ctx.draft["title"] = "Fetch the slate"
+        again, said = errands.keep_quest(ctx)
+        self.assertEqual(again, spec_id)
+        self.assertIn("is changed", said)
+        self.assertEqual(len(quests.specs(self.root)), 1)
+        self.assertEqual(quests.spec(self.root, spec_id)["title"],
+                         "Fetch the slate")
+
+    def test_the_rule_that_offers_it_is_not_written_a_second_time(self):
+        """
+        The question is asked when an errand is written and never again: a
+        yes on every save would give one errand a greeting rule per edit.
+        """
+        from world import rulebooks
+        from world.makers import errands
+
+        spec_id, _said = self.write(wire=True)
+        before = len(rulebooks.all_rules(self.root))
+        _form, ctx = self.editing(spec_id)
+        self.assertNotIn("wire", [item.key for item in
+                                  errands.NEW_QUEST.items_for(ctx)])
+        ctx.draft["title"] = "Fetch the slate"
+        errands.keep_quest(ctx)
+        self.assertEqual(len(rulebooks.all_rules(self.root)), before)
+
+    def test_and_is_still_asked_for_an_errand_being_written(self):
+        from world.makers import errands
+
+        fresh = menus.Context(self.char1, world_root=self.root, draft={})
+        self.assertIn("wire", [item.key for item in
+                               errands.NEW_QUEST.items_for(fresh)])
+
+    def test_nothing_is_written_until_it_is_saved(self):
+        from world import quests
+
+        spec_id, _said = self.write()
+        form, ctx = self.editing(spec_id)
+        self.assertNotIn("Not saved yet", form.intro_for(ctx))
+        ctx.draft["title"] = "Fetch the slate"
+        self.assertEqual(quests.spec(self.root, spec_id)["title"],
+                         "Fetch the chalk")
+        self.assertIn("Not saved yet", form.intro_for(ctx))
+
+    def test_and_the_intro_shows_the_errand_being_written(self):
+        """Not the one still in the register, which is what is being changed."""
+        spec_id, _said = self.write()
+        form, ctx = self.editing(spec_id)
+        ctx.draft["title"] = "Fetch the slate"
+        self.assertIn("Fetch the slate", form.intro_for(ctx))
+
+    def test_editing_one_that_is_gone_offers_no_form(self):
+        from world.makers import errands
+
+        self.assertIsNone(errands.edit_quest(self.root, "q99"))
 
 
 # ---------------------------------------------------------------------------
@@ -2454,3 +3359,60 @@ class RequiringSomethingWhereNothingIsRequired(Building):
                 "world.rulebooks", fromlist=["x"]).all_rules(self.root)})
         self.assertEqual([(rule["id"], many) for rule, many in found],
                          [(rule_id, 1)])
+
+
+@tag("unit")
+class WhatAnEditFormOpensHolding(Building):
+    """
+    `menus.Form.draft` where it is reached through another form.
+
+    The worth sub-forms said what they opened holding on their one submenu,
+    which was right until the day a second opener forgot -- and a forgotten
+    draft here does not fail. It opens empty, and "Keep this" writes the
+    empty over what the thing was worth. Saying it on the form instead is
+    what makes that unreachable rather than merely unlikely.
+    """
+
+    loose_objects = 1
+
+    def setUp(self):
+        super().setUp()
+        from world import gear, traits
+
+        traits.register(self.root, "defence", means="how well protected")
+        self.obj1.db.trait_bonuses = {"defence": 3}
+        self.obj1.db.bonus_when = "worn"
+        gear.recompute(self.char1)
+
+    def test_a_things_worth_arrives_through_the_submenu(self):
+        from world.makers import things
+
+        self.open(things._EDIT_THING, world_root=self.root, target=self.obj1)
+        self.type("worth")
+        draft = self.char1.ndb._evmenu.stack[-1].ctx.draft
+        self.assertEqual(draft["trait_bonuses"],
+                         [{"trait": "defence", "amount": 3}])
+        self.assertEqual(draft["bonus_when"], "worn")
+
+    def test_and_the_opener_keeps_a_draft_of_its_own(self):
+        """
+        The other half: a sub-form filling itself in must not reach up into
+        the draft of the form that opened it.
+        """
+        from world.makers import things
+
+        self.open(things._EDIT_THING, world_root=self.root, target=self.obj1)
+        self.type("worth")
+        self.assertEqual(self.char1.ndb._evmenu.stack[0].ctx.draft, {})
+
+    def test_what_being_here_is_worth_arrives_the_same_way(self):
+        from world import gear
+        from world.makers import things
+
+        self.room1.db.trait_bonuses = {"defence": 1}
+        gear.recompute(self.char1)
+        self.open(things.EDIT_ROOM, world_root=self.root)
+        self.type("worth")
+        draft = self.char1.ndb._evmenu.stack[-1].ctx.draft
+        self.assertEqual(draft["trait_bonuses"],
+                         [{"trait": "defence", "amount": 1}])

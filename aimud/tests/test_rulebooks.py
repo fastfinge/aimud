@@ -82,6 +82,84 @@ class StoringRules(GameTest):
 
 
 @tag("world")
+class ChangingARuleThatIsAlreadyFiled(GameTest):
+    """
+    `replace`, which is what editing one is, and what it refuses to disturb.
+
+    Before it there was only `add`, so changing what a rule did meant deleting
+    it and writing it again -- and the id went with it, taking the rule's
+    place in the tie-break that decides which of two rules at one scope fired
+    first, along with every suggestion and log line that ever named it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+
+    def test_the_id_stays_and_no_second_rule_appears(self):
+        rule = R.add(self.root, R.blank(action="power", name="first"))
+        changed = R.replace(self.root, rule["id"],
+                            R.blank(action="power", name="second"))
+        self.assertEqual(changed["id"], rule["id"])
+        self.assertEqual(len(R.all_rules(self.root)), 1)
+        self.assertEqual(R.get(self.root, rule["id"])["name"], "second")
+
+    def test_and_so_does_everything_about_where_it_came_from(self):
+        """
+        `born`, `source` and `evidence` are facts about a rule's past, and
+        editing what it says is not a claim about any of them. A rule a
+        ruleset gave this world and somebody has since changed is still a
+        rule that came from that ruleset -- which is the question
+        `rules_subject` and `suggest` ask of `source` years afterwards.
+        """
+        rule = R.add(self.root, R.blank(
+            action="power", name="first", source="ruleset:machinery",
+            evidence={"tried": 4}, why="it kept being asked for"))
+        changed = R.replace(self.root, rule["id"], R.blank(
+            action="power", name="second", source="hand"))
+        self.assertEqual(changed["source"], "ruleset:machinery")
+        self.assertEqual(changed["born"], rule["born"])
+        self.assertEqual(dict(changed["evidence"]), {"tried": 4})
+        self.assertEqual(changed["why"], "it kept being asked for")
+
+    def test_it_goes_through_the_same_checks_a_new_rule_does(self):
+        """
+        The second door must not be the one every malformed rule walks in by.
+        """
+        rule = R.add(self.root, R.blank(action="power"))
+        changed = R.replace(self.root, rule["id"], R.blank(
+            action="examine", scope={"world": True, "kind": "lamp.n.01"},
+            report="pulls the lever."))
+        self.assertEqual(changed["action"], "look")      # folded
+        self.assertEqual(changed["scope"], {"kind": "lamp.n.01"})
+        self.assertIn("{actor}", changed["report"])      # repaired
+
+    def test_one_that_is_no_longer_there_is_not_resurrected(self):
+        """
+        Two people in one world, and one of them deleted it while the other
+        had it open. Answering None is what lets the form say so.
+        """
+        self.assertIsNone(R.replace(self.root, "r99", R.blank(action="power")))
+        self.assertEqual(R.all_rules(self.root), [])
+
+    def test_a_becomes_rule_edited_arms_the_clock_again(self):
+        """Editing one is how a boundary moves, so the timer is set afresh."""
+        from unittest import mock
+
+        rule = R.add(self.root, R.blank(
+            phase=R.BECOMES,
+            when=[{"subject": "direct", "trait": "health", "max": 0}]))
+        from world import becoming
+
+        with mock.patch.object(becoming, "arm_clock") as armed:
+            R.replace(self.root, rule["id"], R.blank(
+                phase=R.BECOMES,
+                when=[{"subject": "direct", "trait": "health", "max": 5}]))
+        armed.assert_called_once()
+
+
+@tag("world")
 class WhichRulesApply(GameTest):
     loose_objects = 2
     second_room = True

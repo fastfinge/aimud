@@ -321,6 +321,13 @@ _WORTH = menus.Form(
     key="worth", title="What it is worth", guided=False,
     intro="What this thing does for whoever has it. Changed here it takes "
           "effect at once, including for whoever is holding it now.",
+    # What it opens holding is a fact about this form rather than about
+    # whoever opened it: it changes what a thing is already worth, so it has
+    # to start from that wherever it is reached from. It said so on its one
+    # submenu before `menus.Form.draft` existed, which was right until the
+    # day a second opener forgot -- and a forgotten draft here does not fail,
+    # it opens empty and writes the empty over what was there.
+    draft=_worth_draft,
     items=lambda ctx: _gearing_items() + [
         making.keeper("keep", "Keep this", _keep_worth)],
 )
@@ -349,7 +356,6 @@ _EDIT_THING = menus.Form(
                       help="Several, separated by spaces. A condition this "
                            "world does not keep can be made from here."),
         menus.Submenu("worth", _worth_label, _WORTH,
-                      fresh_draft=True, draft=_worth_draft,
                       help="What it does for whoever has it, and when that "
                            "counts."),
     ],
@@ -571,6 +577,7 @@ _ROOM_WORTH = menus.Form(
     key="room-worth", title="What being here is worth", guided=False,
     intro="What being in this place does to whoever is in it, for everybody "
           "standing here. It takes effect at once.",
+    draft=_room_worth_draft,
     items=lambda ctx: _gearing_items(present_only=True) + [
         making.keeper("keep", "Keep this", _keep_room_worth)],
 )
@@ -598,7 +605,6 @@ EDIT_ROOM = menus.Form(
                     parse=lambda ctx, text: _read_words(text),
                     show=lambda ctx, value: ", ".join(value or []) or "none"),
         menus.Submenu("worth", _room_worth_label, _ROOM_WORTH,
-                      fresh_draft=True, draft=_room_worth_draft,
                       help="What being in this place does to whoever is in "
                            "it. A forge is warm whether or not anything in "
                            "it is."),

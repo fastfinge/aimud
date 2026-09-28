@@ -115,23 +115,30 @@ def blank(action=None, phase=CHECK, scope=None, about="direct", name="",
         "why": str(why or ""),
         "overrides": overrides,
         "evidence": dict(evidence or {}),
-        # What a becomes rule says when it fires, as an event template. It
-        # never calls a model: a world's clock would otherwise be a paid tick.
+        # What this rule says people read, as an event template, when its
+        # author wrote the words rather than leaving them to a narrator. It
+        # never calls a model, which is why a becomes rule has no other kind:
+        # a world's clock would otherwise be a paid tick.
+        #
+        # A verb rule may carry one too, and then it is read instead of the
+        # narration and instead of anything cached -- which is how a world
+        # with no key at all reads as something other than an echo of what
+        # was typed. Only in the two phases that narrate: `carry_out` and
+        # `instead`. See world/attempt.py.
         "report": str(report or ""),
         "born": time.time(),
     }
 
 
-def add(world_root, rule):
+def _tidied(rule):
     """
-    File a rule, giving it an id. Answers with the rule as stored.
+    One rule held to its shape, whoever wrote it and whether it is new.
 
-    Ids are sequential rather than random so that the tie-break at the end of
-    the sort is stable and readable: `r7` fired before `r8` because it was
-    written first, which is what somebody reading `rules` needs to know.
+    Everything `add` did before `replace` existed, minus the storing. Split
+    out rather than copied: a rule somebody edited goes back into the book
+    through exactly the checks it came in through, or the second door becomes
+    the one every malformed rule walks in by.
     """
-    if not world_root:
-        return None
     record = dict(blank(), **{k: v for k, v in dict(rule or {}).items()
                               if k in blank()})
     record["phase"] = (record["phase"] if record["phase"] in STORED_PHASES
@@ -141,10 +148,14 @@ def add(world_root, rule):
         # A becomes rule has no action: it runs because something became
         # true, not because anybody tried anything.
         record["action"] = None
-        if record.get("report"):
-            from world import events
+    if record.get("report"):
+        # Repaired on the way in, whatever the phase, because what is stored
+        # is a template and a blemish in it is permanent: it is rendered
+        # afresh for every reader, for ever. Was inside the branch above when
+        # `report` was a becomes rule's alone. See `events.repair`.
+        from world import events
 
-            record["report"] = events.repair(record["report"])
+        record["report"] = events.repair(record["report"])
     # Nodes tidied and held to their caps on the way in, whoever wrote the
     # rule. A condition that cannot be stored is dropped and logged rather
     # than kept to evaluate as nothing for ever.
@@ -160,27 +171,73 @@ def add(world_root, rule):
         from world import verbs
 
         record["action"] = verbs.canonical_verb(str(record["action"]))
+    return record
 
-    number = int(getattr(world_root.db, COUNTER, 0) or 0) + 1
-    setattr(world_root.db, COUNTER, number)
-    record["id"] = f"r{number}"
-    if not record.get("born"):
-        record["born"] = time.time()
 
+def _filed(world_root, record, what="rules"):
+    """Write one tidied rule into the book, and say so in the log."""
     store = _store(world_root)
     store[record["id"]] = record
     setattr(world_root.db, ATTR, store)
     if record["phase"] == BECOMES:
         # A rule about a place may watch the clock, and a new boundary wants
-        # the world's timer set afresh. See world/becoming.py.
+        # the world's timer set afresh. Armed on a change as well as on a new
+        # rule: editing one is how a boundary moves.
         from world import becoming
 
         becoming.arm_clock(world_root)
     logger.log_info(
-        f"rules: {record['id']} {record['phase']} "
+        f"{what}: {record['id']} {record['phase']} "
         f"{record['action'] or 'any action'} at {said_scope(record['scope'])}"
         + (f" -- {record['name']}" if record["name"] else ""))
     return record
+
+
+def add(world_root, rule):
+    """
+    File a rule, giving it an id. Answers with the rule as stored.
+
+    Ids are sequential rather than random so that the tie-break at the end of
+    the sort is stable and readable: `r7` fired before `r8` because it was
+    written first, which is what somebody reading `rules` needs to know.
+    """
+    if not world_root:
+        return None
+    record = _tidied(rule)
+    number = int(getattr(world_root.db, COUNTER, 0) or 0) + 1
+    setattr(world_root.db, COUNTER, number)
+    record["id"] = f"r{number}"
+    if not record.get("born"):
+        record["born"] = time.time()
+    return _filed(world_root, record)
+
+
+def replace(world_root, rule_id, rule):
+    """
+    Change a rule that is already filed, keeping everything about its past.
+
+    The id stays, and with it the rule's place in the tie-break, every
+    suggestion that names it and every line in the log that ever mentioned it.
+    So do `born`, `source` and `evidence`: when it was written, where it came
+    from and what prompted it are facts about its history, and editing what a
+    rule *says* is not a claim about any of them. A rule a ruleset gave this
+    world and somebody has since changed is still a rule that came from that
+    ruleset, which is the question `rules_subject` and `suggest` ask of
+    `source` years later.
+
+    Answers with the rule as stored, or None when there is no such rule --
+    which is the answer to editing one somebody else has just deleted.
+    """
+    if not world_root:
+        return None
+    existing = get(world_root, rule_id)
+    if existing is None:
+        return None
+    record = _tidied(rule)
+    record["id"] = existing["id"]
+    for kept in ("born", "source", "evidence", "why", "overrides"):
+        record[kept] = existing.get(kept)
+    return _filed(world_root, record, what="rules changed")
 
 
 def _clean_scope(scope):
