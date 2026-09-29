@@ -1,10 +1,11 @@
 # Development plan: agents on equal footing
 
-Status: **built**, phases 0 to 7. What each came to, and where it differs from
+Status: **built**, phases 0 to 8. What each came to, and where it differs from
 what was scoped, is under it in §12. Everything the building found is marked
 **as built** where it changed the plan. §3.2 held: an MCP session is an Evennia
 session, and `who` lists it with `mcp` in the protocol column. An agent is
-offered 31 tools, of which `send` is the one that matters.
+offered 32 tools, of which `send` is the one that matters, and is pointed at
+`manual` for the rest.
 
 This covers the first half of the `future-plans.md` item "mcp servers: let
 other AI's play? Give generators and npcs new tools?" — the half where an
@@ -58,8 +59,9 @@ are the reason to do it now rather than after the flagship worlds:
 * **Four kinds of tool, not a tool per command.** `send` (a line of input),
   `poll` (what the mud has said since last time), the world document through
   `world/exchange.py`, and the lookups already registered in
-  `world/lookups.py`. Nothing else. That comes to 31 tools as built, 29 of
-  which were already written and needed only offering. §5.
+  `world/lookups.py`. Nothing else. That comes to 32 tools as built, 30 of
+  which were already written and needed only offering, the last being the
+  manual an agent reads (§12, phase 8). §5.
 * **`send` is a complete building surface, and stays complete for free.**
   CLAUDE.md already promises that every point in a menu is reachable by typing
   a command. That promise is held level for players; an agent inherits it and
@@ -676,13 +678,46 @@ that shares its name. It found something on its first run: the tool is called
 `commonsense`, not `ask_commonsense`, and the name written from memory would
 have excluded nothing at all.
 
-`tools()` per module and converting `NPC_TOOLS` did **not** happen, and should
-not be quietly dropped. `lookups.all_tools()` already enumerates every tool an
-agent could want, so the guard has what it needs; what remains uncovered is
-NPC action tools and generator finish tools, which no agent is offered and so
-nothing yet forces into the open. The day one of those should reach an agent is
-the day this is worth doing, and until then the argument for it is tidiness
-rather than a gap somebody could fall into.
+*As built, second pass:* `tools()` per module and the `NPC_TOOLS` conversion
+were left out of the first pass as tidiness, and doing them showed the first
+pass had been wrong about that — they are what close the guard's blind spot.
+
+**`NPC_TOOLS` were raw provider dicts, and so were invisible.** The AST pass
+finds a tool by the string literal it is named with; the thirteen character
+tools were named inside a dictionary and reached `toolbox` through
+`from_schema`, so a static walk found the other fifty and none of them. They
+are `toolbox.Tool` objects now, the schemas byte-for-byte identical (checked by
+dumping every schema before and after and comparing), and a test asserts no
+tool anywhere is built under a name a static pass cannot read — because a
+guard with a blind spot is worse than no guard.
+
+**`world/toolkit.py` is the register**, gathering `lookup_tools()` and
+`tools()` from every module that has either. Two accessors rather than one, so
+nothing forwards: a module whose only tools are lookups needs no `tools()` at
+all, which is the same judgement that kept the makers from growing a
+`record()`. `lookups.py` keeps its job unchanged.
+
+**A tool with no handler is a declaration.** Most finish tools cannot exist
+without the conversation they answer — `item_tool` needs to know which item,
+`rules_tool` which action — so a module declares those: name, kind and what it
+is for, with no handler. `Tool.runnable` tells them apart, and it turned out to
+be load-bearing in a way that was not foreseen: `check_traits` is a lookup by
+kind, so the kind filter alone would have handed an agent a character's own
+tool. `runnable` is what stops it, and a test says so.
+
+**`Tool.kind`** is worked out from the two flags rather than stored, so a tool
+cannot be filed as one kind and behave as another. The three kinds were already
+named in `toolbox`'s own docstring; this is that sentence as a value something
+can walk.
+
+The guard now bites four ways, each verified by planting the fault and watching
+it go red: a tool built and not registered, a declaration nothing builds any
+more, a tool named by something other than a literal, and one name claimed by
+two modules. The second of those did **not** bite at first — declarations are
+themselves `tb.Tool("name")` calls, so counting them as evidence of being built
+made that direction impossible to fail. It now separates a call inside a
+`tools()` body (the register speaking) from one anywhere else (the tool being
+made). A guard nobody has watched fail is a guard nobody knows works.
 
 **Phase 7 — documentation.** The README's command reference and architecture
 table; a section under "Before you host this anywhere" about what a token is
@@ -694,10 +729,43 @@ in a form something can read.
 minting a token, a client config, the tool table, what to expect), the
 `agenttoken` row in the command reference, `agents.py` in the architecture
 table, and a paragraph under "Before you host this anywhere" saying plainly
-that a token is the account. The agent-readable surfaces document is **not**
-done and is bigger than this phase: it is the surviving half of the ACP item
-in `future-plans.md`, and it wants writing for an agent about to build a
-plugin, not for a person switching a port on.
+that a token is the account. The agent-readable half became phase 8, because it
+is a different document for a different reader and wanted the register first.
+
+**Phase 8 — the manual an agent reads.** `world/manual.py`, reached by one
+`manual` tool, a page at a time. The surviving half of the ACP item in
+`future-plans.md`: the README tells a person how to switch a port on, and this
+tells whatever connects what there is to do here.
+
+*As built:* nine pages, and **the half of it that would rot is generated**.
+The tools page is built from `agents.offered_tools`, the commands page from the
+subject register and the maker table, the effects page from
+`effects.VOCABULARY` — so a tool, a verb, a thing a world can be made of or an
+effect a rule may use cannot be added without the manual saying so. Tests
+assert exactly that: every offered tool named on the tools page, every verb and
+maker on the commands page, every effect on the effects page. It is the same
+reason `preferences.help_entries` builds a topic per setting rather than
+somebody writing fourteen of them.
+
+The written half is what a register cannot say: what a world *is*, why building
+goes through menus, what to do with a document, and one page (`testing`) on
+what an agent is actually better at than a person — write the fixture as a
+document, play it with `send`, assert with `export_world`, listen with `poll`.
+
+`extending` is the page that says what may not be added, and it says it plainly
+rather than leaving an agent to find out: no Python from inside the game, no
+uncontrolled network request, and a note that finding a way around either is a
+bug worth reporting rather than a feature to use.
+
+Two constraints that shaped it. Every page is shorter than `MOST_RESULT`, with
+a test, because a page that has to be cut is one nobody reads the end of — the
+remedy is another page, not a longer one. And no page carries a colour code or
+an aligned column, for the reason `score` and `worldcheck` carry none: it is
+read aloud at least as often as it is looked at.
+
+`manual` is defined as an ordinary lookup, so `lookups.py` gathers it and an
+agent is offered it with nothing wired up. `agents.greeting` names it, so the
+first thing an agent is told is where to read the rest.
 
 Each phase ends with the suite green.
 
@@ -763,17 +831,19 @@ answering later rather than returning, and `mcp_tool` replying by ticket when
 it does, which the Portal already waits for. Small, and the only tool this
 surface is missing.
 
-**The agent-readable surfaces document.** Phase 7 wrote the README section for
-a person switching a port on. The other half — the plugin and building surfaces
-written for an agent about to use them — is the surviving half of the ACP item
-in `future-plans.md` and was not attempted here.
+**What the manual does not cover yet.** Nine pages, and the gap is the one the
+ACP item named: a page for an agent about to write a *plugin*. `extending` says
+what may be added and what may not, which is the honest answer while affect
+plugins are still a `future-plans.md` item with no surface to document. When
+that surface exists, it is a tenth page, generated from whatever register the
+plugins hang off rather than written.
 
-**`tools()` per module, and `NPC_TOOLS` as `Tool` objects.** Scoped as phase 6
-and deliberately not done (§12): `lookups.all_tools()` already enumerates
-everything an agent could be offered, so the guard has what it needs, and what
-stays uncovered — NPC action tools, generator finish tools — is not reachable
-from here. Worth doing the day one of those should reach an agent, and tidiness
-until then.
+**Whether a page should be reachable by typing, too.** Everything else in this
+game is, and the manual is the one thing an agent has that a person does not.
+`help` already answers for commands and settings; a `view manual` would make
+the register's pages readable in the game, and the argument against is only
+that they are written for a reader who is not there. Worth revisiting the first
+time a person wants to read what their agent was told.
 
 **Whether `poll` is enough, or whether the client needs pushing.** MCP is
 request-shaped and a mud is not. A blocking `poll` with a short timeout is the

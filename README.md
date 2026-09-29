@@ -784,6 +784,7 @@ about the game:
 |---|---|
 | `send` | Type one line, as a player would, and read what comes back. This is the whole game: every command and every point in every menu is reachable by typing, so there is no separate building API to fall behind. |
 | `poll` | Hear what the world said while nothing was being typed — an NPC talking, an errand expiring, somebody walking in. |
+| `manual` | The documentation, written for an agent rather than for you: what there is to do here, how to build a world, how to drive a test, and what may not be added to the game. Half of it is generated from the game's own registers, so it cannot fall behind. An agent is pointed at it as soon as it connects. |
 | `export_world` | A whole world as one JSON document, as it stands. |
 | `import_world` | Build a world from such a document. Validated whole and refused entire with every reason, so nothing is half built. |
 | the lookups | Everything an NPC can ask about the world: kinds, traits, states, rules, zones, verbs, the dictionary, its own memory. The same register, offered the same way. |
@@ -919,6 +920,8 @@ The interesting half is `world/`:
 | `memory.py` | Per-character memory, written and recalled by relevance |
 | `exchange.py` | A world as a document: writing one out, refusing a bad one, building one |
 | `agents.py` | Who an agent is and what it may call: the token, and the tools MCP offers |
+| `toolkit.py` | Every tool the game defines, gathered, and what kind each one is |
+| `manual.py` | The documentation an agent reads, half of it built from the registers |
 | `fact_gen.py` | Turning what a character has been through into what it knows |
 
 Two ideas run through all of it and explain most of the design:
