@@ -21,6 +21,10 @@ is used to let NPCs answer basic questions like "What do you want?" without an L
 create AIML entries for characters, as well as menu based creator for players to create AIML files and attach them to
 characters. In theory an entire mud that could run with wordnet, commonsense, and no LLM at all if players want to be
 the builders. Just depend on AIML here maybe? But replace support for JavaScript with ability to execute an action instead. Allow matches and responses to use tokens to substitute real information from world state.
+This is also what lets an agent join you: docs/mcp.md gives an agent its own account so it can be given fewer
+permissions than you, and `resolve_worlds` only lists worlds an account created, so until a world can be entered by
+somebody who did not make it, an agent and a player can hand worlds to each other through the shared folder but cannot
+stand in one together. Entering another account's world is the piece both want, and it is smaller than it sounds.
 * do something interesting with the web interface. Web editor? Examine stats in the browser? Prettier looking interface
 for playing in browser? Ability to read help files and documentation online, with hyperlinks?
 * let characters use Evennia's built-in discord/IRC support so characters can reach out of their world
@@ -42,9 +46,29 @@ central mud for everyone. Or via activitypub? Or xmpp? Or matrix?
 unexpectedly, etc.
 * secure mud connections via SSL for remotely hosted worlds. Players shouldn't have to pass API keys over unencrypted connections unless they want to
 * some sort of npc emotion system? Personality arcatypes? Memory already has support for NPC emotions somehow. Support this in the mud with emotions on npcs and rule conditions and actions about them?
-* mcp servers: let other AI's play? Give generators and npcs new tools?
+* an mcp server, so other AI's can play and build: **scoped**, see docs/mcp.md. An MCP session is an Evennia
+session, authenticated by a token minted in game, and the tools are `send`, `poll`, the lookups `world/lookups.py`
+already registers, and the world document. Done mainly to make testing possible from an agent.
+* an mcp client, so a world can reach out: the other half of the mcp item, deliberately split off from docs/mcp.md
+because it is a different set of questions. Give generators, npcs and players new tools that come from somewhere
+else -- real weather, a web search, an out-of-game action an npc can take. Three things to settle when it is scoped.
+*Where a server is declared:* basic-principles.md says network access needs access to the machine, so the precedent
+is RULESET_DIRS -- declared in settings.py by whoever runs the mud, not a URL a player types, and then chosen per
+world the way a world chooses rulesets. *Who may use one:* permits.py's three levels (whenever asked / only for a
+player / never), asked through `Sponsor.will`, because an npc doing a web search spends money and sends world text
+out, which is the same class of decision permits already governs. *What arrives:* text from outside is ungrounded
+text, and "text should never exist if it will always be exclusively decoration" -- so an external call should set a
+figure or a state the rules can read, or answer a lookup, rather than come back as prose an npc says. Also: a server's
+address and key are a secret and a path, so they are `exchange.LEFT`, and a world that uses one names it rather than
+carrying it.
 * editor improvements: evennia's editor is based on vi and confusing. Let "@" on a blank line stop editing, the same way MOO does it. Support the local editor OOB protocol and MUD Client Protocol v2.1 for players who have better editors
-* Agent Client Protocol (ACP): let your coding agent or claude join you in the mud and help you make things? By its nature this mud welcomes players and bots on equal footing. The idea is have fun, no matter who or what you are. Document plugin surfaces in agent friendly form for player's Claude or codex or other agent, so they can build plugins. 
+* Agent Client Protocol (ACP): **the protocol half is declined** -- see docs/mcp.md §13. ACP's client is a code
+editor and its agent is a coding agent, so for aimud to speak it aimud would have to become a host for coding-agent
+sessions, which is a different program; nothing in "let your coding agent join you in the mud" needs it that the MCP
+server does not already give. What is worth keeping is the second half of this item, and it survives as phase 7 of
+docs/mcp.md: document the plugin and building surfaces in agent friendly form, for a player's Claude or codex or other
+agent, so they can build plugins. By its nature this mud welcomes players and bots on equal footing. The idea is have
+fun, no matter who or what you are.
 * Co-ownership and institutional owners: worth having for corporations, countries, gangs, guilds, etc.
 * kinds declaring themselves mass: "some bread", not "a bread". WordNet's lexical file only reliably marks substances (water, sand); food nouns like bread, soup and rice share `noun.food` with apple, so the English module in tokens-and-phrases.md treats them as countable. Wants a `mass` boolean on kind specs, set by the item generator's prompt and settable by players, read by `english.article`, `english.plural` and `english.count`. Pairs with plural objects as a single bound thing.
 * a verb whose object is chosen from a menu rather than typed. The other half of what "summon air" wanted, and the half still missing: `summon` typed bare could ask which of the four, so nothing has to be named at all. The typed half is **done** -- the `called` condition asks about the word rather than the thing, and an unmatched noun consults the rulebooks before it is conjured, so a rule reached by the word is reached before anything is made to satisfy it. See docs/player-building.md 8.6.
