@@ -241,3 +241,23 @@ def distil(banks=None, on_done=None):
             on_done(tally)
 
     _next()
+
+
+# ---------------------------------------------------------------------------
+# The register (world/toolkit.py)
+# ---------------------------------------------------------------------------
+
+def tools():
+    """
+    `record_facts`, as declared: how what a character has just been
+    through becomes what it knows. See `world/toolkit.py`.
+    """
+    from world import toolbox as tb
+
+    return [
+        tb.Tool(
+            "record_facts",
+            "Say what this character now knows, from what it has just been" 
+            "through.",
+            finishes=True),
+    ]

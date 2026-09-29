@@ -70,6 +70,24 @@ RULESET_DIRS = [os.path.join(GAME_DIR, "server", "conf", "rulesets")]
 # worlds somebody put on the machine by hand. See world/exchange.py.
 WORLD_DIRS = [os.path.join(GAME_DIR, "worlds")]
 
+# The MCP endpoint, which is how an agent plays and builds here. Off unless
+# this says otherwise, and listening on localhost when it is: turning it on
+# and reaching it from another machine are two separate decisions, and the
+# second one belongs to somebody who has read what a token is. A token is the
+# account -- everything that account can do, its API key included -- so an
+# agent meant to play beside you wants an account of its own, which can be
+# given less. Lockdown mode puts the interface back to localhost whatever is
+# set here, as it does for telnet. See docs/mcp.md and world/agents.py.
+#
+# 4007 because Evennia has 4000 to 4006 already: telnet 4000, the web proxy
+# 4001, the websocket client 4002, SSL 4003, SSH 4004, the webserver's own
+# internal port 4005 (the second half of WEBSERVER_PORTS, which is easy to
+# miss) and AMP 4006. Picking 4005 makes the Portal bind it first and the
+# Server fail to start at all, which is how this comment came to be written.
+MCP_ENABLED = False
+MCP_INTERFACE = "127.0.0.1"
+MCP_PORT = 4007
+
 
 ######################################################################
 # Settings given in secret_settings.py override those in this file.

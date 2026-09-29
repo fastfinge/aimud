@@ -2218,3 +2218,39 @@ def contents_tool(description):
 
     return tb.Tool("furnish_room", "Give this room its loose contents.",
                    parameters, handler, finishes=True)
+
+
+# ---------------------------------------------------------------------------
+# The register (world/toolkit.py)
+# ---------------------------------------------------------------------------
+
+def tools():
+    """
+    Everything the world builder answers through, as declared. Each is
+    built per call, for one world, one area or one room, and closed to
+    what that world already holds. See `world/toolkit.py`.
+    """
+    from world import toolbox as tb
+
+    return [
+        tb.Tool(
+            "plan_world",
+            "Plan the areas a new world is made of.",
+            finishes=True),
+        tb.Tool(
+            "describe_area",
+            "Say what one area of a world is.",
+            finishes=True),
+        tb.Tool(
+            "name_room",
+            "Say what one room is called and where its ways out lead.",
+            finishes=True),
+        tb.Tool(
+            "describe_room",
+            "Describe one room.",
+            finishes=True),
+        tb.Tool(
+            "furnish_room",
+            "Give one room its loose contents.",
+            finishes=True),
+    ]

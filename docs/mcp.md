@@ -1,6 +1,11 @@
 # Development plan: agents on equal footing
 
-Status: **scoped**, nothing built.
+Status: **built**, phases 0 to 8. What each came to, and where it differs from
+what was scoped, is under it in §12. Everything the building found is marked
+**as built** where it changed the plan. §3.2 held: an MCP session is an Evennia
+session, and `who` lists it with `mcp` in the protocol column. An agent is
+offered 32 tools, of which `send` is the one that matters, and is pointed at
+`manual` for the rest.
 
 This covers the first half of the `future-plans.md` item "mcp servers: let
 other AI's play? Give generators and npcs new tools?" — the half where an
@@ -51,10 +56,12 @@ are the reason to do it now rather than after the flagship worlds:
   far as the rest of the game is concerned. `who` lists it, `@boot` removes
   it, the idle timer applies to it, and — the one that decides the whole
   architecture — a menu will open for it (§3.2).
-* **Four tools, not two hundred.** `send` (a line of input), `poll` (what the
-  mud has said since last time), the lookups already registered in
-  `world/lookups.py`, and the world document through `world/exchange.py`.
-  Nothing else. §5.
+* **Four kinds of tool, not a tool per command.** `send` (a line of input),
+  `poll` (what the mud has said since last time), the world document through
+  `world/exchange.py`, and the lookups already registered in
+  `world/lookups.py`. Nothing else. That comes to 32 tools as built, 30 of
+  which were already written and needed only offering, the last being the
+  manual an agent reads (§12, phase 8). §5.
 * **`send` is a complete building surface, and stays complete for free.**
   CLAUDE.md already promises that every point in a menu is reachable by typing
   a command. That promise is held level for players; an agent inherits it and
@@ -208,6 +215,27 @@ the tests in this plan are unchanged either way; only §3.2 and §3.4 are.
 
 Do not write the token, the tools or the tests until phase 0 has answered.
 
+*As built:* it answered yes, and the fallback is not needed. A Twisted
+resource started from `server/conf/portal_services_plugins.py` binds its own
+port in the Portal, makes a session, has it logged in by an inputfunc, drives
+commands and collects output; `who` shows the agent with `mcp` in the protocol
+column. Three things the spike found that reading could not have:
+
+* **Evennia already owns 4000 to 4006**, and 4005 is not free: it is the
+  second half of `WEBSERVER_PORTS = [(4001, 4005)]`, the webserver's internal
+  port, which the *Server* binds. Taking it means the Portal wins the race and
+  the Server then fails to start at all. The endpoint is on **4007**.
+* **A `render_` method that finishes a request must return `NOT_DONE_YET`**,
+  even when the answer was ready immediately. Returning a body as well makes
+  Twisted write to a finished request, and the client sees the connection drop
+  with nothing sent.
+* **`sessionhandler.connect()` does not connect.** It puts the session on a
+  throttled queue and tells the Server about it over AMP some time later.
+  Anything sent before `session.server_connected` is true is sent for a
+  session the Server has never heard of, and is dropped in silence. A person
+  typing cannot lose that race; an agent calling `initialize` always does, so
+  the auth message waits for it.
+
 ---
 
 ## 4. Who is asking
@@ -354,6 +382,20 @@ Both go through the same confirmations a player's `export world` and
 as text and is answered with `send` — a menu, in other words, which works
 because §3.2.
 
+*As built:* they do not, and this is the one place the plan asked for something
+worse than what is there. A confirmation needs a session to answer yes on, and
+a tool call is not a session turn: the request is held open while the Server
+runs the tool, so a menu opened inside it would wait for an answer that cannot
+arrive until the call returns. Neither tool needs one anyway once they are
+this shape. `export_world` writes no file and does not touch the restore point
+— a document that went nowhere is not an export, and an agent reading a world
+out should not quietly move where `reset world` goes back to — so it changes
+nothing and has nothing to confirm. `import_world` creates a world rather than
+destroying one, and what a player's confirmation there actually says ("its
+text reaches your model on your key") is a warning; it is in the tool's answer
+instead, where an agent will read it. A player's `export world` and
+`import world` still confirm, unchanged.
+
 ### 5.5 What is deliberately not a tool
 
 * **One tool per command.** §5.1.
@@ -399,14 +441,25 @@ Everything here is a cap that already exists somewhere, reused:
 
 * **A tool result** is capped at `toolbox.MOST_RESULT`, cut with
   `toolbox.CUT_SHORT`, because every list tool takes a query, a limit and an
-  offset and can always be asked again more precisely.
+  offset and can always be asked again more precisely. *As built:* with one
+  exception, found by running it. A world document is not a list. Four thousand
+  characters of one is not a shorter world, it is broken JSON — the first
+  `export_world` came back cut at 4000 and would not parse, and that tool is
+  the reason this surface exists. `agents.WHOLE` names the tools whose answer
+  is never cut, with that reason; the ceiling for them is
+  `exchange.MOST_BYTES`, because that is the most a world may be at all. The
+  document that found this was 27 KB.
 * **A document** is capped by `exchange.MOST_BYTES` and the rest of the caps
   in that module, checked before anything is built.
 * **Arguments** are checked by `toolbox.problems_with` against the schema's
   own promises before a handler sees them.
 * **A rate on `send`**, because a runaway loop typing at the mud is the
   in-game equivalent of the runaway recursion `basic-principles.md` asks for
-  guards against.
+  guards against. *As built:* nothing was added. Evennia's
+  `PortalSessionHandler.data_in` already counts commands per second per
+  session against `_MIN_TIME_BETWEEN_COMMANDS` and answers an overflow with a
+  complaint rather than the command, which is the guard this asked for, applied
+  to agents because they are ordinary sessions.
 
 There is deliberately **no cap on sessions per token**, because there is
 nothing to cap: one character per account means a second connection displaces
@@ -427,8 +480,12 @@ saying what putting something here buys and what the bar is:
 ```python
 MCP_ENABLED = False
 MCP_INTERFACE = "127.0.0.1"
-MCP_PORT = 4005
+MCP_PORT = 4007
 ```
+
+4007 because Evennia has 4000 to 4006 already, and the one that is easy to
+miss is 4005 -- the second half of `WEBSERVER_PORTS`, bound by the Server.
+§3.5.
 
 The default is nothing listening. Turning it on and reaching it from another
 machine are two separate decisions, and the second one should be made by
@@ -518,6 +575,38 @@ that nothing changed.
 **Tags.** All of this is `world`-tier: the database, no network, no model.
 Nothing here belongs in the `llm` tier, which is the point of §9.
 
+*As built:* `tests/test_agents.py`, 40 tests, all `world`-tier and none paid.
+Four things are worth recording about how it came out.
+
+The session with no socket is nine lines. Everything in `world/agents.py` wants
+a session for two things only — who the account is and what it is puppeting —
+so the stand-in carries those, a `msg` that files what the game said by name,
+and a `login` that sets a flag. A real one needs a Portal, an AMP link and a
+reactor, none of which has an opinion about any of this. It is named `Session`
+and its accessor is `agent_session()`, because `self.session` is one of
+`tests/base.py`'s fixture dials and the first version of this shadowed it.
+
+The world fixture is **borrowed, not written again**: `DocumentsTravel`
+subclasses `test_exchange.WorldTest`, whose `world()` and `furnish()` already
+build a hand-built world with one of everything a document has a section for. A
+second world fixture would have been a second thing to keep level, and the
+round trip here is the same round trip that module already makes — driven
+through the tool an agent calls rather than the command a player types.
+
+The refusal tests found a real bug rather than confirming one. `run_tool` reads
+a plain string as success and only a `toolbox.Complaint` as failure, and the
+document handlers were answering refusals with plain strings — so a document
+that was not a world came back as a cheerful result whose text happened to say
+it had failed. Three tests went red, which is what they were for.
+
+The guard was **verified to bite** by disarming `NOT_OFFERED` and watching it
+go red, not by assuming. It also has a non-vacuity test of its own, because a
+guard whose set is empty passes forever.
+
+The Portal half has no tests here and is not pretended to. It is HTTP, Twisted
+and a live AMP link, and what proves it is running it — which is what §3.5 did,
+and how all three of its findings surfaced.
+
 ---
 
 ## 12. Phases
@@ -529,29 +618,154 @@ and this document updated if the answer is the fallback.
 handshake and tool listing, a session made and torn down. No auth yet, nothing
 but a `send` that echoes. Ends when a client can connect and see a tool list.
 
+*As built:* phases 1, 2 and 3 arrived together, because they turned out to be
+one thing. A transport with no auth has nobody to make a session for, and a
+session with no `send` cannot be shown to work; the spike needed all three to
+answer its own question. `server/conf/mcp_protocol.py` is the Portal half
+(session, endpoint, `send`, `poll`, JSON-RPC, `initialize`/`ping`/`tools/list`/
+`tools/call`, `DELETE`), `world/agents.py` the Server half, and
+`server/conf/inputfuncs.py` the two-function seam between them.
+
 **Phase 2 — the token.** The preferences field, generation, masking, the
 confirmation, the `exchange.LEFT` line, and the displaced-session message
 (§4.3). Ends when phase 1 refuses everybody without a token.
+
+*As built:* the token itself, the `exchange.LEFT` line and the displacement
+warning are in (`world/agents.py`). The `settings agenttoken` field is not:
+nothing can mint a token from inside the game yet, which is the rest of this
+phase.
 
 **Phase 3 — `send` and `poll`.** The real ones: input in, output collected,
 prompt included, ANSI off, the buffer and its cap, the rate limit. Ends with
 an agent that can play a world.
 
+*As built:* done, and the interesting part was not the plumbing but the
+waiting. A mud has no end marker: a command that moves you prints the room,
+and a command that wakes an NPC may print again a moment later. `send` answers
+when the mud has been quiet for `SETTLE` (a quarter second), giving up at
+`MOST_WAIT`; `poll` answers the moment anything arrives, waiting up to
+`POLL_WAIT` for it. That is what a person staring at a terminal does, and
+there is no better rule available to something reading a stream with no end.
+
 **Phase 4 — the document.** `export_world` and `import_world` over
 `exchange.py`, with the confirmations. Ends with a fixture built by an agent
 and checked in.
 
+*As built:* done, without the confirmations (§5.4) and with the result cap
+lifted for a document (§7). The round trip works over the wire: a 27 KB
+document read out of a world and built into a new one in one call, and the same
+round trip is a test. Both tools take a document inline rather than going
+through the shared folder, which is what makes a fixture one call.
+
 **Phase 5 — the lookups.** `lookups.all_tools()` offered, the context built
 from the session, `available` honoured. Small, because the tools exist.
 
+*As built:* small, as expected — `offered_tools` is fifteen lines. 29 lookups
+reach an agent and one does not. `commonsense` is `threaded`: it goes to the
+network, and a tool run from the Server's reactor thread would stop the mud
+while it waited, so it is named in `NOT_OFFERED` with that reason rather than
+quietly left out. Giving it the deferred shape `llm.fetch` already uses is the
+one piece of work this phase left behind.
+
 **Phase 6 — the guard.** `tools()` per module, `NPC_TOOLS` converted,
 `OFFERED` / `NOT_OFFERED`, and the walk test verified to bite.
+
+*As built:* the guard is in and bites — disarming `NOT_OFFERED` turns it red,
+which was checked rather than assumed — and it is a two-way guard: a tool that
+cannot be offered and is not named fails, and a name left in `NOT_OFFERED`
+after its tool is gone fails too, because a stale exclusion hides the next tool
+that shares its name. It found something on its first run: the tool is called
+`commonsense`, not `ask_commonsense`, and the name written from memory would
+have excluded nothing at all.
+
+*As built, second pass:* `tools()` per module and the `NPC_TOOLS` conversion
+were left out of the first pass as tidiness, and doing them showed the first
+pass had been wrong about that — they are what close the guard's blind spot.
+
+**`NPC_TOOLS` were raw provider dicts, and so were invisible.** The AST pass
+finds a tool by the string literal it is named with; the thirteen character
+tools were named inside a dictionary and reached `toolbox` through
+`from_schema`, so a static walk found the other fifty and none of them. They
+are `toolbox.Tool` objects now, the schemas byte-for-byte identical (checked by
+dumping every schema before and after and comparing), and a test asserts no
+tool anywhere is built under a name a static pass cannot read — because a
+guard with a blind spot is worse than no guard.
+
+**`world/toolkit.py` is the register**, gathering `lookup_tools()` and
+`tools()` from every module that has either. Two accessors rather than one, so
+nothing forwards: a module whose only tools are lookups needs no `tools()` at
+all, which is the same judgement that kept the makers from growing a
+`record()`. `lookups.py` keeps its job unchanged.
+
+**A tool with no handler is a declaration.** Most finish tools cannot exist
+without the conversation they answer — `item_tool` needs to know which item,
+`rules_tool` which action — so a module declares those: name, kind and what it
+is for, with no handler. `Tool.runnable` tells them apart, and it turned out to
+be load-bearing in a way that was not foreseen: `check_traits` is a lookup by
+kind, so the kind filter alone would have handed an agent a character's own
+tool. `runnable` is what stops it, and a test says so.
+
+**`Tool.kind`** is worked out from the two flags rather than stored, so a tool
+cannot be filed as one kind and behave as another. The three kinds were already
+named in `toolbox`'s own docstring; this is that sentence as a value something
+can walk.
+
+The guard now bites four ways, each verified by planting the fault and watching
+it go red: a tool built and not registered, a declaration nothing builds any
+more, a tool named by something other than a literal, and one name claimed by
+two modules. The second of those did **not** bite at first — declarations are
+themselves `tb.Tool("name")` calls, so counting them as evidence of being built
+made that direction impossible to fail. It now separates a call inside a
+`tools()` body (the register speaking) from one anywhere else (the tool being
+made). A guard nobody has watched fail is a guard nobody knows works.
 
 **Phase 7 — documentation.** The README's command reference and architecture
 table; a section under "Before you host this anywhere" about what a token is
 and what an agent connected with one can spend; and the agent-readable note
 that the ACP item in `future-plans.md` really wanted — what the surfaces are,
 in a form something can read.
+
+*As built:* the README has a "Letting an agent play" section (switching it on,
+minting a token, a client config, the tool table, what to expect), the
+`agenttoken` row in the command reference, `agents.py` in the architecture
+table, and a paragraph under "Before you host this anywhere" saying plainly
+that a token is the account. The agent-readable half became phase 8, because it
+is a different document for a different reader and wanted the register first.
+
+**Phase 8 — the manual an agent reads.** `world/manual.py`, reached by one
+`manual` tool, a page at a time. The surviving half of the ACP item in
+`future-plans.md`: the README tells a person how to switch a port on, and this
+tells whatever connects what there is to do here.
+
+*As built:* nine pages, and **the half of it that would rot is generated**.
+The tools page is built from `agents.offered_tools`, the commands page from the
+subject register and the maker table, the effects page from
+`effects.VOCABULARY` — so a tool, a verb, a thing a world can be made of or an
+effect a rule may use cannot be added without the manual saying so. Tests
+assert exactly that: every offered tool named on the tools page, every verb and
+maker on the commands page, every effect on the effects page. It is the same
+reason `preferences.help_entries` builds a topic per setting rather than
+somebody writing fourteen of them.
+
+The written half is what a register cannot say: what a world *is*, why building
+goes through menus, what to do with a document, and one page (`testing`) on
+what an agent is actually better at than a person — write the fixture as a
+document, play it with `send`, assert with `export_world`, listen with `poll`.
+
+`extending` is the page that says what may not be added, and it says it plainly
+rather than leaving an agent to find out: no Python from inside the game, no
+uncontrolled network request, and a note that finding a way around either is a
+bug worth reporting rather than a feature to use.
+
+Two constraints that shaped it. Every page is shorter than `MOST_RESULT`, with
+a test, because a page that has to be cut is one nobody reads the end of — the
+remedy is another page, not a longer one. And no page carries a colour code or
+an aligned column, for the reason `score` and `worldcheck` carry none: it is
+read aloud at least as often as it is looked at.
+
+`manual` is defined as an ordinary lookup, so `lookups.py` gathers it and an
+agent is offered it with nothing wired up. `agents.greeting` names it, so the
+first thing an agent is told is where to read the rest.
 
 Each phase ends with the suite green.
 
@@ -608,6 +822,28 @@ down in a form an agent can read — and that is phase 7, not a protocol.
 ---
 
 ## 14. Open questions
+
+**The one lookup an agent cannot have.** `commonsense` is `threaded`: it goes
+to the network, and a tool run from the Server's reactor thread would stop the
+mud while it waited. It is named in `agents.NOT_OFFERED` with that reason, and
+what it wants is the deferred shape `llm.fetch` already uses — `run_tool`
+answering later rather than returning, and `mcp_tool` replying by ticket when
+it does, which the Portal already waits for. Small, and the only tool this
+surface is missing.
+
+**What the manual does not cover yet.** Nine pages, and the gap is the one the
+ACP item named: a page for an agent about to write a *plugin*. `extending` says
+what may be added and what may not, which is the honest answer while affect
+plugins are still a `future-plans.md` item with no surface to document. When
+that surface exists, it is a tenth page, generated from whatever register the
+plugins hang off rather than written.
+
+**Whether a page should be reachable by typing, too.** Everything else in this
+game is, and the manual is the one thing an agent has that a person does not.
+`help` already answers for commands and settings; a `view manual` would make
+the register's pages readable in the game, and the argument against is only
+that they are written for a reader who is not there. Worth revisiting the first
+time a person wants to read what their agent was told.
 
 **Whether `poll` is enough, or whether the client needs pushing.** MCP is
 request-shaped and a mud is not. A blocking `poll` with a short timeout is the

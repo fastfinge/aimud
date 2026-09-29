@@ -506,3 +506,28 @@ def narration_complaints(args, bound, actor):
         if kind not in effects_mod.VOCABULARY:
             said.append(f"there is no such effect as {kind!r}")
     return said
+
+
+# ---------------------------------------------------------------------------
+# The register (world/toolkit.py)
+# ---------------------------------------------------------------------------
+
+def tools():
+    """
+    The verb pipeline's two answers, as declared. `admit` is how a model
+    says a verb cannot be done to a sort of thing at all; `narrate`,
+    built per call by `narration_tool(bound, actor)`, is how one attempt
+    is told. See `world/toolkit.py`.
+    """
+    from world import toolbox as tb
+
+    return [
+        tb.Tool(
+            "admit",
+            "Say whether this verb can be done to this sort of thing at all.",
+            finishes=True),
+        tb.Tool(
+            "narrate",
+            "Say what happened in one attempt, and what it changed here.",
+            finishes=True),
+    ]

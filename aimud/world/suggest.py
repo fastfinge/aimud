@@ -719,3 +719,22 @@ def verdicts_tool(standing):
     return tb.Tool("give_verdicts", "Say yes or no to each suggestion.",
                    parameters, handler, finishes=True)
 
+
+# ---------------------------------------------------------------------------
+# The register (world/toolkit.py)
+# ---------------------------------------------------------------------------
+
+def tools():
+    """
+    `give_verdicts`, as declared: how a model answers a whole page of
+    suggestions at once. Built per call by `verdicts_tool(standing)`,
+    which knows which suggestions are waiting. See `world/toolkit.py`.
+    """
+    from world import toolbox as tb
+
+    return [
+        tb.Tool(
+            "give_verdicts",
+            "Say yes or no to each suggestion waiting, and why.",
+            finishes=True),
+    ]

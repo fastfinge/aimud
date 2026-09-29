@@ -1495,3 +1495,30 @@ def ask_when_it_runs_out(character, slug, world_root):
     if not payer.will("verbs"):
         return
     learn_becoming(payer, world_root, slug)
+
+
+# ---------------------------------------------------------------------------
+# The register (world/toolkit.py)
+# ---------------------------------------------------------------------------
+
+def tools():
+    """
+    The rule generator's two answers, as declared. `rules_tool` is built
+    per call for one action and `becoming_tool` for one figure running
+    out. `verb_info` is a lookup and `lookup_tools` answers for it. See
+    `world/toolkit.py`.
+    """
+    from world import toolbox as tb
+
+    return [
+        tb.Tool(
+            "file_rules",
+            "File the rules for one action: what happens, when, and what it" 
+            "changes.",
+            finishes=True),
+        tb.Tool(
+            "file_becoming",
+            "File what running out of a figure means for whoever it belongs" 
+            "to.",
+            finishes=True),
+    ]

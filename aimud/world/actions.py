@@ -623,3 +623,25 @@ def lookup_tools():
         tb.params(tb.PAGE), tb.answering(listing),
         doing="looking up the verbs this world knows", looks=True,
         available=lambda ctx: ctx.world_root is not None)]
+
+
+# ---------------------------------------------------------------------------
+# The register (world/toolkit.py)
+# ---------------------------------------------------------------------------
+
+def tools():
+    """
+    `declare_action`, as declared: the action generator's answer.
+
+    Built per call by `declaration_tool(action)`, which knows which
+    action is being declared. See `world/toolkit.py`.
+    """
+    from world import toolbox as tb
+
+    return [
+        tb.Tool(
+            "declare_action",
+            "Say what one action means: what it does to what, and when it can" 
+            "be done at all.",
+            finishes=True),
+    ]
