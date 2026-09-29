@@ -1,6 +1,10 @@
 # Development plan: agents on equal footing
 
-Status: **scoped**, nothing built.
+Status: **being built.** Phases 0 to 3 are done and an agent can play; what each
+came to, and where it differs from what was scoped, is under it in §12.
+Everything the building found is marked **as built** where it changed the plan.
+§3.2 held: an MCP session is an Evennia session, and `who` lists it with
+`mcp` in the protocol column.
 
 This covers the first half of the `future-plans.md` item "mcp servers: let
 other AI's play? Give generators and npcs new tools?" — the half where an
@@ -208,6 +212,27 @@ the tests in this plan are unchanged either way; only §3.2 and §3.4 are.
 
 Do not write the token, the tools or the tests until phase 0 has answered.
 
+*As built:* it answered yes, and the fallback is not needed. A Twisted
+resource started from `server/conf/portal_services_plugins.py` binds its own
+port in the Portal, makes a session, has it logged in by an inputfunc, drives
+commands and collects output; `who` shows the agent with `mcp` in the protocol
+column. Three things the spike found that reading could not have:
+
+* **Evennia already owns 4000 to 4006**, and 4005 is not free: it is the
+  second half of `WEBSERVER_PORTS = [(4001, 4005)]`, the webserver's internal
+  port, which the *Server* binds. Taking it means the Portal wins the race and
+  the Server then fails to start at all. The endpoint is on **4007**.
+* **A `render_` method that finishes a request must return `NOT_DONE_YET`**,
+  even when the answer was ready immediately. Returning a body as well makes
+  Twisted write to a finished request, and the client sees the connection drop
+  with nothing sent.
+* **`sessionhandler.connect()` does not connect.** It puts the session on a
+  throttled queue and tells the Server about it over AMP some time later.
+  Anything sent before `session.server_connected` is true is sent for a
+  session the Server has never heard of, and is dropped in silence. A person
+  typing cannot lose that race; an agent calling `initialize` always does, so
+  the auth message waits for it.
+
 ---
 
 ## 4. Who is asking
@@ -406,7 +431,11 @@ Everything here is a cap that already exists somewhere, reused:
   own promises before a handler sees them.
 * **A rate on `send`**, because a runaway loop typing at the mud is the
   in-game equivalent of the runaway recursion `basic-principles.md` asks for
-  guards against.
+  guards against. *As built:* nothing was added. Evennia's
+  `PortalSessionHandler.data_in` already counts commands per second per
+  session against `_MIN_TIME_BETWEEN_COMMANDS` and answers an overflow with a
+  complaint rather than the command, which is the guard this asked for, applied
+  to agents because they are ordinary sessions.
 
 There is deliberately **no cap on sessions per token**, because there is
 nothing to cap: one character per account means a second connection displaces
@@ -427,8 +456,12 @@ saying what putting something here buys and what the bar is:
 ```python
 MCP_ENABLED = False
 MCP_INTERFACE = "127.0.0.1"
-MCP_PORT = 4005
+MCP_PORT = 4007
 ```
+
+4007 because Evennia has 4000 to 4006 already, and the one that is easy to
+miss is 4005 -- the second half of `WEBSERVER_PORTS`, bound by the Server.
+§3.5.
 
 The default is nothing listening. Turning it on and reaching it from another
 machine are two separate decisions, and the second one should be made by
@@ -529,13 +562,34 @@ and this document updated if the answer is the fallback.
 handshake and tool listing, a session made and torn down. No auth yet, nothing
 but a `send` that echoes. Ends when a client can connect and see a tool list.
 
+*As built:* phases 1, 2 and 3 arrived together, because they turned out to be
+one thing. A transport with no auth has nobody to make a session for, and a
+session with no `send` cannot be shown to work; the spike needed all three to
+answer its own question. `server/conf/mcp_protocol.py` is the Portal half
+(session, endpoint, `send`, `poll`, JSON-RPC, `initialize`/`ping`/`tools/list`/
+`tools/call`, `DELETE`), `world/agents.py` the Server half, and
+`server/conf/inputfuncs.py` the two-function seam between them.
+
 **Phase 2 — the token.** The preferences field, generation, masking, the
 confirmation, the `exchange.LEFT` line, and the displaced-session message
 (§4.3). Ends when phase 1 refuses everybody without a token.
 
+*As built:* the token itself, the `exchange.LEFT` line and the displacement
+warning are in (`world/agents.py`). The `settings agenttoken` field is not:
+nothing can mint a token from inside the game yet, which is the rest of this
+phase.
+
 **Phase 3 — `send` and `poll`.** The real ones: input in, output collected,
 prompt included, ANSI off, the buffer and its cap, the rate limit. Ends with
 an agent that can play a world.
+
+*As built:* done, and the interesting part was not the plumbing but the
+waiting. A mud has no end marker: a command that moves you prints the room,
+and a command that wakes an NPC may print again a moment later. `send` answers
+when the mud has been quiet for `SETTLE` (a quarter second), giving up at
+`MOST_WAIT`; `poll` answers the moment anything arrives, waiting up to
+`POLL_WAIT` for it. That is what a person staring at a terminal does, and
+there is no better rule available to something reading a stream with no end.
 
 **Phase 4 — the document.** `export_world` and `import_world` over
 `exchange.py`, with the confirmations. Ends with a fixture built by an agent
