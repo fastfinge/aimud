@@ -130,10 +130,17 @@ def _result(id_, value):
     return {"jsonrpc": JSONRPC, "id": id_, "result": value}
 
 
-def _content(text, failed=False):
-    """A tool result in MCP's shape: content, and whether it went wrong."""
+def _content(text, failed=False, whole=False):
+    """
+    A tool result in MCP's shape: content, and whether it went wrong.
+
+    `whole` is for an answer the Server has already decided the length of.
+    A world document is one indivisible thing and four thousand characters of
+    it is broken JSON rather than a shorter world, so `world/agents.py` keeps
+    the list of tools that are never cut and does the cutting for the rest.
+    """
     text = str(text or "")
-    if len(text) > MOST_RESULT:
+    if not whole and len(text) > MOST_RESULT:
         text = text[:MOST_RESULT] + CUT_SHORT
     return {"content": [{"type": "text", "text": text}], "isError": failed}
 
@@ -539,7 +546,8 @@ class McpResource(resource.Resource):
             said = answers[0]["args"]
             text = said[1] if len(said) > 1 else ""
             failed = bool(said[2]) if len(said) > 2 else False
-            self._reply(request, _result(id_, _content(text, failed=failed)))
+            self._reply(request, _result(
+                id_, _content(text, failed=failed, whole=True)))
 
         self._wait(sess, arrived, most=TOOL_WAIT,
                    until=lambda: any(

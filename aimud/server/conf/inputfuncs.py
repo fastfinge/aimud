@@ -69,8 +69,12 @@ def mcp_auth(session, token="", **kwargs):
 
     agents.warn_displaced(session, account)
     session.sessionhandler.login(session, account)
-    session.msg(mcp_auth=((True, agents.greeting(account)), {}))
+    # The tool list goes first and the verdict second, because the Portal is
+    # holding a request open until the verdict arrives and reads the tools in
+    # the same breath. Sent the other way round, the tools are still in flight
+    # when the reply goes out and an agent is offered `send` and `poll` alone.
     session.msg(mcp_tools=((agents.tool_schemas(session),), {}))
+    session.msg(mcp_auth=((True, agents.greeting(account)), {}))
 
 
 def mcp_tool(session, ticket="", name="", args=None, **kwargs):
