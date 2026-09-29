@@ -10,7 +10,7 @@ import re
 
 from evennia.utils import logger
 
-from world import llm, tokens
+from world import llm, tokens, toolbox as tb
 
 
 #: Words that are a station rather than a name. Two sergeants are not two
@@ -25,356 +25,303 @@ TITLES = frozenset("""
 # Tool definitions sent to the dialogue model
 # ---------------------------------------------------------------------------
 
+#: Every tool a character may be offered, as `toolbox.Tool` objects -- the one
+#: currency for a tool anywhere in this game, so a generator's tools, a
+#: character's and an agent's are the same sort of thing and can be gathered
+#: into one register (`world/toolkit.py`). These carry no handler: a handler
+#: belongs to one character's turn and is bound in `_toolbox_for`, so what is
+#: written here is what a tool always means rather than who is using it.
+#:
+#: They were dicts until the register wanted to walk them. A dict built a
+#: schema a provider understood and nothing else could read: `TOOL_NAMES` had
+#: to reach into `tool["function"]["name"]`, the three helpers below did
+#: surgery on copies of nested dicts, and an AST pass looking for every tool
+#: in the game found the other fifty and none of these.
 NPC_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "move",
-            "description": "Leave by one of the ways out of this room.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "direction": {
-                        "type": "string",
-                        "description": "Which way out, by its name",
-                    }
+    tb.Tool(
+        "move",
+        "Leave by one of the ways out of this room.",
+        {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string",
+                    "description": "Which way out, by its name",
                 },
-                "required": ["direction"],
             },
+            "required": ["direction"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "say",
-            "description": "Say something aloud in the room.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "message": {
-                        "type": "string",
-                        "description": "The words, as you would say them",
-                    },
-                    "to": {
-                        "type": "string",
-                        "description": (
-                            "Optional. Who you are speaking to, when it is "
-                            "somebody in particular"
-                        ),
-                    },
+    ),
+    tb.Tool(
+        "say",
+        "Say something aloud in the room.",
+        {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The words, as you would say them",
                 },
-                "required": ["message"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get",
-            "description": (
-                "Pick up something within reach: lying here, or in or on "
-                "something that is open."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "object_name": {
-                        "type": "string",
-                        "description": "What to pick up",
-                    }
+                "to": {
+                    "type": "string",
+                    "description": "Optional. Who you are speaking to, when "
+                    "it is somebody in particular",
                 },
-                "required": ["object_name"],
             },
+            "required": ["message"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "give",
-            "description": "Give an object from your inventory to someone in the room.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "object_name": {
-                        "type": "string",
-                        "description": "What to hand over, from what you are carrying",
-                    },
-                    "recipient": {
-                        "type": "string",
-                        "description": "Name of the player or NPC to give to",
-                    },
+    ),
+    tb.Tool(
+        "get",
+        "Pick up something within reach: lying here, or in or on something "
+        "that is open.",
+        {
+            "type": "object",
+            "properties": {
+                "object_name": {
+                    "type": "string",
+                    "description": "What to pick up",
                 },
-                "required": ["object_name", "recipient"],
             },
+            "required": ["object_name"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "emote",
-            "description": ("A gesture or expression everyone here sees. Not "
-                            "for doing something to anything: that is attempt."),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "action": {
-                        "type": "string",
-                        "description": (
-                            "What you do, starting with the verb, without "
-                            "your own name or pronoun in front: 'nods "
-                            "solemnly', 'loops an arm through Sampson's'. "
-                            "Third person throughout -- your own hair is "
-                            "'her hair', 'his hair' or 'their hair', never "
-                            "'my hair' -- and never I or me."
-                        ),
-                    }
+    ),
+    tb.Tool(
+        "give",
+        "Give an object from your inventory to someone in the room.",
+        {
+            "type": "object",
+            "properties": {
+                "object_name": {
+                    "type": "string",
+                    "description": "What to hand over, from what you are "
+                    "carrying",
                 },
-                "required": ["action"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "attempt",
-            "description": (
-                "Attempt an action on something, the way a player would type it: "
-                "'light the candle', 'read the notice', 'open the drawer'. The "
-                "world decides whether it works and what changes. Use this for "
-                "anything physical rather than describing it in an emote. "
-                "Clothes work this way too: 'wear the grey coat', 'remove my "
-                "apron'. Anyone looking at you sees what you have on, so what "
-                "you put on or take off really does change how you appear."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "action": {
-                        "type": "string",
-                        "description": "The action as a short command, e.g. 'light candle'",
-                    }
+                "recipient": {
+                    "type": "string",
+                    "description": "Name of the player or NPC to give to",
                 },
-                "required": ["action"],
             },
+            "required": ["object_name", "recipient"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_traits",
-            "description": (
-                "Take stock of somebody -- how strong, how skilled, how well, "
-                "how well thought of. Your own figures you already know and "
-                "they are given to you above; use this for other people in the "
-                "room. What you find comes straight back to you, so you can "
-                "act on it in the same turn. Sizing "
-                "somebody up is a thing anyone can do by looking at them, so "
-                "use it when it would matter -- before picking a fight, "
-                "before trusting a stranger with an errand, when someone "
-                "looks unwell."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "person": {
-                        "type": "string",
-                        "description": (
-                            "Which of the people here to size up, or "
-                            "'myself'"
-                        ),
-                    },
+    ),
+    tb.Tool(
+        "emote",
+        "A gesture or expression everyone here sees. Not for doing something "
+        "to anything: that is attempt.",
+        {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "What you do, starting with the verb, "
+                    "without your own name or pronoun in "
+                    "front: 'nods solemnly', 'loops an arm "
+                    "through Sampson's'. Third person "
+                    "throughout -- your own hair is 'her "
+                    "hair', 'his hair' or 'their hair', never "
+                    "'my hair' -- and never I or me.",
                 },
-                "required": ["person"],
             },
+            "required": ["action"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "answer_quest",
-            "description": (
-                "Answer a request somebody has made of you. Refusing is a "
-                "perfectly good answer, and the right one when it does not "
-                "suit who you are or what you are already doing. Agreeing "
-                "means you will work at it until it is done, fails, or you "
-                "give it up."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "accept": {
-                        "type": "boolean",
-                        "description": "true to agree to it, false to refuse",
-                    },
+    ),
+    tb.Tool(
+        "attempt",
+        "Attempt an action on something, the way a player would type it: "
+        "'light the candle', 'read the notice', 'open the drawer'. The world "
+        "decides whether it works and what changes. Use this for anything "
+        "physical rather than describing it in an emote. Clothes work this "
+        "way too: 'wear the grey coat', 'remove my apron'. Anyone looking at "
+        "you sees what you have on, so what you put on or take off really "
+        "does change how you appear.",
+        {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "description": "The action as a short command, e.g. "
+                    "'light candle'",
                 },
-                "required": ["accept"],
             },
+            "required": ["action"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "offer_quest",
-            "description": (
-                "Ask someone present -- player or character -- to do something "
-                "for you, in your own words. Say what you want, what you will "
-                "give them for it, and any consequence of failing. The game "
-                "works out how to check it, so describe the errand plainly "
-                "rather than in any particular format, and ask only for "
-                "something that could actually be done with what is around "
-                "you. Use this sparingly: ask when you genuinely need a hand "
-                "with what you are trying to do, not as a way of making "
-                "conversation. Anyone already running an errand cannot take "
-                "another."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "person": {
-                        "type": "string",
-                        "description": "Name of the person you are asking",
-                    },
-                    "request": {
-                        "type": "string",
-                        "description": (
-                            "What you want done, said the way you would say it: "
-                            "'bring me the chalk from the storeroom'"
-                        ),
-                    },
-                    "offer": {
-                        "type": "string",
-                        "description": "What they get for doing it, e.g. 'my old brass compass'",
-                    },
-                    "consequence": {
-                        "type": "string",
-                        "description": "Optional. What happens if they fail or run out of time.",
-                    },
-                    "time_limit_seconds": {
-                        "type": "integer",
-                        "description": (
-                            "Optional deadline in seconds. Leave it out if "
-                            "there is no hurry."
-                        ),
-                    },
+    ),
+    tb.Tool(
+        "check_traits",
+        "Take stock of somebody -- how strong, how skilled, how well, how "
+        "well thought of. Your own figures you already know and they are "
+        "given to you above; use this for other people in the room. What you "
+        "find comes straight back to you, so you can act on it in the same "
+        "turn. Sizing somebody up is a thing anyone can do by looking at "
+        "them, so use it when it would matter -- before picking a fight, "
+        "before trusting a stranger with an errand, when someone looks "
+        "unwell.",
+        {
+            "type": "object",
+            "properties": {
+                "person": {
+                    "type": "string",
+                    "description": "Which of the people here to size up, or "
+                    "'myself'",
                 },
-                "required": ["person", "request", "offer"],
             },
+            "required": ["person"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "set_goal",
-            "description": (
-                "Decide what you are going to work towards next, in your own "
-                "words: 'get the storeroom key', 'see the lamp in the chapel "
-                "lit', 'find out where the cook went'. You will then pursue it "
-                "on your own between conversations, so choose something you "
-                "could actually get done with what is around you. Use this "
-                "when you have nothing in particular you are working towards."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "want": {
-                        "type": "string",
-                        "description": "What you want to bring about, in a sentence",
-                    }
+        looks=True,
+    ),
+    tb.Tool(
+        "answer_quest",
+        "Answer a request somebody has made of you. Refusing is a perfectly "
+        "good answer, and the right one when it does not suit who you are or "
+        "what you are already doing. Agreeing means you will work at it until "
+        "it is done, fails, or you give it up.",
+        {
+            "type": "object",
+            "properties": {
+                "accept": {
+                    "type": "boolean",
+                    "description": "true to agree to it, false to refuse",
                 },
-                "required": ["want"],
             },
+            "required": ["accept"],
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create",
-            "description": (
-                "Make real something this room already implies but that "
-                "nothing in the game has yet -- the notice board the "
-                "description mentions, the row of hooks by the door, the "
-                "bottle behind the bar. Name it; the world decides whether "
-                "it belongs here and works out what it is, so it comes back "
-                "as a thing that can actually be handled rather than a name "
-                "on nothing. This is not for furnishing: something nobody "
-                "has any reason to reach for is better left unmade."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": (
-                            "What it is called, as you would name it: "
-                            "'notice board', 'brass hooks'"
-                        ),
-                    },
+    ),
+    tb.Tool(
+        "offer_quest",
+        "Ask someone present -- player or character -- to do something for "
+        "you, in your own words. Say what you want, what you will give them "
+        "for it, and any consequence of failing. The game works out how to "
+        "check it, so describe the errand plainly rather than in any "
+        "particular format, and ask only for something that could actually be "
+        "done with what is around you. Use this sparingly: ask when you "
+        "genuinely need a hand with what you are trying to do, not as a way "
+        "of making conversation. Anyone already running an errand cannot take "
+        "another.",
+        {
+            "type": "object",
+            "properties": {
+                "person": {
+                    "type": "string",
+                    "description": "Name of the person you are asking",
                 },
-                "required": ["name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "destroy",
-            "description": (
-                "Destroy something lying here or that you carry. Ways out "
-                "and people cannot be destroyed."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "object_name": {
-                        "type": "string",
-                        "description": "What to destroy",
-                    }
+                "request": {
+                    "type": "string",
+                    "description": "What you want done, said the way you "
+                    "would say it: 'bring me the chalk from "
+                    "the storeroom'",
                 },
-                "required": ["object_name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "modify",
-            "description": (
-                "Change what something within reach is called, or how it "
-                "looks. A name says what a thing IS -- what it is made of, "
-                "what it is for, whose it is -- and never its condition: "
-                "'glass bottle', not 'broken glass bottle'. Everyone here sees "
-                "you do it, and a change the world's rules refuse is not made."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "object_name": {
-                        "type": "string",
-                        "description": "What to change, as it is called now",
-                    },
-                    "new_name": {
-                        "type": "string",
-                        "description": "What it is called from now on, if that changes",
-                    },
-                    "new_description": {
-                        "type": "string",
-                        "description": (
-                            "What it looks like from now on, if that changes: "
-                            "what it is made of and what it is for, not how "
-                            "full, lit or damaged it is"
-                        ),
-                    },
+                "offer": {
+                    "type": "string",
+                    "description": "What they get for doing it, e.g. 'my old "
+                    "brass compass'",
                 },
-                "required": ["object_name"],
+                "consequence": {
+                    "type": "string",
+                    "description": "Optional. What happens if they fail or "
+                    "run out of time.",
+                },
+                "time_limit_seconds": {
+                    "type": "integer",
+                    "description": "Optional deadline in seconds. Leave it "
+                    "out if there is no hurry.",
+                },
             },
+            "required": ["person", "request", "offer"],
         },
-    },
+    ),
+    tb.Tool(
+        "set_goal",
+        "Decide what you are going to work towards next, in your own words: "
+        "'get the storeroom key', 'see the lamp in the chapel lit', 'find out "
+        "where the cook went'. You will then pursue it on your own between "
+        "conversations, so choose something you could actually get done with "
+        "what is around you. Use this when you have nothing in particular you "
+        "are working towards.",
+        {
+            "type": "object",
+            "properties": {
+                "want": {
+                    "type": "string",
+                    "description": "What you want to bring about, in a "
+                    "sentence",
+                },
+            },
+            "required": ["want"],
+        },
+    ),
+    tb.Tool(
+        "create",
+        "Make real something this room already implies but that nothing in "
+        "the game has yet -- the notice board the description mentions, the "
+        "row of hooks by the door, the bottle behind the bar. Name it; the "
+        "world decides whether it belongs here and works out what it is, so "
+        "it comes back as a thing that can actually be handled rather than a "
+        "name on nothing. This is not for furnishing: something nobody has "
+        "any reason to reach for is better left unmade.",
+        {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "What it is called, as you would name it: "
+                    "'notice board', 'brass hooks'",
+                },
+            },
+            "required": ["name"],
+        },
+    ),
+    tb.Tool(
+        "destroy",
+        "Destroy something lying here or that you carry. Ways out and people "
+        "cannot be destroyed.",
+        {
+            "type": "object",
+            "properties": {
+                "object_name": {
+                    "type": "string",
+                    "description": "What to destroy",
+                },
+            },
+            "required": ["object_name"],
+        },
+    ),
+    tb.Tool(
+        "modify",
+        "Change what something within reach is called, or how it looks. A "
+        "name says what a thing IS -- what it is made of, what it is for, "
+        "whose it is -- and never its condition: 'glass bottle', not 'broken "
+        "glass bottle'. Everyone here sees you do it, and a change the "
+        "world's rules refuse is not made.",
+        {
+            "type": "object",
+            "properties": {
+                "object_name": {
+                    "type": "string",
+                    "description": "What to change, as it is called now",
+                },
+                "new_name": {
+                    "type": "string",
+                    "description": "What it is called from now on, if that "
+                    "changes",
+                },
+                "new_description": {
+                    "type": "string",
+                    "description": "What it looks like from now on, if that "
+                    "changes: what it is made of and what it "
+                    "is for, not how full, lit or damaged it "
+                    "is",
+                },
+            },
+            "required": ["object_name"],
+        },
+    ),
 ]
 
 #: Every tool a character may be offered, by name. `NPC._execute_one` refuses
 #: anything else, which is how a model inventing a tool gets noticed rather
 #: than quietly ignored. Read off the list above, so the two cannot disagree.
-TOOL_NAMES = frozenset(tool["function"]["name"] for tool in NPC_TOOLS)
+TOOL_NAMES = frozenset(tool.name for tool in NPC_TOOLS)
 
 #: How many things a character may DO in one turn. The prompt always said so,
 #: and nothing held a model to it: a reply with eight tool calls was eight
@@ -962,7 +909,7 @@ def _tools_for(npc, room):
 
     offered = []
     for tool in NPC_TOOLS:
-        name = tool["function"]["name"]
+        name = tool.name
 
         if name == "answer_quest":
             offer = quests.offered_to(npc)
@@ -975,8 +922,7 @@ def _tools_for(npc, room):
             if not askable:
                 continue
             tool = _with_choices(tool, {"person": askable})
-            deadline = tool["function"]["parameters"]["properties"][
-                "time_limit_seconds"]
+            deadline = tool.parameters["properties"]["time_limit_seconds"]
             deadline["minimum"] = quests.MIN_TIME_LIMIT
             deadline["maximum"] = quests.MAX_TIME_LIMIT
             offered.append(_described(tool, _carrying_note(here["carried"])))
@@ -1013,33 +959,37 @@ def _tools_for(npc, room):
 
 def _with_choices(tool, choices):
     """A copy of `tool` whose named arguments are closed to these values."""
-    from copy import deepcopy
-
-    tool = deepcopy(tool)
-    properties = tool["function"]["parameters"]["properties"]
+    properties = _properties(tool)
     for argument, values in choices.items():
         properties[argument]["enum"] = list(values)
-    return tool
+    return tool.but(parameters=dict(tool.parameters, properties=properties))
 
 
 def _described(tool, note):
     """A copy of `tool` with something about this moment added to what it says."""
     if not note:
         return tool
-    from copy import deepcopy
-
-    tool = deepcopy(tool)
-    tool["function"]["description"] = f"{tool['function']['description']} {note}"
-    return tool
+    return tool.but(description=f"{tool.description} {note}")
 
 
 def _without(tool, argument):
     """A copy of `tool` that does not offer `argument` at all."""
+    properties = _properties(tool)
+    properties.pop(argument, None)
+    return tool.but(parameters=dict(tool.parameters, properties=properties))
+
+
+def _properties(tool):
+    """
+    A deep copy of one tool's argument properties, safe to change.
+
+    Deep, because an argument's own dict is what gains an `enum` or a bound,
+    and these tools are module-level: a shallow copy would close every
+    character's `get` to whatever was lying in one room.
+    """
     from copy import deepcopy
 
-    tool = deepcopy(tool)
-    tool["function"]["parameters"]["properties"].pop(argument, None)
-    return tool
+    return deepcopy(dict((tool.parameters or {}).get("properties") or {}))
 
 
 def _unexplored_note(here):
@@ -1710,8 +1660,6 @@ def _toolbox_for(npc, room, depth=0):
     those would leave the character thinking for ever; what comes of it
     reaches the next prompt the way it always has.
     """
-    from world import toolbox as tb
-
     acted = {"count": 0}
 
     def running(name):
@@ -1732,9 +1680,8 @@ def _toolbox_for(npc, room, depth=0):
             answer("; ".join(noticed) if noticed else _DONE.get(name, "Done."))
         return handler
 
-    tools = [tb.from_schema(schema, running(schema["function"]["name"]),
-                            looks=schema["function"]["name"] in LOOKING)
-             for schema in _tools_for(npc, room)]
+    tools = [tool.but(handler=running(tool.name))
+             for tool in _tools_for(npc, room)]
     # The first lookups a character is offered: a closer look at something
     # here, its own memory, what this world already knows how to do, and what
     # is wrong with its rules. Each is left out where it cannot answer.
@@ -2019,3 +1966,32 @@ def carry_hints(npc):
         if len(lines) >= CARRY_WANTS:
             break
     return lines
+
+
+# ---------------------------------------------------------------------------
+# The register (world/toolkit.py)
+# ---------------------------------------------------------------------------
+
+def tools():
+    """
+    Every tool a character has, and the two a character is made with.
+
+    `NPC_TOOLS` are the real thing rather than declarations -- they are what
+    every character is offered, they exist without a generator around them,
+    and `_toolbox_for` binds a handler to each for one turn. The two below are
+    declared, because both are built per call: `character_tool(existing)` is
+    closed to the names already taken in a world and `dressing_tool()` answers
+    for one character being dressed. `name_taken` is a lookup and
+    `lookup_tools` answers for it. See `world/toolkit.py`.
+    """
+    return list(NPC_TOOLS) + [
+        tb.Tool(
+            "make_character",
+            "Make the character who belongs in this room: who they are, "
+            "what they look like, and what they want.",
+            finishes=True),
+        tb.Tool(
+            "dress_character",
+            "Dress a character and give them what they carry.",
+            finishes=True),
+    ]

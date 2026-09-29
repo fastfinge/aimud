@@ -116,14 +116,25 @@ def warn_displaced(session, account):
 
 
 def greeting(account):
-    """What an agent is told once it is in. MCP shows this as instructions."""
+    """
+    What an agent is told once it is in. MCP shows this as instructions.
+
+    Short, and its real job is to name the manual: there is far more worth
+    knowing than belongs in a handshake, and `world/manual.py` is where it is
+    kept -- including the half of it generated from the game's own registers,
+    which no fixed greeting could stay level with.
+    """
+    from world import manual
+
     return (
         f"Connected to aimud as {account.key}. You are playing a text mud, "
         "typing at it with the `send` tool exactly as a person would. "
         "Everything this game can do is reachable by typing, menus included: "
         "`help` lists commands, `look` describes where you are, and a menu "
         "tells you what to type next. Use `poll` to hear what happens while "
-        "you are not typing.")
+        f"you are not typing. Call `manual` (page '{manual.FIRST}') first: it "
+        "explains what there is to do here, how to build a world, and how to "
+        "use this connection to drive a test.")
 
 
 # ---------------------------------------------------------------------------
@@ -175,17 +186,34 @@ def offered_tools(ctx):
     """
     `{name: Tool}` for every tool an agent may call, beyond `send` and `poll`.
 
-    The lookups come from `world/lookups.py` whole, because they are already a
-    register, already read-only, and already what an NPC is given -- offering
-    an agent less than an NPC has would be a strange reading of "equal
-    access", and offering it something else would be a second register to keep
-    level. Anything `NOT_OFFERED` names is left out here.
-    """
-    from world import lookups
+    Read off `world/toolkit.py`, the register of every tool in the game, so
+    there is one list and not a second one kept level by hand. Three things
+    take a tool off it, and each is a rule rather than a name:
 
-    found = {tool.name: tool for tool in document_tools()}
-    for name, tool in lookups.all_tools().items():
-        if name in NOT_OFFERED or tool.threaded:
+    * **It cannot be called at all.** A tool with no handler is a declaration
+      (`Tool.runnable`): a generator's finish tool, made per call and
+      meaningless without the conversation it answers, or one of `NPC_TOOLS`,
+      which is what a character is offered and gets its handler bound for one
+      turn. Neither is a thing an agent could run if it tried.
+    * **It does not act.** Only lookups are offered, plus this module's own
+      document tools. An agent that wanted to move or speak types it with
+      `send`, where the parser, the rules and the room all get their say --
+      which is the whole argument of docs/mcp.md §5.1.
+    * **`NOT_OFFERED` names it**, with the reason, for a tool that is runnable
+      and a lookup and still cannot be offered as it stands.
+
+    So a lookup added tomorrow beside the register it reads reaches an agent
+    without anybody wiring it up, and anything else added tomorrow does not
+    reach one by accident. `tests/test_agents.py` holds both halves.
+    """
+    from world import toolbox as tb, toolkit
+
+    ours = {tool.name for tool in document_tools()}
+    found = {}
+    for name, tool in toolkit.every_tool().items():
+        if not tool.runnable or name in NOT_OFFERED or tool.threaded:
+            continue
+        if tool.kind != tb.LOOKUP and name not in ours:
             continue
         if not tool.offered(ctx):
             continue
@@ -259,6 +287,17 @@ def _shortened(name, said):
 # ---------------------------------------------------------------------------
 # The world as a document
 # ---------------------------------------------------------------------------
+
+def tools():
+    """
+    What this module defines for the register: the two document tools.
+
+    `world/toolkit.py` calls this. Runnable rather than declared, unlike a
+    generator's finish tools: these need no live conversation around them, and
+    an agent calls them directly.
+    """
+    return document_tools()
+
 
 def document_tools():
     """
