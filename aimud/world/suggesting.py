@@ -232,3 +232,25 @@ def fill(ctx, form, fields, on_done, on_error, wait=None):
                  # exactly -- somebody is sitting in a form watching it.
                  rounds=ROUNDS, timeout=llm.TIMEOUT, wait=wait)
     return None
+
+
+# ---------------------------------------------------------------------------
+# The register (world/toolkit.py)
+# ---------------------------------------------------------------------------
+
+def tools():
+    """
+    `fill`, as declared: what a model answers when somebody sitting in a
+    form asks for it to be filled in. Built per call by
+    `fill_tool(ctx, fields)`, which knows which fields were asked about.
+    See `world/toolkit.py`.
+    """
+    from world import toolbox as tb
+
+    return [
+        tb.Tool(
+            "fill",
+            "Give a value for every field that was asked about, and nothing" 
+            "for the rest.",
+            finishes=True),
+    ]

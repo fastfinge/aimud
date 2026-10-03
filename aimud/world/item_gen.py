@@ -817,3 +817,26 @@ def _state_hints(world_root, words):
                      "yet: " + ", ".join(unused) + ". Reuse one before "
                      "coining another.")
     return "\n".join(lines) + "\n\n" if lines else ""
+
+
+# ---------------------------------------------------------------------------
+# The register (world/toolkit.py)
+# ---------------------------------------------------------------------------
+
+def tools():
+    """
+    `make_item`, as declared: the item generator's answer.
+
+    Built per call by `item_tool(object_name)`, which knows which item
+    is wanted and closes its fields to what this world already keeps.
+    See `world/toolkit.py`.
+    """
+    from world import toolbox as tb
+
+    return [
+        tb.Tool(
+            "make_item",
+            "Make the item that was asked for: what it is, what sort of" 
+            "thing, and what can be done to it.",
+            finishes=True),
+    ]

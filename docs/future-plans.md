@@ -65,10 +65,14 @@ carrying it.
 * Agent Client Protocol (ACP): **the protocol half is declined** -- see docs/mcp.md §13. ACP's client is a code
 editor and its agent is a coding agent, so for aimud to speak it aimud would have to become a host for coding-agent
 sessions, which is a different program; nothing in "let your coding agent join you in the mud" needs it that the MCP
-server does not already give. What is worth keeping is the second half of this item, and it survives as phase 7 of
-docs/mcp.md: document the plugin and building surfaces in agent friendly form, for a player's Claude or codex or other
-agent, so they can build plugins. By its nature this mud welcomes players and bots on equal footing. The idea is have
-fun, no matter who or what you are.
+server does not already give. The second half of this item is **done**, as phase 8 of docs/mcp.md: the building
+surfaces are documented in agent friendly form, in `world/manual.py`, reached by a `manual` tool a page at a time --
+and half of it is generated from the game's own registers, so the tools, the commands, the things a world can be made
+of and the effects a rule may use cannot be added without the manual saying so. What is left of this item is one page
+that cannot be written yet: a plugin surface to document. `extending` says what may be added and what may not, which is
+the honest answer while affect plugins are still an idea below. When there is a plugin surface, it is a tenth page,
+generated from whatever register the plugins hang off. By its nature this mud welcomes players and bots on equal
+footing. The idea is have fun, no matter who or what you are.
 * Co-ownership and institutional owners: worth having for corporations, countries, gangs, guilds, etc.
 * kinds declaring themselves mass: "some bread", not "a bread". WordNet's lexical file only reliably marks substances (water, sand); food nouns like bread, soup and rice share `noun.food` with apple, so the English module in tokens-and-phrases.md treats them as countable. Wants a `mass` boolean on kind specs, set by the item generator's prompt and settable by players, read by `english.article`, `english.plural` and `english.count`. Pairs with plural objects as a single bound thing.
 * a verb whose object is chosen from a menu rather than typed. The other half of what "summon air" wanted, and the half still missing: `summon` typed bare could ask which of the four, so nothing has to be named at all. The typed half is **done** -- the `called` condition asks about the word rather than the thing, and an unmatched noun consults the rulebooks before it is conjured, so a rule reached by the word is reached before anything is made to satisfy it. See docs/player-building.md 8.6.

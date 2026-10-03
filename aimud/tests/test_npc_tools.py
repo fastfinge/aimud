@@ -37,7 +37,10 @@ class _Scene(GameTest):
         self.letter.db.relation = "in"
 
     def offered(self):
-        return {tool["function"]["name"]: tool["function"]
+        from world import toolbox as tb
+
+        ctx = tb.ToolContext(room=self.room1, actor=self.npc)
+        return {tool.name: tool.schema(ctx)["function"]
                 for tool in npc_gen._tools_for(self.npc, self.room1)}
 
     def choices(self, tool, argument):

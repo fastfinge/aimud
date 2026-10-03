@@ -28,6 +28,7 @@ you can reach through [OpenRouter](https://openrouter.ai/).
 - [Command reference](#command-reference)
 - [Menus](#menus)
 - [What it costs](#what-it-costs)
+- [Letting an agent play](#letting-an-agent-play)
 - [Before you host this anywhere](#before-you-host-this-anywhere)
 - [How it fits together](#how-it-fits-together)
 
@@ -476,6 +477,7 @@ Beyond that:
 | `settings list` / `view settings` | Every setting at once, with what it is set to and the name to type. |
 | `settings <name> [<value> \| default]` | One setting: `settings busy 30`, `set mode always`, `settings models dialogue temperature 0.9`. `edit settings <name> <value>` is the same line spelled out. `help <name>` explains any of them. |
 | `view settings [<name>]` | The same settings read rather than changed: `view settings mode` is one of them, `view settings general` one group. |
+| `settings agenttoken new` / `clear` | Mint the token an agent plays here with over MCP, or take it away. Shown once and masked afterwards. It **is** your account — read what `help agenttoken` says before you hand one out. |
 
 ### World
 
@@ -742,6 +744,60 @@ your `default` to try everything at no cost, and expect rougher prose.
 
 ---
 
+## Letting an agent play
+
+This game welcomes players and bots on the same footing, so an AI can play and
+build here the way a person does — over MCP. The full design is in
+`docs/mcp.md`; this is how to switch it on.
+
+**1. Switch the endpoint on.** In `server/conf/secret_settings.py`:
+
+```python
+MCP_ENABLED = True
+MCP_INTERFACE = "127.0.0.1"   # localhost. Read the next section before changing it.
+MCP_PORT = 4007               # 4000–4006 are Evennia's
+```
+
+Then `evennia stop` and `evennia start` — a reload is not enough, because this
+is a Portal service and a reload restarts only the Server.
+
+**2. Mint a token.** In the game, `settings agenttoken new`. It is shown once.
+
+**3. Point a client at it.** One streamable-HTTP endpoint at
+`http://127.0.0.1:4007/`, with the token as a bearer header:
+
+```json
+{
+  "mcpServers": {
+    "aimud": {
+      "url": "http://127.0.0.1:4007/",
+      "headers": { "Authorization": "Bearer aimud_agent_..." }
+    }
+  }
+}
+```
+
+**What an agent gets.** Two tools about the connection and everything else
+about the game:
+
+| Tool | What it is for |
+|---|---|
+| `send` | Type one line, as a player would, and read what comes back. This is the whole game: every command and every point in every menu is reachable by typing, so there is no separate building API to fall behind. |
+| `poll` | Hear what the world said while nothing was being typed — an NPC talking, an errand expiring, somebody walking in. |
+| `manual` | The documentation, written for an agent rather than for you: what there is to do here, how to build a world, how to drive a test, and what may not be added to the game. Half of it is generated from the game's own registers, so it cannot fall behind. An agent is pointed at it as soon as it connects. |
+| `export_world` | A whole world as one JSON document, as it stands. |
+| `import_world` | Build a world from such a document. Validated whole and refused entire with every reason, so nothing is half built. |
+| the lookups | Everything an NPC can ask about the world: kinds, traits, states, rules, zones, verbs, the dictionary, its own memory. The same register, offered the same way. |
+
+None of it costs a model call. An agent with no API key at all can import a
+hand-built world and play it, which is what makes it useful for testing.
+
+**What to expect.** An agent is an ordinary session: `who` lists it with `mcp`
+in the protocol column, `@boot` removes it, it times out when idle, and it can
+do exactly what its account can do and nothing more. One character per account
+means an agent connecting **takes your character** — you are disconnected, and
+told why. To play alongside one, give it its own account.
+
 ## Before you host this anywhere
 
 **Run this for yourself, or for people you know. Please do not put a public
@@ -771,6 +827,18 @@ That is not modesty about the code — it is a specific and honest assessment:
   no code, no paths and no accounts, and building it spends nothing; what has
   *not* been explored is what somebody could talk a model into by writing a
   room description. Import worlds from people you would take a file from.
+- **An agent token is the account, not a lesser key.** `settings agenttoken new`
+  mints a bearer token an AI can play and build with over MCP (`docs/mcp.md`).
+  Anything that account can do, the holder of its token can do: spend its API
+  key, build, delete a world, and everything Evennia's own permissions allow
+  it. There is no way to scope a token down, and this is said plainly rather
+  than dressed up — so if you want an agent playing beside you, **give it an
+  account of its own** and grant that account less. One character per account
+  also means an agent connecting takes your character: you are disconnected,
+  the way you would be logging in from a second terminal. The endpoint itself
+  is off unless `MCP_ENABLED` says otherwise, listens on localhost, and stays
+  on localhost in lockdown mode; putting it on a network it can be reached
+  across is a decision to make after reading this whole section.
 
 If you want to play with friends: run it on a machine you control, for people
 you trust, and have everyone use their own key with a spending limit set on it.
@@ -851,6 +919,9 @@ The interesting half is `world/`:
 | `hints.py` | Giving a player the same help an NPC gets |
 | `memory.py` | Per-character memory, written and recalled by relevance |
 | `exchange.py` | A world as a document: writing one out, refusing a bad one, building one |
+| `agents.py` | Who an agent is and what it may call: the token, and the tools MCP offers |
+| `toolkit.py` | Every tool the game defines, gathered, and what kind each one is |
+| `manual.py` | The documentation an agent reads, half of it built from the registers |
 | `fact_gen.py` | Turning what a character has been through into what it knows |
 
 Two ideas run through all of it and explain most of the design:

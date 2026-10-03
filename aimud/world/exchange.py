@@ -197,6 +197,8 @@ LEFT = {
                "itself, and each export would carry the last one",
     "openrouter_api_key": "an account's key, and the one thing in this game "
                           "that must never be written to a file",
+    "agent_token": "an account's own, and a secret: it *is* the account, so "
+                   "a world carrying one would hand out a way in",
     "api_base_url": "where an account's key is spent",
     "ai_models": "which model an account pays for, per job",
     "ai_params": "how an account has tuned its models",

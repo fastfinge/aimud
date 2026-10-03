@@ -100,6 +100,8 @@ CONFIRMATIONS = [
     ("download", "Large downloads", "Some downloads take a long time and a lot of space."),
     ("clear_apikey", "Removing your API key",
      "Nothing new can be generated until you set another."),
+    ("clear_agenttoken", "Removing or replacing your agent token",
+     "Any agent holding the old one stops being able to play."),
     ("reset_rounds", "Clearing round counts", "What was measured is discarded."),
     ("abandon_quest", "Abandoning a quest", "Whoever asked is told you gave up."),
     ("discard", "Leaving a form with unsaved changes", "What you entered is lost."),
@@ -460,6 +462,87 @@ API_URL = m.Field(
 )
 
 API = m.Form(key="api", title="API key and address", items=[API_KEY, API_URL])
+
+
+# ---------------------------------------------------------------------------
+# Agent access
+# ---------------------------------------------------------------------------
+
+#: What `parse` answers when somebody asked for a fresh token. A sentinel
+#: rather than the token itself, because a field's parse says what was meant
+#: and its set does the thing -- and minting twice for one command would leave
+#: an agent holding the one nobody was shown.
+NEW_TOKEN = object()
+
+
+def _agent_parse(ctx, text):
+    said = text.strip().lower()
+    if said in ("new", "mint", "generate", "another"):
+        return NEW_TOKEN, ""
+    if said in ("clear", "none", "off", "remove", "default"):
+        return None, ""
+    return None, ("A token is generated rather than chosen: one you picked "
+                  "would be a password. Type |wnew|n for a fresh one, or "
+                  "|wclear|n to take away the one you have.")
+
+
+def _agent_set(ctx, value):
+    from world import agents
+
+    if value is None:
+        agents.clear(ctx.account)
+        return ("Your agent token is removed. Any agent holding it is on its "
+                "own and cannot come back until you mint another.")
+    token = agents.mint(ctx.account)
+    return (
+        "Your new agent token, which is shown this once and never again:\n\n"
+        f"  |w{token}|n\n\n"
+        "Give it to an agent as a bearer token. It |ris|n this account: "
+        "anything you can do, it can do, your API key included. An agent "
+        "meant to play beside you wants an account of its own, which can be "
+        "given less.")
+
+
+def _agent_confirm(ctx, value):
+    from world import agents
+
+    held = agents.token_of(ctx.account)
+    if value is None and held:
+        return ("clear_agenttoken",
+                "Remove your agent token? Any agent using it stops working.")
+    if value is not None and held:
+        return ("clear_agenttoken",
+                "You already have a token. A new one replaces it, and any "
+                "agent using the old one stops working. Mint a new one?")
+    return None
+
+
+def _agent_get(ctx):
+    from world import agents
+
+    return agents.token_of(ctx.account)
+
+
+AGENT_TOKEN = m.Field(
+    "agenttoken", "Agent token", kind=m.SECRET,
+    get=_agent_get,
+    set=_agent_set, parse=_agent_parse, confirm=_agent_confirm,
+    show=lambda ctx, value: mask(value) if value else "not set",
+    prompt="Type new for a fresh token, or clear to take yours away",
+    help=("A bearer token an agent uses to play here over MCP, so a coding "
+          "agent or another AI can play and build the way you do. It is "
+          "generated rather than typed, because a token you chose would be a "
+          "password. It |ris|n your account: an agent holding it can do "
+          "everything you can, spend your API key included, and one character "
+          "per account means it takes your character while it is connected -- "
+          "you are disconnected, as you would be logging in from a second "
+          "terminal. To play alongside an agent, give it an account of its "
+          "own, which can be given fewer permissions than yours. The endpoint "
+          "has to be switched on by whoever runs this server."),
+)
+
+
+AGENT = m.Form(key="agent", title="Agent access", items=[AGENT_TOKEN])
 
 
 # ---------------------------------------------------------------------------
@@ -1049,6 +1132,9 @@ GROUPS = [
      _has_account),
     ("models", "Models", ACCOUNT, MODELS,
      "Which model answers for each job, and how it is asked.",
+     _has_account),
+    ("agent", "Agent access", ACCOUNT, AGENT,
+     "The token an agent plays here with, and what holding one means.",
      _has_account),
     ("you", "You in this world", CHARACTER_IN_WORLD, YOU_HERE,
      "Your name, looks and pronouns in the world you are standing in.",

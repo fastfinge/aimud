@@ -476,3 +476,35 @@ def goal_tool(owner):
     return tb.Tool("write_goal", "Write what they want as checkable "
                                  "conditions.",
                    parameters, handler, finishes=True)
+
+
+# ---------------------------------------------------------------------------
+# The register (world/toolkit.py)
+# ---------------------------------------------------------------------------
+
+def tools():
+    """
+    The errand generator's three answers, as declared. Each is built per
+    call -- `quest_tool`, `use_quest_tool`, `goal_tool(owner)` -- because
+    each is closed to what this world can actually check. See
+    `world/toolkit.py`.
+    """
+    from world import toolbox as tb
+
+    return [
+        tb.Tool(
+            "write_quest",
+            "Write a request somebody made in their own words as an errand" 
+            "the game can check.",
+            finishes=True),
+        tb.Tool(
+            "use_quest",
+            "Say which errand already written this request is, when it is one" 
+            "of them.",
+            finishes=True),
+        tb.Tool(
+            "write_goal",
+            "Write what somebody wants as conditions the planner can work" 
+            "towards.",
+            finishes=True),
+    ]

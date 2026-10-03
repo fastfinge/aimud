@@ -40,6 +40,14 @@ MOST_CALLS_PER_ROUND = 8
 
 CUT_SHORT = "\n[... cut short: ask again for less, or for the rest]"
 
+#: The three kinds of tool, as the docstring above describes them. Named here
+#: so a register, a test and a page of documentation can all say the same word
+#: for the same thing; `Tool.kind` works each out from the flags the loop
+#: reads, so no tool can be filed as one kind and behave as another.
+LOOKUP = "lookup"
+FINISH = "finish"
+ACT = "act"
+
 
 class ToolContext:
     """Everything a tool may need to know about the call it is part of."""
@@ -108,6 +116,60 @@ class Tool:
         self.finishes = finishes
         self.threaded = threaded
         self.available = available
+
+    @property
+    def kind(self):
+        """
+        Which of the three kinds this is, worked out from the two flags.
+
+        Not stored, because storing it would let it disagree with the flags
+        the loop actually reads. The docstring at the top of this module is
+        the definition; this is that sentence as a value something can walk.
+        """
+        if self.looks:
+            return LOOKUP
+        if self.finishes:
+            return FINISH
+        return ACT
+
+    @property
+    def runnable(self):
+        """
+        Whether this tool can be called, or only described.
+
+        A tool with no handler is a **declaration**: it says a tool of this
+        name and kind exists so that a register can list it and a test can
+        walk it, without a live generator to build the real one. Several
+        finish tools are made per call and cannot exist otherwise -- an item
+        tool knows which item, a rules tool knows which action -- so the only
+        honest context-free form of one is a declaration. See `world/toolkit.py`.
+        """
+        return self.handler is not None
+
+    def but(self, **changes):
+        """
+        This tool with something changed, leaving this one alone.
+
+        Every caller wants the same thing for the same reason: a tool is
+        defined once, as what it always means, and then adjusted for the
+        moment it is offered in -- an argument closed to what is actually in
+        the room, a description told what is waiting on an answer, a handler
+        bound to the character whose turn it is. The definition has to survive
+        that, because it is module-level and shared by every character in the
+        game.
+        """
+        fields = {
+            "name": self.name, "description": self.description,
+            "parameters": self.parameters, "handler": self.handler,
+            "doing": self.doing, "looks": self.looks,
+            "finishes": self.finishes, "threaded": self.threaded,
+            "available": self.available,
+        }
+        unknown = set(changes) - set(fields)
+        if unknown:
+            raise TypeError(f"a tool has no {', '.join(sorted(unknown))}")
+        fields.update(changes)
+        return Tool(**fields)
 
     def offered(self, ctx):
         return True if self.available is None else bool(self.available(ctx))
