@@ -72,6 +72,7 @@ class MakingACharacter(_World):
         self.assertEqual(pronouns.of(npc, self.root)["subject"], "he")
         self.assertIn("patched wool coat", [obj.key for obj in npc.contents])
         self.assertIsNotNone(_offered(recorder, 0, "list_traits"))
+        self.assertEqual(npc.db.manner, "Gruff, and fair with it.")
 
     def test_a_name_somebody_answers_to_is_sent_back(self):
         from typeclasses.npcs import NPC

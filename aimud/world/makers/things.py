@@ -772,6 +772,32 @@ def _trait_line(ctx, entry):
     return f"{entry.get('trait')} {entry.get('value')}"
 
 
+#: What the characteristics field is for, as the player reads it after `?` and
+#: as a model filling it with `~` is told.
+MANNER_HELP = (
+    "Who they are, which nobody sees by looking: temperament, how they talk, "
+    "what they want from life and what they fear, how they treat strangers, "
+    "a quirk. Every character is otherwise given the same instructions, so "
+    "this is what makes them speak and act like nobody else. Be specific -- "
+    "\"friendly and helpful\" describes nobody.")
+
+
+def _manner_field(**kwargs):
+    return menus.Field("manner", "Characteristics", kind=menus.LONG_TEXT,
+                       suggestible=True, help=MANNER_HELP, **kwargs)
+
+
+def _set_manner(ctx, value):
+    from world import npc_gen
+
+    npc = _target(ctx)
+    if npc is None:
+        raise menus.Refuse("They are no longer here.")
+    if npc_gen.characterise(npc, value):
+        return "Who they are has changed."
+    return "Nothing is written about who they are now."
+
+
 def keep_npc(ctx):
     from world import kinds, npc_gen, ownership, traits
 
@@ -796,6 +822,7 @@ def keep_npc(ctx):
     if chosen:
         npc.db.pronoun_set = chosen
     kinds.ensure_person(npc)
+    npc_gen.characterise(npc, ctx.draft.get("manner"))
     for entry in ctx.draft.get("traits") or []:
         slug = str(entry.get("trait") or "")
         if slug:
@@ -830,6 +857,7 @@ def _npc_items(ctx):
                     suggestible=True),
         menus.Field("description", "What they look like",
                     kind=menus.LONG_TEXT, suggestible=True),
+        _manner_field(),
         making.picker("pronouns", "Pronouns", "pronoun",
                       options=pronoun_options, make=_new_pronoun_form,
                       none="None of these -- add a pronoun set",
@@ -889,6 +917,10 @@ EDIT_PERSON = menus.Form(
                     get=lambda ctx: getattr(getattr(_target(ctx), "db", None),
                                             "desc", ""),
                     set=_thing_writer("new_description")),
+        _manner_field(get=lambda ctx: getattr(
+                          getattr(_target(ctx), "db", None), "manner", None)
+                      or "",
+                      set=_set_manner),
         making.picker("states", "What condition they are in", "condition",
                       options=state_options,
                       get=lambda ctx: sorted(

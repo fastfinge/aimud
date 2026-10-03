@@ -1435,7 +1435,7 @@ def _build_people(root, people, names):
     Before the things, because a thing may be in somebody's hands.
     """
     from evennia import create_object
-    from world import kinds, traits
+    from world import kinds, npc_gen, traits
 
     for record in people:
         room = names.object(record.get("at"))
@@ -1450,7 +1450,7 @@ def _build_people(root, people, names):
         npc.db.world_root = root
         npc.db.world_description = root.db.world_description or ""
         if record.get("manner"):
-            npc.db.manner = str(record["manner"])
+            npc_gen.characterise(npc, record["manner"])
         if record.get("pronouns"):
             npc.db.pronoun_set = str(record["pronouns"])
         kinds.ensure_person(npc)

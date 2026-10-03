@@ -516,6 +516,14 @@ class WritingSomebodyByHand(GameTest):
         self.char1.ndb._evmenu.parse_input("description")
         self.assertIn("first draft", self.heard[-1])
 
+    def test_so_can_who_a_new_person_is(self):
+        from world.makers import things
+
+        self.opened(things.NEW_NPC)
+        self.char1.ndb._evmenu.parse_input("b")        # out of the name
+        self.char1.ndb._evmenu.parse_input("manner")
+        self.assertIn("first draft", self.heard[-1])
+
     def test_and_so_can_a_persons_who_is_already_here(self):
         from evennia import create_object
         from world.makers import things

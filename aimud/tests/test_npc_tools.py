@@ -135,6 +135,30 @@ class WhatACharacterIsOffered(_Scene):
 
 
 @tag("world")
+class WhoACharacterIs(_Scene):
+    """Every character is sent the same instructions but its own manner."""
+
+    def system(self):
+        with immediately(),                 replying(tool_reply(tool_call("say", message="Hm."))) as asked,                 mock.patch("world.npc_gen._memory_inputs",
+                           return_value=("(no prior events)", "bank", [], [])),                 mock.patch("world.memory.recall_for_cues", return_value=[]),                 mock.patch("world.memory.format_recalled", return_value=""):
+            npc_gen.generate_npc_reaction(FakeSponsor(), self.npc, self.room1,
+                                          on_success=lambda _used: None,
+                                          on_error=self.fail)
+        return asked.prompts[0][0]["content"]
+
+    def test_its_characteristics_are_in_its_prompt_as_its_voice(self):
+        npc_gen.characterise(self.npc, "Counts everything twice, aloud.")
+        system = self.system()
+        self.assertIn("Who you are: Counts everything twice, aloud.", system)
+        self.assertIn("your own words and habits", system)
+
+    def test_a_character_with_none_is_not_told_to_be_itself(self):
+        system = self.system()
+        self.assertNotIn("Who you are", system)
+        self.assertNotIn("your own words and habits", system)
+
+
+@tag("world")
 class WhatACharacterDoes(_Scene):
 
     def test_it_takes_the_letter_out_of_the_tray(self):
