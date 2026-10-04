@@ -709,3 +709,145 @@ class TheRuleLoopFilesACall(GameTest):
         self.assertEqual(len(filed), 1)
         self.assertEqual(filed[0]["effects"][0]["does"],
                          "Gets today's forecast for a city.")
+
+
+# ---------------------------------------------------------------------------
+# The planner (§9): promises, finding out, and once per goal
+# ---------------------------------------------------------------------------
+
+@tag("world")
+class PlanningWithTheWeather(_AWorldWithWeather):
+    """
+    A character wants to sail; sailing needs fair weather here; a forecast
+    can find out whether it is. Finding out is a step, never a promise.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from typeclasses.npcs import NPC
+
+        self.room1.key = "Harbour"
+        self.boat = create_object("typeclasses.objects.Object", key="Boat",
+                                  location=self.room1)
+        self.npc = create_object(NPC, key="Mara", location=self.room1)
+        actions.declare(self.root, "sail", applies_to=[{"role": "direct"}])
+        R.add(self.root, R.blank(
+            action="sail", phase=R.CHECK, scope={"world": True},
+            name="only in fair weather",
+            conditions=[{"subject": "here", "is": ["sunny"]}]))
+        R.add(self.root, R.blank(
+            action="sail", phase=R.CARRY_OUT, scope={"world": True},
+            report="{actor} $pconj(sail).",
+            effects=[{"type": "set_state", "role": "direct", "add": ["sailing"]}]))
+        self.goal = [{"type": "state", "object": "Boat", "is": ["sailing"]}]
+        self.npc.db.goal = self.goal
+
+    def forecast_from(self, city):
+        actions.declare(self.root, "forecast")
+        R.add(self.root, R.blank(
+            action="forecast", phase=R.CARRY_OUT, scope={"world": True},
+            report="{actor} $pconj(look) at the sky.",
+            effects=[_call(args={"city": f"value:{city}"},
+                           results={"conditions": "state:here"})]))
+
+    def move(self):
+        from world import planner
+
+        return planner.next_move(self.npc, self.root, self.goal)
+
+    def test_it_checks_the_weather_first(self):
+        with serving():
+            self.forecast_from("Lisbon")
+            self.assertEqual(self.move().action, "forecast")
+
+    def test_and_sails_once_it_knows_it_is_fair(self):
+        with serving():
+            self.forecast_from("Lisbon")
+            self.attempt("forecast", who=self.npc, sponsor=FakeSponsor())
+            self.assertIn("sunny", verbs.states(self.room1))
+            self.assertEqual(self.move().action, "sail Boat")
+
+    def test_a_storm_means_waiting_not_asking_again_every_turn(self):
+        with serving():
+            self.forecast_from("Oslo")
+            self.attempt("forecast", who=self.npc, sponsor=FakeSponsor())
+            self.assertIn("storm", verbs.states(self.room1))
+            move = self.move()
+        self.assertIsNone(move.action)
+        self.assertIsNotNone(move.wait, "a storm is a wait, not a dead end")
+        self.assertLessEqual(move.wait, tool_calls.FIND_OUT_EVERY)
+
+    def test_and_looks_again_once_the_wait_is_over(self):
+        with serving():
+            self.forecast_from("Oslo")
+            self.attempt("forecast", who=self.npc, sponsor=FakeSponsor())
+            held = dict(self.npc.db.goal_reaching)
+            held["found_out"] = {key: when - tool_calls.FIND_OUT_EVERY - 1
+                                 for key, when in held["found_out"].items()}
+            self.npc.db.goal_reaching = held
+            self.assertEqual(self.move().action, "forecast")
+
+    def test_a_forecast_is_never_a_way_of_making_it_fair(self):
+        """`call_tool` is not readable backwards: a wish for sun checks nothing."""
+        from world import conditions
+
+        effect = _call(results={"conditions": "state:here"})
+        self.assertFalse(conditions.achieves(
+            effect, {"subject": "here", "is": ["sunny"]}))
+
+    def test_a_new_goal_starts_clean(self):
+        with serving():
+            self.forecast_from("Oslo")
+            self.attempt("forecast", who=self.npc, sponsor=FakeSponsor())
+            self.goal = [{"type": "state", "object": "Boat", "is": ["sailing"]},
+                         {"type": "state", "object": "Boat", "lacks": ["wet"]}]
+            self.npc.db.goal = self.goal
+            self.assertEqual(self.move().action, "forecast")
+
+
+@tag("world")
+class ActingOutwardOncePerGoal(_AWorldWithWeather):
+
+    def setUp(self):
+        super().setUp()
+        from typeclasses.npcs import NPC
+
+        self.letter = create_object("typeclasses.objects.Object", key="Letter",
+                                    location=self.room1)
+        self.npc = create_object(NPC, key="Mara", location=self.room1)
+        self.goal = [{"type": "state", "object": "Letter", "is": ["posted"]}]
+        self.npc.db.goal = self.goal
+
+    def post_rule(self, args):
+        actions.declare(self.root, "post", applies_to=[{"role": "direct"}])
+        R.add(self.root, R.blank(
+            action="post", phase=R.CARRY_OUT, scope={"world": True},
+            report="{actor} $pconj(post) it.",
+            effects=[{"type": "call_tool", "tool": "weather.send_postcard",
+                      "args": args, "results": {}},
+                     {"type": "set_state", "role": "direct", "add": ["posted"]}]))
+
+    def move(self):
+        from world import planner
+
+        return planner.next_move(self.npc, self.root, self.goal)
+
+    def test_what_the_rule_promises_alongside_the_call_is_a_step(self):
+        with serving():
+            self.post_rule({"to": "value:Ana", "text": "value:hello"})
+            self.assertEqual(self.move().action, "post Letter")
+
+    def test_but_once_it_has_acted_for_this_goal_it_is_not_again(self):
+        from tests.fixtures import weather_server
+
+        with serving():
+            self.post_rule({"to": "value:Ana", "text": "value:hello"})
+            self.attempt("post letter", who=self.npc, sponsor=FakeSponsor())
+            self.assertEqual(len(weather_server.SENT), 1)
+            verbs.apply_states(self.letter, remove=["posted"], world_root=self.root)
+            self.assertNotEqual(self.move().action, "post Letter")
+
+    def test_a_call_that_asks_is_never_a_step(self):
+        with serving():
+            self.post_rule({"to": "ask", "text": "value:hello"})
+            self.assertNotEqual(self.move().action, "post Letter")

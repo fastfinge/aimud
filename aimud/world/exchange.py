@@ -214,6 +214,8 @@ LEFT = {
     "action_history": "what a character has been through, which is memory",
     "last_near_player": "true of a moment, not of a world",
     "goal_stalls": "how a plan is going, not what the plan is",
+    "goal_reaching": "how a plan is going, too: which calls outside the game "
+                     "a character has made for the goal it has now",
     "goal_waiting": "the same",
     "goal_from_quest": "a quest in progress, which does not travel",
     "becomes_seen": "an edge already crossed; the rules that watch for it do "

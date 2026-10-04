@@ -680,6 +680,10 @@ def _run(caller, sponsor, world_root, room, bound, words, effects, plans,
             if info.get("level") == services.ACTS:
                 services.note_outward(record["name"], tool, caller, world_root,
                                       sponsor, args, answer)
+                if services.is_character(caller):
+                    note_acted(caller, effects[index])
+            if answer.ok and services.is_character(caller):
+                note_found_out(caller, call_key(effects[index]))
             if not answer.ok:
                 if answer.reached:
                     on_fail(f"{services.tool_id(record['name'], tool)} "
@@ -880,3 +884,153 @@ def lookup_tools():
                 tb.answering(showing), doing="looking up a tool", looks=True,
                 available=available),
     ]
+
+
+# ---------------------------------------------------------------------------
+# The planner's three questions about a call (§9)
+# ---------------------------------------------------------------------------
+
+#: Where a character keeps how its reaching outside is going for the goal it
+#: has now: the acts-outward calls already made for it, and when it last found
+#: something out. Keyed by the goal, so a new goal starts clean without
+#: anything having to remember to clear it. How a plan is going, not what it
+#: is -- `exchange.LEFT`, beside `goal_stalls`.
+GOAL_ATTR = "goal_reaching"
+
+#: Seconds before a character may find out the same thing again for one goal.
+#: Once and never again would leave a sailor who saw a storm waiting for ever
+#: for weather it can no longer look at; every turn would spend a call to
+#: learn what it learned a moment ago. Long enough that weather can change.
+FIND_OUT_EVERY = 15 * 60
+
+
+def _goal_mark(actor):
+    import json
+
+    goal = getattr(getattr(actor, "db", None), "goal", None)
+    if not goal:
+        return ""
+    try:
+        return json.dumps(goal, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return repr(goal)
+
+
+def _reaching(actor):
+    held = dict(getattr(actor.db, GOAL_ATTR, None) or {})
+    if held.get("goal") != _goal_mark(actor):
+        return {"goal": _goal_mark(actor), "acted": [], "found_out": {}}
+    held.setdefault("acted", [])
+    held.setdefault("found_out", {})
+    return held
+
+
+def call_key(effect):
+    """A call as written, as one string: which tool, and with what."""
+    args = ",".join(f"{k}={v}" for k, v in sorted(args_of(effect).items()))
+    return f"{effect.get('tool')}({args})"
+
+
+def level_of(effect, records=None):
+    from world import services
+
+    _record, info = services.find(effect.get("tool"), records)
+    return (info or {}).get("level")
+
+
+def reaches_outward(effects, records=None):
+    """The acts-outward calls among these effects."""
+    from world import services
+
+    return [effect for effect in calls_in(effects)
+            if level_of(effect, records) == services.ACTS]
+
+
+def note_acted(actor, effect):
+    """A character with a goal made this acts-outward call for it."""
+    if not _goal_mark(actor):
+        return
+    held = _reaching(actor)
+    key = call_key(effect)
+    if key not in held["acted"]:
+        held["acted"].append(key)
+    setattr(actor.db, GOAL_ATTR, held)
+
+
+def already_acted(actor, effects):
+    """
+    Whether any acts-outward call here was made already for this goal.
+
+    The planner tries an acts-outward rule at most once per goal: a goal that
+    keeps failing must not send the same email twice. A new goal may, which
+    is the author's decision to give it.
+    """
+    if not _goal_mark(actor):
+        return False
+    acted = set(_reaching(actor)["acted"])
+    return any(call_key(effect) in acted for effect in reaches_outward(effects))
+
+
+def could_tell(effect, condition, records=None):
+    """
+    Whether this call's answer could put something in the wanted condition.
+
+    Read off the result mapping: a bounded field mapped onto a condition, one
+    of whose answers is what the condition wants. That is something a call can
+    find out, never something it promises -- which is why `call_tool` is not
+    readable backwards, and why this is a separate question. §9.
+    """
+    from world import conditions as C
+    from world import services
+    from world.model_json import listed
+
+    _record, info = services.find(effect.get("tool"), records)
+    if not info:
+        return False
+    fields = dict(services.outputs(info.get("output")))
+    possible = set()
+    for field, text in results_of(effect).items():
+        target = read_target(text)
+        if target and target["to"] == "state" and field in fields:
+            possible |= set(_state_values(field, fields[field]))
+    if not possible:
+        return False
+    # A goal's condition, or a rule's: both come down to leaves saying what
+    # something is or is not in.
+    parts = C.from_goal(condition) if "type" in (condition or {}) else [condition]
+    for part in parts:
+        for leaf, _optional in C.leaves(part):
+            wanted = {_slug(s) for s in listed(leaf.get("is"))} \
+                | {_slug(s) for s in listed(leaf.get("lacks"))}
+            if wanted & possible:
+                return True
+    return False
+
+
+def may_find_out(actor, key, now=None):
+    import time
+
+    when = _reaching(actor)["found_out"].get(key)
+    now = time.time() if now is None else now
+    return when is None or now - float(when) >= FIND_OUT_EVERY
+
+
+def note_found_out(actor, key, now=None):
+    import time
+
+    if not _goal_mark(actor):
+        return
+    held = _reaching(actor)
+    held["found_out"][key] = time.time() if now is None else now
+    setattr(actor.db, GOAL_ATTR, held)
+
+
+def find_out_wait(actor, key, now=None):
+    """Seconds until this character may make this call again for its goal."""
+    import time
+
+    when = _reaching(actor)["found_out"].get(key)
+    if when is None:
+        return 0.0
+    now = time.time() if now is None else now
+    return max(0.0, FIND_OUT_EVERY - (now - float(when)))
