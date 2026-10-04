@@ -34,6 +34,10 @@ __pycache__
 # Per-character memory banks (mnemosyne). Game data, not source.
 server/memory/
 
+# Each command service's own home: its history, cache and any login it keeps.
+# The server's data, and possibly secret. See world/services.py `home_of`.
+server/services/
+
 # Installation-specific.
 # For group efforts, comment out some or all of these.
 server/conf/secret_settings.py

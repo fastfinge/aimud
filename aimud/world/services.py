@@ -603,6 +603,57 @@ def spec_key(spec):
     return None, None
 
 
+def home_of(name):
+    """
+    `server/services/<name>/`: a command service's own home, made if missing.
+
+    Its working directory and its `HOME`. A command that keeps state -- a
+    history, a cache, a login -- keeps it here, as the server's, and not in
+    the game directory or in whoever runs the server's own profile. Found
+    with the first real service: on Windows the SDK passes a child no `HOME`,
+    so kagi wrote `.\.cache` into the game directory and could never lock it;
+    pointed at its owner's real profile it fought the owner's own copy for the
+    same file. §4.4: every credential is the server's, and so is every file.
+    """
+    from pathlib import Path
+
+    from django.conf import settings
+
+    safe = re.sub(r"[^a-z0-9_-]", "_", str(name or "service").lower())
+    home = Path(settings.GAME_DIR) / "server" / "services" / safe
+    home.mkdir(parents=True, exist_ok=True)
+    return home
+
+
+def command_params(record):
+    """What the SDK starts for a command service: its own home, then its env."""
+    from mcp.client.stdio import StdioServerParameters
+
+    home = home_of(record.get("name"))
+    env = {"HOME": str(home)}
+    # The owner's own variables win, `HOME` included: a service they know
+    # wants its real profile is theirs to point there.
+    env.update({str(k): str(v) for k, v in (record.get("env") or {}).items()})
+    return StdioServerParameters(
+        command=record.get("command") or "",
+        args=list(record.get("args") or []),
+        env=env, cwd=str(home))
+
+
+#: What decides how a service is reached. A connection is made again when one
+#: of these changes, and never because the tool table, the status or the
+#: record of recent calls did -- those change on every listing and every
+#: acts-outward call, and restarting a command each time left its process,
+#: or the one it launched, holding files the next one needed.
+CONNECTION_FIELDS = ("kind", "command", "args", "env", "url", "spec",
+                     "headers", "auth", "key_place", "key_name", "key",
+                     "timeout")
+
+
+def connection_of(record):
+    return {field: record.get(field) for field in CONNECTION_FIELDS}
+
+
 def target(record):
     """
     What the SDK's `Client` connects to for this service, and any methods.
@@ -614,13 +665,9 @@ def target(record):
     """
     kind = record.get("kind")
     if kind == COMMAND:
-        from mcp.client.stdio import StdioServerParameters, stdio_client
+        from mcp.client.stdio import stdio_client
 
-        params = StdioServerParameters(
-            command=record.get("command") or "",
-            args=list(record.get("args") or []),
-            env={str(k): str(v) for k, v in (record.get("env") or {}).items()}
-            or None)
+        params = command_params(record)
         # Never the SDK's default, which is `sys.stderr` -- and in the Server
         # that is Twisted's LoggingFile, whose fileno() is -1, so every command
         # failed to start with "[Errno 9] Bad file descriptor". Found by the
@@ -813,7 +860,7 @@ class _Manager:
     async def _connection(self, record):
         name = record["name"]
         held = self.connections.get(name)
-        if held is not None and held.record != record:
+        if held is not None and connection_of(held.record) != connection_of(record):
             # Edited since it connected: the old session has the old command,
             # address or key. Close it rather than keep talking to it.
             await held.close()

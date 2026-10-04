@@ -84,5 +84,14 @@ def flaky(why: str = "") -> str:
     raise ValueError(why or "it always fails")
 
 
+@server.tool(annotations=ToolAnnotations(readOnlyHint=True,
+                                         openWorldHint=False))
+def where() -> str:
+    """Says where this process is running and what it calls home."""
+    import os
+
+    return f"{os.getcwd()}|{os.environ.get('HOME', '')}"
+
+
 if __name__ == "__main__":
     server.run()

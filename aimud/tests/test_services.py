@@ -628,3 +628,73 @@ class ACommandUnderTheServer(GameTest):
         self.assertIsNone(tools)
         self.assertIn("it said: KAGI_API_KEY is not set", status)
         self.assertTrue(services.stderr_path("local").exists())
+
+
+@tag("world")
+class ACommandHasAHomeOfItsOwn(GameTest):
+    """
+    Found with kagi on the first live server: on Windows the SDK passes a
+    child no HOME, so a command keeping a history wrote `.\\.cache` into the
+    game directory and could never lock it. A command service now runs in,
+    and calls home, a directory of its own.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.old = services._MANAGER
+        services._MANAGER = services._Manager()
+        self.addCleanup(self.restore)
+
+    def restore(self):
+        manager = services._MANAGER
+        for name in list(manager.connections):
+            manager.drop(name)
+        services._MANAGER = self.old
+
+    def record(self, **env):
+        fixture = Path(__file__).resolve().parent / "fixtures" / "weather_server.py"
+        record = services.blank("local", services.COMMAND)
+        record.update(command=sys.executable, args=[str(fixture)], env=env)
+        return record
+
+    def test_it_runs_there_and_calls_it_home(self):
+        home = services.home_of("local")
+        answer = services.call(self.record(), "where", {})
+        cwd, said_home = answer.text.split("|")
+        self.assertEqual(Path(cwd).resolve(), home.resolve())
+        self.assertEqual(Path(said_home).resolve(), home.resolve())
+        self.assertNotEqual(Path(cwd).resolve(),
+                            Path(__file__).resolve().parent.parent)
+
+    def test_the_owner_may_point_it_somewhere_else(self):
+        params = services.command_params(self.record(HOME="C:/elsewhere"))
+        self.assertEqual(params.env["HOME"], "C:/elsewhere")
+
+    def test_each_service_has_its_own(self):
+        self.assertNotEqual(services.home_of("one"), services.home_of("two"))
+
+
+@tag("world")
+class AConnectionIsMadeAgainOnlyWhenHowItConnectsChanges(GameTest):
+    """
+    Every listing writes the tool table and every acts-outward call writes the
+    record of recent calls. Neither is how a service is reached, and
+    restarting a command for them left processes holding files.
+    """
+
+    def test_the_table_and_the_record_of_calls_do_not_restart_it(self):
+        with serving() as record:
+            services.call(record, "roll", {"sides": 2})
+            first = services._manager().connections["weather"]
+            changed = dict(record, recent=[{"tool": "roll"}], status="x",
+                           tools={})
+            services.call(changed, "roll", {"sides": 2})
+            self.assertIs(services._manager().connections["weather"], first)
+
+    def test_a_new_address_does(self):
+        with serving() as record:
+            services.call(record, "roll", {"sides": 2})
+            first = services._manager().connections["weather"]
+            services.call(dict(record, url="http://elsewhere.example/mcp"),
+                          "roll", {"sides": 2})
+            self.assertIsNot(services._manager().connections["weather"], first)
