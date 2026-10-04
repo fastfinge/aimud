@@ -614,13 +614,18 @@ def target(record):
     """
     kind = record.get("kind")
     if kind == COMMAND:
-        from mcp.client.stdio import StdioServerParameters
+        from mcp.client.stdio import StdioServerParameters, stdio_client
 
-        return StdioServerParameters(
+        params = StdioServerParameters(
             command=record.get("command") or "",
             args=list(record.get("args") or []),
             env={str(k): str(v) for k, v in (record.get("env") or {}).items()}
-            or None), {}
+            or None)
+        # Never the SDK's default, which is `sys.stderr` -- and in the Server
+        # that is Twisted's LoggingFile, whose fileno() is -1, so every command
+        # failed to start with "[Errno 9] Bad file descriptor". Found by the
+        # first real service added on a live server; see `stderr_log`.
+        return stdio_client(params, errlog=stderr_log(record.get("name"))), {}
     if kind == URL:
         from mcp.client.streamable_http import streamable_http_client
 
@@ -641,6 +646,65 @@ def target(record):
             name=record.get("name") or "openapi")
         return server._mcp_server, spec_methods(spec)
     raise ValueError(f"no such kind of service: {kind}")
+
+
+#: Where each command's stderr goes, opened once per name per process.
+_STDERR = {}
+_STDERR_LOCK = threading.Lock()
+
+
+def stderr_path(name):
+    """`server/logs/services/<name>.log`: what a command says about itself."""
+    from pathlib import Path
+
+    from django.conf import settings
+
+    safe = re.sub(r"[^a-z0-9_-]", "_", str(name or "service").lower())
+    return Path(settings.GAME_DIR) / "server" / "logs" / "services" / f"{safe}.log"
+
+
+def stderr_log(name):
+    """
+    A real file for a command's stderr: the one thing a child process must be
+    handed that has a file descriptor behind it.
+
+    And worth having for its own sake: a server that will not start almost
+    always says why on stderr -- a key not set, a package missing -- and this
+    is where the owner can read it. `connect_and_list` quotes the last line.
+    """
+    with _STDERR_LOCK:
+        held = _STDERR.get(name)
+        if held is None or held.closed:
+            path = stderr_path(name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            held = open(path, "a", encoding="utf-8", buffering=1)
+            _STDERR[name] = held
+        return held
+
+
+def stderr_size(name):
+    """How much a command's stderr log holds now, to read only what follows."""
+    try:
+        return stderr_path(name).stat().st_size
+    except OSError:
+        return 0
+
+
+def stderr_said(name, since=0, most=200):
+    """
+    The last thing a command wrote to stderr since `since`, or ''.
+
+    Only since: the log is kept across attempts, and quoting a line an earlier
+    failure left would be telling the owner the wrong reason.
+    """
+    try:
+        with open(stderr_path(name), "rb") as log:
+            log.seek(since)
+            text = log.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[-1][:most] if lines else ""
 
 
 class _Connection:
@@ -905,10 +969,15 @@ def connect_and_list(record, timeout=None):
     a wrong setting -- it is saved anyway, and says why. §4.2.
     """
     _manager().drop(record["name"])
+    before = stderr_size(record.get("name")) if record.get("kind") == COMMAND else 0
     try:
         return list_tools(record, timeout=timeout), ""
     except Exception as exc:
         reason = _reason(exc)
+        if record.get("kind") == COMMAND:
+            said = stderr_said(record.get("name"), since=before)
+            if said:
+                reason += f" -- it said: {said}"
         logger.log_info(f"services: {record.get('name')} could not be listed: {reason}")
         return None, reason
 

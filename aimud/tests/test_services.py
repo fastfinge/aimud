@@ -567,3 +567,64 @@ class TheManualPage(GameTest):
         from world import manual
 
         self.assertIn("`services`", manual.page("start"))
+
+
+@tag("world")
+class ACommandUnderTheServer(GameTest):
+    """
+    Found on the first live server: a command service always failed to start
+    with "[Errno 9] Bad file descriptor". The SDK hands a child process its
+    default `errlog`, `sys.stderr`, and in the Server that is Twisted's
+    LoggingFile, whose fileno() is -1. Reproduced here by making it the
+    default again.
+    """
+
+    def command(self, *args):
+        record = services.blank("local", services.COMMAND)
+        record["command"] = sys.executable
+        record["args"] = list(args)
+        return record
+
+    def setUp(self):
+        super().setUp()
+        self.old = services._MANAGER
+        services._MANAGER = services._Manager()
+        self.addCleanup(self.restore)
+
+    def restore(self):
+        manager = services._MANAGER
+        for name in list(manager.connections):
+            manager.drop(name)
+        services._MANAGER = self.old
+
+    def test_it_starts_when_stderr_is_twisteds(self):
+        from mcp.client import stdio as stdio_mod
+        from twisted.logger import Logger, LoggingFile
+
+        fixture = Path(__file__).resolve().parent / "fixtures" / "weather_server.py"
+        twisted_stderr = LoggingFile(Logger())
+        self.assertEqual(twisted_stderr.fileno(), -1)
+        # `__wrapped__`: `stdio_client` is an asynccontextmanager, and the
+        # default that bit is the function's inside it, not the wrapper's.
+        with mock.patch.object(stdio_mod.stdio_client.__wrapped__, "__defaults__",
+                               (twisted_stderr,)):
+            tools, status = services.connect_and_list(self.command(str(fixture)))
+        self.assertEqual(status, "")
+        self.assertIn("forecast", tools)
+
+    def test_a_line_an_earlier_failure_left_is_not_quoted(self):
+        log = services.stderr_log("local")
+        log.write("an old complaint from yesterday\n")
+        log.flush()
+        record = self.command("-c", "import sys; sys.exit(1)")
+        _tools, status = services.connect_and_list(record)
+        self.assertNotIn("yesterday", status)
+
+    def test_one_that_dies_says_why(self):
+        record = self.command(
+            "-c", "import sys; print('KAGI_API_KEY is not set', file=sys.stderr); "
+                  "sys.exit(1)")
+        tools, status = services.connect_and_list(record)
+        self.assertIsNone(tools)
+        self.assertIn("it said: KAGI_API_KEY is not set", status)
+        self.assertTrue(services.stderr_path("local").exists())
