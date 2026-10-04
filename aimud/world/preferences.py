@@ -92,6 +92,8 @@ CONFIRMATIONS = [
      "Its text reaches your model on your key when you play it."),
     ("delete_export", "Taking a world out of the shared folder",
      "Nobody can build it here afterwards."),
+    ("delete_service", "Forgetting a service",
+     "Rules that call its tools stop being able to."),
     ("reset_verb", "Resetting what a verb takes",
      "The world will be asked afresh what the verb means."),
     ("delete_tokens", "Deleting a word list",

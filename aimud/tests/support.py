@@ -200,6 +200,53 @@ def deciding(*answers):
         yield Recorder()
 
 
+@contextlib.contextmanager
+def serving(record=None, server=None, **extra):
+    """
+    A service on the register, served in process by the real manager.
+
+    `world.services.target` is the one seam: it is what turns a record into
+    something the SDK's client connects to, so replacing it is all it takes to
+    point the whole path -- loop thread, session, listing, calling -- at a
+    server in this process. Nothing else is stood in for, which is the point:
+    the manager is real, and so is the SDK.
+
+    `record` is written to the register (a URL service called `weather` by
+    default, with whatever `extra` overrides) and listed, so a test starts
+    with the tool table a fresh `create service` would leave. `server` is the
+    MCP server to serve, `tests/fixtures/weather_server.py` by default. Each
+    use gets fresh connections, so nothing leaks between tests.
+
+    Yields the record as it was left after listing.
+    """
+    from tests.fixtures import weather_server
+    from world import services
+
+    served = server or weather_server.server
+    weather_server.SENT.clear()
+    record = dict(record or services.blank("weather", services.URL))
+    record.setdefault("url", "http://weather.example/mcp")
+    record.update(extra)
+    old_manager = services._MANAGER
+    services._MANAGER = services._Manager()
+    with mock.patch.object(services, "target",
+                           lambda wanted: (served, {})):
+        services.put(record)
+        tools, status = services.connect_and_list(services.get(record["name"]))
+        fresh = services.get(record["name"])
+        if tools is not None:
+            fresh["tools"] = services.merge_tools({}, tools)
+        fresh["status"] = status
+        services.put(fresh)
+        try:
+            yield services.get(record["name"])
+        finally:
+            manager = services._MANAGER
+            if manager.loop is not None:
+                manager.loop.call_soon_threadsafe(manager.loop.stop)
+            services._MANAGER = old_manager
+
+
 def as_json(data):
     """A reply whose text is this object, the way a generator expects it."""
     return json.dumps(data)
