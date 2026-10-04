@@ -524,9 +524,55 @@ class TheAddActionShortcut(GameTest):
         self.assertEqual(len(rules), 1)
         effect = rules[0]["effects"][0]
         self.assertEqual(effect["tool"], "weather.forecast")
-        self.assertEqual(effect["args"], {"city": "word:direct"})
+        self.assertEqual(effect["args"], {"city": "typed"})
         self.assertEqual(effect["results"], {"text": "actor"})
         self.assertIn("calls weather.forecast", said)
+
+
+@tag("world")
+class AVerbThatCallsAToolTakesWhatIsTyped(_AWorldWithWeather):
+    """
+    Found on the live server: `websearch fastfinge` opened a menu. The verb
+    had been declared taking nothing, so the shortcut had set the search's
+    query to be asked. A verb that calls a tool now takes what is typed after
+    it, all of it.
+    """
+
+    def made(self):
+        from world import menus
+        from world.makers import doing
+
+        ctx = menus.Context(self.char1, world_root=self.root, draft={
+            "action": "websearch", "tool": "weather.search"})
+        doing.keep_action(ctx)
+
+    def test_with_no_parts_given_it_takes_something_said(self):
+        with serving():
+            self.made()
+        spec = actions.spec(self.root, "websearch")
+        self.assertEqual(spec["applies_to"],
+                         [{"role": "direct", "access": "visible",
+                           "optional": False}])
+
+    def test_everything_typed_is_the_query_prepositions_and_all(self):
+        with serving():
+            self.made()
+            mine, _theirs = self.attempt("websearch best muds in london")
+        self.assertIn("best muds in london|None|None", mine)
+
+    def test_no_menu_opens_for_one_word(self):
+        with serving():
+            self.made()
+            mine, _theirs = self.attempt("websearch fastfinge")
+        self.assertIn("fastfinge|None|None", mine)
+        self.assertNotIn("[query=...]", mine)
+
+    def test_alone_it_asks_what(self):
+        with serving():
+            self.made()
+            mine, _theirs = self.attempt("websearch")
+        self.assertIn("what", mine.lower())
+        self.assertNotIn("|None|", mine)
 
 
 @tag("world")

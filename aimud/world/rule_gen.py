@@ -695,8 +695,9 @@ offers and what each does; show_tool says what one takes and gives back.
   {"type": "call_tool", "tool": "weather.forecast",
    "args": {"city": "word:direct"},
    "results": {"conditions": "state:here", "text": "actor"}}
-Each thing the tool takes comes from "value:<text>", "word:<role>" (whatever
-word was typed for that part of the sentence -- nothing is made for it),
+Each thing the tool takes comes from "typed" (everything typed after the verb,
+the usual answer for a search or a question), "value:<text>", "word:<role>"
+(the word typed for one part of the sentence -- nothing is made for it),
 "name:<role>", "trait:<role>:<trait>" or "state:<role>:<group>". Every one it
 requires must be given. What comes back has to land somewhere it matters: a
 field with a set of answers as a condition ("state:<role>", role "here" for

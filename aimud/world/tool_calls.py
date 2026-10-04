@@ -52,6 +52,7 @@ from evennia.utils import logger
 #: Where an argument may come from.
 SOURCES = (
     ("value", "a fixed value, written now"),
+    ("typed", "everything typed after the verb, however it reads"),
     ("word", "the word somebody typed for a part of the sentence"),
     ("name", "the name of a thing in the sentence"),
     ("trait", "a figure kept about somebody"),
@@ -71,6 +72,22 @@ TARGET_NAMES = tuple(name for name, _said in TARGETS)
 
 #: The answer's key for everything it said, rather than one field of it.
 TEXT = "text"
+
+#: Where `attempt` puts everything typed after the verb, among the words for
+#: each role. No role is called this, so nothing can mistake it for one.
+TYPED = "*typed*"
+
+
+def typed_after_verb(raw):
+    """
+    Everything typed after the verb, as it was typed.
+
+    `websearch best muds in london` is one query, not "best muds" in a
+    container called London -- which is what the parser, rightly, makes of
+    it for any verb about things. A tool's text wants the whole of it.
+    """
+    parts = str(raw or "").strip().split(None, 1)
+    return parts[1].strip() if len(parts) > 1 else ""
 
 #: How much told text a character's prompt is given. Search results run long,
 #: and the whole page is still remembered; this is what it reads now.
@@ -100,6 +117,8 @@ def read_source(text):
     text = str(text or "").strip()
     if text == "ask":
         return {"from": "ask"}
+    if text == "typed":
+        return {"from": "typed"}
     kind, _colon, rest = text.partition(":")
     kind = kind.strip().lower()
     if kind == "value":
@@ -130,8 +149,8 @@ def read_target(text):
 
 def write_source(source):
     kind = source.get("from")
-    if kind == "ask":
-        return "ask"
+    if kind in ("ask", "typed"):
+        return kind
     if kind == "value":
         return f"value:{source.get('value', '')}"
     if kind in ("trait", "state"):
@@ -162,6 +181,8 @@ def said_source(text):
     kind = source["from"]
     if kind == "ask":
         return "asked when the verb is used"
+    if kind == "typed":
+        return "everything typed after the verb"
     if kind == "value":
         return repr(source.get("value", ""))
     role = _role_said(source.get("role"))
@@ -380,6 +401,8 @@ def takes_word(effect, roles=()):
     roles = set(roles or [])
     for text in args_of(effect).values():
         source = read_source(text)
+        if source and source["from"] == "typed":
+            return True
         if source and source["from"] == "word" and (
                 not roles or source.get("role") in roles):
             return True
@@ -453,6 +476,8 @@ def arguments(effect, info, actor, bound, room, words, answers, world_root):
             value = source.get("value")
         elif source["from"] == "ask":
             value = (answers or {}).get(name)
+        elif source["from"] == "typed":
+            value = str((words or {}).get(TYPED) or "").strip() or None
         elif source["from"] == "word":
             value = (words or {}).get(source["role"])
             if not value:

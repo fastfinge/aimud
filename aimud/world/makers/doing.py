@@ -150,9 +150,18 @@ def keep_action(ctx):
 
         _record, info = services.find(tool)
         means = services.does(info or {})
+    applies_to = list(ctx.draft.get("applies_to") or ())
+    if tool and not applies_to:
+        # A verb that calls a tool is typed with what to ask it -- `websearch
+        # fastfinge` -- so it takes something, and something said rather than
+        # something here: `visible`, so nobody is sent to pick up a word.
+        # Required, so `websearch` alone asks "websearch what?" instead of
+        # calling a search with nothing in it. Somebody who declared parts of
+        # their own is left with them.
+        applies_to = [{"role": "direct", "access": "visible", "optional": False}]
     record = actions.declare(
         root, word,
-        applies_to=ctx.draft.get("applies_to") or (),
+        applies_to=applies_to,
         sense=str(ctx.draft.get("sense") or ""),
         means=means,
         despite=ctx.draft.get("despite") or (),
@@ -175,10 +184,11 @@ def tool_rule(root, word, tool, record):
     The carry-out rule the add-action shortcut writes for a verb that calls a
     tool: ordinary, so `edit rule` changes it like any other.
 
-    Each required parameter comes from the word typed for the thing the verb
-    is done to when it takes one and the parameter is text -- `forecast
-    london` -- and is asked otherwise; the answer is told to whoever used the
-    verb. A sensible first rule, not a system of its own. §8.
+    The first required text parameter is everything typed after the verb --
+    `websearch best muds in london` is one query, whatever the parser makes of
+    "in" -- when the verb takes something; any other required parameter is
+    asked. The answer is told to whoever used the verb. A sensible first rule,
+    not a system of its own. §8.
     """
     from world import rulebooks, services
 
@@ -190,7 +200,7 @@ def tool_rule(root, word, tool, record):
         if not required:
             continue
         if takes_direct and not worded and services.is_text(schema)                 and "enum" not in schema:
-            args[name] = "word:direct"
+            args[name] = "typed"
             worded = True
         else:
             args[name] = "ask"

@@ -1493,8 +1493,10 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
 
         sessions = getattr(getattr(caller, "sessions", None), "all", None)
         session = (sessions() or [None])[0] if callable(sessions) else None
+        heard = dict(words or {})
+        heard[tool_calls.TYPED] = tool_calls.typed_after_verb(raw)
         tool_calls.prepare(caller, sponsor, world_root, room, bound,
-                           words or {}, calls, on_ready=ready,
+                           heard, calls, on_ready=ready,
                            on_fail=lambda text: release(text),
                            waiter=waiter, session=session)
         return

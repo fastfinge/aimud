@@ -1411,8 +1411,10 @@ def schema(ctx=None):
             "args": {"type": "object",
                      "description": "call_tool: each parameter the tool "
                                     "takes, as name: where it comes from -- "
-                                    "'value:<text>', 'word:<role>' (the word "
-                                    "typed), 'name:<role>', "
+                                    "'typed' (everything typed after the "
+                                    "verb), 'value:<text>', 'word:<role>' "
+                                    "(the word typed for one part), "
+                                    "'name:<role>', "
                                     "'trait:<role>:<trait>' or "
                                     "'state:<role>:<group>'"},
             "results": {"type": "object",
