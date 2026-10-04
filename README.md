@@ -29,6 +29,7 @@ you can reach through [OpenRouter](https://openrouter.ai/).
 - [Menus](#menus)
 - [What it costs](#what-it-costs)
 - [Letting an agent play](#letting-an-agent-play)
+- [Letting the game reach outside](#letting-the-game-reach-outside)
 - [Before you host this anywhere](#before-you-host-this-anywhere)
 - [How it fits together](#how-it-fits-together)
 
@@ -622,6 +623,8 @@ account's own.
 | `view memory` / `edit memory [sleep \| sweep \| distil \| all]` | Memory upkeep now rather than on its clock: consolidate what characters remember, delete the banks of characters that no longer exist, or turn recent summaries into what a character now knows. `view memory` reports and changes nothing. Distilling is the only part that costs anything; sweeping asks first. |
 | `view commonsense` / `import commonsense` | A second dictionary, optional and fetched rather than shipped. WordNet answers what a word can be; this answers what people think is true of it — that open and closed cannot both hold, that a beetle has a thorax, that a datapad is probably a device. `view` says whether the corpus is here and what it knows; `import` downloads it, after asking. Nothing depends on it: without it, state groups, body parts and anchor suggestions are guessed rather than looked up, which is how the game has always worked. |
 | `view rounds [<job>] [world <n>]` / `reset rounds` | How many rounds the game's conversations with models take, per job, and which tools they used. `reset` starts counting again. |
+| `view services` / `view service <name>` | What this server lets the game reach outside itself for, and what each tool does out there. Open to everybody, secrets masked. |
+| `create service` / `edit service <name>` / `delete service <name>` | Add, change or forget one. Admin; one that runs a command needs Developer. See [Letting the game reach outside](#letting-the-game-reach-outside). |
 
 ### Building commands inside a world
 
@@ -797,6 +800,64 @@ in the protocol column, `@boot` removes it, it times out when idle, and it can
 do exactly what its account can do and nothing more. One character per account
 means an agent connecting **takes your character** — you are disconnected, and
 told why. To play alongside one, give it its own account.
+
+## Letting the game reach outside
+
+The other direction from the last section: the game as a *client* of MCP
+servers and OpenAPI services, so a verb can check the real weather, search
+the web, or have an innkeeper send an email. The design is in
+`docs/mcp-client.md`.
+
+**You decide what it may reach, and nobody else does.** A service is added in
+the game, by an admin:
+
+```
+create service weather url https://weather.example/mcp
+create service local command uvx some-mcp-server
+create service pubs openapi https://pubs.example/openapi.json
+```
+
+or `create service` alone for a form. One that runs a command needs Developer —
+the permission `py` already needs, because starting a process is running code.
+Once you have added it, players and characters use it; that is not arbitrary
+code, because the command is fixed and only the tool's arguments vary.
+
+**Every credential is the server's.** A key, an environment variable or an
+OAuth authorisation is held once, for the whole server — never per player.
+Nobody can connect their own email or bank to the game and have a character act
+as them. The consequence for you: **give the game its own account** with
+anything that acts in the real world, so that what it sends is plainly sent by
+a multiplayer game. The game names itself in what it sends (`clientInfo`, a
+`User-Agent`), but only its own account makes that true at the other end.
+
+**You classify every tool.** When a service connects, `edit service <name>`
+lists its tools with their descriptions in full — read them; a description is
+what the game's models will be told — and a first guess at what each does
+outside: *contained* (nothing leaves the machine), *looks outward* (a question
+goes out) or *acts outward* (something out there changes). Change any guess,
+and switch off anything the game should not use. An OpenAPI service starts
+with every operation off.
+
+**One gate.** A character uses a tool only where somebody is paying for a model
+in that world. A player may use contained and looks-outward tools anywhere, and
+acts-outward ones where somebody is paying. Every acts-outward call is recorded
+beside its service, with who did it, where, and on whose account:
+`view service <name>`.
+
+**How a world uses one.** Only through a rule: a `call_tool` effect, written in
+`create rule`, by the shortcut in `create action`, or by a model learning a
+verb. What comes back becomes a condition, a figure, what something looks like,
+or is told privately to whoever used the verb — never narration. A world needs a
+service when one of its rules names one of its tools, and a world document says
+so; it will not import on a server without it.
+
+**OAuth.** Set the service to OAuth and `edit service <name> authorise`. You are
+given an address to open in a browser; it comes back to
+`/services/oauth/callback`. That works from a browser on the same machine. For
+anywhere else, set `SERVICES_PUBLIC_URL` in `secret_settings.py` to wherever
+browsers reach this game's web pages.
+
+`LOCKDOWN_MODE` switches every service off.
 
 ## Before you host this anywhere
 
