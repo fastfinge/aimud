@@ -801,3 +801,82 @@ def _tell(actor, called, text, told):
         told.append(text)
     else:
         actor.msg(text)
+
+
+# ---------------------------------------------------------------------------
+# What the rule generator may read about the server's tools (§7.6)
+# ---------------------------------------------------------------------------
+
+def tool_said(found, info):
+    """One tool, in full, as a model writing a rule needs it."""
+    from world import services
+
+    lines = [f"{found} ({services.said_level(info.get('level'))})",
+             f"does: {services.does(info) or 'it says nothing about itself'}"]
+    for name, schema, required in services.parameters(info.get("input")):
+        kind = schema.get("type") or ""
+        if "enum" in schema:
+            kind = "one of " + ", ".join(str(v) for v in schema["enum"])
+        lines.append(f"takes {name}: {kind}"
+                     f"{'' if required else ' (optional)'}"
+                     + (f" -- {schema['description']}" if schema.get("description") else ""))
+    for name, schema in services.outputs(info.get("output")):
+        if services.is_bounded(schema):
+            where = "can be a condition"
+        elif services.is_numeric(schema):
+            where = "can be a figure"
+        elif services.is_text(schema):
+            where = "can be told or described"
+        else:
+            where = "cannot be kept"
+        kind = ("one of " + ", ".join(str(v) for v in schema["enum"])
+                if "enum" in schema else schema.get("type") or "")
+        lines.append(f"gives {name}: {kind} -- {where}")
+    lines.append("gives text: everything it says -- can be told or described")
+    return "\n".join(lines)
+
+
+def lookup_tools():
+    """
+    `list_tools` and `show_tool`: what this server lets a rule call.
+
+    Offered to the rule loop alone (`rule_gen.TOOL_LOOKUPS`). Available only
+    where there is a tool to call, so a world on a server that reaches nothing
+    is never shown the idea.
+    """
+    from world import services
+    from world import toolbox as tb
+
+    def listing(ctx, args):
+        lines = [f"{found} ({services.said_level(info.get('level'))}): "
+                 f"{services.does(info)[:160] or 'says nothing about itself'}"
+                 for found, _record, info in services.usable()]
+        return tb.paged(lines, args, "tools")
+
+    def showing(ctx, args):
+        wanted = str(args.get("tool") or "").strip()
+        for found, _record, info in services.usable():
+            if found == wanted:
+                return tool_said(found, info)
+        return (f"This server offers no tool called {wanted}. list_tools "
+                f"says what there is.")
+
+    def available(ctx):
+        return bool(services.usable())
+
+    return [
+        tb.Tool("list_tools",
+                "The tools this server lets a rule call outside the game, and "
+                "what each does there.",
+                tb.params(tb.PAGE), tb.answering(listing),
+                doing="looking up the tools this server offers", looks=True,
+                available=available),
+        tb.Tool("show_tool",
+                "What one tool takes, what it gives back, and where each part "
+                "of its answer can go.",
+                tb.params({"tool": {"type": "string",
+                                    "description": "The tool, as service.tool"}},
+                          ["tool"]),
+                tb.answering(showing), doing="looking up a tool", looks=True,
+                available=available),
+    ]

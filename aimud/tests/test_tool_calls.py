@@ -569,3 +569,143 @@ class TheFormAPlayerIsAsked(GameTest):
                                     on_quit=lambda: quit.append(True))
         other.on_close(menus.Context(self.char1), "quit")
         self.assertEqual(quit, [True])
+
+
+# ---------------------------------------------------------------------------
+# A model writing it (§7.6)
+# ---------------------------------------------------------------------------
+
+@tag("world")
+class AModelWritingACall(GameTest):
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.root.db.world_root = self.root
+
+    def reply(self, effect):
+        return {"rules": [{"phase": "carry_out", "scope": "world",
+                           "effects": [effect]}]}
+
+    def validate(self, effect):
+        from world import rule_gen
+
+        offered = [("world", "everywhere", {"world": True})]
+        return rule_gen.validate(self.reply(effect), offered, "sail", self.root)
+
+    def test_a_call_that_can_be_made_is_kept(self):
+        with serving():
+            kept, said = self.validate(_call(results={"conditions": "state:here"}))
+        self.assertEqual(len(kept), 1, said)
+
+    def test_one_that_asks_is_sent_back(self):
+        with serving():
+            kept, said = self.validate(_call(args={"city": "ask"}))
+        self.assertEqual(kept, [])
+        self.assertTrue(any("cannot be asked" in line for line in said), said)
+
+    def test_one_naming_no_tool_here_is_sent_back(self):
+        with serving():
+            kept, said = self.validate(_call("weather.hurricane"))
+        self.assertEqual(kept, [])
+        self.assertTrue(any("no tool" in line for line in said), said)
+
+    def test_what_it_does_is_never_taken_from_the_model(self):
+        with serving():
+            kept, _said = self.validate(_call(does="Launches the missiles."))
+            filed = R.add(self.root, kept[0])
+        self.assertEqual(filed["effects"][0]["does"],
+                         "Gets today's forecast for a city.")
+
+    def test_nothing_becoming_true_may_call_out(self):
+        """It would be a timer by another name."""
+        from world import rule_gen
+
+        with serving():
+            kept, said = rule_gen.validate_becoming({"rules": [{
+                "when": [{"subject": "here", "is": "dark"}],
+                "effects": [_call()]}]}, self.root)
+        self.assertEqual(kept, [])
+        self.assertTrue(any("call_tool" in line for line in said), said)
+
+
+@tag("world")
+class WhatTheRuleLoopIsShown(GameTest):
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.root.db.world_root = self.root
+
+    def ctx(self):
+        from world import toolbox as tb
+
+        return tb.ToolContext(world_root=self.root, room=self.room1,
+                              actor=self.char1)
+
+    def test_nothing_about_tools_where_there_are_none(self):
+        from world import lookups, rule_gen
+
+        self.assertEqual(rule_gen._tools_said(), "")
+        for tool in lookups.named(*rule_gen.TOOL_LOOKUPS):
+            self.assertFalse(tool.offered(self.ctx()), tool.name)
+
+    def test_with_a_service_both_are_there(self):
+        from world import lookups, rule_gen
+
+        with serving():
+            self.assertIn("call_tool", rule_gen._tools_said())
+            tools = {tool.name: tool for tool in lookups.named(*rule_gen.TOOL_LOOKUPS)}
+            self.assertTrue(tools["list_tools"].offered(self.ctx()))
+            heard = []
+            tools["list_tools"].handler(self.ctx(), {}, heard.append)
+            tools["show_tool"].handler(self.ctx(), {"tool": "weather.forecast"},
+                                       heard.append)
+            listed, shown = heard
+        self.assertIn("weather.forecast", listed)
+        self.assertNotIn("weather.ledger", listed)
+        self.assertIn("conditions: one of sunny, rain, storm -- can be a condition",
+                      shown)
+        self.assertIn("high_c: number -- can be a figure", shown)
+
+    def test_the_becomes_loop_is_never_offered_them(self):
+        from world import rule_gen
+
+        for name in rule_gen.TOOL_LOOKUPS:
+            self.assertNotIn(name, rule_gen.LOOKUPS)
+
+
+@tag("world")
+class TheRuleLoopFilesACall(GameTest):
+    """The whole loop, with the model's answer scripted: offered, sent, filed."""
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.root.db.world_root = self.root
+
+    def test_a_model_learning_a_verb_can_write_a_rule_that_checks_the_weather(self):
+        from tests.support import finishing, replying
+        from world import rule_gen
+
+        kept = []
+        with serving(), immediately(), replying(finishing(file_rules={"rules": [{
+                "phase": "carry_out", "scope": "world", "name": "forecasting",
+                "effects": [_call(results={"conditions": "state:here",
+                                           "text": "actor"})]}]})) as recorder:
+            rule_gen.learn(FakeSponsor(), self.root, "forecast", {}, self.char1,
+                           on_success=kept.extend,
+                           on_error=lambda err: self.fail(err))
+            offered = [tool["function"]["name"] for tool in recorder.tools(0)]
+            system = recorder.prompts[0][0]["content"]
+        self.assertIn("list_tools", offered)
+        self.assertIn("show_tool", offered)
+        self.assertIn('"call_tool" asks a service', system)
+        filed = [rule for rule in R.all_rules(self.root)
+                 if rule.get("action") == "forecast"]
+        self.assertEqual(len(filed), 1)
+        self.assertEqual(filed[0]["effects"][0]["does"],
+                         "Gets today's forecast for a city.")
