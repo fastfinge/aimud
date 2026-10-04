@@ -583,6 +583,26 @@ def spec_methods(spec):
     return found
 
 
+def spec_key(spec):
+    """
+    (where, name) for an API key, from an OpenAPI spec's `securitySchemes`.
+
+    The first `apiKey` scheme, or an HTTP bearer one, so the owner does not
+    have to read the spec to fill in the form. (None, None) when the spec says
+    nothing a key could be sent by. §12.
+    """
+    schemes = (((spec or {}).get("components") or {}).get("securitySchemes")
+               or {})
+    for scheme in schemes.values():
+        scheme = scheme or {}
+        if scheme.get("type") == "apiKey" and scheme.get("in") in ("header", "query"):
+            return (HEADER if scheme["in"] == "header" else QUERY,
+                    str(scheme.get("name") or ""))
+        if scheme.get("type") == "http" and str(scheme.get("scheme")).lower() == "bearer":
+            return BEARER, ""
+    return None, None
+
+
 def target(record):
     """
     What the SDK's `Client` connects to for this service, and any methods.
@@ -610,6 +630,10 @@ def target(record):
         from fastmcp import FastMCP
 
         spec = _load_spec(record)
+        if record.get("auth") == KEY_AUTH and not record.get("key_name"):
+            place, named = spec_key(spec)
+            if place:
+                record = dict(record, key_place=place, key_name=named)
         servers = spec.get("servers") or [{}]
         base = str((servers[0] or {}).get("url") or "").strip() or None
         server = FastMCP.from_openapi(
