@@ -302,6 +302,12 @@ def _connect(caller, name):
     services.refresh(name, on_done=done)
 
 
+def _authorise(ctx):
+    from world import service_auth
+
+    return service_auth.begin(ctx.draft.get("name"), _caller(ctx))
+
+
 def _refresh(ctx):
     _connect(_caller(ctx), ctx.draft.get("name"))
     return "Connecting again..."
@@ -374,6 +380,14 @@ SERVICE = menus.Form(
                       command=lambda ctx: f"edit service {ctx.draft.get('name')} tool",
                       help="Confirm or change what each tool does outside the "
                            "game, and switch off any the game should not use."),
+        menus.Action("authorise", "Authorise it, as this server",
+                     lambda ctx: _authorise(ctx),
+                     lock=lambda ctx: not _creating(ctx)
+                     and ctx.draft.get("auth") == services.OAUTH,
+                     command=lambda ctx: f"edit service {ctx.draft.get('name')} authorise",
+                     help="Gives you an address to open in a browser. What you "
+                          "agree to there, you agree to for this whole server: "
+                          "whatever the game does with it, it does as the game."),
         menus.Action("refresh", "Connect again and relist its tools", _refresh,
                      lock=lambda ctx: not _creating(ctx),
                      command=lambda ctx: f"edit service {ctx.draft.get('name')} refresh"),
@@ -619,7 +633,7 @@ def edit_run(cmd, ctx, words):
     if what == "authorise" or what == "authorize":
         from world import service_auth
 
-        caller.msg(service_auth.begin(record["name"]))
+        caller.msg(service_auth.begin(record["name"], caller))
         return
     fields = _typed_fields()
     if what not in fields:

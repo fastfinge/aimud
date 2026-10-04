@@ -790,7 +790,7 @@ def _dump(model):
     return model
 
 
-def list_tools(record):
+def list_tools(record, timeout=None):
     """
     What a service offers, as {tool: info}. Blocking.
 
@@ -807,7 +807,7 @@ def list_tools(record):
             if not cursor:
                 return found
 
-    tools = _manager().do(record, job)
+    tools = _manager().do(record, job, timeout=timeout)
     methods = _manager().methods(record["name"])
     listed = {}
     for tool in tools:
@@ -873,7 +873,7 @@ def _reason(exc):
     return said.splitlines()[0][:200]
 
 
-def connect_and_list(record):
+def connect_and_list(record, timeout=None):
     """
     (tools, status) for a service: a fresh listing, or why there is none.
 
@@ -882,7 +882,7 @@ def connect_and_list(record):
     """
     _manager().drop(record["name"])
     try:
-        return list_tools(record), ""
+        return list_tools(record, timeout=timeout), ""
     except Exception as exc:
         reason = _reason(exc)
         logger.log_info(f"services: {record.get('name')} could not be listed: {reason}")

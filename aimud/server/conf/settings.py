@@ -88,6 +88,15 @@ MCP_ENABLED = False
 MCP_INTERFACE = "127.0.0.1"
 MCP_PORT = 4007
 
+# Where a browser reaches this game's web pages, for the one thing that sends
+# a browser here from somewhere else: a service authorised with OAuth, which
+# comes back to /services/oauth/callback. Empty means localhost on the web
+# port, which works for an admin at this machine and nobody else. Services
+# themselves are added in the game by the owner (`create service`), with this
+# server's credentials and never a player's. See docs/mcp-client.md and
+# world/services.py.
+SERVICES_PUBLIC_URL = ""
+
 
 ######################################################################
 # Settings given in secret_settings.py override those in this file.
