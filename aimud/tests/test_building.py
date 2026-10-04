@@ -1541,6 +1541,32 @@ class MakingThings(Building):
         here = [obj.key for obj in self.room1.contents]
         self.assertIn("Hob the Alchemist", here)
 
+    def test_a_person_is_made_with_their_characteristics(self):
+        from world.makers import things
+
+        ctx = _Draft({"name": "Hob the Alchemist",
+                      "description": "Ink-stained and cheerful.",
+                      "manner": "  Hums when lying.  "},
+                     self.root, self.char1)
+        npc_id, _said = things.keep_npc(ctx)
+        npc = next(obj for obj in self.room1.contents if obj.id == npc_id)
+        self.assertEqual(npc.db.manner, "Hums when lying.")
+
+    def test_and_their_characteristics_can_be_changed(self):
+        from evennia import create_object
+        from world.makers import things
+
+        npc = create_object("typeclasses.npcs.NPC", key="Hob",
+                            location=self.room1)
+        npc.db.manner = "Hums when lying."
+        field = next(item for item in things.EDIT_PERSON.items
+                     if getattr(item, "key", "") == "manner")
+        ctx = _Draft({}, self.root, self.char1)
+        ctx.data["target"] = npc
+        self.assertEqual(field.value(ctx), "Hums when lying.")
+        field.store(ctx, "Never hums at all.")
+        self.assertEqual(npc.db.manner, "Never hums at all.")
+
 
 class _Draft:
     """A context for a keeper called directly, without a menu around it."""

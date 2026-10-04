@@ -347,7 +347,7 @@ TURN_ROUNDS = 8
 
 _NPC_GEN_SYSTEM = """You generate NPC characters for a text-based MUD.
 Answer by calling make_character. The name is 1-3 words, the description 2-4
-sentences, and the manner 2-3 sentences.
+sentences, and the manner 3-5 sentences.
 
 "name" is how the player will address this character, so it has to belong to
 one person. Any names already used in this world are listed for you; do not
@@ -402,8 +402,22 @@ discarded entire, because the missing form is a sentence written wrong every
 time it comes up afterwards. "plural" is whether the verb after it is plural:
 "they pick up the sword" is true, "she picks up the sword" is false.
 
-"manner" is the opposite and is never shown to players: temperament, habits,
-what they want, how they speak and treat people. Put the character there.
+"manner" is the opposite and is never shown to players. It is the character's
+characteristics, and the only thing that makes them talk and behave unlike
+everyone else here: every character in the world is otherwise given the same
+instructions, so a vague manner makes a person who sounds like all the rest.
+Cover, specifically:
+- their temperament, and one thing in them that cuts against it -- a gruff
+  porter who cannot bear to see an animal go hungry
+- how they talk: plain or ornate, curt or rambling, a phrase they lean on, a
+  subject they cannot leave alone
+- what they want from life beyond the small goal below, and what they fear,
+  resent or are hiding
+- how they treat strangers, and whom they treat differently
+- one quirk or habit odd enough to be remembered
+Be specific rather than pleasant. "Friendly and helpful" describes nobody.
+Most people are busy, wary, proud, bored, or preoccupied with something of
+their own, and a place where everyone is eager to help is not a place.
 
 "goal" is the one thing this character is trying to bring about, written as
 conditions the game can check. Keep it small and near at hand -- something
@@ -700,6 +714,37 @@ def _trait_line(npc):
 
     described = traits.describe(npc)
     return f"What is true of you: {described}\n" if described else ""
+
+
+def characterise(npc, text):
+    """
+    Give a character its manner: who it is, as nobody sees by looking.
+
+    The one writer, so a character a model invented, one somebody typed into
+    `create person` and one an imported document brought back are the same
+    sort of person. Empty clears it.
+    """
+    npc.db.manner = str(text or "").strip()
+    return npc.db.manner
+
+
+def _manner_line(npc):
+    """
+    Who this character is, for its own prompt.
+
+    Every character is sent the same instructions, so this is the one place
+    two of them differ in anything but body and circumstance. It is said as
+    an instruction about voice as well as a fact, because a model handed a
+    personality as one more line of context goes on sounding like itself.
+    """
+    manner = str(npc.db.manner or "").strip()
+    if not manner:
+        return "\n"
+    return (f"Who you are: {manner}\n"
+            "That is what makes you yourself and not anyone else here. Let it "
+            "decide what you notice, what you care about, what you want from "
+            "whoever is in front of you, and how you put things -- your own "
+            "words and habits, not a helpful narrator's.\n\n")
 
 
 def _want_line(npc):
@@ -1357,7 +1402,7 @@ def generate_npc(sponsor, room, on_success, on_error):
             # Kept apart from the description: this is who they are, which
             # players never see by looking, and which the character itself
             # needs in order to behave like anyone in particular.
-            npc.db.manner = manner
+            characterise(npc, manner)
             # What other people will say about them. A set this world already
             # keeps is used by name; a declared one is registered first and
             # then given, because `give` refuses a word the register has never
@@ -1591,7 +1636,7 @@ def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked,
                                      nearby[0] if nearby else None),
         npc_desc=clothing.own_appearance(npc, tokens.text_of(npc)) or "(no description)",
         npc_traits=_trait_line(npc),
-        npc_manner=(f"Who you are: {npc.db.manner}\n\n" if npc.db.manner else "\n"),
+        npc_manner=_manner_line(npc),
         room_title=room_title,
         room_desc=room_desc,
         room_contents=room_contents,
@@ -1787,7 +1832,10 @@ def character_tool(existing):
             "description": {"type": "string",
                             "description": "Their body, and nothing else"},
             "manner": {"type": "string",
-                       "description": "Who they are and how they behave"},
+                       "description": "Their characteristics: temperament, "
+                                      "how they talk, what they want and "
+                                      "fear, a quirk -- specific, never "
+                                      "generic"},
             "pronouns": {"type": "string",
                          "description": "What others say about them: one of "
                                         + ", ".join(sets)
