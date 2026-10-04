@@ -424,7 +424,7 @@ def root_of(ctx):
 # ---------------------------------------------------------------------------
 
 def listing_field(key, label, add_form, describe, help="", add_label="",
-                  empty="none yet", most=0):
+                  empty="none yet", most=0, data=None, **kwargs):
     """
     One form item for a list kept in the draft: add one, or take one out.
 
@@ -434,7 +434,10 @@ def listing_field(key, label, add_form, describe, help="", add_label="",
     holds now, and `add_form` answers with `menus.Picked` -- so one form
     serves both this and a picker.
 
-    `describe(ctx, entry)` says one entry in a line.
+    `describe(ctx, entry)` says one entry in a line. `data(ctx)` is handed
+    to the form that adds one, for an entry that depends on something else
+    in this draft -- a tool's parameters depend on which tool -- since that
+    form gets a draft of its own. Anything else is the item's: a lock.
     """
     from world import menus
 
@@ -449,6 +452,7 @@ def listing_field(key, label, add_form, describe, help="", add_label="",
                 "add", add_label or f"Add one",
                 add_form(ctx) if callable(add_form) else add_form,
                 into=key, append=True, fresh_draft=True,
+                data=(lambda _child, ctx=ctx: data(ctx)) if data else None,
                 help="Adds one more to the list."))
         for number, entry in enumerate(entries):
             found.append(menus.Action(
@@ -474,7 +478,7 @@ def listing_field(key, label, add_form, describe, help="", add_label="",
         return f"{label}: {len(entries)} of them"
 
     form = menus.Form(key=f"list-{key}", title=label, intro=intro, items=items)
-    return menus.Submenu(key, summary, form, help=help)
+    return menus.Submenu(key, summary, form, help=help, **kwargs)
 
 
 def _dropper(key, number):

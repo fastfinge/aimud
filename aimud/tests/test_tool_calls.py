@@ -1,0 +1,571 @@
+"""
+The `call_tool` effect: a rule asking a service something, or having it act.
+
+docs/mcp-client.md §6 and §7. A tool reaches a world only through a rule, so
+everything here is driven the way a player drives it: a verb typed, a rule
+found, the call made, and the answer landing -- as a condition, a figure, a
+description, or told privately to whoever asked. Never as narration, and never
+to the room.
+
+The server is `tests/fixtures/weather_server.py`, served in process by the
+real manager (`tests.support.serving`); `immediately` makes `llm.fetch`
+synchronous, so by the time an attempt returns its calls have been made.
+"""
+
+from unittest import mock
+
+from django.test import SimpleTestCase, tag
+from evennia import create_object
+
+from tests.base import GameTest
+from tests.support import FakeSponsor, immediately, serving
+from world import actions, services, tool_calls, verbs
+from world import rulebooks as R
+
+
+# ---------------------------------------------------------------------------
+# Reading and writing what a rule says
+# ---------------------------------------------------------------------------
+
+@tag("unit")
+class Sources(SimpleTestCase):
+
+    def test_each_reads(self):
+        self.assertEqual(tool_calls.read_source("value:metric"),
+                         {"from": "value", "value": "metric"})
+        self.assertEqual(tool_calls.read_source("word:direct"),
+                         {"from": "word", "role": "direct"})
+        self.assertEqual(tool_calls.read_source("name:actor"),
+                         {"from": "name", "role": "actor"})
+        self.assertEqual(tool_calls.read_source("trait:actor:strength"),
+                         {"from": "trait", "role": "actor", "name": "strength"})
+        self.assertEqual(tool_calls.read_source("state:here:weather"),
+                         {"from": "state", "role": "here", "name": "weather"})
+        self.assertEqual(tool_calls.read_source("ask"), {"from": "ask"})
+
+    def test_a_value_may_hold_colons(self):
+        self.assertEqual(tool_calls.read_source("value:12:30")["value"], "12:30")
+
+    def test_nonsense_does_not_read(self):
+        for text in ("", "word", "word:nobody", "trait:actor", "colour:red"):
+            with self.subTest(text=text):
+                self.assertIsNone(tool_calls.read_source(text))
+
+    def test_written_and_read_back(self):
+        for text in ("value:x", "word:direct", "trait:actor:luck",
+                     "state:here:weather", "ask", "name:target"):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    tool_calls.write_source(tool_calls.read_source(text)), text)
+
+
+@tag("unit")
+class Targets(SimpleTestCase):
+
+    def test_each_reads(self):
+        self.assertEqual(tool_calls.read_target("state:here"),
+                         {"to": "state", "role": "here"})
+        self.assertEqual(tool_calls.read_target("trait:actor:luck"),
+                         {"to": "trait", "role": "actor", "name": "luck"})
+        self.assertEqual(tool_calls.read_target("description:direct"),
+                         {"to": "description", "role": "direct"})
+        self.assertEqual(tool_calls.read_target("actor"), {"to": "actor"})
+
+    def test_nonsense_does_not_read(self):
+        for text in ("", "room", "state:", "trait:actor", "narration"):
+            with self.subTest(text=text):
+                self.assertIsNone(tool_calls.read_target(text))
+
+
+@tag("unit")
+class AnswersInBrackets(SimpleTestCase):
+
+    def test_taken_off_the_line(self):
+        self.assertEqual(tool_calls.answers_in("forecast london [units=metric days=3]"),
+                         ("forecast london", {"units": "metric", "days": "3"}))
+
+    def test_quoted_values(self):
+        self.assertEqual(tool_calls.answers_in('send [to="Ana B" text=hi]')[1],
+                         {"to": "Ana B", "text": "hi"})
+
+    def test_nothing_in_brackets_is_left_alone(self):
+        self.assertEqual(tool_calls.answers_in("look at the [sign]"),
+                         ("look at the [sign]", {}))
+        self.assertEqual(tool_calls.answers_in("forecast london"),
+                         ("forecast london", {}))
+
+
+# ---------------------------------------------------------------------------
+# Whether a call is one that can be made
+# ---------------------------------------------------------------------------
+
+def _call(tool="weather.forecast", **fields):
+    effect = {"type": "call_tool", "tool": tool,
+              "args": {"city": "word:direct"}, "results": {}}
+    effect.update(fields)
+    return effect
+
+
+@tag("world")
+class Complaints(GameTest):
+
+    def test_a_good_one_has_none(self):
+        with serving():
+            self.assertEqual(tool_calls.complaints(_call(
+                results={"conditions": "state:here", "high_c": "trait:actor:warmth"})), [])
+
+    def test_no_such_service_or_tool(self):
+        with serving():
+            self.assertIn("no service", tool_calls.complaints(_call("nowhere.x"))[0])
+            self.assertIn("no tool", tool_calls.complaints(_call("weather.nope"))[0])
+
+    def test_a_tool_switched_off(self):
+        with serving() as record:
+            record["tools"]["forecast"]["on"] = False
+            services.put(record)
+            self.assertIn("switched off", tool_calls.complaints(_call())[0])
+
+    def test_a_refused_tool(self):
+        with serving():
+            said = tool_calls.complaints(_call("weather.ledger", args={}))
+            self.assertIn("cannot be called", said[0])
+
+    def test_a_required_parameter_with_no_source(self):
+        with serving():
+            said = tool_calls.complaints(_call(args={}))
+            self.assertTrue(any("needs city" in line for line in said), said)
+
+    def test_a_parameter_it_does_not_take(self):
+        with serving():
+            said = tool_calls.complaints(_call(args={"city": "word:direct",
+                                                     "colour": "value:red"}))
+            self.assertTrue(any("colour" in line for line in said), said)
+
+    def test_a_condition_needs_set_answers(self):
+        with serving():
+            said = tool_calls.complaints(_call(results={"high_c": "state:here"}))
+            self.assertTrue(any("set of answers" in line for line in said), said)
+
+    def test_a_figure_needs_a_number(self):
+        with serving():
+            said = tool_calls.complaints(
+                _call(results={"conditions": "trait:actor:warmth"}))
+            self.assertTrue(any("not a number" in line for line in said), said)
+
+    def test_words_can_only_be_told_or_described(self):
+        with serving():
+            said = tool_calls.complaints(_call(results={"text": "state:here"}))
+            self.assertTrue(any("description" in line for line in said), said)
+
+    def test_a_model_may_not_ask(self):
+        """§7.6: a learned rule is used by characters and the planner."""
+        with serving():
+            self.assertEqual(tool_calls.complaints(_call(args={"city": "ask"})), [])
+            said = tool_calls.complaints(_call(args={"city": "ask"}), by_model=True)
+            self.assertTrue(any("cannot be asked" in line for line in said), said)
+
+
+@tag("world")
+class Completing(GameTest):
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.root.db.world_root = self.root
+
+    def test_what_it_does_is_copied_never_typed(self):
+        with serving() as record:
+            kept = R.add(self.root, R.blank(
+                action="forecast", phase=R.CARRY_OUT,
+                effects=[_call(does="Steals your wallet.")]))
+            effect = kept["effects"][0]
+            self.assertEqual(effect["does"], "Gets today's forecast for a city.")
+            self.assertEqual(effect["fingerprint"],
+                             record["tools"]["forecast"]["fingerprint"])
+
+    def test_an_enum_is_registered_before_it_comes_back(self):
+        """So the rules about rain can be written before it rains."""
+        with serving():
+            R.add(self.root, R.blank(action="forecast", phase=R.CARRY_OUT,
+                                     effects=[_call(results={"conditions": "state:here"})]))
+            known = set(verbs.vocabulary(self.root))
+            for value in ("sunny", "rain", "storm"):
+                self.assertIn(value, known)
+
+
+# ---------------------------------------------------------------------------
+# The whole road: a verb typed, a call made, an answer landing
+# ---------------------------------------------------------------------------
+
+class _AWorldWithWeather(GameTest):
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.root.db.world_root = self.root
+        self.root.db.is_ai_room = True
+        self.watcher = create_object("typeclasses.characters.Character",
+                                     key="Watcher", location=self.room1)
+
+    def rule(self, action, effects, **fields):
+        actions.declare(self.root, action,
+                        applies_to=[{"role": "direct", "optional": True}])
+        fields.setdefault("report", "{actor} $pconj(consult) the almanac.")
+        return R.add(self.root, R.blank(action=action, phase=R.CARRY_OUT,
+                                        scope={"world": True},
+                                        effects=effects, **fields))
+
+    def attempt(self, line, who=None, sponsor=None):
+        """Type a line, and answer with what the actor and the room read."""
+        from world import attempt as attempt_mod
+        from world import events
+
+        who = who or self.char1
+        mine, theirs = [], []
+        with mock.patch.object(who, "msg", side_effect=lambda text=None, **kw:
+                               mine.append(str(text))), \
+             mock.patch.object(self.watcher, "msg",
+                               side_effect=lambda text=None, **kw:
+                               theirs.append(str(text))):
+            with immediately():
+                attempt_mod.attempt(
+                    who, line, sponsor if sponsor is not None else FakeSponsor(key=""),
+                    on_message=lambda text, event=None: events.show(text, event, who))
+        return "\n".join(mine), "\n".join(theirs)
+
+
+@tag("world")
+class AnAnswerBecomesACondition(_AWorldWithWeather):
+
+    def test_the_word_typed_is_passed_and_nothing_is_conjured(self):
+        with serving():
+            self.rule("forecast", [_call(results={"conditions": "state:here"})])
+            self.attempt("forecast london")
+        self.assertIn("rain", verbs.states(self.room1))
+        self.assertFalse([obj for obj in self.room1.contents
+                          if obj.key.lower() == "london"],
+                         "a London was conjured for a word a rule wanted")
+
+    def test_a_new_answer_replaces_the_old_one(self):
+        with serving():
+            self.rule("forecast", [_call(results={"conditions": "state:here"})])
+            self.attempt("forecast london")
+            self.attempt("forecast lisbon")
+        states = verbs.states(self.room1)
+        self.assertIn("sunny", states)
+        self.assertNotIn("rain", states)
+
+    def test_the_room_reads_the_verb_and_not_the_answer(self):
+        with serving():
+            self.rule("forecast", [_call(results={"conditions": "state:here"})])
+            _mine, theirs = self.attempt("forecast london")
+        self.assertIn("consults the almanac", theirs)
+        self.assertNotIn("12", theirs)
+
+
+@tag("world")
+class TextToldToWhoeverAsked(_AWorldWithWeather):
+
+    def pubs(self):
+        return [{"type": "call_tool", "tool": "weather.pubs",
+                 "args": {"near": "word:direct"}, "results": {"text": "actor"}}]
+
+    def test_a_player_reads_it_and_the_room_does_not(self):
+        with serving():
+            self.rule("find", self.pubs())
+            mine, theirs = self.attempt("find london")
+        self.assertIn("The Lamb", mine)
+        self.assertNotIn("The Lamb", theirs)
+
+    def test_a_character_has_it_labelled_and_remembers_it(self):
+        from typeclasses.npcs import NPC
+
+        npc = create_object(NPC, key="Mara", location=self.room1)
+        with serving(), mock.patch("world.memory.remember") as remembered, \
+                mock.patch.object(NPC, "_note_to_self") as noted:
+            self.rule("find", self.pubs())
+            self.attempt("find london", who=npc, sponsor=FakeSponsor())
+        told = noted.call_args[0][0]
+        self.assertIn("From outside the game, by weather.pubs", told)
+        self.assertIn("The Lamb", told)
+        memories = [call[0][1] for call in remembered.call_args_list]
+        self.assertTrue(any("The Lamb" in line and "From outside the game" in line
+                            for line in memories), memories)
+
+    def test_it_can_become_a_description_instead(self):
+        board = create_object("typeclasses.objects.Object", key="Board",
+                              location=self.room1)
+        with serving():
+            self.rule("post", [{"type": "call_tool", "tool": "weather.pubs",
+                                "args": {"near": "value:London"},
+                                "results": {"text": "description:direct"}}])
+            self.attempt("post board")
+        self.assertIn("The Eagle", board.db.desc)
+
+
+@tag("world")
+class TheGateOnTheRoad(_AWorldWithWeather):
+
+    def postcard(self):
+        return [{"type": "call_tool", "tool": "weather.send_postcard",
+                 "args": {"to": "value:Ana", "text": "value:hello"},
+                 "results": {}}]
+
+    def test_a_player_acting_outward_with_nobody_paying_is_refused(self):
+        from tests.fixtures import weather_server
+
+        with serving():
+            self.rule("post", self.postcard())
+            mine, _theirs = self.attempt("post", sponsor=FakeSponsor(key=""))
+            self.assertEqual(weather_server.SENT, [])
+        self.assertIn("paying", mine)
+
+    def test_with_somebody_paying_it_is_sent_once_and_recorded(self):
+        from tests.fixtures import weather_server
+
+        with serving():
+            self.rule("post", self.postcard())
+            self.attempt("post", sponsor=FakeSponsor())
+            self.assertEqual(weather_server.SENT, [("Ana", "hello")])
+            recent = services.get("weather")["recent"]
+        self.assertEqual(len(recent), 1)
+        self.assertEqual(recent[0]["tool"], "send_postcard")
+        self.assertEqual(recent[0]["actor"], self.char1.key)
+
+    def test_a_player_looking_outward_needs_nobody_paying(self):
+        with serving():
+            self.rule("forecast", [_call(results={"conditions": "state:here"})])
+            self.attempt("forecast london", sponsor=FakeSponsor(key=""))
+        self.assertIn("rain", verbs.states(self.room1))
+
+    def test_a_character_with_nobody_paying_reaches_nothing(self):
+        from typeclasses.npcs import NPC
+
+        npc = create_object(NPC, key="Mara", location=self.room1)
+        with serving():
+            self.rule("forecast", [_call(results={"conditions": "state:here"})])
+            self.attempt("forecast london", who=npc, sponsor=FakeSponsor(key=""))
+        self.assertNotIn("rain", verbs.states(self.room1))
+
+
+@tag("world")
+class WhenACallFails(_AWorldWithWeather):
+
+    def test_nothing_in_the_batch_is_applied(self):
+        with serving():
+            self.rule("forecast", [
+                {"type": "set_state", "role": "actor", "add": ["hopeful"]},
+                {"type": "call_tool", "tool": "weather.flaky",
+                 "args": {"why": "value:no"}, "results": {}}])
+            mine, _theirs = self.attempt("forecast")
+        self.assertNotIn("hopeful", verbs.states(self.char1))
+        self.assertIn("said no", mine)
+
+    def test_a_service_that_cannot_be_reached_says_so(self):
+        with serving():
+            self.rule("forecast", [_call(results={"conditions": "state:here"})])
+            with mock.patch.object(services, "call", return_value=services.Answer(
+                    error="refused", reached=False)):
+                mine, _theirs = self.attempt("forecast london")
+        self.assertIn("cannot be reached", mine)
+        self.assertNotIn("rain", verbs.states(self.room1))
+
+    def test_a_tool_that_changed_shape_is_not_called(self):
+        with serving() as record:
+            self.rule("forecast", [_call(results={"conditions": "state:here"})])
+            record = services.get("weather")
+            record["tools"]["forecast"]["fingerprint"] = "sha256:changed"
+            services.put(record)
+            mine, _theirs = self.attempt("forecast london")
+        self.assertIn("not what this rule was written for", mine)
+
+
+@tag("world")
+class Asking(_AWorldWithWeather):
+
+    def test_answers_in_brackets(self):
+        with serving():
+            self.rule("forecast", [_call(args={"city": "ask"},
+                                         results={"conditions": "state:here"})])
+            self.attempt("forecast [city=lisbon]")
+        self.assertIn("sunny", verbs.states(self.room1))
+
+    def test_nobody_to_ask_is_told_what_to_type(self):
+        with serving():
+            self.rule("forecast", [_call(args={"city": "ask"},
+                                         results={"conditions": "state:here"})])
+            mine, _theirs = self.attempt("forecast")
+        self.assertIn("[city=...]", mine)
+        self.assertNotIn("rain", verbs.states(self.room1))
+
+
+@tag("world")
+class RetryingOnlyWhatIsSafeToRepeat(_AWorldWithWeather):
+    """§7.5: retrying an email sends it twice."""
+
+    def retried(self, tool, args):
+        seen = []
+        real = services.call
+
+        def recording(record, name, arguments, retry=False):
+            seen.append(retry)
+            return real(record, name, arguments, retry=retry)
+
+        with serving():
+            self.rule("go", [{"type": "call_tool", "tool": tool,
+                              "args": args, "results": {}}])
+            with mock.patch.object(services, "call", recording):
+                self.attempt("go", sponsor=FakeSponsor())
+        return seen
+
+    def test_a_tool_that_says_nothing_is_never_sent_again(self):
+        self.assertEqual(self.retried("weather.send_postcard",
+                                      {"to": "value:Ana", "text": "value:hi"}),
+                         [False])
+
+    def test_one_that_says_it_is_idempotent_may_be(self):
+        self.assertEqual(self.retried("weather.roll", {"sides": "value:4"}), [True])
+
+
+# ---------------------------------------------------------------------------
+# A person writing it: the effect form, and the add-action shortcut (§8)
+# ---------------------------------------------------------------------------
+
+@tag("world")
+class ThroughTheRuleForm(GameTest):
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.root.db.world_root = self.root
+
+    def ctx(self, **draft):
+        from world import menus
+
+        return menus.Context(self.char1, world_root=self.root, draft=draft)
+
+    def test_the_form_asks_for_the_tool_and_both_lists(self):
+        from world.makers import rules
+
+        with serving():
+            keys = [item.key for item in
+                    rules.NEW_EFFECT.items_for(self.ctx(type="call_tool"))]
+        for key in ("tool", "args", "results"):
+            self.assertIn(key, keys)
+
+    def test_only_usable_tools_are_offered(self):
+        from world.makers import rules
+
+        with serving():
+            offered = [value for value, _label in rules.tool_options(self.ctx())]
+        self.assertIn("weather.forecast", offered)
+        self.assertNotIn("weather.ledger", offered)
+
+    def test_keeping_turns_the_lists_into_mappings(self):
+        from world.makers import rules
+
+        with serving():
+            effect, said = rules.keep_effect(self.ctx(
+                type="call_tool", tool="weather.forecast",
+                args=[{"param": "city", "source": "word:direct"}],
+                results=[{"field": "conditions", "target": "state:here"}]))
+        self.assertEqual(effect["args"], {"city": "word:direct"})
+        self.assertEqual(effect["results"], {"conditions": "state:here"})
+        self.assertIn("weather.forecast", said)
+
+    def test_a_call_that_cannot_be_made_is_refused_and_says_why(self):
+        from world import menus
+        from world.makers import rules
+
+        with serving():
+            with self.assertRaises(menus.Refuse) as refused:
+                rules.keep_effect(self.ctx(type="call_tool",
+                                           tool="weather.forecast", args=[],
+                                           results=[]))
+        self.assertIn("needs city", str(refused.exception))
+
+    def test_a_source_is_written_from_the_sub_form(self):
+        from world.makers import rules
+
+        with serving():
+            value, said = rules._keep_arg(self.ctx(param="city", source="word",
+                                                   role="direct"))
+        self.assertEqual(value, {"param": "city", "source": "word:direct"})
+        self.assertIn("word typed", said)
+
+
+@tag("world")
+class TheAddActionShortcut(GameTest):
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.root.db.world_root = self.root
+
+    def test_declares_the_verb_and_writes_the_rule_that_calls_it(self):
+        from world import menus
+        from world.makers import doing
+
+        with serving():
+            ctx = menus.Context(self.char1, world_root=self.root, draft={
+                "action": "forecast", "tool": "weather.forecast",
+                "applies_to": [{"role": "direct", "access": "visible",
+                                "optional": False}]})
+            word, said = doing.keep_action(ctx)
+        self.assertEqual(word, "forecast")
+        spec = actions.spec(self.root, "forecast")
+        self.assertEqual(spec["means"], "Gets today's forecast for a city.")
+        rules = [r for r in R.all_rules(self.root)
+                 if r.get("action") == "forecast"]
+        self.assertEqual(len(rules), 1)
+        effect = rules[0]["effects"][0]
+        self.assertEqual(effect["tool"], "weather.forecast")
+        self.assertEqual(effect["args"], {"city": "word:direct"})
+        self.assertEqual(effect["results"], {"text": "actor"})
+        self.assertIn("calls weather.forecast", said)
+
+
+@tag("world")
+class TheFormAPlayerIsAsked(GameTest):
+    """Built from the schema: an enum is a choice, a number a number."""
+
+    def test_each_parameter_is_the_field_its_schema_says(self):
+        from world import menus
+
+        info = {"description": "Plans a trip.", "input": {"properties": {
+            "city": {"type": "string"},
+            "days": {"type": "integer", "minimum": 1, "maximum": 7},
+            "units": {"enum": ["metric", "imperial"]},
+            "rain_ok": {"type": "boolean"}}}}
+        got = {}
+        form = tool_calls.ask_form(["city", "days", "units", "rain_ok"], info,
+                                   on_answered=got.update, on_quit=lambda: None)
+        fields = {item.key: item for item in form.items_for(menus.Context(self.char1))
+                  if isinstance(item, menus.Field)}
+        self.assertEqual(fields["city"].kind, menus.TEXT)
+        self.assertEqual(fields["days"].kind, menus.NUMBER)
+        self.assertEqual(fields["days"].maximum, 7)
+        self.assertEqual(fields["units"].kind, menus.CHOICE)
+        self.assertEqual(fields["rain_ok"].kind, menus.BOOLEAN)
+
+    def test_going_ahead_hands_the_answers_on_and_quitting_says_so(self):
+        from world import menus
+
+        info = {"input": {"properties": {"city": {"type": "string"}}}}
+        got, quit = {}, []
+        form = tool_calls.ask_form(["city"], info, on_answered=got.update,
+                                   on_quit=lambda: quit.append(True))
+        ctx = menus.Context(self.char1, draft={"city": "Lisbon"})
+        go = next(item for item in form.items_for(ctx) if item.key == "go")
+        go.run(ctx)
+        form.on_close(ctx, "finished")
+        self.assertEqual(got, {"city": "Lisbon"})
+        self.assertEqual(quit, [])
+        other = tool_calls.ask_form(["city"], info, on_answered=got.update,
+                                    on_quit=lambda: quit.append(True))
+        other.on_close(menus.Context(self.char1), "quit")
+        self.assertEqual(quit, [True])

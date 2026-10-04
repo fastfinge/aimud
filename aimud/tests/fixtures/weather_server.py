@@ -14,6 +14,7 @@ stdio test, which runs this file. Nothing here touches the network.
 * `flaky` fails as a tool, which is a reached service saying no.
 """
 
+import logging
 from typing import Literal
 
 from mcp.server.mcpserver import MCPServer
@@ -21,6 +22,11 @@ from mcp_types import ToolAnnotations
 from pydantic import BaseModel
 
 server = MCPServer("weather")
+
+# `flaky` failing is the point of it; the server's own traceback for each
+# failure is noise in a test run.
+logging.getLogger("mcp.server").setLevel(logging.CRITICAL)
+logging.getLogger("fastmcp").setLevel(logging.CRITICAL)
 
 #: What `send_postcard` was sent, in order: the proof a test reads.
 SENT = []

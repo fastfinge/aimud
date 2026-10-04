@@ -203,7 +203,7 @@ def add(world_root, rule):
     """
     if not world_root:
         return None
-    record = _tidied(rule)
+    record = _tidied(_calls_completed(world_root, rule))
     number = int(getattr(world_root.db, COUNTER, 0) or 0) + 1
     setattr(world_root.db, COUNTER, number)
     record["id"] = f"r{number}"
@@ -233,11 +233,38 @@ def replace(world_root, rule_id, rule):
     existing = get(world_root, rule_id)
     if existing is None:
         return None
-    record = _tidied(rule)
+    record = _tidied(_calls_completed(world_root, rule))
     record["id"] = existing["id"]
     for kept in ("born", "source", "evidence", "why", "overrides"):
         record[kept] = existing.get(kept)
     return _filed(world_root, record, what="rules changed")
+
+
+def _calls_completed(world_root, rule):
+    """
+    A rule whose calls to services say what each tool does, as of now.
+
+    Here, in the one door every rule comes in by -- a person's form, a model's
+    answer, an imported document -- so a `call_tool` is completed the same way
+    whoever wrote it: its `does` and `fingerprint` copied from the service and
+    never typed, and the conditions an answer can put something in registered
+    with this world. See `world/tool_calls.py` `complete`.
+    """
+    try:
+        effects = list((rule or {}).get("effects") or [])
+    except (TypeError, AttributeError):
+        return rule
+    if not any(isinstance(e, dict) and e.get("type") == "call_tool"
+               for e in effects):
+        return rule
+    from world import tool_calls
+
+    rule = dict(rule)
+    rule["effects"] = [
+        tool_calls.complete(e, world_root=world_root)
+        if isinstance(e, dict) and e.get("type") == "call_tool" else e
+        for e in effects]
+    return rule
 
 
 def _clean_scope(scope):

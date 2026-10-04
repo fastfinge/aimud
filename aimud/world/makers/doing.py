@@ -143,18 +143,69 @@ def keep_action(ctx):
             f"rule about it was written against that. |wview action {word}|n "
             f"shows it; |wreset verb {word}|n forgets it, and says what that "
             f"costs first.")
+    tool = str(ctx.draft.get("tool") or "").strip()
+    means = str(ctx.draft.get("means") or "")
+    if tool and not means:
+        from world import services
+
+        _record, info = services.find(tool)
+        means = services.does(info or {})
     record = actions.declare(
         root, word,
         applies_to=ctx.draft.get("applies_to") or (),
         sense=str(ctx.draft.get("sense") or ""),
-        means=str(ctx.draft.get("means") or ""),
+        means=means,
         despite=ctx.draft.get("despite") or (),
         must=ctx.draft.get("must") or ())
     if record is None:
         raise menus.Refuse(f"|w{word}|n could not be declared.")
     takes = ", ".join(r["role"] for r in record["applies_to"]) or "nothing"
+    if tool:
+        rule = tool_rule(root, word, tool, record)
+        return word, (f"|w{word}|n is declared, takes {takes}, and calls "
+                      f"{tool} (rule {rule['id']}). What it said is told to "
+                      f"whoever used it; |wedit rule {rule['id']}|n changes "
+                      f"where its answer goes.")
     return word, (f"|w{word}|n is declared, and takes {takes}. Nothing yet "
                   f"says what it does: |wcreate rule|n does that.")
+
+
+def tool_rule(root, word, tool, record):
+    """
+    The carry-out rule the add-action shortcut writes for a verb that calls a
+    tool: ordinary, so `edit rule` changes it like any other.
+
+    Each required parameter comes from the word typed for the thing the verb
+    is done to when it takes one and the parameter is text -- `forecast
+    london` -- and is asked otherwise; the answer is told to whoever used the
+    verb. A sensible first rule, not a system of its own. §8.
+    """
+    from world import rulebooks, services
+
+    _service, info = services.find(tool)
+    info = info or {}
+    takes_direct = any(r.get("role") == "direct" for r in record.get("applies_to") or [])
+    args, worded = {}, False
+    for name, schema, required in services.parameters(info.get("input")):
+        if not required:
+            continue
+        if takes_direct and not worded and services.is_text(schema)                 and "enum" not in schema:
+            args[name] = "word:direct"
+            worded = True
+        else:
+            args[name] = "ask"
+    effect = {"type": "call_tool", "tool": tool, "args": args,
+              "results": {"text": "actor"}}
+    return rulebooks.add(root, rulebooks.blank(
+        name=f"{word} calls {tool}", action=word,
+        phase=rulebooks.CARRY_OUT, scope={"world": True},
+        effects=[effect]))
+
+
+def _tool_options(ctx):
+    from world.makers import rules
+
+    return rules.tool_options(ctx) + [("", "None -- rules will say what it does")]
 
 
 NEW_ACTION = menus.Form(
@@ -194,6 +245,13 @@ NEW_ACTION = menus.Form(
                     choices=_must_choices, parse=lambda ctx, t: _read_must(t),
                     show=lambda ctx, value: _said_must(value),
                     help=MUST_HELP),
+        menus.Picker("tool", "A tool it calls", options=_tool_options,
+                     lock=lambda ctx: bool(_tool_options(ctx)[:-1]),
+                     help="A shortcut: pick a tool a service on this server "
+                          "offers, and keeping this also writes the rule that "
+                          "calls it. Its meaning comes from what the tool "
+                          "says it does when you leave that empty. The rule "
+                          "is an ordinary one afterwards."),
         making.keeper("keep", "Declare this action", keep_action,
                       command=lambda ctx: "create action <verb>"),
     ],
