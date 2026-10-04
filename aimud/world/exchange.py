@@ -462,7 +462,18 @@ def _requires(root):
         # written after they do is refused clearly by a server from before
         # them, rather than imported wrongly. See docs/archived/import-and-export.md 14.
         "plugins": [],
+        # Every tool a rule here names, with the shape it was written
+        # against. Read off the rules, never stored, so it cannot drift from
+        # them; a world never carries where a service is or how to log in to
+        # it, only that it needs one by this name. docs/mcp-client.md 10.
+        "services": _services_needed(root),
     }
+
+
+def _services_needed(root):
+    from world import rulebooks, tool_calls
+
+    return tool_calls.needed(rulebooks.all_rules(root))
 
 
 def _setup(root):
@@ -983,6 +994,19 @@ def _required(doc, known=None):
         wrong.append(
             f"it needs the plugin {', '.join(repr(str(p)) for p in plugins)}, "
             f"and this server has no plugins at all")
+
+    # The services it needs, by name and by shape. Refused rather than built
+    # with the rules that call them suspended, and never added: a world does
+    # not get to put a service on somebody else's server. docs/mcp-client.md
+    # 10.3.
+    needs = requires.get("services") or {}
+    if not hasattr(needs, "keys") or not all(
+            hasattr(tools, "keys") for tools in needs.values()):
+        wrong.append("requires.services is not an object of objects")
+    else:
+        from world import tool_calls
+
+        wrong.extend(tool_calls.missing(needs))
 
     wanted = requires.get("rulesets") or {}
     if not hasattr(wanted, "keys"):

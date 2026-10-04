@@ -241,6 +241,12 @@ def serving(record=None, server=None, **extra):
         try:
             yield services.get(record["name"])
         finally:
+            # Off the register as well as off the wire, so what a test does
+            # after the block is done on a server without the service -- which
+            # is how a test says "and on a server that lacks it".
+            records = services.register()
+            records.pop(record["name"], None)
+            services._save(records)
             manager = services._MANAGER
             if manager.loop is not None:
                 manager.loop.call_soon_threadsafe(manager.loop.stop)

@@ -66,6 +66,13 @@ def _toggle(name):
     def put(ctx, value):
         wanted = set(_wanted(ctx))
         if value:
+            # Its rules call a service this server does not have, so switched
+            # on it would be a world whose verbs say they cannot reach what
+            # they were written for. Refused, as an import would be.
+            lacking = rulesets.services_lacking(name)
+            if lacking:
+                raise menus.Refuse("It cannot be switched on here: "
+                                   + "; ".join(lacking) + ".")
             wanted.add(name)
         else:
             wanted.discard(name)

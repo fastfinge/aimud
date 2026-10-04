@@ -1034,3 +1034,95 @@ def find_out_wait(actor, key, now=None):
         return 0.0
     now = time.time() if now is None else now
     return max(0.0, FIND_OUT_EVERY - (now - float(when)))
+
+
+# ---------------------------------------------------------------------------
+# What a world needs, and whether this server has it (§10)
+# ---------------------------------------------------------------------------
+
+def needed(rules):
+    """
+    {service: {tool: fingerprint}} for every call these rules name.
+
+    Read off the rules every time it is asked, never stored, so it cannot
+    drift from them: a world needs a service when a rule *names* one of its
+    tools -- suspended rules included, since a suspended rule can be brought
+    back -- not when something happens to call it. A rule that has not fired
+    yet still depends on its service, and calls are history: two copies of a
+    world would otherwise need different things. §10.1.
+
+    The fingerprint is the one the rule was written against, which is what the
+    world needs; a rule from before fingerprints takes the server's.
+    """
+    from world import services
+
+    records = services.register()
+    wanted = {}
+    for rule in rules or []:
+        try:
+            effects = rule.get("effects") or []
+        except AttributeError:
+            continue
+        for effect in calls_in(effects):
+            service, tool = services.split_id(effect.get("tool"))
+            if not service:
+                continue
+            printed = str(effect.get("fingerprint") or "")
+            if not printed:
+                _record, info = services.find(effect.get("tool"), records)
+                printed = str((info or {}).get("fingerprint") or "")
+            wanted.setdefault(service, {})[tool] = printed
+    return {service: dict(sorted(tools.items()))
+            for service, tools in sorted(wanted.items())}
+
+
+def missing(wanted, records=None):
+    """
+    Everything this server lacks of what a world or a ruleset needs, as
+    sentences. [] when it has all of it. §10.3.
+    """
+    from world import services
+
+    records = services.register() if records is None else records
+    said = []
+    for service, tools in sorted((wanted or {}).items()):
+        record = records.get(str(service))
+        if record is None:
+            said.append(f"it uses the service {service!r}, which this server "
+                        f"does not have")
+            continue
+        for tool, printed in sorted(dict(tools or {}).items()):
+            info = (record.get("tools") or {}).get(str(tool))
+            named = services.tool_id(service, tool)
+            if info is None:
+                said.append(f"it uses {named!r}, which this server's "
+                            f"{service!r} does not offer")
+            elif printed and info.get("fingerprint") != printed:
+                said.append(f"{named!r} here takes different arguments from "
+                            f"the one it was built with")
+            elif not info.get("on") or info.get("refused"):
+                said.append(f"{named!r} is switched off on this server")
+    return said
+
+
+def shape_complaints(effect):
+    """
+    What is wrong with how a call is written, without asking the server.
+
+    For a ruleset, which is read once when the server starts -- whether a
+    service is here is asked when a world switches the ruleset on, since a
+    service can be added at any time and the ruleset is not read again.
+    """
+    from world import services
+
+    said = []
+    service, tool = services.split_id(effect.get("tool"))
+    if not service:
+        said.append(f"{effect.get('tool')!r} is not a tool, as service.tool")
+    for name, text in args_of(effect).items():
+        if read_source(text) is None:
+            said.append(f"where {name} comes from, {text!r}, does not read")
+    for field, text in results_of(effect).items():
+        if read_target(text) is None:
+            said.append(f"where {field} goes, {text!r}, does not read")
+    return said

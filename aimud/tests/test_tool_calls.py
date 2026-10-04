@@ -851,3 +851,199 @@ class ActingOutwardOncePerGoal(_AWorldWithWeather):
         with serving():
             self.post_rule({"to": "ask", "text": "value:hello"})
             self.assertNotEqual(self.move().action, "post Letter")
+
+
+# ---------------------------------------------------------------------------
+# A world as a document: what it needs, and refusing without it (§10)
+# ---------------------------------------------------------------------------
+
+from tests.test_exchange import WorldTest  # noqa: E402
+
+
+@tag("world")
+class WhatAWorldNeeds(WorldTest):
+
+    def forecasting(self, root):
+        actions.declare(root, "forecast", applies_to=[{"role": "direct",
+                                                       "optional": True}])
+        return R.add(root, R.blank(
+            action="forecast", phase=R.CARRY_OUT, scope={"world": True},
+            name="forecasting", report="{actor} $pconj(look) up.",
+            effects=[_call(results={"conditions": "state:here"})]))
+
+    def test_a_rule_that_never_fired_is_still_needed(self):
+        from world import exchange
+
+        with serving() as record:
+            root = self.world()
+            self.forecasting(root)
+            doc = exchange.document(root)
+        self.assertEqual(doc["requires"]["services"], {
+            "weather": {"forecast": record["tools"]["forecast"]["fingerprint"]}})
+
+    def test_nothing_about_where_it_is_or_how_to_log_in(self):
+        import json
+
+        from world import exchange
+
+        with serving(auth=services.KEY_AUTH, key="sk-should-never-travel",
+                     url="http://secret.example/mcp"):
+            root = self.world()
+            self.forecasting(root)
+            text = json.dumps(exchange.document(root))
+        self.assertNotIn("sk-should-never-travel", text)
+        self.assertNotIn("secret.example", text)
+
+    def test_calls_change_nothing_about_it(self):
+        from world import attempt as attempt_mod
+        from world import exchange
+
+        with serving():
+            root = self.world()
+            self.forecasting(root)
+            before = exchange.document(root)["requires"]["services"]
+            self.char1.move_to(root, quiet=True)
+            with immediately():
+                attempt_mod.attempt(self.char1, "forecast london",
+                                    FakeSponsor(key=""),
+                                    on_message=lambda *a, **k: None)
+            after = exchange.document(root)["requires"]["services"]
+        self.assertEqual(before, after)
+
+    def test_a_world_with_no_calls_needs_nothing(self):
+        from world import exchange
+
+        root = self.world()
+        self.assertEqual(exchange.document(root)["requires"]["services"], {})
+
+    def test_it_comes_back_on_a_server_that_has_it(self):
+        from world import exchange
+
+        with serving():
+            root = self.world()
+            self.forecasting(root)
+            doc = exchange.document(root)
+            self.assertEqual(exchange.problems(doc), [])
+            new = exchange.build(doc, None, self.char1)
+            rules = [r for r in R.all_rules(new) if r.get("action") == "forecast"]
+        self.assertEqual(rules[0]["effects"][0]["tool"], "weather.forecast")
+
+
+@tag("world")
+class RefusingAWorldThatCannotWork(WorldTest):
+    """§10.3: refused, every problem named, and never a service added."""
+
+    def document(self):
+        from world import exchange
+
+        with serving():
+            root = self.world()
+            actions.declare(root, "forecast")
+            R.add(root, R.blank(action="forecast", phase=R.CARRY_OUT,
+                                scope={"world": True}, name="forecasting",
+                                effects=[_call(args={"city": "value:Oslo"})]))
+            return exchange.document(root)
+
+    def problems(self, doc):
+        from world import exchange
+
+        return exchange.problems(doc)
+
+    def test_no_such_service(self):
+        doc = self.document()
+        said = self.problems(doc)
+        self.assertTrue(any("does not have" in line for line in said), said)
+        self.assertIsNone(services.get("weather"), "a world never adds one")
+
+    def test_no_such_tool(self):
+        doc = self.document()
+        doc["requires"]["services"]["weather"] = {"hurricane": "sha256:x"}
+        with serving():
+            said = self.problems(doc)
+        self.assertTrue(any("does not offer" in line for line in said), said)
+
+    def test_a_tool_that_takes_different_arguments(self):
+        doc = self.document()
+        doc["requires"]["services"]["weather"]["forecast"] = "sha256:another"
+        with serving():
+            said = self.problems(doc)
+        self.assertTrue(any("different arguments" in line for line in said), said)
+
+    def test_a_tool_switched_off(self):
+        doc = self.document()
+        with serving() as record:
+            record["tools"]["forecast"]["on"] = False
+            services.put(record)
+            said = self.problems(doc)
+        self.assertTrue(any("switched off" in line for line in said), said)
+
+    def test_and_with_all_of_it_nothing_is_said(self):
+        doc = self.document()
+        with serving():
+            self.assertEqual(self.problems(doc), [])
+
+
+@tag("world")
+class DriftAtRunTime(_AWorldWithWeather):
+
+    def test_rulecheck_names_a_rule_whose_tool_changed(self):
+        from world import rulecheck
+
+        with serving():
+            filed = self.rule("forecast", [_call(results={"conditions": "state:here"})])
+            record = services.get("weather")
+            record["tools"]["forecast"]["fingerprint"] = "sha256:changed"
+            services.put(record)
+            findings = rulecheck.scan(rulecheck.of_world(self.root))
+            said = rulecheck.report(findings)
+        lost = findings["unreachable_calls"]
+        self.assertEqual([(rule_id, tool) for rule_id, tool, _why in lost],
+                         [(filed["id"], "weather.forecast")])
+        self.assertIn("no longer has", said)
+
+    def test_and_says_nothing_while_it_is_as_it_was(self):
+        from world import rulecheck
+
+        with serving():
+            self.rule("forecast", [_call(results={"conditions": "state:here"})])
+            findings = rulecheck.scan(rulecheck.of_world(self.root))
+        self.assertEqual(findings["unreachable_calls"], [])
+
+
+@tag("world")
+class RulesetsThatCall(GameTest):
+
+    def ruleset(self, phase="carry_out", source="word:direct"):
+        return {"name": "weatherwise", "means": "Knows the weather.",
+                "rules": [{"name": "forecasting", "phase": phase,
+                           "action": "forecast",
+                           "when": [{"subject": "here", "is": "dark"}]
+                           if phase == "becomes" else [],
+                           "effects": [_call(args={"city": source})]}]}
+
+    def test_a_well_written_one_has_no_problems(self):
+        from world import rulesets
+
+        said = [line for line in rulesets.problems(self.ruleset())
+                if "forecast" in line or "call" in line]
+        self.assertEqual(said, [])
+
+    def test_a_source_that_does_not_read(self):
+        from world import rulesets
+
+        said = rulesets.problems(self.ruleset(source="smell:direct"))
+        self.assertTrue(any("does not read" in line for line in said), said)
+
+    def test_calling_out_when_something_becomes_true(self):
+        from world import rulesets
+
+        said = rulesets.problems(self.ruleset(phase="becomes"))
+        self.assertTrue(any("timer" in line for line in said), said)
+
+    def test_switched_on_only_where_the_service_is(self):
+        from world import rulesets
+
+        with mock.patch.object(rulesets, "get", return_value=self.ruleset()):
+            self.assertTrue(rulesets.services_lacking("weatherwise"))
+            with serving():
+                self.assertEqual(rulesets.services_lacking("weatherwise"), [])
