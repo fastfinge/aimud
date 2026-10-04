@@ -543,3 +543,27 @@ class ForgettingAService(_AsSomebody):
         with serving():
             self.call(CmdDelete(), "service weather yes")
             self.assertIsNone(services.get("weather"))
+
+
+@tag("world")
+class TheManualPage(GameTest):
+    """Generated off the register, so it cannot fall behind it."""
+
+    def test_with_nothing_switched_on_it_says_so(self):
+        from world import manual
+
+        self.assertIn("none switched on", manual.page("services"))
+
+    def test_it_lists_what_a_rule_may_call(self):
+        from world import manual
+
+        with serving():
+            page = manual.page("services")
+        self.assertIn("weather.forecast, looks outward", page)
+        self.assertNotIn("weather.ledger", page)
+        self.assertIn("[city=Lisbon]", page)
+
+    def test_the_front_page_points_at_it(self):
+        from world import manual
+
+        self.assertIn("`services`", manual.page("start"))

@@ -96,6 +96,7 @@ What to read next:
   `tools`      every tool you have, and what each is for
   `commands`   the commands that make, change and read things
   `effects`    the closed list of everything a rule may do
+  `services`   what this server lets the game reach outside itself for
 """
 
 BUILDING = """
@@ -207,9 +208,10 @@ over this connection can do that. If you find a way to get code to run from
 inside a world, that is a bug worth reporting rather than a feature to use.
 
 **Nothing in the game makes an uncontrolled network request.** The ways out
-are named and few: a model API on somebody's own key, an MCP server an admin
-declared, a download somebody confirmed. This connection is one of the ways
-*in*, not a way out.
+are named and few: a model API on somebody's own key, a service the server's
+owner added (`services` says which), a download somebody confirmed. This
+connection is one of the ways *in*, not a way out. A service is reached only
+through a rule, with the server's own credentials, never yours.
 
 What can be added without code, and where:
 
@@ -383,6 +385,54 @@ def _effects_page():
     return "\n".join(lines)
 
 
+#: The most tools the services page lists before saying where the rest are.
+#: A page has to arrive whole, and a server can have a great many.
+MOST_SERVICE_TOOLS = 30
+
+
+def _services_page():
+    """What this server may reach outside the game for, off the register."""
+    from world import services
+
+    lines = [
+        "A service is something the owner of this server let the game reach "
+        "outside itself for: an MCP server or an OpenAPI service, added in "
+        "the game by an admin, with the server's own credentials and never a "
+        "player's.",
+        "",
+        "Nothing calls a service except a rule. A rule's call_tool effect "
+        "names a tool, says where each thing it takes comes from, and where "
+        "each part of the answer goes: a condition, a figure, what something "
+        "looks like, or told privately to whoever used the verb. It is never "
+        "narrated. So you use a tool by typing the verb whose rule calls it, "
+        "as anybody does. If it needs to know something, answer in brackets "
+        "on the end: forecast [city=Lisbon].",
+        "",
+        "Each tool is classed by what it does out there. Contained: nothing "
+        "leaves the machine. Looks outward: a question goes out. Acts "
+        "outward: something out there changes. A character may use any of "
+        "them only where somebody pays for a model; a player may use the "
+        "first two anywhere and the third where somebody pays.",
+        "",
+    ]
+    usable = services.usable()
+    if not usable:
+        lines.append("This server has none switched on, so nothing here "
+                     "reaches outside the game.")
+        return "\n".join(lines)
+    lines.append(f"This server offers {len(usable)}:")
+    for found, _record, info in usable[:MOST_SERVICE_TOOLS]:
+        does = services.does(info)[:100] or "it says nothing about itself"
+        lines.append(f"  {found}, {services.said_level(info.get('level'))}: "
+                     f"{does}")
+    if len(usable) > MOST_SERVICE_TOOLS:
+        lines.append(f"  and {len(usable) - MOST_SERVICE_TOOLS} more.")
+    lines.append("")
+    lines.append("view services lists them; view service <name> says what "
+                 "each takes and gives back, in full.")
+    return "\n".join(lines)
+
+
 #: Every page, in the order they are worth reading. Key, then (title, body);
 #: a body is either the text or something that builds it off a register.
 PAGES = {
@@ -395,6 +445,8 @@ PAGES = {
     "tools": ("Every tool you have", _tools_page),
     "commands": ("Commands, subjects and what can be made", _commands_page),
     "effects": ("Everything a rule may do", _effects_page),
+    "services": ("What this server may reach outside the game for",
+                 _services_page),
 }
 
 
