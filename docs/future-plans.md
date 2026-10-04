@@ -49,7 +49,9 @@ unexpectedly, etc.
 * an mcp server, so other AI's can play and build: **scoped**, see docs/mcp.md. An MCP session is an Evennia
 session, authenticated by a token minted in game, and the tools are `send`, `poll`, the lookups `world/lookups.py`
 already registers, and the world document. Done mainly to make testing possible from an agent.
-* an mcp client, so a world can reach out: the other half of the mcp item, deliberately split off from docs/mcp.md
+* an mcp client, so a world can reach out: **scoped in docs/mcp-client.md**, which settles the three questions below
+differently in places (servers are added in game by the owner, worlds do not choose them, and the gate is whatever
+lets a model be called) and says why. The other half of the mcp item, deliberately split off from docs/mcp.md
 because it is a different set of questions. Give generators, npcs and players new tools that come from somewhere
 else -- real weather, a web search, an out-of-game action an npc can take. Three things to settle when it is scoped.
 *Where a server is declared:* basic-principles.md says network access needs access to the machine, so the precedent
