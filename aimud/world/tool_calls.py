@@ -45,6 +45,8 @@ attached; then the rule's effects run as one batch, and `apply` here reads
 the answer it was handed. If a call fails, nothing in the batch is applied.
 """
 
+from collections.abc import Mapping
+
 from evennia.utils import logger
 
 #: Where an argument may come from.
@@ -251,7 +253,11 @@ def complaints(effect, records=None, by_model=False):
     args = args_of(effect)
     params = {name: (schema, required)
               for name, schema, required in services.parameters(info.get("input"))}
+    unusable = dict(services.left_out(info.get("input")))
     for name, text in args.items():
+        if name in unusable:
+            said.append(f"{name} cannot be given by a rule: {unusable[name]}")
+            continue
         if name not in params:
             said.append(f"{wanted} takes nothing called {name}")
             continue
@@ -357,9 +363,16 @@ def tool_ids(effects):
     return found
 
 
+def is_call(effect):
+    """
+    Whether an effect is a `call_tool`. A Mapping test, never a dict one:
+    rules come back from a world's attributes as Evennia's _SaverDict.
+    """
+    return isinstance(effect, Mapping) and effect.get("type") == "call_tool"
+
+
 def calls_in(effects):
-    return [effect for effect in effects or []
-            if isinstance(effect, dict) and effect.get("type") == "call_tool"]
+    return [effect for effect in effects or [] if is_call(effect)]
 
 
 def takes_word(effect, roles=()):
@@ -588,7 +601,7 @@ def prepare(caller, sponsor, world_root, room, bound, words, effects,
     typed = dict(getattr(caller.ndb, "tool_answers", None) or {})
     plans = []
     for index, effect in enumerate(effects or []):
-        if not isinstance(effect, dict) or effect.get("type") != "call_tool":
+        if not is_call(effect):
             continue
         wanted = str(effect.get("tool") or "")
         record, info = services.find(wanted, records)
@@ -674,7 +687,7 @@ def _run(caller, sponsor, world_root, room, bound, words, effects, plans,
         return answers
 
     def done(results):
-        copies = [dict(effect) if isinstance(effect, dict) else effect
+        copies = [dict(effect) if isinstance(effect, Mapping) else effect
                   for effect in effects]
         for index, record, tool, args, info, answer in results:
             if info.get("level") == services.ACTS:

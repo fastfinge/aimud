@@ -85,6 +85,19 @@ def flaky(why: str = "") -> str:
 
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=True,
+                                         openWorldHint=True))
+def search(query: str, include_domains: list[str] | None = None,
+           time_relative: Literal["day", "week", "month"] | None = None,
+           tuning: dict | None = None) -> str:
+    """
+    Shaped as kagi's own search is: every optional parameter is `X | None`,
+    which the SDK writes as anyOf with null. `tuning` is optional and no rule
+    can fill it, so it is left out rather than refusing the tool.
+    """
+    return f"{query}|{include_domains}|{time_relative}"
+
+
+@server.tool(annotations=ToolAnnotations(readOnlyHint=True,
                                          openWorldHint=False))
 def where() -> str:
     """Says where this process is running and what it calls home."""

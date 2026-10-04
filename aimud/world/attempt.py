@@ -1081,8 +1081,7 @@ def _knows_the_word(world_root, verb, bound, caller, words, roles=None):
         # answer to it. Just as narrow -- only a call that names one of the
         # roles that failed to bind.
         for effect in (rule.get("effects") or []):
-            if isinstance(effect, dict) and effect.get("type") == "call_tool" \
-                    and tool_calls.takes_word(effect, roles):
+            if tool_calls.is_call(effect) and tool_calls.takes_word(effect, roles):
                 return True
     return False
 
@@ -1504,7 +1503,9 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
 
 
 def _is_call(effect):
-    return isinstance(effect, dict) and effect.get("type") == "call_tool"
+    from world import tool_calls
+
+    return tool_calls.is_call(effect)
 
 
 def _call_key(effect):

@@ -82,14 +82,15 @@ class WhatInputARuleCanFill(SimpleTestCase):
             "maybe": {"type": ["string", "null"]},
         }}), "")
 
-    def test_a_nested_object_is_refused_and_named(self):
+    def test_a_required_nested_object_is_refused_and_named(self):
         said = services.input_complaint(
-            {"properties": {"entry": {"type": "object"}}})
+            {"required": ["entry"], "properties": {"entry": {"type": "object"}}})
         self.assertIn("entry", said)
 
-    def test_several_shapes_are_refused(self):
+    def test_several_required_shapes_are_refused(self):
         self.assertIn("several", services.input_complaint(
-            {"properties": {"x": {"oneOf": [{"type": "string"}]}}}))
+            {"required": ["x"], "properties": {"x": {
+                "oneOf": [{"type": "string"}, {"type": "integer"}]}}}))
 
     def test_nothing_to_fill_is_fine(self):
         self.assertEqual(services.input_complaint({}), "")
@@ -698,3 +699,87 @@ class AConnectionIsMadeAgainOnlyWhenHowItConnectsChanges(GameTest):
             services.call(dict(record, url="http://elsewhere.example/mcp"),
                           "roll", {"sides": 2})
             self.assertIsNot(services._manager().connections["weather"], first)
+
+
+#: kagimcp's `include_domains` and `time_relative`, as its server lists them.
+KAGI_INCLUDE = {"anyOf": [{"items": {"type": "string"}, "type": "array"},
+                          {"type": "null"}],
+                "default": None, "description": "Restrict to these domains."}
+KAGI_TIME = {"anyOf": [{"enum": ["day", "week", "month"], "type": "string"},
+                       {"type": "null"}], "default": None}
+
+
+@tag("unit")
+class OrNothing(SimpleTestCase):
+    """
+    Found adding kagi's official MCP server: every optional parameter of a
+    Python server is `X | None`, written as anyOf with null, and all of them
+    were refused as "one of several shapes" -- so its search could not be
+    used at all.
+    """
+
+    def test_or_nothing_is_one_shape(self):
+        self.assertEqual(services.plain(KAGI_INCLUDE)["type"], "array")
+        self.assertEqual(services.plain(KAGI_TIME)["enum"], ["day", "week", "month"])
+        self.assertEqual(services.plain(KAGI_INCLUDE)["description"],
+                         "Restrict to these domains.")
+
+    def test_kagis_search_can_be_called_by_a_rule(self):
+        schema = {"type": "object", "required": ["query"], "properties": {
+            "query": {"type": "string"}, "include_domains": KAGI_INCLUDE,
+            "time_relative": KAGI_TIME}}
+        self.assertEqual(services.input_complaint(schema), "")
+        names = [name for name, _schema, _req in services.parameters(schema)]
+        self.assertEqual(names, ["query", "include_domains", "time_relative"])
+
+    def test_two_real_shapes_are_still_several(self):
+        param = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+        self.assertIn("several", services.unfillable(param))
+
+    def test_an_optional_one_no_rule_can_fill_is_left_out_not_refused(self):
+        schema = {"type": "object", "required": ["query"], "properties": {
+            "query": {"type": "string"},
+            "tuning": {"anyOf": [{"type": "object"}, {"type": "null"}]}}}
+        self.assertEqual(services.input_complaint(schema), "")
+        self.assertEqual([n for n, _s, _r in services.parameters(schema)], ["query"])
+        self.assertEqual([n for n, _w in services.left_out(schema)], ["tuning"])
+
+    def test_a_required_one_still_refuses_the_tool(self):
+        schema = {"type": "object", "required": ["entry"],
+                  "properties": {"entry": {"type": "object"}}}
+        self.assertIn("entry is required", services.input_complaint(schema))
+
+    def test_a_tool_this_game_refused_and_now_takes_is_switched_on(self):
+        old = {"search": {"fingerprint": "sha256:a", "level": services.LOOKS,
+                          "on": False, "decided": False,
+                          "refused": "include_domains may be one of several shapes"}}
+        listed = {"search": {"fingerprint": "sha256:a", "level": services.LOOKS,
+                             "refused": ""}}
+        self.assertTrue(services.merge_tools(old, listed)["search"]["on"])
+
+    def test_but_one_the_owner_switched_off_stays_off(self):
+        old = {"search": {"fingerprint": "sha256:a", "level": services.LOOKS,
+                          "on": False, "decided": True, "refused": ""}}
+        listed = {"search": {"fingerprint": "sha256:a", "level": services.LOOKS,
+                             "refused": ""}}
+        self.assertFalse(services.merge_tools(old, listed)["search"]["on"])
+
+
+@tag("world")
+class ASearchShapedLikeKagis(GameTest):
+
+    def test_it_is_listed_on_and_leaves_out_what_no_rule_can_give(self):
+        with serving() as record:
+            info = record["tools"]["search"]
+            self.assertEqual(info["refused"], "")
+            self.assertTrue(info["on"])
+            names = [n for n, _s, _r in services.parameters(info["input"])]
+        self.assertEqual(names, ["query", "include_domains", "time_relative"])
+
+    def test_a_list_and_an_enum_reach_it(self):
+        with serving() as record:
+            answer = services.call(record, "search", {
+                "query": "mud", "include_domains": ["github.com", "docs.python.org"],
+                "time_relative": "week"})
+        self.assertEqual(answer.text,
+                         "mud|['github.com', 'docs.python.org']|week")

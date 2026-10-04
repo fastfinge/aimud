@@ -254,15 +254,15 @@ def _calls_completed(world_root, rule):
         effects = list((rule or {}).get("effects") or [])
     except (TypeError, AttributeError):
         return rule
-    if not any(isinstance(e, dict) and e.get("type") == "call_tool"
-               for e in effects):
-        return rule
     from world import tool_calls
+
+    if not any(tool_calls.is_call(e) for e in effects):
+        return rule
 
     rule = dict(rule)
     rule["effects"] = [
         tool_calls.complete(e, world_root=world_root)
-        if isinstance(e, dict) and e.get("type") == "call_tool" else e
+        if tool_calls.is_call(e) else e
         for e in effects]
     return rule
 

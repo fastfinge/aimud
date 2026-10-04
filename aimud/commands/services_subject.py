@@ -123,6 +123,8 @@ def _schema_lines(info):
         lines.append(f"      takes {name}: {kind}"
                      f"{'' if required else ' (optional)'}"
                      + (f" -- {param['description']}" if param.get("description") else ""))
+    for name, why in services.left_out(info.get("input")):
+        lines.append(f"      leaves out {name}, which no rule can give: {why}")
     for name, field in services.outputs(info.get("output")):
         kind = field.get("type") or ""
         if "enum" in field:

@@ -204,9 +204,9 @@ def apply(actor, room, effects, bound=None, world_root=None, found=None,
 
     with becoming.caused_by(actor):
         for effect in effects or []:
-            if isinstance(effect, dict) and effect.get("type") == "call_tool":
-                from world import tool_calls
+            from world import tool_calls
 
+            if tool_calls.is_call(effect):
                 try:
                     announcements += tool_calls.apply(
                         actor, room, effect, bound, world_root, told=told)

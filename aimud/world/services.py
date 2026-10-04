@@ -37,6 +37,7 @@ listing, calling and fingerprints are one code path. §3.3.
 
 import asyncio
 import hashlib
+from collections.abc import Mapping, Sequence
 import json
 import re
 import shlex
@@ -244,10 +245,53 @@ SCALARS = ("string", "number", "integer", "boolean")
 
 def _type_of(schema):
     kind = (schema or {}).get("type")
-    if isinstance(kind, list):
+    if isinstance(kind, Sequence) and not isinstance(kind, str):
         kinds = [k for k in kind if k != "null"]
         return kinds[0] if len(kinds) == 1 else None
     return kind
+
+
+def plain(schema):
+    """
+    One value's schema with "or nothing" taken off it.
+
+    `X | None` in Python comes out as `anyOf: [X, {"type": "null"}]` from
+    Pydantic and FastMCP -- which is to say, every optional parameter of most
+    Python MCP servers. That is one shape, optional, not several: refusing it
+    refused kagi's own search over a domain list nobody had to give. A union
+    of more than one real shape is left as it is, for `unfillable` to say so.
+    """
+    # Mapping and Sequence, never dict and list: a schema read back from the
+    # register is Evennia's _SaverDict, which is neither, and a `dict` test
+    # here refused every parameter of every stored tool.
+    if not isinstance(schema, Mapping):
+        return schema
+    for key in ("anyOf", "oneOf"):
+        branches = schema.get(key)
+        if not isinstance(branches, Sequence) or isinstance(branches, str):
+            continue
+        real = [b for b in branches
+                if not (isinstance(b, Mapping) and b.get("type") == "null")]
+        if len(real) == 1 and isinstance(real[0], Mapping):
+            merged = {k: v for k, v in schema.items() if k != key}
+            merged.update(real[0])
+            return plain(merged)
+    return dict(schema)
+
+
+def unfillable(param):
+    """Why a rule could never fill this parameter, or '' when one can."""
+    param = plain(param)
+    if not isinstance(param, Mapping):
+        return "it has no shape"
+    if any(key in param for key in ("oneOf", "anyOf", "allOf", "$ref")):
+        return "it may be one of several shapes"
+    kind = _type_of(param)
+    if kind in SCALARS or "enum" in param:
+        return ""
+    if kind == "array" and _type_of(plain(param.get("items") or {})) in SCALARS:
+        return ""
+    return f"it is {kind or 'of no stated type'}, which no menu can ask for"
 
 
 def input_complaint(schema):
@@ -255,38 +299,46 @@ def input_complaint(schema):
     Why a tool's input cannot be written as a rule's arguments, or ''.
 
     A parameter is a scalar, an enum, or an array of scalars -- what a menu
-    can ask for and a word or a figure can fill. Nested objects, `oneOf` and
-    the rest are refused when the service is listed, so the owner sees why
-    rather than finding out from a rule that cannot be written. §7.2.
+    can ask for and a word or a figure can fill -- once "or nothing" is taken
+    off it (`plain`). Only a *required* parameter of any other shape refuses
+    the tool, so the owner sees why rather than finding out from a rule that
+    cannot be written. An optional one is left out instead: no rule can name
+    it, and the tool is called without it. §7.2.
     """
     schema = schema or {}
     if schema.get("type") not in (None, "object"):
         return "its input is not a set of named parameters"
+    required = set(schema.get("required") or [])
     for name, param in (schema.get("properties") or {}).items():
-        if not isinstance(param, dict):
-            return f"{name} has no shape"
-        if any(key in param for key in ("oneOf", "anyOf", "allOf", "$ref")):
-            return f"{name} may be one of several shapes"
-        kind = _type_of(param)
-        if kind in SCALARS or "enum" in param:
-            continue
-        if kind == "array" and _type_of(param.get("items") or {}) in SCALARS:
-            continue
-        return f"{name} is {kind or 'of no stated type'}, which no menu can ask for"
+        why = unfillable(param)
+        if why and name in required:
+            return f"{name} is required, and {why}"
     return ""
 
 
-def parameters(schema):
-    """[(name, schema, required)] in the order the service listed them."""
+def parameters(schema, every=False):
+    """
+    [(name, schema, required)] a rule may fill, in the order the service
+    listed them, each with "or nothing" taken off. `every` includes the
+    optional ones no rule can fill, for somebody reading the tool in full.
+    """
     schema = schema or {}
     required = set(schema.get("required") or [])
-    return [(str(name), dict(param or {}), name in required)
-            for name, param in (schema.get("properties") or {}).items()]
+    return [(str(name), dict(plain(param) or {}), name in required)
+            for name, param in (schema.get("properties") or {}).items()
+            if every or not unfillable(param)]
+
+
+def left_out(schema):
+    """The optional parameters no rule can fill, and why: [(name, why)]."""
+    return [(str(name), unfillable(param))
+            for name, param in ((schema or {}).get("properties") or {}).items()
+            if unfillable(param)]
 
 
 def outputs(schema):
     """[(field, schema)] a result mapping may name, from an output schema."""
-    return [(str(name), dict(field or {}))
+    return [(str(name), dict(plain(field) or {}))
             for name, field in ((schema or {}).get("properties") or {}).items()]
 
 
@@ -318,6 +370,13 @@ def merge_tools(old, listed, openapi=False):
     for name, info in listed.items():
         before = old.get(name)
         info = dict(info)
+        if before and before.get("refused") and not info.get("refused") \
+                and not before.get("decided"):
+            # Refused by this game rather than switched off by the owner --
+            # and this game has since learned to take it. It is as new as it
+            # would have been the first time, not left off for a reason
+            # nobody gave.
+            before = None
         if before and before.get("fingerprint") == info["fingerprint"]:
             info["level"] = before.get("level", info["level"])
             info["on"] = bool(before.get("on", True))
@@ -468,7 +527,7 @@ class Answer:
     """
 
     def __init__(self, structured=None, text="", error="", reached=True):
-        self.structured = structured if isinstance(structured, dict) else None
+        self.structured = dict(structured) if isinstance(structured, Mapping) else None
         self.text = str(text or "")
         self.error = str(error or "")
         self.reached = reached
@@ -578,7 +637,7 @@ def spec_methods(spec):
     found = {}
     for _path, item in ((spec or {}).get("paths") or {}).items():
         for method, operation in (item or {}).items():
-            if isinstance(operation, dict) and operation.get("operationId"):
+            if isinstance(operation, Mapping) and operation.get("operationId"):
                 found[str(operation["operationId"])] = method.upper()
     return found
 

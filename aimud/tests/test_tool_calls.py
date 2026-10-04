@@ -1047,3 +1047,27 @@ class RulesetsThatCall(GameTest):
             self.assertTrue(rulesets.services_lacking("weatherwise"))
             with serving():
                 self.assertEqual(rulesets.services_lacking("weatherwise"), [])
+
+
+@tag("world")
+class OptionalArgumentsInARule(_AWorldWithWeather):
+    """A rule may fill an `X | None` parameter, and is told why not otherwise."""
+
+    def search(self, **args):
+        return {"type": "call_tool", "tool": "weather.search",
+                "args": {"query": "word:direct", **args},
+                "results": {"text": "actor"}}
+
+    def test_a_fixed_list_of_domains_reaches_the_tool(self):
+        with serving():
+            self.rule("search", [self.search(
+                include_domains="value:github.com docs.python.org",
+                time_relative="value:week")])
+            mine, _theirs = self.attempt("search mud")
+        self.assertIn("mud|['github.com', 'docs.python.org']|week", mine)
+
+    def test_one_no_rule_can_give_is_refused_with_the_reason(self):
+        with serving():
+            said = tool_calls.complaints(self.search(tuning="value:x"))
+        self.assertTrue(any("cannot be given by a rule" in line for line in said),
+                        said)
