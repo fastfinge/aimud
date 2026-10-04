@@ -611,9 +611,13 @@ def home_of(name):
     history, a cache, a login -- keeps it here, as the server's, and not in
     the game directory or in whoever runs the server's own profile. Found
     with the first real service: on Windows the SDK passes a child no `HOME`,
-    so kagi wrote `.\.cache` into the game directory and could never lock it;
-    pointed at its owner's real profile it fought the owner's own copy for the
-    same file. §4.4: every credential is the server's, and so is every file.
+    so kagi wrote `.\.cache` into the game directory. §4.4: every credential
+    is the server's, and so is every file.
+
+    (kagi's searches still failed here, with "failed to lock ... Access is
+    denied". That one is kagi-cli's own on Windows, not anything about where
+    it runs: it opens its history append-only and then asks for a lock, which
+    Windows refuses on an append-only handle. Its other tools are unaffected.)
     """
     from pathlib import Path
 
