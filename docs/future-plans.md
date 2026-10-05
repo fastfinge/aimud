@@ -31,15 +31,14 @@ shares a world will want to see what visitors spent, and perhaps a cap.
 * do something interesting with the web interface. Web editor? Examine stats in the browser? Prettier looking interface
 for playing in browser? Ability to read help files and documentation online, with hyperlinks?
 * let characters use Evennia's built-in discord/IRC support so characters can reach out of their world
-* how a player gets a file to the server, and gets one off it: one problem, not three. MSP sounds, resource packs, and
-worlds from another aimud all want it. **World import and export is built** (docs/archived/import-and-export.md) and
-takes the shared folder as given, which answers player-to-player on one server and nothing else; moving a document
-between servers still means somebody with shell access moving a file. Two shapes worth investigating, from that plan's
-§17: a *fetch* rather than an upload (`import world from <url>`, the gesture `import commonsense` already uses, and one
-basic-principles.md permits as a scoped network surface), which inverts the hard part because the server pulls from
-somewhere a player names rather than accepting bytes from a connection; or federation, which is a much bigger plan.
-Whatever eventually carries files, a world is already one self-contained validated document with no dbrefs, paths,
-accounts or code in it.
+* what is left of assets (docs/archived/assets.md, built): the pieces that wait for a system that uses an asset.
+A `call_tool` result that is a file (`services.Answer.files`) becomes an asset through `assets.from_tool`, with
+`assets.made_before` so the same request is never paid for twice -- but nothing in a rule can hold an asset's id yet,
+so wiring it into `tool_calls` waits for the first type with a consumer (MSP's "play this sound"). The same goes for
+`assets.picker`, a `menus.Picker` over one type, which wants a form to sit in. Then: Freesound search (`find sound
+rain`), whose results arrive with author and licence already recorded; and offering a vision model (`~`, paid,
+never automatic) to describe an uploaded or generated image, because a description is all a screen reader user or
+a model ever has of one.
 * affect plugins: let players write Python code that can be added to worlds as unique affects the other systems can use,
  expanding the hardcoded menu. Let them share plugins with other aimud owners. All the hardcoded lists and vocabularies
 should be extendable via plugin, so worlds can become unique in ways our models can't make them. Installing or enabling a plugin should require admin on the mud, plus access to the machine outside of the mud. Nobody just feeds the mud Python and has it run, not even admins. They have to put the files in the correct directory first. When there is a plugin surface,

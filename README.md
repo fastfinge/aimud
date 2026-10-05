@@ -26,6 +26,7 @@ you can reach through [OpenRouter](https://openrouter.ai/).
 - [Your first world](#your-first-world)
 - [Playing](#playing)
 - [Sharing a world](#sharing-a-world)
+- [Assets](#assets)
 - [Command reference](#command-reference)
 - [Menus](#menus)
 - [What it costs](#what-it-costs)
@@ -502,6 +503,46 @@ because it is the one setting that lets somebody else spend your key.
 
 ---
 
+## Assets
+
+An asset is a file the game keeps: a world document today, and the sounds,
+images and other files later systems will use. You name an asset, describe
+it, and pick it from menus. You never see where it lives.
+
+- **Adding one.** `create asset` fetches a file from a web address. The
+  website's **Add an asset** page (`/assets/upload/`, once you are logged in)
+  takes one straight from your machine. Either way, the file is checked by
+  what is in it, never by its name, and anything that is not a kind of file
+  this server keeps is refused. No asset is ever code.
+- **Describe it properly.** A name and a description are required, because
+  somebody who cannot see or hear the file, and any model choosing it, will
+  only ever know it by its description. Credit the author and say the licence
+  where you know them.
+- **Your quota.** `view assets` opens with how much you are using (500 MB
+  each by default; an admin can give one account more with `edit quota`). An
+  asset counts against whoever paid for it to exist: you for what you add,
+  the importer for a world's files, and whoever's key paid for a tool to make
+  one. Using somebody else's asset costs you nothing, in any world.
+- **Giving one up.** You cannot delete an asset something is using, so
+  `edit asset <name> giveup` hands it to the server instead. It stops counting
+  against you, and the worlds using it keep it. The server keeps 1 GB of
+  given-up assets; when that fills, the least-used are removed and marked
+  missing. Owners of worlds using one are told when it is given up, when it
+  is next in line to go, and when it has gone, so they can
+  `edit asset <name> adopt` it onto their own quota. `view world` lists them
+  too.
+- **Worlds carry theirs.** `export world` keeps the world as an asset, and
+  its document names every asset the world uses, by hash and by where to
+  fetch it. `import world` reuses any this server already has, downloads the
+  rest and checks each against its hash; one that cannot be fetched is marked
+  missing, the world still arrives, and `edit asset <name> fetch` tries again
+  later. A server needs `ASSET_BASE_URL` set to its own public address before
+  its exports can say where their files are.
+- **Admins** can review what was added lately with `view assets recent`, and
+  remove anything with `delete asset <name> force`.
+
+---
+
 ## Command reference
 
 ### Account level
@@ -526,10 +567,15 @@ because it is the one setting that lets somebody else spend your key.
 | `enter start` | Back to Limbo, the room everybody starts in. `enter limbo` works too. |
 | `edit world [<n or title>]` | Change a world's text without rebuilding it. |
 | `reset world [<n or title>] [yes]` | Put a world back. A world you have imported or exported goes back to *that* -- free, instant, and exactly as it was. A world that has done neither is wiped and regenerated from the same setup, which costs model calls. `view world <n>` says which yours will do. Asks first unless you add `yes`. |
-| `export world [<n or title>] [yes]` | Write a world to the shared folder, where anybody on this server can build it. Also makes today's state the one `reset world` comes back to. Costs nothing. |
-| `import world <name>` | Build a world somebody here exported. It becomes yours -- you own it, you pay for it -- and building it costs nothing at all. |
-| `view exports` | What is in the shared folder: each world's title, how big it is, when it was taken, and whether this server has what it needs. |
-| `delete export <name> [yes]` | Take a world out of the shared folder. Whoever put it there, or a builder. |
+| `export world [<n or title>] [yes]` | Keep a world as a world asset, which anybody on this server can build from. Also makes today's state the one `reset world` comes back to. Costs nothing. |
+| `import world <name>` | Build a world from a world asset. It becomes yours -- you own it, you pay for it -- and building it costs nothing at all. Any assets it uses come with it, on your quota. |
+| `view assets [world \| missing \| pool \| recent]` | Files the game keeps, with your quota. `world` lists world documents; `missing` what could not be fetched; `pool` what owners gave up and what goes next; `recent` is for admins. |
+| `view asset <name>` | One asset in full: what it is, who added it, its credit and licence, and what is using it. |
+| `create asset [<url>]` | Fetch a file from a web address and keep it. The website's upload page takes one from your machine. |
+| `edit asset <name> [name \| description \| author \| licence <text>]` | Change what an asset is called or credited as. Never its contents: a changed file is a new asset. |
+| `edit asset <name> giveup \| adopt \| fetch` | Hand one to the server's pool, take a given-up one onto your quota, or fetch a missing one again. |
+| `delete asset <name> [force] [yes]` | Delete one nothing is using. `force` is for admins, and leaves whatever used it holding a missing asset. |
+| `edit quota <account> <size \| default>` | One account's own asset quota. Admins only. |
 | `delete world [<n or title>] [yes]` | Delete a world permanently. Asks first unless you add `yes`. |
 | `edit world` → Open a way on | Open a way on, in a world that has built itself into a corner and has nowhere unexplored left. |
 | `create world` / `edit world` → What this world writes for itself | Whether this world grows its own rooms, items, characters, verbs and errands — **whenever anything asks**, **only when a player goes looking**, or **never**. `settings world <what> <how>` changes it later. Everything is on until you say otherwise, so no world you already have changes. |
@@ -917,15 +963,26 @@ That is not modesty about the code — it is a specific and honest assessment:
   talk a model into doing on a shared instance has not been explored.
 - **Evennia's builder commands, admin and web admin are all present** with
   default permissions.
-- Worlds are per account and are not shared, but that separation has not been
-  tested adversarially either.
+- Worlds are private to their creator unless shared, and a shared world's
+  creator pays for what happens in it only while logged in. That separation
+  has not been tested adversarially either.
 - **An imported world is text somebody else wrote, reaching your model on your
-  key.** `import world` builds a world from a document in the shared folder,
+  key.** `import world` builds a world from a world asset,
   and that world's descriptions, its guidance and its characters' words all go
   into prompts when you play it. The document itself is validated and contains
   no code, no paths and no accounts, and building it spends nothing; what has
   *not* been explored is what somebody could talk a model into by writing a
   room description. Import worlds from people you would take a file from.
+- **Assets are served to anyone who knows their address.** Every asset is
+  at `/media/assets/<hash>.<type>` on the website, because sound and image
+  clients fetch them from there. A hash is hard to guess and Evennia lists no
+  directories, but nothing is private: do not let anybody upload what they
+  would not hand to a stranger. Every file is checked by its contents and
+  refused if it is not a kind the server keeps, and nothing kept is ever
+  code. A player-named download goes through Drawbridge, which refuses
+  private, loopback and cloud-metadata addresses, including by redirect, and
+  stops at the type's size limit. Back up `server/.media/` with the database:
+  the records are in one and the files in the other.
 - **An agent token is the account, not a lesser key.** `settings agenttoken new`
   mints a bearer token an AI can play and build with over MCP (`docs/archived/mcp.md`).
   Anything that account can do, the holder of its token can do: spend its API
@@ -946,7 +1003,8 @@ you trust, and have everyone use their own key with a spending limit set on it.
 
 This repository contains **code only**. The database (`server/evennia.db3`),
 `server/conf/secret_settings.py`, the log files, the per-character memory
-banks under `server/memory/` and the exported worlds under `worlds/` are all
+banks under `server/memory/`, the assets under `server/.media/` and anything
+put in the old shared folder `worlds/` are all
 gitignored and have never been committed. Your API key lives in the database
 and nowhere else.
 

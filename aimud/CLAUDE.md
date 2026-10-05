@@ -102,7 +102,7 @@ All in-game entities are Python classes that inherit from Evennia defaults. The 
 - `command.py` — base `Command` class; all game commands subclass this
 - `default_cmdsets.py` — four cmdset classes (`CharacterCmdSet`, `AccountCmdSet`, `UnloggedinCmdSet`, `SessionCmdSet`) that wrap Evennia defaults; add/override commands in `at_cmdset_creation()`
 - `verbs.py` — the eight verb commands: `create`, `edit`, `delete`, `reset`, `view`, `import`, `export`, `enter`. Each only finds a subject and hands over the rest of the line.
-- `subjects.py` — the subject registry, and helpers every subject shares (`require_world`, `require_owner`, `answered`, `asking`). `SUBJECT_MODULES` lists the modules that define subjects: `world_subject.py`, `rules_subject.py`, `contents_subject.py`, `upkeep_subject.py`, `settings_subject.py`, `score_subject.py`, `rulesets_subject.py`, `term_subject.py`, `exchange_subject.py`, `services_subject.py`, and `making_subject.py` last.
+- `subjects.py` — the subject registry, and helpers every subject shares (`require_world`, `require_owner`, `answered`, `asking`). `SUBJECT_MODULES` lists the modules that define subjects: `world_subject.py`, `rules_subject.py`, `contents_subject.py`, `upkeep_subject.py`, `settings_subject.py`, `score_subject.py`, `rulesets_subject.py`, `term_subject.py`, `exchange_subject.py`, `services_subject.py`, `assets_subject.py`, and `making_subject.py` last.
 - `settings_cmds.py` — `settings`, over the register in `world/preferences.py`.
 
 **Adding something a player makes, changes or reads belongs in a subject, not a
@@ -148,6 +148,16 @@ an attribute anywhere in `world/`, `typeclasses/` or `commands/` means adding
 it to `exchange.CARRIED` or `exchange.LEFT` with the reason -- an AST test
 (`tests/test_exchange.py`, `AttributesAreAccountedFor`) fails until you do, so
 that export cannot rot quietly. See docs/archived/import-and-export.md.
+
+**A file the game keeps is an asset.** `world/assets.py` is the register
+and `assets.add` the one writer: a file arrives on disk and is checked by its
+contents, its type's version, its size and the payer's quota before it is
+stored by hash (`world/asset_store.py`). A system that needs a new kind of
+file -- sounds for MSP, images for MXP -- registers an `AssetType` in
+`world/asset_types.py` with its own permit, and offers players only assets
+of that type (`assets.search(type)`). Never add a type whose files are code; the register
+refuses one. Nothing downloads a file a player named except `assets.fetch`,
+and no player, model or page is ever shown a path. See docs/archived/assets.md.
 
 **Nothing in building calls a model.** `~` is the only paid key and it is
 always optional. A test (`tests/test_building.py`, `NoModels`) drives the forms
