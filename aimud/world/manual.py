@@ -113,7 +113,8 @@ model, and that is deliberate.
     enter world <n>             go into one
     enter world public <n>      go into one somebody else shared
     view world                  what this one is like
-    export world                write it to the shared folder
+    export world                keep it as a world asset
+    view assets                 files the game keeps: worlds, and later sounds
     reset world                 put it back to its restore point
     delete world <n>            permanently
 
@@ -222,7 +223,9 @@ What can be added without code, and where:
   **rulesets**  a bundle of rules, kinds, states and figures a world can
                 choose, as a JSON document in a directory the server declares.
                 Never code. A world takes one with `edit rulesets`.
-  **worlds**    a document in the shared folder, as under `documents`.
+  **worlds**    a world document, kept as an asset, as under `documents`.
+  **assets**    files the game keeps: `create asset` fetches one from a web
+                address, checked by what is in it. Never code.
 
 So the way to make a world do something new is a rule, a kind, a trait or a
 word -- and if what you want cannot be expressed that way, that is worth

@@ -1,6 +1,7 @@
 # Development plan: assets
 
-Status: **planned**, not started. This answers the `future-plans.md` item "how a
+Status: **built**, phases 0 to 6, on the `assets` branch. Where the building
+changed the plan, §18 says how and why. This answers the `future-plans.md` item "how a
 player gets a file to the server, and gets one off it", and gives MSP sounds,
 MXP images and AIML a place to keep their files before any of them is built.
 
@@ -472,3 +473,62 @@ These were open questions, and are answered (2026-10-05):
    document lists.
 3. **Freesound search is a later plan**, once there is a sound type to put
    results in. The record already has `author` and `licence` for it.
+
+## 18. As built
+
+Where the building departed from the plan above, and what it found.
+
+* **A subject, not a maker (§5.1).** Everything in `world/making.py` is a fact
+  about one world, listed by `listing(root)` and owned by that world's
+  creator. An asset belongs to no world. So assets are
+  `commands/assets_subject.py`, the shape `services_subject.py` already has
+  for the other server-wide register.
+* **`edit asset <name> giveup`, `adopt` and `fetch`, not `adopt asset`
+  (§7.1, §9).** The verbs are fixed (`commands/subjects.py`), and all three
+  change who an asset belongs to or whether it is here, which is editing it.
+  The warnings say the command as built.
+* **`~` does not fill a description yet (§5.1).** A model filling in what a
+  file is would be describing a file it cannot see. It comes with images, as
+  a vision model offered on purpose (`future-plans.md`).
+* **Drawbridge's own size cap does nothing in stream mode.** A download is
+  streamed to disk, and Drawbridge enforces `max_response_bytes` only for
+  responses it reads whole. Our byte counter is the limit; a planted fault
+  removing it lets an endless body through, and the tests go red.
+* **Ports are a setting.** Drawbridge allows 80, 443, 8080 and 8443 by
+  default, and an aimud's website is on 4001, so a world could not have been
+  imported from another aimud. `ASSET_FETCH_PORTS` adds 4001; whatever it
+  lists, nothing private is ever fetched.
+* **A server that sends more than its `Content-Length` is cut at what it
+  said.** That is HTTP framing, not something this code does. The lie that
+  matters is no length and no end, and that is refused by the byte counter.
+* **The upload view is CSRF-exempt and its inner function is protected.**
+  Django's CSRF check reads the body, after which the upload handlers that
+  stop an oversized file cannot be swapped in. That is Django's documented
+  pattern, and a test without a token gets 403 and keeps nothing.
+* **The shared folder's functions are gone (§13).** `exchange.write`,
+  `read`, `remove`, `available` and `folder` had no callers once export and
+  import moved to assets; `directories()` stays for `take_in_folder`. The old
+  tests of the folder became tests of taking it in.
+* **`view exports` and `delete export` say what is typed now**
+  (`commands/exchange_subject.py`) rather than doing it under another name.
+* **Two more origins:** `export` (from `export world`) and `folder` (put in
+  `WORLD_DIRS` by hand). The migration was regenerated rather than added to,
+  since it had never been applied anywhere.
+* **`uses(asset)` answers `{"said", "world"}`, and `used_in(world)` was
+  added (§12, §9).** Deleting needs what to say, warning needs whose world,
+  and exporting needs the reverse question.
+* **A world's document lists `assets` only when it uses any (§9),** so every
+  world exported before this exports exactly as it did.
+* **Tool results that are files are kept, but no rule reaches them yet
+  (§11).** `services.Answer.files` holds the images, sounds and blobs a tool
+  sends back, `assets.from_tool` keeps one charged to the sponsor's payer
+  with its `made_with`, and `assets.made_before` finds a repeat. Nothing in a
+  rule can hold an asset's id until a type has a consumer, so the
+  `tool_calls` mapping waits for MSP. So does `assets.picker` (§10), which
+  wants a form to sit in. Both are in `future-plans.md`.
+* **Fixture accounts are Developers**, which outranks Admin, so the command
+  tests take that away and give `Admin` back only where a test wants an
+  admin.
+* **Not watched live:** an upload from a real browser, a fetch over the real
+  internet, and an import from a second aimud. The server needs `evennia
+  migrate` for the new table before any of it runs.

@@ -991,8 +991,27 @@ def _world_detail(root, count, number):
         taken = str(doc.get("exported") or "")
         lines.append(f"|wreset world {number}|n puts it back as it was"
                      + (f" on {taken}." if taken else "."))
+    lines.extend(_given_up_lines(root))
     lines.append(f"|wenter world {number}|n goes there.")
     return "\n".join(lines)
+
+
+def _given_up_lines(root):
+    """
+    Assets this world uses that their owners gave up, every time it is
+    viewed, with the command that keeps each. docs/archived/assets.md 7.1.
+    """
+    from world import assets
+
+    going = {asset.pk for asset in assets.next_in_line()}
+    lines = []
+    for asset in assets.given_up_in(root):
+        lines.append(
+            f"|y{asset.name}|n ({assets.size_said(asset.size)}) was given up, "
+            + ("and is next in line to go" if asset.pk in going
+               else "and could go if the server runs short of room")
+            + f": |wedit asset {asset.hash[:8]} adopt|n keeps it.")
+    return lines
 
 
 def _view_entry(number, root, count, current):
@@ -1281,14 +1300,13 @@ def enter_start_items(ctx):
 # Neither calls a model. An export is a read and an import is a build, and a
 # server with no API key does both. See docs/archived/import-and-export.md 12.
 
-EXPORT_QUESTION = ("Write {title} to the shared folder, where anybody here "
-                   "can build a world from it, and make this the state "
+EXPORT_QUESTION = ("Keep {title} as a world asset, which anybody here can "
+                   "build a world from, and make this the state "
                    "|wreset world|n comes back to?")
 
 
 def _export(caller, root):
-    from commands import exchange_subject
-    from world import exchange
+    from world import assets, exchange
 
     account = account_of(caller)
     if not owns(account, root):
@@ -1305,16 +1323,18 @@ def _export(caller, root):
                        f"{'; '.join(wrong)}")
         return (f"|r{lore.title(root)} could not be written down: "
                 f"{wrong[0]}|n")
+    # Kept as an asset, where it used to be written to the shared folder.
+    # The same world exported twice unchanged is one asset, and costs the
+    # second time nothing. docs/archived/assets.md 13.
     try:
-        name = exchange.write(doc)
-    except exchange.Refused as refusal:
-        return f"|r{refusal}|n"
-    exchange_subject.wrote(account, name)
+        asset, _said = assets.keep_world(doc, account)
+    except assets.Refused as refusal:
+        return f"|r{lore.title(root)} could not be kept: {refusal}.|n"
     exchange.remember(root, doc)
     carried = _carried_note(caller, root)
-    return (f"|g{lore.title(root)} is in the shared folder as |w{name}|g, "
-            f"{doc['rooms']} room(s). |wreset world|g now puts it back as it "
-            f"is today.|n" + carried)
+    return (f"|g{lore.title(root)} is kept as the world asset |w{asset.name}|g "
+            f"({asset.hash[:8]}), {doc['rooms']} room(s). |wreset world|g now "
+            f"puts it back as it is today.|n" + carried)
 
 
 def _carried_note(caller, root):
@@ -1376,8 +1396,8 @@ def export_run(cmd, ctx, words):
 
 def export_items(ctx):
     return [menus.Submenu("world", "A world you made", EXPORT_WHICH, help=(
-        "Write a world to the shared folder, and make today's state the one "
-        "|wreset world|n comes back to."))]
+        "Keep a world as an asset anybody here can build from, and make "
+        "today's state the one |wreset world|n comes back to."))]
 
 
 IMPORT_QUESTION = ("Build a world from {name}, {rooms} room(s), made by "
@@ -1385,68 +1405,107 @@ IMPORT_QUESTION = ("Build a world from {name}, {rooms} room(s), made by "
                    "are sent to your model on your key when you play it.")
 
 
-def _import(caller, name):
-    from world import exchange
+def _heading(asset):
+    """What a listing says about a world asset: its rooms, what it needs."""
+    from world import assets, rulesets
+
+    try:
+        doc = assets.world_document(asset)
+    except (OSError, ValueError):
+        return {"title": asset.name, "rooms": 0, "missing": [], "assets": 0}
+    wanted = ((doc.get("requires") or {}).get("rulesets") or {})
+    here = rulesets.available()
+    return {"title": str(doc.get("title") or asset.name),
+            "rooms": int(doc.get("rooms") or 0),
+            "missing": sorted(str(name) for name in wanted if name not in here),
+            "assets": len(doc.get("assets") or [])}
+
+
+def _import(caller, asset):
+    """
+    Build a world from a world asset. Its own assets come first: anything
+    this server has not got is fetched, checked against its hash, and
+    charged to the importer; what cannot be is recorded missing and does not
+    stop the build. docs/archived/assets.md 9.
+    """
+    from world import assets, exchange
 
     account = account_of(caller)
     if account is None:
         return "Only an account can hold a world."
     try:
-        doc = exchange.read(name)
-        root = exchange.build(doc, account, caller)
-    except exchange.Refused as refusal:
-        return ("|r" + str(refusal.complaints[0]) + "|n"
-                + ("".join(f"\n|r  {said}|n"
-                           for said in refusal.complaints[1:6])))
-    number = len(resolve_worlds(account))
-    return (f"|g{lore.title(root)} is yours, "
-            f"{len(exchange.rooms_of(root))} room(s). "
-            f"|wenter world {number}|g goes there, and |wreset world "
-            f"{number}|g puts it back as it is now.|n")
+        doc = assets.world_document(asset)
+    except (OSError, ValueError) as exc:
+        return f"|r{asset.name} cannot be read: {exc}|n"
+    no_room = assets.room_to_bring(doc, account)
+    if no_room:
+        return f"|r{asset.name} was not built: {no_room}.|n"
+    assets.touch(asset)
+
+    def build(problems):
+        try:
+            root = exchange.build(doc, account, caller)
+        except exchange.Refused as refusal:
+            caller.msg("|r" + str(refusal.complaints[0]) + "|n"
+                       + "".join(f"\n|r  {said}|n"
+                                 for said in refusal.complaints[1:6]))
+            return
+        number = len(resolve_worlds(account))
+        said = (f"|g{lore.title(root)} is yours, "
+                f"{len(exchange.rooms_of(root))} room(s). "
+                f"|wenter world {number}|g goes there, and |wreset world "
+                f"{number}|g puts it back as it is now.|n")
+        if problems:
+            said += ("\n|y" + f"{len(problems)} of its assets are missing: "
+                     + "; ".join(problems[:5])
+                     + ". |wview assets missing|y lists them.|n")
+        caller.msg(said)
+
+    bringing = assets.to_bring(doc)
+    if bringing:
+        caller.msg(f"Fetching {len(bringing)} asset(s) {asset.name} uses...")
+    assets.bring_in(doc, account, build)
+    return ""
 
 
-def _import_entry(name, heading):
+def _import_entry(asset):
+    heading = _heading(asset)
     return menus.Action(
-        f"import-{name}",
-        f"{heading['title'] or name} -- {heading['rooms']} room"
+        f"import-{asset.hash[:8]}",
+        f"{heading['title']} -- {heading['rooms']} room"
         f"{'s' if heading['rooms'] != 1 else ''}"
         + (f", |rneeds {', '.join(heading['missing'])}|n"
            if heading["missing"] else ""),
-        run=lambda ctx: _import(ctx.character or ctx.caller, name),
+        run=lambda ctx: _import(ctx.character or ctx.caller, asset),
         confirm="import_world",
-        question=IMPORT_QUESTION.format(name=heading["title"] or name,
+        question=IMPORT_QUESTION.format(name=heading["title"],
                                         rooms=heading["rooms"]),
-        after=menus.CLOSE, aliases=names_for(name, heading["title"]),
-        command=lambda ctx: f"import world {name}")
+        after=menus.CLOSE, aliases=names_for(asset.name),
+        command=lambda ctx: f"import world {asset.hash[:8]}")
+
+
+def _world_assets():
+    from world import assets
+
+    return list(assets.search("world")[:200])
 
 
 IMPORT_WHICH = menus.Form(
     key="import-world", title="Build a world from which document?",
-    intro=lambda ctx: _import_intro(),
-    items=lambda ctx: _import_entries(),
+    intro=lambda ctx: (
+        "A world somebody here kept. It becomes yours: you own it, you pay "
+        "for it, and its text reaches your model."
+        if _world_assets() else
+        "No world documents are kept here yet. |wexport world|n keeps one of "
+        "yours for everybody, and |wcreate asset|n fetches one."),
+    items=lambda ctx: [_import_entry(asset) for asset in _world_assets()],
     command=lambda ctx: "import world",
 )
 
 
-def _import_intro():
-    from commands import exchange_subject
-
-    if not exchange_subject.exports():
-        return ("The shared folder is empty. |wexport world|n puts one of "
-                "yours in it for everybody here.")
-    return ("A world somebody here exported. It becomes yours: you own it, "
-            "you pay for it, and its text reaches your model.")
-
-
-def _import_entries():
-    from commands import exchange_subject
-
-    return [_import_entry(name, heading)
-            for name, heading in sorted(exchange_subject.exports().items())]
-
-
 def import_run(cmd, ctx, words):
     from commands.subjects import verb_form
+    from world import assets
 
     caller = cmd.caller
     words, yes = answered(words)
@@ -1454,32 +1513,26 @@ def import_run(cmd, ctx, words):
         menus.open_menu(caller, verb_form("import"), session=cmd.session,
                         path=["world"])
         return
-    from commands import exchange_subject
-
-    said = " ".join(words).strip()
-    found = exchange_subject.exports()
-    # By the name the folder uses, or by the world's own title: nobody types
-    # `import world the_school` having read "The School" in the listing.
-    name, heading = said, found.get(said)
-    if heading is None:
-        matches = [(made, entry) for made, entry in found.items()
-                   if entry["title"].lower() == said.lower()]
-        if len(matches) == 1:
-            name, heading = matches[0]
-    if heading is None:
-        caller.msg(f"There is no world called {said} in the shared folder. "
-                   f"|wview exports|n lists what is.")
+    asset, why = assets.named(" ".join(words), type_="world", status="present")
+    if asset is None:
+        caller.msg(why.replace("|wview assets|n", "|wview assets world|n"))
         return
-    asking(cmd, IMPORT_QUESTION.format(name=heading["title"] or name,
+    heading = _heading(asset)
+
+    def go():
+        said = _import(caller, asset)
+        if said:
+            caller.msg(said)
+
+    asking(cmd, IMPORT_QUESTION.format(name=heading["title"],
                                        rooms=heading["rooms"]),
-           "import_world", f"import world {name}",
-           lambda: caller.msg(_import(caller, name)), already=yes)
+           "import_world", f"import world {asset.hash[:8]}", go, already=yes)
 
 
 def import_items(ctx):
-    return [menus.Submenu("world", "One from the shared folder", IMPORT_WHICH,
-                          help=("Build a world somebody here exported. It "
-                                "becomes yours, and costs nothing to build."))]
+    return [menus.Submenu("world", "A world somebody here kept", IMPORT_WHICH,
+                          help=("Build a world from a world asset. It becomes "
+                                "yours, and costs nothing to build."))]
 
 
 # ---------------------------------------------------------------------------

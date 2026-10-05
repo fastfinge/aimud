@@ -140,11 +140,14 @@ class Account(DefaultAccount):
         super().at_post_login(session=session, **kwargs)
         # The first session only: a second window is not coming back.
         if self.sessions.count() == 1:
-            from world import sharing
+            from world import assets, sharing
 
             sharing.tell_visitors(
                 self, f"{self.key} is back. What happens here is paid for "
                       f"again.")
+            # What happened to assets this account's worlds use while it was
+            # away: given up, next in line, gone. docs/archived/assets.md 7.1.
+            assets.deliver_notices(self)
 
     def at_post_disconnect(self, **kwargs):
         # Evennia calls this only once the last session has gone, which is

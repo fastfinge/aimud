@@ -165,8 +165,10 @@ class CmdImport(VerbCommand):
       import world <name>
       import commonsense
 
-    |wimport world|n builds a world somebody here exported, from the shared
-    folder |wview exports|n lists. It becomes yours -- you own it and you pay
+    |wimport world|n builds a world from a world asset, which |wview assets
+    world|n lists: one somebody here exported, or fetched with |wcreate
+    asset|n. Any sounds or other assets it uses come with it, charged to your
+    quota. It becomes yours -- you own it and you pay
     for it -- and building it costs nothing at all. Its text reaches your model
     on your key once you play it, which is worth knowing before you build one
     somebody else wrote.
@@ -184,8 +186,8 @@ class CmdExport(VerbCommand):
       export
       export world [<number or title>]
 
-    Writes a world to the shared folder, where anybody on this server can build
-    it. It also makes today's state the one |wreset world|n comes back to, so
+    Keeps a world as a world asset, which anybody on this server can build a
+    world from. It also makes today's state the one |wreset world|n comes back to, so
     exporting is how you save a world you like the state of. Costs nothing.
     """
 

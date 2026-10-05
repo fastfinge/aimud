@@ -669,137 +669,80 @@ class TheRestorePoint(WorldTest):
         self.assertIsNone(exchange.restore_point(new))
 
 
-class TheSharedFolder(WorldTest):
-    """Reading and writing the folder, and the one rule about filenames."""
+class _WithAStore(WorldTest):
+    """A temporary asset store, so nothing lands in the real media folder."""
 
     def setUp(self):
         super().setUp()
-        self.folder = tempfile.mkdtemp(prefix="aimud-worlds-")
-
-    def tearDown(self):
         import shutil
 
-        shutil.rmtree(self.folder, ignore_errors=True)
-        super().tearDown()
+        from world import asset_store
 
-    def test_a_world_is_written_and_read_back(self):
-        from world import exchange
+        self.store_dir = tempfile.mkdtemp(prefix="aimud-assets-")
+        self.folder = tempfile.mkdtemp(prefix="aimud-worlds-")
+        previous = asset_store.use(asset_store.LocalStore(self.store_dir))
+        self.addCleanup(asset_store.use, previous)
+        self.addCleanup(shutil.rmtree, self.store_dir, True)
+        self.addCleanup(shutil.rmtree, self.folder, True)
 
-        root = self.world()
-        self.furnish(root)
-        doc = exchange.document(root)
-        with override_settings(WORLD_DIRS=[self.folder]):
-            name = exchange.write(doc)
-            self.assertEqual(name, "the_school")
-            self.assertEqual(exchange.read(name)["title"], "The School")
-            listed = exchange.available()
-        self.assertEqual(listed[name]["rooms"], doc["rooms"])
-        self.assertEqual(listed[name]["missing"], [])
 
-    def test_two_worlds_of_one_name_are_two_files(self):
-        from world import exchange
+class TheFolderIsTakenIn(_WithAStore):
+    """
+    The shared folder became the `world` asset type. Files put in it by hand
+    are taken into the register at startup, charged to nobody, and left
+    where they are. docs/archived/assets.md 13.
+    """
 
-        doc = exchange.document(self.world())
-        with override_settings(WORLD_DIRS=[self.folder]):
-            self.assertEqual(exchange.write(doc), "the_school")
-            self.assertEqual(exchange.write(doc), "the_school_2")
+    def write(self, name, doc):
+        pathlib.Path(self.folder, name).write_text(json.dumps(doc),
+                                                   encoding="utf-8")
 
-    def test_a_name_never_becomes_a_path(self):
-        """
-        The whole of the path-traversal defence, asserted.
-
-        A title is slugged before it is joined to a directory, so nothing a
-        player can type reaches outside the folder -- and nothing they type
-        becomes a filename at all: they name a world.
-        """
-        from world import exchange
-
-        doc = dict(exchange.document(self.world()),
-                   title="../../etc/passwd")
-        with override_settings(WORLD_DIRS=[self.folder]):
-            name = exchange.write(doc)
-            self.assertEqual(name, "etc_passwd")
-            self.assertEqual(sorted(os.listdir(self.folder)),
-                             ["etc_passwd.json"])
-            # Asked for by the same string, it is the same slug: the file in
-            # the folder, and never a file outside it.
-            self.assertEqual(exchange.read("../../etc/passwd")["title"],
-                             "../../etc/passwd")
-            with self.assertRaises(exchange.Refused):
-                exchange.read("../../etc/shadow")
-
-    def test_a_world_this_server_cannot_build_still_lists(self):
-        """
-        Listed, and said to be unbuildable. Not hidden.
-
-        A folder that quietly dropped what it could not build would leave
-        somebody looking for a world they know is there, with nothing saying
-        why it is not. The listing is read from `requires` without parsing the
-        document whole, which is the whole reason that field is in the header.
-        """
-        import json as _json
-
-        from world import exchange
+    def test_a_world_document_in_the_folder_becomes_an_asset(self):
+        from world import assets, exchange
 
         doc = exchange.document(self.world())
-        doc["requires"]["rulesets"]["moons"] = 1
+        self.write("the_school.json", doc)
         with override_settings(WORLD_DIRS=[self.folder]):
-            name = exchange.write(doc)
-            listed = exchange.available()
-        self.assertEqual(listed[name]["missing"], ["moons"])
-        self.assertIn("moons", listed[name]["requires"])
+            self.assertEqual(assets.take_in_folder(), 1)
+        asset = assets.search("world").first()
+        self.assertEqual(asset.name, "The School")
+        self.assertIsNone(asset.charged_to)
+        self.assertEqual(asset.origin, "folder")
+        self.assertTrue(os.path.exists(os.path.join(self.folder,
+                                                    "the_school.json")))
 
-    def test_a_file_that_is_not_a_world_is_not_listed(self):
-        from world import exchange
+    def test_only_once(self):
+        from world import assets, exchange
 
-        pathlib.Path(self.folder, "notes.json").write_text(
-            '{"kind": "shopping list"}', encoding="utf-8")
+        self.write("the_school.json", exchange.document(self.world()))
+        with override_settings(WORLD_DIRS=[self.folder]):
+            assets.take_in_folder()
+            self.assertEqual(assets.take_in_folder(), 0)
+        self.assertEqual(assets.search("world").count(), 1)
+
+    def test_what_is_not_a_world_is_left_out(self):
+        from world import assets
+
+        self.write("notes.json", {"kind": "shopping list"})
         pathlib.Path(self.folder, "broken.json").write_text(
             "{not json", encoding="utf-8")
         with override_settings(WORLD_DIRS=[self.folder]):
-            self.assertEqual(exchange.available(), {})
+            self.assertEqual(assets.take_in_folder(), 0)
+        self.assertFalse(assets.search().exists())
 
-    def test_a_file_too_big_to_read_is_refused_before_it_is_read(self):
-        from world import exchange
+    def test_a_file_too_big_is_left_out(self):
+        from world import assets, exchange
 
-        big = pathlib.Path(self.folder, "huge.json")
-        big.write_text("x" * (exchange.MOST_BYTES + 1), encoding="utf-8")
+        pathlib.Path(self.folder, "huge.json").write_text(
+            "{" + " " * (exchange.MOST_BYTES + 1) + "}", encoding="utf-8")
         with override_settings(WORLD_DIRS=[self.folder]):
-            with self.assertRaises(exchange.Refused) as caught:
-                exchange.read("huge")
-            self.assertIn("the most a world may be", str(caught.exception))
-
-    def test_removing_one(self):
-        from world import exchange
-
-        doc = exchange.document(self.world())
-        with override_settings(WORLD_DIRS=[self.folder]):
-            name = exchange.write(doc)
-            self.assertTrue(exchange.remove(name))
-            self.assertFalse(exchange.remove(name))
-
-    def test_a_server_with_nowhere_to_put_them(self):
-        from world import exchange
-
-        with override_settings(WORLD_DIRS=[]):
-            with self.assertRaises(exchange.Refused):
-                exchange.write(exchange.document(self.world()))
+            self.assertEqual(assets.take_in_folder(), 0)
 
 
-class TheCommands(WorldTest):
-    """export world, import world, view exports, delete export."""
+class TheCommands(_WithAStore):
+    """export world and import world, through world assets."""
 
     accounts = True
-
-    def setUp(self):
-        super().setUp()
-        self.folder = tempfile.mkdtemp(prefix="aimud-worlds-")
-
-    def tearDown(self):
-        import shutil
-
-        shutil.rmtree(self.folder, ignore_errors=True)
-        super().tearDown()
 
     def _mine(self, root):
         """Make the world the account's, as the wizard would have."""
@@ -810,39 +753,56 @@ class TheCommands(WorldTest):
         made.append(root.id)
         self.account.db.created_worlds = made
 
-    def test_export_then_import_through_the_commands(self):
-        from commands import exchange_subject, world_subject
+    def _import(self, asset):
+        from commands import world_subject
+
+        heard = []
+        self.char1.msg = lambda text="", **kw: heard.append(
+            str(text[0] if isinstance(text, tuple) else text))
+        said = world_subject._import(self.char1, asset)
+        return "\n".join([said] + heard)
+
+    def test_export_keeps_a_world_asset_and_import_builds_from_it(self):
+        from commands import world_subject
+        from world import assets
 
         root = self.world()
         self.furnish(root)
         self._mine(root)
-        with override_settings(WORLD_DIRS=[self.folder]):
-            said = world_subject._export(self.char1, root)
-            self.assertIn("is in the shared folder", said)
-            self.assertIn("the_school", exchange_subject.exports())
-            said = world_subject._import(self.char1, "the_school")
-            self.assertIn("is yours", said)
+        said = world_subject._export(self.char1, root)
+        self.assertIn("is kept as the world asset", said)
+        asset = assets.search("world").first()
+        self.assertEqual(asset.charged_to, self.account)
+        self.assertEqual(asset.origin, "export")
+        self.assertIn("is yours", self._import(asset))
         self.assertEqual(len(self.account.db.created_worlds), 2)
 
-    def test_a_world_is_imported_by_its_title_too(self):
-        """Nobody types `the_school` having read "The School" in the listing."""
+    def test_exporting_an_unchanged_world_twice_is_one_asset(self):
+        from commands import world_subject
+        from world import assets
+
+        root = self.world()
+        self._mine(root)
+        world_subject._export(self.char1, root)
+        world_subject._export(self.char1, root)
+        self.assertEqual(assets.search("world").count(), 1)
+
+    def test_a_world_is_imported_by_its_name(self):
         from commands import world_subject
 
         root = self.world()
         self._mine(root)
-        with override_settings(WORLD_DIRS=[self.folder]):
-            world_subject._export(self.char1, root)
-            cmd = type("Cmd", (), {"caller": self.char1, "session": None})()
-            world_subject.import_run(cmd, None, ["The", "School", "yes"])
+        world_subject._export(self.char1, root)
+        cmd = type("Cmd", (), {"caller": self.char1, "session": None})()
+        world_subject.import_run(cmd, None, ["The", "School", "yes"])
         self.assertEqual(len(self.account.db.created_worlds), 2)
 
     def test_only_whoever_made_a_world_may_export_it(self):
         from commands import world_subject
 
         root = self.world()
-        with override_settings(WORLD_DIRS=[self.folder]):
-            self.assertIn("Only whoever made a world",
-                          world_subject._export(self.char1, root))
+        self.assertIn("Only whoever made a world",
+                      world_subject._export(self.char1, root))
 
     def test_exporting_sets_the_restore_point(self):
         from commands import world_subject
@@ -850,8 +810,7 @@ class TheCommands(WorldTest):
 
         root = self.world()
         self._mine(root)
-        with override_settings(WORLD_DIRS=[self.folder]):
-            world_subject._export(self.char1, root)
+        world_subject._export(self.char1, root)
         self.assertIsNotNone(exchange.restore_point(root))
 
     def test_the_reset_question_says_which_reset_this_is(self):
@@ -869,38 +828,11 @@ class TheCommands(WorldTest):
     def test_importing_something_that_is_not_there(self):
         from commands import world_subject
 
-        with override_settings(WORLD_DIRS=[self.folder]):
-            cmd = type("Cmd", (), {"caller": self.char1, "session": None})()
-            world_subject.import_run(cmd, None, ["nowhere"])
-
-    def test_only_whoever_wrote_an_export_may_remove_it(self):
-        from commands import exchange_subject, world_subject
-
-        root = self.world()
-        self._mine(root)
-        with override_settings(WORLD_DIRS=[self.folder]):
-            world_subject._export(self.char1, root)
-            # Not as a builder: a builder may remove any of them, which is the
-            # branch this test is not about.
-            for permission in list(self.account.permissions.all()):
-                self.account.permissions.remove(permission)
-            self.account.db.exported_worlds = []
-            said = exchange_subject.remove(self.char1, "the_school")
-            self.assertIn("was not put there by you", said)
-            self.account.db.exported_worlds = ["the_school"]
-            self.assertIn("no longer in the shared folder",
-                          exchange_subject.remove(self.char1, "the_school"))
-
-    def test_a_builder_may_remove_any_of_them(self):
-        from commands import exchange_subject, world_subject
-
-        root = self.world()
-        self._mine(root)
-        with override_settings(WORLD_DIRS=[self.folder]):
-            world_subject._export(self.char1, root)
-            self.account.db.exported_worlds = []
-            self.assertIn("no longer in the shared folder",
-                          exchange_subject.remove(self.char1, "the_school"))
+        heard = []
+        self.char1.msg = lambda text="", **kw: heard.append(str(text))
+        cmd = type("Cmd", (), {"caller": self.char1, "session": None})()
+        world_subject.import_run(cmd, None, ["nowhere"])
+        self.assertIn("view assets world", " ".join(heard))
 
 
 class AttributesAreAccountedFor(NoWorldTest):

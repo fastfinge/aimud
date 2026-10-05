@@ -47,6 +47,7 @@ def at_server_start():
     _ensure_memory_sleep_script()
     _claim_unowned_worlds()
     _normalise_world_modes()
+    _take_in_world_folder()
     _warm_lexicon()
     _arm_crossings()
 
@@ -131,6 +132,29 @@ def _claim_unowned_worlds():
         from evennia.utils import logger
 
         logger.log_info(f"sponsor: claimed {claimed} world(s) for their makers")
+
+
+def _take_in_world_folder():
+    """
+    Bring world documents somebody put in `WORLD_DIRS` into the asset
+    register. Anything already there is passed over by its hash, so this
+    costs one read per file on every boot. docs/archived/assets.md 13.
+    """
+    from evennia.utils import logger
+
+    from world import assets
+
+    try:
+        added = assets.take_in_folder()
+    except Exception:
+        # A database with no assets table yet: `evennia migrate` has not been
+        # run since the assets app arrived. Said, and not fatal.
+        logger.log_trace("assets: the shared folder was not taken in; has "
+                         "`evennia migrate` been run?")
+        return
+    if added:
+        logger.log_info(f"assets: took in {added} world document(s) from the "
+                        f"shared folder")
 
 
 def _normalise_world_modes():

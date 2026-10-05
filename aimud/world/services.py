@@ -526,11 +526,15 @@ class Answer:
     that cannot be reached is not the rule's fault. §7.5.
     """
 
-    def __init__(self, structured=None, text="", error="", reached=True):
+    def __init__(self, structured=None, text="", error="", reached=True,
+                 files=()):
         self.structured = dict(structured) if isinstance(structured, Mapping) else None
         self.text = str(text or "")
         self.error = str(error or "")
         self.reached = reached
+        #: Files the tool sent back -- an image, a sound -- as `(bytes, mime
+        #: type)`, for `assets.from_tool` to keep. docs/archived/assets.md 11.
+        self.files = list(files or [])
 
     @property
     def ok(self):
@@ -1056,8 +1060,42 @@ def call(record, tool, arguments, retry=False):
         structured = getattr(result, "structured_content", None)
         if getattr(result, "is_error", False):
             return Answer(structured, text, error=text or "the tool said it failed")
-        return Answer(structured, text)
+        return Answer(structured, text,
+                      files=files_in(getattr(result, "content", None) or []))
     return Answer(error=last or "no answer", reached=False)
+
+
+def files_in(blocks):
+    """
+    The files among a tool's content blocks, as `(bytes, mime type)`.
+
+    MCP sends an image or a sound as base64 in an `image` or `audio` block,
+    and a file of any other kind as an embedded resource with a `blob`. Text
+    is not a file. A block whose data will not decode is skipped rather than
+    trusted: what is kept is only ever what `assets.add` then checks again.
+    """
+    import base64
+    import binascii
+
+    found = []
+    for block in blocks:
+        kind = getattr(block, "type", "")
+        if kind in ("image", "audio"):
+            data, mime = getattr(block, "data", ""), getattr(block, "mimeType", "")
+        elif kind == "resource":
+            resource = getattr(block, "resource", None)
+            data = getattr(resource, "blob", "") if resource is not None else ""
+            mime = getattr(resource, "mimeType", "") if resource is not None else ""
+        else:
+            continue
+        if not data:
+            continue
+        try:
+            found.append((base64.b64decode(data, validate=True), str(mime or "")))
+        except (binascii.Error, ValueError):
+            logger.log_info(f"services: a {kind} block was not base64, and "
+                            f"was not kept")
+    return found
 
 
 def _reason(exc):

@@ -39,8 +39,6 @@ incomplete forever after unless something says so; `tests/test_exchange.py`
 See docs/archived/import-and-export.md.
 """
 
-import json
-import os
 import re
 from datetime import date
 
@@ -206,6 +204,12 @@ LEFT = {
     "ai_fallbacks": "which models an account falls back to",
     "exported_worlds": "which exports an account wrote, so it may remove "
                        "them; per account, and never in the file",
+    "asset_quota": "an account's own quota for assets, which an admin of "
+                   "this server set",
+    "asset_notices": "warnings about assets waiting for an account's next "
+                     "login",
+    "asset_warned": "which warnings an account has already had, so none is "
+                    "said twice",
     "shared": "whether this server's other accounts may enter is a choice "
               "about this server, not about the world; an imported world "
               "arrives unshared, as it arrives with a new owner",
@@ -410,7 +414,7 @@ def document(root):
     for thing, _where in things:
         names.name(thing, "thing")
 
-    return {
+    doc = {
         "aimud": VERSION,
         "kind": KIND,
         "title": lore.title(root),
@@ -435,6 +439,14 @@ def document(root):
         "errands": _errands(root, names),
         "learned": _learned(root),
     }
+    # Only when there are any, so a world that uses no assets exports exactly
+    # as it always did. docs/archived/assets.md 9.
+    from world import assets
+
+    listed = assets.listed(root)
+    if listed:
+        doc["assets"] = listed
+    return doc
 
 
 def _requires(root):
@@ -835,7 +847,7 @@ def _learned(root):
 #: promise nobody keeps.
 SECTIONS = ("aimud", "kind", "title", "exported", "rooms", "requires",
             "setup", "vocabulary", "map", "things", "people", "errands",
-            "learned")
+            "learned", "assets")
 
 
 def problems(doc, known=None):
@@ -866,6 +878,14 @@ def problems(doc, known=None):
         # shape nobody promised.
         return wrong
 
+    if "assets" in doc:
+        # By name, hash and where to fetch each: never a path. Checked here so
+        # an import knows before it starts what it will be fetching.
+        # docs/archived/assets.md 9.
+        from world import assets
+
+        wrong.extend(assets.entry_problems(doc.get("assets")))
+
     unknown = sorted(set(doc) - set(SECTIONS))
     if unknown:
         wrong.append(
@@ -889,6 +909,7 @@ def problems(doc, known=None):
 _SHAPES = {
     "requires": dict, "setup": dict, "vocabulary": dict, "map": dict,
     "learned": dict, "things": list, "people": list, "errands": list,
+    "assets": list,
 }
 
 
@@ -1745,15 +1766,13 @@ def forget_restore(root):
 # The shared folder
 # ---------------------------------------------------------------------------
 #
-# `WORLD_DIRS` is `RULESET_DIRS`' arrangement exactly: a list of directories,
-# the first written to and all of them read. A file goes there because
-# somebody with access to the machine put it there, or because a player
-# exported a world -- and in the second case the name comes from the world,
-# never from the player. `slug()` is the whole of the path-traversal defence
-# and it is worth being able to say that in one sentence.
+# `WORLD_DIRS` is where somebody with access to the machine can put a world
+# document by hand. Nothing writes to it any more: `export world` keeps a
+# `world` asset, and `assets.take_in_folder` brings anything found here into
+# the register at startup, by the hash of its contents. docs/archived/assets.md 13.
 
 def directories():
-    """Every directory world documents are read from, the writable one first."""
+    """Every directory world documents are taken in from."""
     try:
         from django.conf import settings
 
@@ -1765,146 +1784,3 @@ def directories():
     return [str(path) for path in found]
 
 
-def folder():
-    """Where an export is written, made if it is not there. "" when unset."""
-    found = directories()
-    if not found:
-        return ""
-    try:
-        os.makedirs(found[0], exist_ok=True)
-    except OSError as exc:
-        logger.log_err(f"exchange: {found[0]} cannot be written to: {exc}")
-        return ""
-    return found[0]
-
-
-def _path_of(directory, name):
-    """The file `name` names inside `directory`, and never outside it."""
-    return os.path.join(directory, f"{slug(name, 'world')}.json")
-
-
-def available():
-    """
-    Every document in the shared folder, as {name: heading}.
-
-    Only the heading is read -- the title, the room count, what it requires --
-    because a listing of thirty worlds must not parse thirty documents whole.
-    A file that is not a world document at all is left out with a log rather
-    than shown as a broken entry: the folder may hold anything somebody put
-    there.
-    """
-    found = {}
-    for directory in directories():
-        if not os.path.isdir(directory):
-            continue
-        for entry in sorted(os.listdir(directory)):
-            if not entry.endswith(".json"):
-                continue
-            path = os.path.join(directory, entry)
-            heading = _heading(path)
-            if heading is not None:
-                found[entry[:-len(".json")]] = heading
-    return found
-
-
-def _heading(path):
-    """What a listing shows for one file, or None when it is not one of ours."""
-    try:
-        size = os.path.getsize(path)
-    except OSError:
-        return None
-    if size > MOST_BYTES:
-        logger.log_info(f"exchange: {path} is {size} bytes, past "
-                        f"{MOST_BYTES}, and was not listed")
-        return None
-    try:
-        with open(path, encoding="utf-8") as handle:
-            doc = json.load(handle)
-    except (OSError, ValueError) as exc:
-        logger.log_info(f"exchange: {path} could not be read: {exc}")
-        return None
-    if not hasattr(doc, "keys") or str(doc.get("kind") or "") != KIND:
-        return None
-    from world import rulesets
-
-    wanted = ((doc.get("requires") or {}).get("rulesets") or {})
-    here = rulesets.available()
-    return {
-        "path": path,
-        "title": str(doc.get("title") or ""),
-        "rooms": int(doc.get("rooms") or 0),
-        "exported": str(doc.get("exported") or ""),
-        "requires": sorted(str(name) for name in wanted),
-        "missing": sorted(str(name) for name in wanted if name not in here),
-        "bytes": size,
-    }
-
-
-def read(name):
-    """
-    One document off the disk by its name in the folder.
-
-    Raises `Refused` rather than answering None, because every caller wants
-    the reason: a file too big, a file that is not JSON, and a file that is
-    not a world are three different things to be told.
-    """
-    for directory in directories():
-        path = _path_of(directory, name)
-        if not os.path.isfile(path):
-            continue
-        try:
-            size = os.path.getsize(path)
-        except OSError as exc:
-            raise Refused([f"{name} cannot be read: {exc}"])
-        if size > MOST_BYTES:
-            # Before it is read, because a document is parsed whole into
-            # memory and the size is the one thing knowable without doing so.
-            raise Refused([f"{name} is {size // 1024} KiB, and "
-                           f"{MOST_BYTES // 1024} KiB is the most a world may "
-                           f"be"])
-        try:
-            with open(path, encoding="utf-8") as handle:
-                return json.load(handle)
-        except (OSError, ValueError) as exc:
-            raise Refused([f"{name} is not a document this can read: {exc}"])
-    raise Refused([f"there is no world called {name!r} in the shared folder"])
-
-
-def write(doc, name=""):
-    """
-    Write a document to the shared folder. Answers the name it went under.
-
-    The name comes from the world's title and never from anything anybody
-    typed, and a name already taken takes a number rather than overwriting:
-    two players exporting "The School" have exported two worlds.
-    """
-    directory = folder()
-    if not directory:
-        raise Refused(["this server has nowhere to keep exported worlds; "
-                       "WORLD_DIRS is not set"])
-    wanted = slug(name or doc.get("title") or "world", "world")
-    made, number = wanted, 1
-    while os.path.exists(_path_of(directory, made)):
-        number += 1
-        made = f"{wanted[:LONGEST_ID - 3]}_{number}"
-    path = _path_of(directory, made)
-    try:
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(doc, handle, indent=1, sort_keys=True)
-            handle.write("\n")
-    except OSError as exc:
-        raise Refused([f"it could not be written: {exc}"])
-    return made
-
-
-def remove(name):
-    """Take a document out of the folder. True when one went."""
-    for directory in directories():
-        path = _path_of(directory, name)
-        if os.path.isfile(path):
-            try:
-                os.remove(path)
-            except OSError as exc:
-                raise Refused([f"{name} could not be removed: {exc}"])
-            return True
-    return False

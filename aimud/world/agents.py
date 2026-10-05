@@ -319,7 +319,7 @@ def document_tools():
     test fixture is one `import_world` rather than four hundred menu answers,
     and what comes back out of `export_world` is the assertion.
 
-    Neither writes to the shared folder and neither touches the restore point:
+    Neither keeps an asset and neither touches the restore point:
     a document that went nowhere is not an export, and an agent reading a
     world out should not quietly change where `reset world` goes back to. A
     player's `export world` still does both.
