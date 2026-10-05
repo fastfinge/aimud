@@ -96,6 +96,17 @@ ASSET_STORE = "world.asset_store.LocalStore"
 # Until it is set, exports name their assets by hash alone.
 ASSET_BASE_URL = ""
 
+# Threads for model calls, which spend nearly all their time waiting on the
+# network: this many may be waiting at once, across every world on the
+# server. They have a pool of their own, so memory writes and downloads never
+# stand in front of them. See world/workers.py.
+MODEL_CALL_THREADS = 16
+
+# Threads for writing memories in the background. Each world's writes are
+# drained in order by one worker, so this is how many worlds can be writing
+# at the same moment.
+MEMORY_THREADS = 4
+
 # Ports a player-named download may use. The web's usual ones, and 4001,
 # Evennia's website port, so a world can be imported from another aimud.
 # Whatever is listed here, nothing is ever fetched from a private address.

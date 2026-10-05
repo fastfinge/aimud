@@ -24,39 +24,167 @@ Two rules govern everything here:
   main thread would stall every player in the game.
 """
 
+import contextlib
 import json
 import re
 import threading
-from collections import namedtuple
+from collections import deque, namedtuple
 from datetime import datetime
-
-from twisted.internet import threads
 
 from evennia.utils import logger
 
 _backend = None
 _state = "unknown"          # unknown | ready | missing
 
-#: Set when the server is going down. Writes stop being accepted at that
-#: point: they are serialised behind one lock at roughly a fifth of a second
-#: each, so a busy world can leave a queue that Twisted then waits for while
-#: shutting down its thread pool. Six seconds of that is enough for the
-#: replacement server to find the webserver port still held, and the reload
-#: fails outright.
+#: Set when the server is going down. Writes stop being accepted, and writes
+#: still waiting are let go: a queue Twisted had to wait for while shutting
+#: down once held the webserver port long enough for a reload to fail.
 _closing = False
 
-#: Most writes that may be waiting at once. Past this the oldest events are
-#: worth more than the newest ones are worth waiting for.
-MAX_PENDING = 12
+#: Writes accepted and not yet written, across every world. Only counted:
+#: there is no limit any more. A write waits in its world's queue for as long
+#: as it takes, because a memory is worth having late and worth nothing lost
+#: -- the cap of twelve this replaced dropped 891 memories in one day on a
+#: busy server.
 _pending = 0
 
-#: mnemosyne keeps one SQLite connection, and SQLite connections are not
-#: shared between threads. Every call goes through this lock, so a burst of
-#: remembered events queues instead of colliding -- without it the log fills
-#: with "cannot start a transaction within a transaction" and
-#: "bad parameter or other API misuse", and memories are silently lost.
-#: The import is held under the same lock, since it must happen exactly once.
+#: Every this many writes waiting for one world, the log says so.
+QUEUE_WORTH_SAYING = 250
+
+#: Loading mnemosyne, and the table of open instances. Nothing else: each
+#: world has a lock of its own (`_Bank`). It was one lock for every memory in
+#: the game, from when every character had their own SQLite file and one
+#: connection was all there was; with one bank per world, two worlds have
+#: nothing to collide over.
 _lock = threading.Lock()
+
+#: The embedding model is the one thing every world shares, and the tokenizer
+#: in front of it is not safe to drive from two threads at once. Held only
+#: around turning text into a vector, which is quick; the database work
+#: either side of it runs per world in parallel.
+_EMBED_LOCK = threading.Lock()
+
+
+class _Bank:
+    """
+    One world's memory: its lock, and the writes waiting for it.
+
+    **Reads first.** A recall is a character waiting to speak; a write is a
+    record that can be made whenever. A recall says it is waiting before it
+    asks for the lock, and the worker writing this world's queue steps aside
+    between writes until nobody is.
+
+    **Writes in order, one worker per world.** Each world's writes are a
+    queue drained by a single worker on the memory pool, so they land in the
+    order they happened, and a world with a long queue takes one thread and
+    not all of them.
+
+    The lock is reentrant: a write that reads its own bank on the way, or a
+    recall inside a pass that already holds it, does not wait for itself.
+    """
+
+    def __init__(self):
+        self.lock = threading.Condition(threading.RLock())
+        self.readers = 0
+        self.queue_lock = threading.Lock()
+        self.writes = deque()
+        self.draining = False
+
+
+_BANKS = {}
+
+
+def _bank(name):
+    with _lock:
+        found = _BANKS.get(name)
+        if found is None:
+            found = _BANKS[name] = _Bank()
+        return found
+
+
+@contextlib.contextmanager
+def _reading(name):
+    """Hold a world's memory for a read, ahead of any write waiting for it."""
+    bank = _bank(name)
+    with bank.queue_lock:
+        bank.readers += 1
+    try:
+        with bank.lock:
+            yield
+    finally:
+        with bank.queue_lock:
+            bank.readers -= 1
+        with bank.lock:
+            bank.lock.notify_all()
+
+
+def _write_later(name, job, on_done=None):
+    """
+    Queue a write to a world's memory, behind its earlier writes.
+
+    `job()` runs on the memory pool under the world's lock. `on_done(result)`
+    runs back on the main thread, for a caller that wants the answer.
+    """
+    global _pending
+
+    if _closing or not name:
+        return
+    bank = _bank(name)
+    with bank.queue_lock:
+        bank.writes.append((job, on_done))
+        _pending += 1
+        waiting = len(bank.writes)
+        start = not bank.draining
+        bank.draining = True
+    if waiting % QUEUE_WORTH_SAYING == 0:
+        # There is no limit, so a queue that only grows has to be visible:
+        # a world writing faster than it can be written shows up here, in
+        # steps, rather than as memory quietly piling up.
+        logger.log_info(f"memory: {waiting} writes waiting for {name}")
+    if start:
+        from world import workers
+
+        workers.defer("memory", _drain, name, bank).addErrback(_swallow)
+
+
+def _drain(name, bank):
+    """Write a world's queue in order, stepping aside for any recall."""
+    from twisted.internet import reactor
+
+    while True:
+        with bank.queue_lock:
+            if _closing or not bank.writes:
+                let_go = len(bank.writes)
+                bank.writes.clear()
+                bank.draining = False
+                break
+            job, on_done = bank.writes.popleft()
+        with bank.lock:
+            while bank.readers:
+                bank.lock.wait(timeout=1.0)
+            try:
+                result = job()
+            except Exception as exc:
+                result = None
+                logger.log_info(f"memory: a write to {name} failed: {exc}")
+        _finished()
+        if on_done is not None:
+            reactor.callFromThread(on_done, result)
+    if let_go:
+        for _ in range(let_go):
+            _finished()
+        logger.log_info(f"memory: let go of {let_go} write(s) to {name}, "
+                        f"because the server is stopping")
+
+
+def _in_background(work, *args, on_done=None):
+    """Run memory work on the memory pool, never on a model call's thread."""
+    from world import workers
+
+    deferred = workers.defer("memory", work, *args)
+    if on_done is not None:
+        return deferred.addCallbacks(on_done, _swallow)
+    return deferred.addErrback(_swallow)
 
 
 def _load_locked():
@@ -67,6 +195,7 @@ def _load_locked():
             _configure_backend()
             import mnemosyne
 
+            _guard_embedding()
             _backend, _state = mnemosyne, "ready"
         except Exception as exc:
             _backend, _state = None, "missing"
@@ -76,9 +205,38 @@ def _load_locked():
     return _backend
 
 
-def _with_backend(action):
+def _guard_embedding():
     """
-    Run `action(mnemosyne)` on the one connection, one caller at a time.
+    Load the embedding model once, and make using it one caller at a time.
+
+    mnemosyne loads it lazily, with no lock, on first use -- two worlds
+    remembering at once would each load a copy. And every embedding passes
+    through `model.embed`, which hands back a generator: wrapped, it is
+    consumed inside `_EMBED_LOCK`, so the shared tokenizer never sees two
+    threads. Nothing to guard when embeddings are off or come from an API.
+    """
+    from mnemosyne.core import embeddings
+
+    try:
+        model = embeddings._get_model()
+    except Exception as exc:
+        logger.log_info(f"memory: no embedding model to share: {exc}")
+        return
+    embed = getattr(model, "embed", None)
+    if embed is None or getattr(embed, "_aimud_guarded", False):
+        return
+
+    def guarded(*args, **kwargs):
+        with _EMBED_LOCK:
+            return iter(list(embed(*args, **kwargs)))
+
+    guarded._aimud_guarded = True
+    model.embed = guarded
+
+
+def _with_backend(action, bank=None):
+    """
+    Run `action(mnemosyne)`, with this world's memory held when one is named.
 
     MUST be called from a thread. The import alone pulls in the embedding
     stack and takes seconds, so doing any of this on the reactor would stall
@@ -86,8 +244,11 @@ def _with_backend(action):
     """
     with _lock:
         backend = _load_locked()
-        if backend is None:
-            return None
+    if backend is None:
+        return None
+    if bank is None:
+        return action(backend)
+    with _bank(bank).lock:
         return action(backend)
 
 
@@ -96,23 +257,26 @@ def _with_backend(action):
 #: the single global instance this used to keep cannot express "this
 #: character, in this world" at all.
 #:
-#: The docstring on `_lock` still holds and now means something slightly
-#: different: it is still one caller at a time, and still because SQLite
-#: connections are not shared between threads, but it is no longer one
-#: connection in total. It is one per bank, which is one per world.
+#: An instance is used only under its world's lock, so a world's SQLite
+#: connections are only ever in one thread at a time; two worlds' never meet.
+#: `_lock` guards this table, not what is in it.
 _INSTANCES = {}
 
 
 def _memory_locked(bank, session):
-    """One character's view of one world's bank. Caller must hold _lock."""
-    backend = _load_locked()
+    """
+    One character's view of one world's bank. Caller must hold that world's
+    lock, which is what opening its files is done under.
+    """
+    with _lock:
+        backend = _load_locked()
+        found = _INSTANCES.get((bank, session))
     if backend is None:
         return None
-    key = (bank, session)
-    found = _INSTANCES.get(key)
     if found is None:
         found = backend.Mnemosyne(bank=bank, session_id=session)
-        _INSTANCES[key] = found
+        with _lock:
+            _INSTANCES[(bank, session)] = found
     return found
 
 
@@ -120,12 +284,13 @@ def _with_memory(bank, session, action):
     """
     Run `action(memory)` against one bank and session. MUST be in a thread.
 
-    The same contract `_with_backend` has, and for the same reasons; what
-    differs is that the thing handed over is scoped rather than global.
+    Under that world's lock and no other, so worlds no longer wait for each
+    other. A recall should be inside `_reading` as well, which puts it ahead
+    of the world's queued writes.
     """
     if not bank:
         return None
-    with _lock:
+    with _bank(bank).lock:
         memory = _memory_locked(bank, session)
         return action(memory) if memory is not None else None
 
@@ -139,8 +304,15 @@ def _forget_instances(bank=None):
     to be dropped here first or the sweep silently does nothing.
     """
     with _lock:
-        for key in [k for k in _INSTANCES if bank is None or k[0] == bank]:
-            _close_quietly(_INSTANCES.pop(key))
+        keys = [k for k in _INSTANCES if bank is None or k[0] == bank]
+    # Each under its own world's lock, so nothing is closed under somebody
+    # in the middle of reading it.
+    for key in keys:
+        with _bank(key[0]).lock:
+            with _lock:
+                found = _INSTANCES.pop(key, None)
+            if found is not None:
+                _close_quietly(found)
 
 
 def warm_up():
@@ -150,7 +322,7 @@ def warm_up():
     Without this the first remembered event pays for the import, and it would
     pay for it wherever that happened to be.
     """
-    threads.deferToThread(_with_backend, lambda _backend: None).addErrback(_swallow)
+    _in_background(_with_backend, lambda _backend: None)
 
 
 def _configure_backend():
@@ -293,43 +465,28 @@ def remember(character, text, kind="event", importance=0.5, about=(),
     along unread, so a recalled memory can be re-rendered with today's names
     rather than replayed as the sentence it was written as.
 
-    Dropped rather than queued when the server is closing or the backlog is
-    already long. A memory is worth having; it is not worth holding a shutdown
-    open for, and a queue that outlives the process helps nobody.
+    Queued behind the world's earlier writes, however many there are, and
+    written in order whenever nobody in that world is waiting to recall
+    something (`_Bank`). Only a server going down lets writes go: a queue
+    that outlives the process helps nobody.
 
     Deliberately does not ask mnemosyne to extract facts. It is offered as
     extract=True and it is a trap here: extraction runs a local model on every
     single line, which measured at twenty-five seconds a write against a third
-    of a second without -- about eighty times slower. Writes are serialised
-    behind one lock and dropped past MAX_PENDING, so one remark in a room of
-    three would fill the queue and characters would stop remembering anything
-    at all. What it produced was not usable either: the model's working-out
-    arrived verbatim in the facts table.
+    of a second without -- about eighty times slower, and every write waits
+    for the one before it in its world. What it produced was not usable
+    either: the model's working-out arrived verbatim in the facts table.
     """
-    global _pending
-
     if not text or _closing or not available():
-        return
-    if _pending >= MAX_PENDING:
-        logger.log_info(
-            f"memory: {_pending} writes already waiting, dropping one for "
-            f"{character.key}"
-        )
         return
 
     where = where_for(character)
     if not where.bank:
         return          # not in a world: nowhere for this to belong
 
-    def _write():
-        try:
-            _remember_sync(where.bank, where.session, text, kind, importance,
-                           about=about, metadata=metadata, addressed=addressed)
-        finally:
-            _finished()
-
-    _pending += 1
-    threads.deferToThread(_write).addErrback(_swallow)
+    _write_later(where.bank, lambda: _remember_sync(
+        where.bank, where.session, text, kind, importance, about=about,
+        metadata=metadata, addressed=addressed))
 
 
 def _finished():
@@ -594,6 +751,22 @@ MAX_CUES = 6
 def recall_for_cues(where, cues, top_k=6, per_cue=2, already_known=(),
                     rows=False):
     """
+    `_recall_for_cues`, holding the world's memory for the whole of it.
+
+    One read per cue, and a character waiting on all of them: held as one
+    read, so the world's queued writes do not slip in between the cues.
+    """
+    if not getattr(where, "bank", None):
+        return _recall_for_cues(where, cues, top_k=top_k, per_cue=per_cue,
+                                already_known=already_known, rows=rows)
+    with _reading(where.bank):
+        return _recall_for_cues(where, cues, top_k=top_k, per_cue=per_cue,
+                                already_known=already_known, rows=rows)
+
+
+def _recall_for_cues(where, cues, top_k=6, per_cue=2, already_known=(),
+                     rows=False):
+    """
     Recall against several cues at once, taking a little from each.
 
     Asking one question built out of everything at once does not work. An
@@ -778,7 +951,9 @@ def _consolidate_sync(banks, force=False, payers=None, keep_going=None):
                     _close_quietly(instance)
 
         try:
-            outcome = _with_backend(_one)
+            # That world's lock and only that one: sleeping one world no
+            # longer makes every other world wait to remember anything.
+            outcome = _with_backend(_one, bank=bank)
         except Exception as exc:
             # One bad bank has never stopped the pass and still does not.
             logger.log_info(f"memory: could not sleep {bank!r}: {exc}")
@@ -843,9 +1018,8 @@ def consolidate(force=False, on_done=None, yield_to_players=True):
         if on_done:
             on_done(result)
 
-    threads.deferToThread(
-        _consolidate_sync, banks, force, payers, keep_going
-    ).addCallbacks(_finished, _swallow)
+    _in_background(_consolidate_sync, banks, force, payers, keep_going,
+                   on_done=_finished)
 
 
 # ---------------------------------------------------------------------------
@@ -963,9 +1137,8 @@ def note_fact(where, subject, predicate, object_, veracity=FROM_ENGINE):
     """
     if _closing or not available() or not (subject and predicate):
         return
-    threads.deferToThread(
-        _note_fact_sync, where, str(subject), str(predicate), str(object_),
-        veracity).addErrback(_swallow)
+    _write_later(where.bank, lambda: _note_fact_sync(
+        where, str(subject), str(predicate), str(object_), veracity))
 
 
 def _note_fact_sync(where, subject, predicate, object_, veracity):
@@ -1027,13 +1200,13 @@ def _with_triples(bank, action):
     """
     Run `action(store)` against one world's triples. MUST be in a thread.
 
-    Under the same lock as everything else here, for the same reason: SQLite
+    Under that world's lock, as everything else about the world is: SQLite
     connections are not shared between threads, and a burst of writes that
     collide are writes that are silently lost.
     """
     if not bank:
         return None
-    with _lock:
+    with _bank(bank).lock:
         store = None
         try:
             store = _triple_store(bank)
@@ -1070,7 +1243,7 @@ def note_triple(where, subject, predicate, object_, supersede=True):
         return store.add(str(subject), str(predicate), str(object_),
                          source="engine", supersede=bool(supersede))
 
-    threads.deferToThread(_with_triples, where.bank, _write).addErrback(_swallow)
+    _write_later(where.bank, lambda: _with_triples(where.bank, _write))
 
 
 def end_triples(where, subject, predicate, object_=None):
@@ -1088,7 +1261,7 @@ def end_triples(where, subject, predicate, object_=None):
         return store.end(str(subject), str(predicate),
                          str(object_) if object_ else None)
 
-    threads.deferToThread(_with_triples, where.bank, _write).addErrback(_swallow)
+    _write_later(where.bank, lambda: _with_triples(where.bank, _write))
 
 
 def note_whereabouts(obj, world_root=None):
@@ -1207,7 +1380,9 @@ def distillable(where, on_done):
     if _closing or not available():
         on_done([], "")
         return
-    threads.deferToThread(_distillable_sync, where).addCallbacks(
+    from world import workers
+
+    workers.defer("memory", _distillable_sync, where).addCallbacks(
         lambda result: on_done(*result), lambda _f: on_done([], ""))
 
 
@@ -1224,8 +1399,11 @@ def store_facts(where, facts, through, on_done=None):
         if on_done:
             on_done(0)
         return
-    threads.deferToThread(_store_facts_sync, where, facts, through).addCallbacks(
-        on_done or (lambda _n: None), _swallow)
+    # A write like any other, so it lands after the memories it was distilled
+    # from rather than racing them.
+    _write_later(where.bank,
+                 lambda: _store_facts_sync(where, facts, through),
+                 on_done=on_done or (lambda _n: None))
 
 
 def forget_world(world_root, on_done=None):
@@ -1416,7 +1594,7 @@ def drop_banks(names, on_done=None):
         if on_done:
             on_done(removed)
 
-    threads.deferToThread(_with_backend, _run).addCallbacks(_finished, _swallow)
+    _in_background(_with_backend, _run, on_done=_finished)
 
 
 def forget_character(character):
@@ -1774,7 +1952,11 @@ def _recall_sync(bank, session, query, top_k):
             found.append(row)
         return found
 
-    return _with_memory(bank, session, _read) or []
+    if not bank:
+        return []
+    # Ahead of the world's queued writes: somebody is waiting on this.
+    with _reading(bank):
+        return _with_memory(bank, session, _read) or []
 
 
 def _span_sync(memory, memory_id):
