@@ -4,7 +4,7 @@ Figures that cross a threshold with nobody doing anything.
 A figure with a rate moves in a straight line, so the moment it will reach a
 threshold a becomes rule cares about can be worked out, and one timer per
 character fires exactly then -- while the world is awake, and never as a poll.
-See docs/becoming-and-time.md §7.
+See docs/archived/becoming-and-time.md §7.
 """
 
 import time

@@ -609,7 +609,7 @@ def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False,
 
 
 # ---------------------------------------------------------------------------
-# The finish tools (docs/generator-tool-loops.md §4.2)
+# The finish tools (docs/archived/generator-tool-loops.md §4.2)
 # ---------------------------------------------------------------------------
 
 #: Rounds an item may take (§10.3), with a player waiting on it.

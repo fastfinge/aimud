@@ -34,7 +34,7 @@ whether a kind wants one; the generators offer the menu.
 **A thing may be more than one kind, and kinds only ever add.** A sword with
 runes on the blade is a sword and an inscription, and what it affords is what
 either of them affords. There is deliberately no way to say a thing lacks what
-its kind has: see docs/kinds-and-affordances.md for the measurements, but the
+its kind has: see docs/archived/kinds-and-affordances.md for the measurements, but the
 short of it is that almost every subtraction in these worlds was a model
 forgetting rather than an exception, and a thing that genuinely cannot do what
 its kind does is either in a state that prevents it -- sealed, blunted, broken
@@ -239,7 +239,7 @@ def ancestors(world_root, kind):
 #: position is that this catches some bad senses and not all: a virtual reality
 #: `pod` lands on "the vessel that contains the seeds of a plant", whose bucket
 #: is nothing at all, so there is nothing for a declared affordance to
-#: contradict. See docs/rulebooks-from-inform.md 7.
+#: contradict. See docs/archived/rulebooks-from-inform.md 7.
 UNTAKEABLE_BUCKETS = ("person", "structure")
 
 #: What a character is. Named rather than spelled at each use, because it is
@@ -636,7 +636,7 @@ def enclosure(obj, wanted, world_root=None):
     This is what makes "the ship I am in" sayable. A one-room ship is a room of
     kind `spacecraft.n.01`; a ship with a bridge and an engine room is a zone
     of that kind; both answer here, and a caller asking for its condition does
-    not have to know which it was. See docs/rulebooks-from-inform.md 5.4.
+    not have to know which it was. See docs/archived/rulebooks-from-inform.md 5.4.
     """
     from world import zones
 
@@ -670,7 +670,7 @@ def _is_room(obj):
 
 
 # ---------------------------------------------------------------------------
-# Lookups (docs/generator-tool-loops.md §5)
+# Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 def lookup_tools():

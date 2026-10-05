@@ -25,6 +25,7 @@ you can reach through [OpenRouter](https://openrouter.ai/).
 - [Getting it running](#getting-it-running)
 - [Your first world](#your-first-world)
 - [Playing](#playing)
+- [Sharing a world](#sharing-a-world)
 - [Command reference](#command-reference)
 - [Menus](#menus)
 - [What it costs](#what-it-costs)
@@ -104,7 +105,7 @@ Try to burn the key, be told you cannot, and nothing pays for that answer again.
 `help bottle` says what this world has decided a bottle is, and `help burn` says
 what it will let you burn. The measurements behind all of this, and the two
 designs that were tried and rejected first, are written up in
-[docs/kinds-and-affordances.md](docs/kinds-and-affordances.md).
+[docs/archived/kinds-and-affordances.md](docs/archived/kinds-and-affordances.md).
 
 ### Some verbs can be lost
 
@@ -468,6 +469,39 @@ Beyond that:
 
 ---
 
+## Sharing a world
+
+A world is yours until you share it. `settings shared on`, typed while you are
+standing in it, opens it to every account on this server. It asks first,
+because it is the one setting that lets somebody else spend your key.
+
+- **Others find it under `enter world public`.** The list shows every world
+  somebody else has shared, who made it, and whether they are online. `enter
+  world public 2` or `enter world public harbour` goes straight in. Numbers
+  change as people share and unshare, so a title is the dependable way to name
+  one.
+- **You pay, and only while you are logged in.** Everything a model does for a
+  visitor -- the innkeeper answering, a new room, a verb learned -- is paid for
+  with your key, never theirs. While you are logged out, nothing is: the people
+  there keep to themselves, unexplored ways stay closed, and the world plays
+  the way a world with no key does. Visitors are told when you leave and when
+  you come back.
+- **It runs your way.** The world keeps your `settings mode` and what you have
+  said it may write for itself. Only you can change those, or whether it is
+  shared -- not a visitor, and not the server's admin either. `settings mode
+  always` switches itself off when *you* log out, whoever else is still on.
+- **Visitors can play, read and describe themselves**, as you can. Building and
+  changing the world stays yours.
+- **`settings shared off` closes it again.** Anybody visiting is sent back to
+  Limbo, and finds their way back to the same spot if you share it again.
+  Resetting a shared world keeps it shared. A world you export travels without
+  the switch: whoever imports it decides for themselves.
+- **Memories.** Characters' memories are tidied up once the game has been quiet
+  for a while, which is usually after you have logged off. That carries on for
+  a world nobody else can enter. In a shared world it waits until you are back.
+
+---
+
 ## Command reference
 
 ### Account level
@@ -487,6 +521,8 @@ Beyond that:
 | `create world [<description>]` | The wizard: make a new world. |
 | `view worlds` | List your worlds, numbered as they were made. |
 | `enter world [<n or title>]` | Go into one of your worlds, back where you last were. |
+| `enter world public [<n or title>]` | Go into a world somebody else has shared. Bare, it lists them: who made each one and whether they are online. |
+| `settings shared on \| off` | Share the world you are standing in with everybody on this server, or stop. Only its creator. See [Sharing a world](#sharing-a-world). |
 | `enter start` | Back to Limbo, the room everybody starts in. `enter limbo` works too. |
 | `edit world [<n or title>]` | Change a world's text without rebuilding it. |
 | `reset world [<n or title>] [yes]` | Put a world back. A world you have imported or exported goes back to *that* -- free, instant, and exactly as it was. A world that has done neither is wiped and regenerated from the same setup, which costs model calls. `view world <n>` says which yours will do. Asks first unless you add `yes`. |
@@ -744,6 +780,8 @@ your `default` to try everything at no cost, and expect rougher prose.
 - Leave `settings mode` at `normal` unless you are deliberately watching a world
   run. It is the one setting that spends money with nobody reading the output.
 - `reset world` regenerates an entire world and costs an entire world's worth.
+- A shared world spends your key on whoever visits, and only while you are
+  logged in. Logging out stops it.
 
 ---
 
@@ -751,7 +789,7 @@ your `default` to try everything at no cost, and expect rougher prose.
 
 This game welcomes players and bots on the same footing, so an AI can play and
 build here the way a person does — over MCP. The full design is in
-`docs/mcp.md`; this is how to switch it on.
+`docs/archived/mcp.md`; this is how to switch it on.
 
 **1. Switch the endpoint on.** In `server/conf/secret_settings.py`:
 
@@ -806,7 +844,7 @@ told why. To play alongside one, give it its own account.
 The other direction from the last section: the game as a *client* of MCP
 servers and OpenAPI services, so a verb can check the real weather, search
 the web, or have an innkeeper send an email. The design is in
-`docs/mcp-client.md`.
+`docs/archived/mcp-client.md`.
 
 **You decide what it may reach, and nobody else does.** A service is added in
 the game, by an admin:
@@ -889,7 +927,7 @@ That is not modesty about the code — it is a specific and honest assessment:
   *not* been explored is what somebody could talk a model into by writing a
   room description. Import worlds from people you would take a file from.
 - **An agent token is the account, not a lesser key.** `settings agenttoken new`
-  mints a bearer token an AI can play and build with over MCP (`docs/mcp.md`).
+  mints a bearer token an AI can play and build with over MCP (`docs/archived/mcp.md`).
   Anything that account can do, the holder of its token can do: spend its API
   key, build, delete a world, and everything Evennia's own permissions allow
   it. There is no way to scope a token down, and this is said plainly rather

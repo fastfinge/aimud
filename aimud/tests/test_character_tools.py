@@ -1,6 +1,6 @@
 """
 Characters on finish tools: the first part of phase 7 of
-docs/generator-tool-loops.md.
+docs/archived/generator-tool-loops.md.
 
 Making a character and dressing one are tool loops now. The name check that
 used to retry by hand is a complaint, and so is everything that used to be

@@ -284,7 +284,7 @@ def validate(reply, offered, action, world_root=None):
         # a model may not have it ask, because a rule it writes is used by
         # characters and the planner, who cannot always be asked. What the
         # tool does and its fingerprint are copied by `rulebooks.add`, never
-        # taken from the answer. docs/mcp-client.md §7.6.
+        # taken from the answer. docs/archived/mcp-client.md §7.6.
         from world import tool_calls
 
         wrong = [line for effect in tool_calls.calls_in(effects)
@@ -946,7 +946,7 @@ def _register_states(world_root, reply):
 
 
 # ---------------------------------------------------------------------------
-# Lookups (docs/generator-tool-loops.md §5)
+# Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 def lookup_tools():
@@ -1016,7 +1016,7 @@ LOOKUPS = ("list_states", "show_state", "list_state_groups", "list_traits",
 #: The lookups that show this server's tools, offered to the rule loop alone.
 #: Not to the becomes loop, which may not call a tool (`validate_becoming`),
 #: and not to a character's conversation: a tool reaches a world through a
-#: rule, and this is where rules are written. docs/mcp-client.md §6, §7.6.
+#: rule, and this is where rules are written. docs/archived/mcp-client.md §6, §7.6.
 TOOL_LOOKUPS = ("list_tools", "show_tool")
 
 #: The most wants shown as hints in one call (§5.1).
@@ -1256,7 +1256,7 @@ def _related(what, words):
 # asked for when a verb is attempted. It is asked for once per figure, the first
 # time somebody's gauge in this world actually runs out -- evidence from this
 # world that the question matters, and one call rather than one per verb that
-# could hurt somebody. See docs/becoming-and-time.md §6 and world/becoming.py.
+# could hurt somebody. See docs/archived/becoming-and-time.md §6 and world/becoming.py.
 
 #: Marks a figure whose running out has been asked about, so it is asked once.
 ASKED_BECOMING = "asked_becoming"

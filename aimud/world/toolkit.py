@@ -1,7 +1,7 @@
 """
 Every tool this game defines, gathered, and what kind each one is.
 
-Phase 6 of docs/mcp.md. `world/lookups.py` gathers the lookups and has since
+Phase 6 of docs/archived/mcp.md. `world/lookups.py` gathers the lookups and has since
 the tool loops were built; this gathers everything -- the lookups, the tools a
 character acts with, and the finish tools a generator answers through -- so
 that one question can be asked of the whole game at once: *what tools are

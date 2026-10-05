@@ -46,7 +46,7 @@ PHASES = (INSTEAD, CHECK, CARRY_OUT, AFTER)
 #: The rulebook that runs because something became true rather than because
 #: somebody tried something. Kept out of PHASES on purpose: `rule_gen` offers
 #: PHASES to a model asked about a verb, and this is never an answer to that
-#: question. See world/becoming.py and docs/becoming-and-time.md §6.
+#: question. See world/becoming.py and docs/archived/becoming-and-time.md §6.
 BECOMES = "becomes"
 STORED_PHASES = PHASES + (BECOMES,)
 
@@ -96,7 +96,7 @@ def blank(action=None, phase=CHECK, scope=None, about="direct", name="",
     force"; a suggestion is that plus a reason somebody can read, the rule it
     would override, and the counts that prompted it. Empty for every rule a
     world wrote for itself. See world/suggest.py and
-    docs/rulebooks-from-inform.md 10.1.
+    docs/archived/rulebooks-from-inform.md 10.1.
     """
     return {
         "id": "",
@@ -412,7 +412,7 @@ def gather(world_root, action, bound=None, actor=None, phase=None,
     `guarded=False` matches scope and leaves `when` untested, for the after
     phase: which after rules are about an attempt is settled where it
     happened, and whether each follows is asked once carry-out has run. See
-    docs/becoming-and-time.md 6.8.
+    docs/archived/becoming-and-time.md 6.8.
 
     `words` is what the player typed for each role, which a guard may ask
     about with `called`. It is the only way a rule can be selected for a thing
@@ -721,7 +721,7 @@ def for_attempt(world_root, action, bound=None, actor=None, verb_rule=None,
 
 
 # ---------------------------------------------------------------------------
-# Lookups (docs/generator-tool-loops.md §5)
+# Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 def lookup_tools():

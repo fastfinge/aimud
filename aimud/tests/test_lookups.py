@@ -1,7 +1,7 @@
 """
 Every lookup a model may be offered, asked the way a model asks.
 
-Phase 4 of docs/generator-tool-loops.md, §5. Each lookup is defined beside the
+Phase 4 of docs/archived/generator-tool-loops.md, §5. Each lookup is defined beside the
 register it reads; `world.lookups` gathers them. What is held still here is
 that every tool in §5 exists, speaks the conservative schema dialect, answers
 from what the world holds, and is not offered where it cannot answer.

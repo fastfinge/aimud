@@ -1,6 +1,6 @@
 """
 Items on finish tools: the first part of phase 6 of
-docs/generator-tool-loops.md.
+docs/archived/generator-tool-loops.md.
 
 What a thing is, is a tool loop. What was silently resolved or dropped -- a
 name carrying a condition, a sense that contradicts the thing, a word list

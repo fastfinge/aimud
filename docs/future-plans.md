@@ -13,18 +13,21 @@ These are plans for things I want to do later maybe. They range from good ideas 
 they can use mappers, create health gages, etc.
 * mccp (mud client compression protocol): to save bandwidth for hosted worlds.
 * MXP: clickable menus based on the world's kinds/verbs/rules? Image generators for pictures of items, characters, and rooms?
-* shared worlds: players can share worlds and play together. a world uses the key of the person who created it.
-Worldmode gets extended to have a "none" option, and is always in none mode if the creator is logged out, so other
-players can experience what's there without costing money. Npcs pick random actions or random goals from the list of
-current possible actions or goals when idle, instead of using an LLM, when worldmode is none. Something similar to AIML
-is used to let NPCs answer basic questions like "What do you want?" without an LLM in worldmode none. Ways for llms to
-create AIML entries for characters, as well as menu based creator for players to create AIML files and attach them to
-characters. In theory an entire mud that could run with wordnet, commonsense, and no LLM at all if players want to be
-the builders. Just depend on AIML here maybe? But replace support for JavaScript with ability to execute an action instead. Allow matches and responses to use tokens to substitute real information from world state.
-This is also what lets an agent join you: docs/mcp.md gives an agent its own account so it can be given fewer
-permissions than you, and `resolve_worlds` only lists worlds an account created, so until a world can be entered by
-somebody who did not make it, an agent and a player can hand worlds to each other through the shared folder but cannot
-stand in one together. Entering another account's world is the piece both want, and it is smaller than it sounds.
+* worlds that play without a model: the second half of "shared worlds". The first half is built
+(docs/archived/shared-worlds.md): a creator can share a world, others enter it from `enter world public`, and no model
+is called while the creator is logged out, so a visitor then gets a world that plays the way a keyless one does.
+What is left is making that worth playing. Worldmode gets a "none" option, which a world is in whenever its
+creator is away. Npcs pick random actions or random goals from the list of current possible actions or goals when
+idle, instead of using an LLM, when worldmode is none. Something similar to AIML is used to let NPCs answer basic
+questions like "What do you want?" without an LLM in worldmode none. Ways for llms to create AIML entries for
+characters, as well as menu based creator for players to create AIML files and attach them to characters. In
+theory an entire mud that could run with wordnet, commonsense, and no LLM at all if players want to be the
+builders. Just depend on AIML here maybe? But replace support for JavaScript with ability to execute an action
+instead. Allow matches and responses to use tokens to substitute real information from world state.
+`Sponsor.answers` is already the one place that says whether a model answers here, so worldmode `none` is a
+line there.
+* what a shared world costs its creator: `world/ledger.py` counts calls and nothing reports them. A creator who
+shares a world will want to see what visitors spent, and perhaps a cap.
 * do something interesting with the web interface. Web editor? Examine stats in the browser? Prettier looking interface
 for playing in browser? Ability to read help files and documentation online, with hyperlinks?
 * let characters use Evennia's built-in discord/IRC support so characters can reach out of their world
@@ -39,48 +42,22 @@ Whatever eventually carries files, a world is already one self-contained validat
 accounts or code in it.
 * affect plugins: let players write Python code that can be added to worlds as unique affects the other systems can use,
  expanding the hardcoded menu. Let them share plugins with other aimud owners. All the hardcoded lists and vocabularies
-should be extendable via plugin, so worlds can become unique in ways our models can't make them. Installing or enabling a plugin should require admin on the mud, plus access to the machine outside of the mud. Nobody just feeds the mud Python and has it run, not even admins. They have to put the files in the correct directory first.
+should be extendable via plugin, so worlds can become unique in ways our models can't make them. Installing or enabling a plugin should require admin on the mud, plus access to the machine outside of the mud. Nobody just feeds the mud Python and has it run, not even admins. They have to put the files in the correct directory first. When there is a plugin surface,
+the agent manual (`world/manual.py`) wants a tenth page for it, generated from whatever register the plugins hang
+off; until then its `extending` page says what may be added and what may not.
 * federation: I3 or IMC to let players chat with each other over different muds. Make it social without requiring one
 central mud for everyone. Or via activitypub? Or xmpp? Or matrix?
 * massive security audit: before hosting this for other people. Make sure API keys won't leak, money can't be spent
 unexpectedly, etc.
 * secure mud connections via SSL for remotely hosted worlds. Players shouldn't have to pass API keys over unencrypted connections unless they want to
 * some sort of npc emotion system? Personality arcatypes? Memory already has support for NPC emotions somehow. Support this in the mud with emotions on npcs and rule conditions and actions about them?
-* an mcp server, so other AI's can play and build: **scoped**, see docs/mcp.md. An MCP session is an Evennia
-session, authenticated by a token minted in game, and the tools are `send`, `poll`, the lookups `world/lookups.py`
-already registers, and the world document. Done mainly to make testing possible from an agent.
-* an mcp client, so a world can reach out: **scoped in docs/mcp-client.md**, which settles the three questions below
-differently in places (servers are added in game by the owner, worlds do not choose them, and the gate is whatever
-lets a model be called) and says why. The other half of the mcp item, deliberately split off from docs/mcp.md
-because it is a different set of questions. Give generators, npcs and players new tools that come from somewhere
-else -- real weather, a web search, an out-of-game action an npc can take. Three things to settle when it is scoped.
-*Where a server is declared:* basic-principles.md says network access needs access to the machine, so the precedent
-is RULESET_DIRS -- declared in settings.py by whoever runs the mud, not a URL a player types, and then chosen per
-world the way a world chooses rulesets. *Who may use one:* permits.py's three levels (whenever asked / only for a
-player / never), asked through `Sponsor.will`, because an npc doing a web search spends money and sends world text
-out, which is the same class of decision permits already governs. *What arrives:* text from outside is ungrounded
-text, and "text should never exist if it will always be exclusively decoration" -- so an external call should set a
-figure or a state the rules can read, or answer a lookup, rather than come back as prose an npc says. Also: a server's
-address and key are a secret and a path, so they are `exchange.LEFT`, and a world that uses one names it rather than
-carrying it.
 * editor improvements: evennia's editor is based on vi and confusing. Let "@" on a blank line stop editing, the same way MOO does it. Support the local editor OOB protocol and MUD Client Protocol v2.1 for players who have better editors
-* Agent Client Protocol (ACP): **the protocol half is declined** -- see docs/mcp.md §13. ACP's client is a code
-editor and its agent is a coding agent, so for aimud to speak it aimud would have to become a host for coding-agent
-sessions, which is a different program; nothing in "let your coding agent join you in the mud" needs it that the MCP
-server does not already give. The second half of this item is **done**, as phase 8 of docs/mcp.md: the building
-surfaces are documented in agent friendly form, in `world/manual.py`, reached by a `manual` tool a page at a time --
-and half of it is generated from the game's own registers, so the tools, the commands, the things a world can be made
-of and the effects a rule may use cannot be added without the manual saying so. What is left of this item is one page
-that cannot be written yet: a plugin surface to document. `extending` says what may be added and what may not, which is
-the honest answer while affect plugins are still an idea below. When there is a plugin surface, it is a tenth page,
-generated from whatever register the plugins hang off. By its nature this mud welcomes players and bots on equal
-footing. The idea is have fun, no matter who or what you are.
 * Co-ownership and institutional owners: worth having for corporations, countries, gangs, guilds, etc.
 * kinds declaring themselves mass: "some bread", not "a bread". WordNet's lexical file only reliably marks substances (water, sand); food nouns like bread, soup and rice share `noun.food` with apple, so the English module in tokens-and-phrases.md treats them as countable. Wants a `mass` boolean on kind specs, set by the item generator's prompt and settable by players, read by `english.article`, `english.plural` and `english.count`. Pairs with plural objects as a single bound thing.
-* a verb whose object is chosen from a menu rather than typed. The other half of what "summon air" wanted, and the half still missing: `summon` typed bare could ask which of the four, so nothing has to be named at all. The typed half is **done** -- the `called` condition asks about the word rather than the thing, and an unmatched noun consults the rulebooks before it is conjured, so a rule reached by the word is reached before anything is made to satisfy it. See docs/player-building.md 8.6.
+* a verb whose object is chosen from a menu rather than typed: `summon` typed bare could ask which of the four, so nothing has to be named at all. The other half of what "summon air" wanted; the typed half is built (the `called` condition, docs/archived/player-building.md 8.6).
 * a hand-built "endless alchemy" world, that ships with aimud. Gives the player earth, air, fire, and water. Let's them combine two of them, and the LLM decide what results from combining two things. Contains hand-built npc with a quest chain asking for different things for the player to try and make. Demonstrates hand-built rules and models working together, and how the player can build something fun that's more of a classic game shape, and the LLM can expand on it. With tutorial doc explaining how the world was made. Updated as new features are added, as the flagship to demonstrate what aimud is capable of.
 * a hand-built world that ships with aimud based on the 1979 computer game Taipan! and multiplayer derivatives like Dope Wars, but with spaceships and planets instead. Makes sure we can express everything in our system that we think we can. Again demonstrates hand-coded rules and an LLM working together. Second flagship world. Shows off multiplayer: all characters would affect the economy.
-* more rulesets, now that the loader exists (docs/rulesets.md): weather and climate, moons with phases, hunger and thirst, light and darkness. Each is a bundle of rules, kinds, states and figures a world can choose, and each is a JSON file rather than code. Permadeath was scoped and declined -- see rulesets.md 5.5 -- because what it means differs per world; the piece anybody wanting it would have to build first is an effect that can end a character.
+* more rulesets, now that the loader exists (docs/archived/rulesets.md): weather and climate, moons with phases, hunger and thirst, light and darkness. Each is a bundle of rules, kinds, states and figures a world can choose, and each is a JSON file rather than code. Permadeath was scoped and declined -- see rulesets.md 5.5 -- because what it means differs per world; the piece anybody wanting it would have to build first is an effect that can end a character.
 * let worlds give the player things the first time they enter a world they've never played before. Endless alchemy can give them the first stock of substances to try with, Taipan! can give them money to purchase a spaceship, and so-on.
 * allow players to configure npc autonomy per world or per character: "npcs can idle and react based on probability, or npcs only react to direct mentions from the player. Npcs can generate goals, npcs can make plans and attempt them". If a player builds a world where one NPC is critical to a quest or puzzle, we don't want them wandering off to Jupiter, having children, and then getting killed by a monster. But we do want them to talk to the player.
 * allow objects from templates: every coin can be the same. In a world that doesn't track differences between bottles of beer or barrels of wool, generating a new one doesn't need an LLM call. Not sure how/if models can use this without risking them just always making the same object everywhere? Maybe if the model asks for an object with an identical name to one that already exists in this world, just make an exact copy of it? Once generated from a template it's a complete object that can be modified etc. Point is to let players make rules that can generate items and npcs based on rules in a world where worldmode is none.

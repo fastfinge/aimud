@@ -142,7 +142,7 @@ def _kept_outright(maker, cmd, root, draft):
     The rule every command in this game keeps, said once here for every maker
     instead of once per maker: leave the arguments out and you get a menu,
     give part of them and the menu opens at that point, give all of them and
-    there is no menu (docs/commands-and-settings.md §4). `create tokens smell
+    there is no menu (docs/archived/commands-and-settings.md §4). `create tokens smell
     = brine | tar` is the line that has always done this, and the port is
     what made it everybody's.
     """
@@ -298,7 +298,7 @@ def _edit_reached(maker, cmd, root, words):
     """
     `edit item lamp` means the lamp in front of you, or asks which.
 
-    Never a search of the world: see docs/player-building.md 5. With nothing
+    Never a search of the world: see docs/archived/player-building.md 5. With nothing
     named, everything in reach is offered, which is the same list a player
     would get by looking.
     """

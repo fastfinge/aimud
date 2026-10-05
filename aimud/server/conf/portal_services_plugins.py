@@ -24,7 +24,7 @@ def start_plugin_services(portal):
     The MCP endpoint is started here and nowhere else. It is a way into the
     game, so it belongs beside telnet and the webclient rather than in the
     webserver: the Portal is where sessions are made, and an MCP session is an
-    Evennia session. See docs/mcp.md §3.2.
+    Evennia session. See docs/archived/mcp.md §3.2.
 
     It listens only if `MCP_ENABLED` says so, on the interface `MCP_INTERFACE`
     names, which is localhost unless somebody deliberately changed it --

@@ -1,7 +1,7 @@
 """
 OpenAPI services: an MCP server the game starts for itself from a spec.
 
-docs/mcp-client.md §3.3 and §12. FastMCP builds a server from the spec and it
+docs/archived/mcp-client.md §3.3 and §12. FastMCP builds a server from the spec and it
 is served in process, so everything above it -- listing, classifying,
 calling, fingerprints -- is the same code an MCP server goes through. What is
 OpenAPI's own is held here: the spec read from a file, every operation off

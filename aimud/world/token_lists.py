@@ -5,7 +5,7 @@ A description may say "This is a {color} ball." when the world keeps a list
 called `color`. What that comes to is chosen once, kept, and read back every
 time anybody looks -- so the ball is the same colour on every look, for every
 viewer, and a model reading the description sees a colour rather than a
-brace. See docs/tokens-and-phrases.md §5.
+brace. See docs/archived/tokens-and-phrases.md §5.
 
 **A choice is a fact wherever the world has a word for it.** A list may name
 a state group and give its entries states: picking "blue" then puts the ball
@@ -790,7 +790,7 @@ $found_at(galley, else=a crate).
 
 
 # ---------------------------------------------------------------------------
-# Lookups (docs/generator-tool-loops.md §5)
+# Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 def lookup_tools():

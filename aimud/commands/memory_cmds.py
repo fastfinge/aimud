@@ -32,7 +32,7 @@ def _sponsor_for(caller):
     return sponsor.of(caller)
 
 
-#: Rounds `remember` may take (docs/generator-tool-loops.md §10.3): enough to
+#: Rounds `remember` may take (docs/archived/generator-tool-loops.md §10.3): enough to
 #: recall again under other words, and a player is waiting.
 REMEMBER_ROUNDS = 6
 

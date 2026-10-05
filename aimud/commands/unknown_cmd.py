@@ -44,7 +44,7 @@ NEAR_MISS = 0.85
 #: a retired name typed in a world would otherwise reach a model as a verb
 #: nobody has seen, and cost a call to say something useless. Nothing here is
 #: permanent: once nobody types these, the table goes.
-#: See docs/commands-and-settings.md §2.
+#: See docs/archived/commands-and-settings.md §2.
 RETIRED = {
     "apikey": "settings apikey",
     "busy": "settings busy",
@@ -217,7 +217,7 @@ class CmdAIUnknown(SystemNoMatch):
         # want of an API key refuses the one action that never needs one. The
         # generators inside the pipeline each report a missing key for
         # themselves, so letting these through costs only a later, truer
-        # message. See docs/rulebooks-from-inform.md 8.1.
+        # message. See docs/archived/rulebooks-from-inform.md 8.1.
         from world import verbs as _verbs
 
         if _verbs.canonical_verb(cmd_verb) not in _verbs.PIPELINE_VERBS:

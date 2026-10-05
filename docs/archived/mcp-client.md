@@ -5,7 +5,7 @@ building changed the plan, the change is marked **as built** under its phase
 in §14; the sections above it say what was scoped. Not yet run against the
 live server -- everything is held by the free suite, which drives the real SDK
 against servers in process and one real stdio process. This is the second half of the
-`future-plans.md` item that `docs/mcp.md` split in two. That plan let an agent
+`future-plans.md` item that `docs/archived/mcp.md` split in two. That plan let an agent
 reach *in*. This one lets a world reach *out*: real weather, a web search, a
 dice server, an email an innkeeper sends. It covers MCP servers and OpenAPI
 services together, because once a tool is listed they have the same shape, and
@@ -161,7 +161,7 @@ in-memory MCP server, so nothing above it changes.
 Phase 0, half a day. A live Server, the loop thread, and one of each: a stdio
 server, a streamable HTTP server, a `from_openapi` server, and an OAuth round
 trip through a Django view. It ends with a written answer to §3.2 and §3.3,
-and this document updated where it was wrong. `docs/mcp.md`'s spike found the
+and this document updated where it was wrong. `docs/archived/mcp.md`'s spike found the
 port it had picked would stop the Server booting. This one is expected to find
 something too.
 
@@ -208,7 +208,7 @@ masked.
 
 The client refuses aimud's own MCP endpoint (`MCP_INTERFACE`:`MCP_PORT`). The
 game driving itself as an agent would be a way round every gate in
-`docs/mcp.md`.
+`docs/archived/mcp.md`.
 
 ### 4.4 Whose identity
 
@@ -482,7 +482,7 @@ to know.
   back to what in the game did it.
 * **Quotas are the service's.** Services have their own quotas and refuse when
   they are spent; that refusal is a failure like any other. aimud adds the
-  per-call timeout and nothing else, the same way `docs/mcp.md` added no rate
+  per-call timeout and nothing else, the same way `docs/archived/mcp.md` added no rate
   limit of its own.
 
 ### 7.6 Models writing it

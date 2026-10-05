@@ -1,5 +1,5 @@
 """
-The verb pipeline on finish tools: phase 5 of docs/generator-tool-loops.md.
+The verb pipeline on finish tools: phase 5 of docs/archived/generator-tool-loops.md.
 
 What a new verb costs -- what it takes, what it does, whether a sort of thing
 admits it, what happened -- is four tool loops now, and what a model got wrong

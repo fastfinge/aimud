@@ -1708,7 +1708,7 @@ def generate_connected_room(sponsor, world_description, source_room, exit_name,
 
 
 # ---------------------------------------------------------------------------
-# The finish tools (docs/generator-tool-loops.md §4.2)
+# The finish tools (docs/archived/generator-tool-loops.md §4.2)
 # ---------------------------------------------------------------------------
 
 #: Rounds each may take (§10.3). Planning is background work nobody waits on;

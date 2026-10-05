@@ -4,7 +4,7 @@ What time it is in a world, and what happens at a time of day.
 Every world has a clock, the real one until it says otherwise, read and never
 kept. Time of day is derived states of the world, and a place rule that watches
 the clock fires live in a room somebody is in, or once and silently for a room
-nobody was watching. See docs/becoming-and-time.md §8.
+nobody was watching. See docs/archived/becoming-and-time.md §8.
 """
 
 from datetime import datetime

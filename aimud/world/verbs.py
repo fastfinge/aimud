@@ -1122,7 +1122,7 @@ _COMMAND_VERBS = set()
 #: MEANS is a world's business -- whether the cave is dark, whether the ghost
 #: needs the right spectacles, whether the moon may be looked at without being
 #: touched -- and none of that could be said while the pipeline handed the verb
-#: straight back to `CmdAILook`. See docs/rulebooks-from-inform.md 8.1.
+#: straight back to `CmdAILook`. See docs/archived/rulebooks-from-inform.md 8.1.
 #:
 #: `give` is the same case arrived at from the other end. Evennia ships a give
 #: command and this game replaces it with one that hands the sentence to the
@@ -1147,7 +1147,7 @@ def reserves_word(command):
     building or bookkeeping. The flag exists for the commands that category
     got wrong: the verb commands are filed under World, and must not reserve
     "reset" or "view" however they are filed, because a world may still write
-    rules for them. docs/commands-and-settings.md §2.
+    rules for them. docs/archived/commands-and-settings.md §2.
     """
     flagged = getattr(command, "reserves_word", None)
     if flagged is not None:
@@ -1273,7 +1273,7 @@ def vocabulary(world_root):
 #   does.
 #
 # Death is not derived, because it is sticky: healing a corpse to 1 health
-# should not raise it. See docs/becoming-and-time.md §5.
+# should not raise it. See docs/archived/becoming-and-time.md §5.
 
 #: How many derived states deep a definition may reach: "exhausted" meaning
 #: "tired and starving" is two. Past this, a derived state is simply not true,
@@ -2643,7 +2643,7 @@ def check(requires, bound, actor, world_root=None):
 
 
 # ---------------------------------------------------------------------------
-# Lookups (docs/generator-tool-loops.md §5)
+# Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 def lookup_tools():

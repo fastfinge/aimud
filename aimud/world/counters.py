@@ -11,7 +11,7 @@ learns it needs that rule by somebody trying it -- eleven times, getting "launch
 what?" eleven times, and nothing anywhere remembering. With a count against
 `(launch, enclosure:spacecraft.n.01, no_object)` the commonest refusal in a world
 becomes the best-evidenced proposal in its queue, and the rule arises by itself
-rather than being anticipated. See docs/rulebooks-from-inform.md 10.1.
+rather than being anticipated. See docs/archived/rulebooks-from-inform.md 10.1.
 
 **Deliberately not a log.** A transcript of attempts would be the timer this
 design keeps refusing, in another costume: something that grows while a world is

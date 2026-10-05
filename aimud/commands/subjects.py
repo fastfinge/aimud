@@ -12,7 +12,7 @@ a verb command only takes the input when it is typed on its own or when the
 next word names one of its subjects: `reset world` is ours, `reset the trap`
 is the world's. The words come from here and from nowhere else, so what a
 command claims can never change because a world has learned something. See
-`server/conf/cmdparser.py` and docs/commands-and-settings.md §2.
+`server/conf/cmdparser.py` and docs/archived/commands-and-settings.md §2.
 
 **Registered by module.** `SUBJECT_MODULES` names the modules that define
 subjects, each with a `SUBJECTS` list. Read when first asked for rather than

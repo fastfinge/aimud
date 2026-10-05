@@ -1,6 +1,7 @@
 # Development plan: shared worlds
 
-Status: **planned**, not started. This is the first half of the
+Status: **built**, phases 0 to 4, on the `shared-worlds` branch. Where the
+building changed the plan, §12 says how and why. This is the first half of the
 `future-plans.md` item "shared worlds". That item has two parts. One is
 letting somebody else stand in your world. The other is making a world worth
 standing in when no model answers (worldmode `none`, idle NPCs picking from
@@ -380,3 +381,49 @@ before the PR.
   visitors. The `spend` confirmation's wording for a visitor. The
   delete/reset message to visitors. README: "Sharing a world". Help entries.
   `future-plans.md` rewritten.
+
+## 12. As built
+
+Where the building departed from the plan above, and what it found.
+
+* **The upkeep exemption is a sponsor, not a branch (§5.4).** `payer_for` and
+  `_account_for` could not "check `present` only for shared worlds" by
+  themselves: they hand a `Sponsor` to `world.llm`, and `key()` refuses an
+  absent creator. So `Sponsor` has an `unattended` field, set only by
+  `sponsor.for_upkeep(root)`, and only for an unshared world. Every other path
+  still needs the creator logged in, and the exemption is named in one place.
+* **`sponsor.is_creator`, not `subjects.created` (§6.1).** The check is needed
+  in `world/preferences.py` and `world/sharing.py`, and `world/` does not
+  import from `commands/`. It sits beside `creator_of`.
+* **Fact distilling had never run live since commit 2196ecc.**
+  `fact_gen._account_for` returned the creator's *account*, and `distil` used
+  it as a sponsor: `sponsor.key()` on an account calls its name. Every test
+  replaced `_account_for` with a fake sponsor, so nothing saw it. It now returns
+  a real sponsor, and `WhoPaysForDistilling` tests the real function. A bank
+  nobody can pay for is also now skipped rather than ending the pass, or one
+  creator logging out would stop distilling for everybody.
+* **The agent's own account is not the sponsor's (§5.3).** `import_world` and
+  `_world_for` read `ctx.sponsor.account` to mean "the agent's account". Once
+  the sponsor inside a world is its creator, that named the wrong account. They
+  now read the actor's account (`agents._account_of`).
+* **A reset keeps a world shared (§3.2, not in the plan).** A reset builds a
+  new root, and `shared` is in `exchange.LEFT`, so a rebuilt world came back
+  unshared with its visitors already moved into it. `sharing.carry` copies the
+  switch across in both reset paths, before the old root is cleared.
+* **The superuser may enter any world (§4.3).** The plan refused anything
+  neither yours nor shared. The superuser may already repair what any world is
+  made of through `owns`, and has to be able to stand in one to do it. Mode,
+  permits and sharing stay the creator's alone.
+* **`always` goes back to normal for that world only (§6.2).**
+  `anybody_logged_in` had no other caller, so it is gone.
+* **No `spend` wording to change (§7).** The one `spend` confirmation, judging
+  suggestions, is offered only to the creator and already says "paid for by
+  this world".
+* **Tests.** `tests/support.logged_in(test, *accounts)` counts accounts as
+  logged in for `sponsor.present`. Eleven existing tests needed it: each had a
+  fixture account paying for something it asked for, which no real player can
+  do without being logged in. `PresentMeansLoggedIn` checks `present` against a
+  real session. Every new guard was watched failing with the fault planted.
+* **Not watched live yet**: two real accounts on the live server, one
+  visiting the other's shared world, with the creator logging out partway.
+

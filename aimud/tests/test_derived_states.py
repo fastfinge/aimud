@@ -3,7 +3,7 @@ States that are worked out rather than written.
 
 "Starving" is hunger at 10 or less, said once, in the register. Nothing ever
 writes it onto anybody, and everything that asks whether somebody is starving
-gets the answer from the figure as it is now. See docs/becoming-and-time.md §5.
+gets the answer from the figure as it is now. See docs/archived/becoming-and-time.md §5.
 """
 
 from django.test import tag

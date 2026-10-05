@@ -3,7 +3,7 @@ The in-character commands, typed on their own: goal, remember, quests, score,
 name and pronouns -- and `choosing.ask`, which puts a choice up as a menu.
 
 Each one did something with no arguments before, and the old default is now
-the first thing its menu offers. docs/commands-and-settings.md §7.2.
+the first thing its menu offers. docs/archived/commands-and-settings.md §7.2.
 """
 
 from unittest import mock

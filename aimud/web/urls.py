@@ -29,7 +29,7 @@ urlpatterns = [
     # web admin
     path("admin/", include("web.admin.urls")),
     # where a service's OAuth sends the admin's browser back to; see
-    # world/service_auth.py and docs/mcp-client.md 11
+    # world/service_auth.py and docs/archived/mcp-client.md 11
     path(service_auth.CALLBACK_PATH, service_auth.callback_view),
     # add any extra urls here:
     # path("mypath/", include("path.to.my.urls.file")),

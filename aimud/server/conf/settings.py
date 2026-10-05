@@ -77,7 +77,7 @@ WORLD_DIRS = [os.path.join(GAME_DIR, "worlds")]
 # account -- everything that account can do, its API key included -- so an
 # agent meant to play beside you wants an account of its own, which can be
 # given less. Lockdown mode puts the interface back to localhost whatever is
-# set here, as it does for telnet. See docs/mcp.md and world/agents.py.
+# set here, as it does for telnet. See docs/archived/mcp.md and world/agents.py.
 #
 # 4007 because Evennia has 4000 to 4006 already: telnet 4000, the web proxy
 # 4001, the websocket client 4002, SSL 4003, SSH 4004, the webserver's own
@@ -93,7 +93,7 @@ MCP_PORT = 4007
 # comes back to /services/oauth/callback. Empty means localhost on the web
 # port, which works for an admin at this machine and nobody else. Services
 # themselves are added in the game by the owner (`create service`), with this
-# server's credentials and never a player's. See docs/mcp-client.md and
+# server's credentials and never a player's. See docs/archived/mcp-client.md and
 # world/services.py.
 SERVICES_PUBLIC_URL = ""
 

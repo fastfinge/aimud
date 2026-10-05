@@ -23,7 +23,7 @@ containment read the way a player means it), or a place, which is what
 anything through the things that read it -- the `owned_by` condition, whose
 refusals are addressed to somebody; possessive matching, where "my" and "her"
 resolve to people; an NPC wanting back what is theirs -- and an object owner
-resolves to nothing useful in any of them. See docs/pronouns-and-ownership.md
+resolves to nothing useful in any of them. See docs/archived/pronouns-and-ownership.md
 6.2.
 
 **The name is stored beside the id deliberately.** An Evennia attribute
@@ -228,7 +228,7 @@ def forget(obj):
     object, but what was recorded of it outlives both: the fact is closed at
     this moment and stays answerable as of any moment before it, which is what
     lets somebody ask after -- or mourn -- a sword that no longer exists. See
-    docs/pronouns-and-ownership.md 7.6.
+    docs/archived/pronouns-and-ownership.md 7.6.
     """
     if obj is None or unowned(obj):
         return
@@ -312,7 +312,7 @@ def _within(obj, depth=None):
 # ball to satisfy "her ball" is the worst available answer, because it is
 # indistinguishable from the ball she actually has until somebody looks.
 #
-# See docs/pronouns-and-ownership.md 6.7.
+# See docs/archived/pronouns-and-ownership.md 6.7.
 # ---------------------------------------------------------------------------
 
 def person_meant(caller, owner, word=""):
@@ -529,7 +529,7 @@ def _world_of(caller):
 # it, and a world that leaves it suspended gets exactly this: the taking
 # happens, and the owner knows.
 #
-# See docs/pronouns-and-ownership.md, phase P7.
+# See docs/archived/pronouns-and-ownership.md, phase P7.
 # ---------------------------------------------------------------------------
 
 def taken_from(taker, obj):
@@ -725,7 +725,7 @@ def _ditransitive(caller, parsed):
 # two subjects; `supersede=True`, so a transfer closes the previous owner by
 # itself; and temporal, so `as_of` still answers who it belonged to last week.
 #
-# See docs/pronouns-and-ownership.md 7.5.
+# See docs/archived/pronouns-and-ownership.md 7.5.
 # ---------------------------------------------------------------------------
 
 def _handle(obj):

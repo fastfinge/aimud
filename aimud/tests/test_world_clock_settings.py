@@ -4,7 +4,7 @@ Setting a world's clock, and who is told what time it is.
 Every world has the real clock until somebody changes it, and the usual change
 is only the year. World generation may set a year and does not have to; NPCs are
 told the date in words, so a barman in 1852 does not mention the telephone. See
-docs/becoming-and-time.md 8.5 and 8.6.
+docs/archived/becoming-and-time.md 8.5 and 8.6.
 """
 
 from datetime import datetime

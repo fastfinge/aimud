@@ -250,7 +250,7 @@ class CmdAILook(_DefaultLook):
     describing anything itself. That is what lets a world say its cave is dark,
     that the ghost needs the right spectacles, or that the moon may be looked at
     and not touched -- none of which could be said while the describing happened
-    here. See docs/rulebooks-from-inform.md 8.1.
+    here. See docs/archived/rulebooks-from-inform.md 8.1.
 
     Outside a generated world there is no rulebook to consult and nothing to
     consult it with, so the original behaviour stands unchanged. Limbo still

@@ -936,7 +936,7 @@ class NPC(ObjectParent, DefaultObject):
         # Waiting for something that will come true on its own: the shop to
         # open, mana to return. Until it is due the character does whatever it
         # would with no goal at all; when it is due it looks again rather than
-        # trusting the estimate. See docs/becoming-and-time.md 7.4.
+        # trusting the estimate. See docs/archived/becoming-and-time.md 7.4.
         if self._still_waiting():
             return False
 

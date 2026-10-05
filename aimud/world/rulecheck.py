@@ -541,7 +541,7 @@ def after_self_defeating(rules):
     After rules that only follow when their own verb's result is absent.
 
     The twin of `self_defeating`, and possible only since an after rule's
-    guards are tested once carry-out has run (docs/becoming-and-time.md 6.8).
+    guards are tested once carry-out has run (docs/archived/becoming-and-time.md 6.8).
     "After lighting it, when it is not lit" was written against the world as it
     was before the verb, and against the world after it can never pass: the
     carry-out that ran is the one that made it lit.
@@ -739,7 +739,7 @@ def cause_unguarded(rules):
     behind it, so a rule that names the cause in its effects or its report and
     does not guard on `{"subject": "cause", "unbound": false}` either skips
     those effects without a word or would say "{cause}" aloud -- the report is
-    held back rather than shown that way. See docs/becoming-and-time.md 6.2.
+    held back rather than shown that way. See docs/archived/becoming-and-time.md 6.2.
 
     Returns [(rule id, name), ...].
     """
@@ -811,7 +811,7 @@ def unreachable_calls(rules):
     rule refuses when it is used and is not suspended: the service may be
     fixed this afternoon, and a suspended rule would stay suspended. The one
     finding here that reads the server rather than the world, because what a
-    world's call can reach is the server's. docs/mcp-client.md 10.4.
+    world's call can reach is the server's. docs/archived/mcp-client.md 10.4.
     """
     from world import services, tool_calls
 

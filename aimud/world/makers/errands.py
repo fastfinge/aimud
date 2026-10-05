@@ -17,7 +17,7 @@ and nothing else, which is the same reason `quest_gen`'s prompt spells it out.
 **Offering is a rule.** The form writes the errand, and then offers to write
 the rule that hands it over -- `instead`, on that character, when somebody
 greets them. Declining leaves the errand written and unoffered, for a world
-that wants to wire it some other way. See docs/player-building.md 10.
+that wants to wire it some other way. See docs/archived/player-building.md 10.
 """
 
 from commands.subjects import reachable

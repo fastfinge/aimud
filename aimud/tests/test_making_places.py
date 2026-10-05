@@ -39,7 +39,7 @@ class TheVocabulary(SimpleTestCase):
 
     def test_it_is_not_read_backwards_and_says_why(self):
         """
-        A decision on the record, which `docs/rulebooks-from-inform.md` 11.1
+        A decision on the record, which `docs/archived/rulebooks-from-inform.md` 11.1
         asks for: a goal names a room, and the room this opens onto has no
         name until somebody walks into it.
         """

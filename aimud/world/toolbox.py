@@ -1,7 +1,7 @@
 """
 The tools a model is offered for one call, and what becomes of each use.
 
-Phase 3 of docs/generator-tool-loops.md. `llm.converse` is the loop; this is
+Phase 3 of docs/archived/generator-tool-loops.md. `llm.converse` is the loop; this is
 what it runs. Nothing here imports a game module: a tool's description, its
 parameters and whether it is offered at all are worked out from a context at
 call time, by whoever defines the tool, which keeps each schema beside the

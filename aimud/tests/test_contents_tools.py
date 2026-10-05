@@ -1,6 +1,6 @@
 """
 A room's contents on a finish tool, and the wants nothing in the world can
-satisfy: the last part of phase 6 of docs/generator-tool-loops.md.
+satisfy: the last part of phase 6 of docs/archived/generator-tool-loops.md.
 
 The phase's finish line is here: somebody wants a thing that exists nowhere,
 a room is furnished while they play, and the thing it makes is named in the

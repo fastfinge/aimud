@@ -194,7 +194,7 @@ class TellingABadSenseFromAGoodOne(SimpleTestCase):
         A virtual reality `pod` lands on "the vessel that contains the seeds of
         a plant", whose bucket is nothing at all -- so no declared affordance
         can contradict it, and this says nothing. Finding that class needs a
-        different signal; see docs/rulebooks-from-inform.md 7.
+        different signal; see docs/archived/rulebooks-from-inform.md 7.
         """
         self.assertEqual(lexicon.buckets("pod.n.01"), frozenset())
         self.assertEqual(kinds.sense_contradicts("pod.n.01", ["enter"], True),

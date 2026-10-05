@@ -1,7 +1,7 @@
 """
 OAuth for a service: authorised once, by an admin, as the server.
 
-docs/mcp-client.md §11. The SDK runs the flow; these hold the game's half of
+docs/archived/mcp-client.md §11. The SDK runs the flow; these hold the game's half of
 it at each seam: the token store that is the server's and nobody else's, the
 redirect that tells the admin where to go, the browser coming back to a view
 that hands the code to whatever was waiting, and refusing to start what

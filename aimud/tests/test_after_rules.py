@@ -5,7 +5,7 @@ An after rule's `when` used to be tested with the rest of the book, before
 carry-out ran, so a guard about the result was answered about the world as it
 was: "after reading, when the book is worn" never fired, and "when it is not
 worn" always did. Guards are tested after carry-out now, all together and
-before any after rule lands. See docs/becoming-and-time.md 6.8.
+before any after rule lands. See docs/archived/becoming-and-time.md 6.8.
 """
 
 from django.test import SimpleTestCase, tag

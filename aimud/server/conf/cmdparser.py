@@ -87,7 +87,7 @@ def claims(match):
     `claims_input(cmdname, args)`, which is how `set` stays available to a
     world that wants it for "set the table" while `set busy 30` is still the
     settings command. One that says nothing claims whatever it matched.
-    docs/commands-and-settings.md §2.
+    docs/archived/commands-and-settings.md §2.
     """
     command = match[2]
     verb = getattr(command, "verb", "")

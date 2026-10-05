@@ -15,7 +15,7 @@ Who: reading is everybody's -- players should be able to see what the game can
 reach and what each tool does, because it is an open sandbox, and secrets are
 masked. Adding or changing a service is an admin's; one that runs a command is
 a developer's, because starting a process is running code and `py` already
-needs that permission. See docs/mcp-client.md §4.
+needs that permission. See docs/archived/mcp-client.md §4.
 """
 
 from commands.subjects import Subject, Use, answered, asking

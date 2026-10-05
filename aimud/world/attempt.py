@@ -372,7 +372,7 @@ def consequences(caller, verb, bound):
     is the whole argument of the standard rules: a world can put a check rule
     in front of one, replace it, or read it in `rules`, and none of that is
     possible for a policy welded into a command. See
-    docs/pronouns-and-ownership.md 6.5.
+    docs/archived/pronouns-and-ownership.md 6.5.
 
     The instead and check phases are deliberately not run. Whatever it was has
     already happened by the time anybody calls this, and a refusal arriving
@@ -1184,7 +1184,7 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
     # The after rules about this attempt are settled here, where it happens,
     # and their guards are not tested yet. A guard on an after rule is a
     # question about how things came out, and until carry-out has run the only
-    # answer available is how they were. See docs/becoming-and-time.md 6.8.
+    # answer available is how they were. See docs/archived/becoming-and-time.md 6.8.
     afters = rulebooks.for_attempt(world_root, verb, bound, caller,
                                    verb_rule=rule, phase=rulebooks.AFTER,
                                    guarded=False, words=words)
@@ -1653,7 +1653,7 @@ def _release(caller, on_message, actor_text, event=None):
     on_message(actor_text, event)
     # After the narration, never before it: the blow is described, and then
     # the character collapses, even when the narration waited on a model.
-    # See docs/becoming-and-time.md 6.3.
+    # See docs/archived/becoming-and-time.md 6.3.
     from world import becoming
 
     becoming.settle(cause=caller)

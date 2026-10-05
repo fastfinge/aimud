@@ -186,7 +186,7 @@ class Wait:
             # What a player actually waited, which no ledger entry says: a
             # verb that needs four calls is four entries and one wait. Only
             # when a player was waiting, because that is what is being
-            # measured. The soak in docs/generator-tool-loops.md reads these.
+            # measured. The soak in docs/archived/generator-tool-loops.md reads these.
             seconds = self._clock.seconds() - self._started
             logger.log_info(f"busy: waited {seconds:.1f}s for {self.doing!r}")
         for timer in self._timers.values():

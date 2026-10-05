@@ -127,7 +127,7 @@ class TheTable(SimpleTestCase):
             self.assertIsNotNone(first, maker.key)
 
     def test_vocabulary_cannot_be_deleted(self):
-        """Not a gap: see making.py `remove`, and docs/player-building.md 3.1."""
+        """Not a gap: see making.py `remove`, and docs/archived/player-building.md 3.1."""
         for key in ("kind", "attribute", "condition", "action"):
             self.assertIsNone(making.get(key).remove, key)
 
@@ -355,7 +355,7 @@ class NoModels(Building):
     Not a preference. A world somebody typed is meant to be a fixture that
     later features are tested against -- for nothing, and the same every time
     -- and the moment one of these forms reaches for a model that stops being
-    true. See docs/player-building.md 12.
+    true. See docs/archived/player-building.md 12.
     """
 
     def setUp(self):
@@ -1990,7 +1990,7 @@ class TheCommands(GameCommandTest):
     Every maker on the command line, which is the half a menu test cannot see.
 
     The standing rule is that every point in a menu is also typeable
-    (docs/commands-and-settings.md §3.5), and a maker's subject is generated
+    (docs/archived/commands-and-settings.md §3.5), and a maker's subject is generated
     rather than written, so what is being checked is that the generator wired
     all four verbs to the right place -- not that any one form works.
     """
@@ -2513,7 +2513,7 @@ class WhatThePortSurfaced(Building):
 @tag("unit")
 class EveryConfirmationCanBeTurnedOff(SimpleTestCase):
     """
-    §8 of docs/commands-and-settings.md: every confirmation has a setting.
+    §8 of docs/archived/commands-and-settings.md: every confirmation has a setting.
 
     It was true of the hand-written ones and silently untrue of the generated
     ones -- `delete rule` asked every time and `settings confirmations` did

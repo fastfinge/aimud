@@ -484,7 +484,7 @@ def services_lacking(name):
     sentences; [] when it has them all, or the ruleset calls none.
 
     Asked when a world switches the ruleset on rather than when the ruleset
-    is read, because a service can be added at any time. docs/mcp-client.md
+    is read, because a service can be added at any time. docs/archived/mcp-client.md
     10.2.
     """
     from world import tool_calls

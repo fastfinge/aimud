@@ -17,7 +17,7 @@ can be read, replaced, scoped to a room, and proposed by `suggest` from what
 players kept trying. So the recipes below are written by the test, the way a
 world or a model would write them.
 
-**Typed inputs-first, and that is not a stylistic choice.** `docs/rulesets.md`
+**Typed inputs-first, and that is not a stylistic choice.** `docs/archived/rulesets.md`
 §1.1 argued that the contrib's `craft <recipe> from <stuff>` is the wrong
 syntax here, because `verbs.bind` binds nouns to things that exist and a blade
 being forged does not exist yet -- so `forge a blade` would conjure the blade

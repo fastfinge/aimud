@@ -1,7 +1,7 @@
 """
 Every lookup tool, by name, gathered from the modules that keep what each reads.
 
-Phase 4 of docs/generator-tool-loops.md, §5. A lookup is defined beside the
+Phase 4 of docs/archived/generator-tool-loops.md, §5. A lookup is defined beside the
 register it reads -- `traits.lookup_tools` beside the trait register, and so on
 -- for the reason `gear.prompt_block` sits beside gear: the shape asked for and
 the shape read cannot drift apart. This module only collects them, so that a

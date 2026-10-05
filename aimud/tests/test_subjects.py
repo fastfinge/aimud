@@ -5,7 +5,7 @@ rounds -- who may use each, what asks first, and what the menus offer.
 
 What each one reports is tested where it always was (`test_rules_command`,
 `test_examining`, `test_rounds`, `test_token_lists`, `test_paying_commands`).
-This is the part that is new. docs/commands-and-settings.md §4, §7 and §8.
+This is the part that is new. docs/archived/commands-and-settings.md §4, §7 and §8.
 """
 
 from unittest import mock
