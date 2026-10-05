@@ -8,7 +8,7 @@ condition and its opposite, rules waiting on a figure nothing moves, and
 worked-out conditions that overlap. A rule added to what is already so says
 what it holds for and can be applied once. And the planner follows a becomes
 rule, so wanting somebody dead is wanting their health down. See
-docs/becoming-and-time.md §10.
+docs/archived/becoming-and-time.md §10.
 """
 
 from unittest import mock

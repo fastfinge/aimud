@@ -20,7 +20,7 @@ a `means` sentence in the second person and a `takes` line naming its fields,
 because `view effects` and `help <effect>` needed them. Adding an effect there
 puts it in this menu; there is no second list to keep level.
 
-**The phase is asked last**, and docs/player-building.md 8.4 has the argument:
+**The phase is asked last**, and docs/archived/player-building.md 8.4 has the argument:
 a phase says what *else* runs, so nothing in a rule's own content distinguishes
 instead from carry-out. Asked at the end, the question can show the rule its
 nudges and its place in firing order, neither of which exists before the rest

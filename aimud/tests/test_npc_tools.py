@@ -1,7 +1,7 @@
 """
 A character's tools: what it is offered, and what happens when it uses them.
 
-Phase 2 of docs/generator-tool-loops.md. Every argument that must name
+Phase 2 of docs/archived/generator-tool-loops.md. Every argument that must name
 something here is closed to what is here, and each tool is told what matters
 about this moment -- whose things are, where they sit, the terms of a request
 waiting on an answer -- because a description written once for every room is

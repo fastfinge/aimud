@@ -1,7 +1,7 @@
 """
 How long ago something happened, to a character.
 
-Phase 10 of docs/becoming-and-time.md, §8.7. Ages are read in the world's own
+Phase 10 of docs/archived/becoming-and-time.md, §8.7. Ages are read in the world's own
 time; working memory says how old it is; a summary is as old as what it
 summarises and a fact is not old at all; the `recall` tool ages what it finds;
 and distillation is told dates that stay true. None of it needs a model or

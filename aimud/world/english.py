@@ -6,7 +6,7 @@ first and of spelling last. Every one of these was being decided somewhere
 already -- `events` choosing "the", `events._stance` agreeing verbs,
 `referents.is_plural` reading a name, Evennia's `get_numbered_name` asking
 `inflect` for "a" and "three" -- and each knew a different part of the
-answer. See docs/tokens-and-phrases.md §7.
+answer. See docs/archived/tokens-and-phrases.md §7.
 
 **The layers, in the order they are asked:**
 

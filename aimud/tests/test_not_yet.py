@@ -4,7 +4,7 @@ Not yet: waiting for what will come true on its own.
 Two things change with nobody acting, and both can be worked out: the clock and
 a figure with a rate. A goal that needs one of them is not given up on; the
 planner answers "not yet", the character does other things, and looks again
-when it is due. See docs/becoming-and-time.md 7.4.
+when it is due. See docs/archived/becoming-and-time.md 7.4.
 """
 
 import time

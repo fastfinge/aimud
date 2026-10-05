@@ -1,7 +1,7 @@
 """
 The shapes finish tools will ask for, and the words they will send back.
 
-Phase 4c of docs/generator-tool-loops.md: §4.1's shared schemas, the enum
+Phase 4c of docs/archived/generator-tool-loops.md: §4.1's shared schemas, the enum
 cap, and §3.3's near-duplicate complaints. Nothing here uses them yet; they
 are what the generators in phases 5 to 7 are built from, so they are held
 still first.

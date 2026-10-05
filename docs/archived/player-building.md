@@ -1200,7 +1200,7 @@ to `world/menus.py`. Where it differs:
   churn:
 
   * **A complete command line opened a menu anyway.** "Give all the arguments
-    and there is no menu" (§4 of docs/commands-and-settings.md) was true of
+    and there is no menu" (§4 of docs/archived/commands-and-settings.md) was true of
     the hand-written `create tokens` and of nothing the table generated. It is
     everybody's now: a line whose draft leaves no required field unset runs
     the form's finishing action and says what happened. A line that gives only

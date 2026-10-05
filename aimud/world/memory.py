@@ -409,7 +409,7 @@ def record_room_event(room, event_type, actor_name, text, actor=None,
 # ---------------------------------------------------------------------------
 # Episodes: what happened, as it will be remembered
 #
-# See docs/tokens-and-phrases.md, phase 6. An episode is an event's narration
+# See docs/archived/tokens-and-phrases.md, phase 6. An episode is an event's narration
 # rendered in the past tense for nobody -- names throughout, no pronouns, no
 # "I" -- so it is the same sentence for whoever did it and whoever watched,
 # and it stays true for ever because it happened. What an event changed is not
@@ -1009,7 +1009,7 @@ def _note_fact_sync(where, subject, predicate, object_, veracity):
 # structured question rather than a fuzzy one. A caller asks and puts the
 # answer in a prompt deliberately; nothing here is automatic.
 #
-# See docs/pronouns-and-ownership.md 7.5.
+# See docs/archived/pronouns-and-ownership.md 7.5.
 # ---------------------------------------------------------------------------
 
 def _triple_store(bank):
@@ -1563,7 +1563,7 @@ def age_of(timestamp, now=None, world_root=None):
     midnight and a conversation ten real minutes old in a world whose day is
     an hour long is hours old, which is what it is there. `now` is the real
     moment to measure from, for a test; the world's clock is read as it was
-    then. See docs/becoming-and-time.md 8.7.
+    then. See docs/archived/becoming-and-time.md 8.7.
     """
     then = real_seconds(timestamp)
     if then is None:
@@ -1803,7 +1803,7 @@ def _span_sync(memory, memory_id):
 
 
 # ---------------------------------------------------------------------------
-# Lookups (docs/generator-tool-loops.md §5)
+# Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 def lookup_tools():

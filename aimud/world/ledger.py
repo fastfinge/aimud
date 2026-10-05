@@ -226,7 +226,7 @@ def forget_world(account, world_id):
 # ---------------------------------------------------------------------------
 #
 # How many rounds each job's conversations take, which is what the round
-# budgets in docs/generator-tool-loops.md are set from. Kept apart from what
+# budgets in docs/archived/generator-tool-loops.md are set from. Kept apart from what
 # was spent, because these figures are for tuning and may be cleared to start
 # counting again after a change, and money spent may not.
 

@@ -111,7 +111,7 @@ class AIExit(ObjectParent, DefaultExit):
         # rulebook because going is Evennia's own command and does not come
         # through the attempt pipeline -- which is a limit worth naming: a world
         # cannot yet write its own rules about walking, only set the states this
-        # reads. See docs/development-plan.md phase 9.
+        # reads. See docs/archived/development-plan.md phase 9.
         from world import relations
 
         shut = relations.SHUT & verbs.states(self)

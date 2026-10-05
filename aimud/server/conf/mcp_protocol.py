@@ -1,7 +1,7 @@
 """
 The MCP endpoint, and the session behind it.
 
-Phases 1, 3 and 5 of docs/mcp.md. This runs in the **Portal**, which is where
+Phases 1, 3 and 5 of docs/archived/mcp.md. This runs in the **Portal**, which is where
 Evennia's protocols live and the only place a new way in can be added without
 inventing one. It is modelled on `evennia/server/portal/webclient_ajax.py`
 almost line for line, because that is an HTTP resource that makes sessions and

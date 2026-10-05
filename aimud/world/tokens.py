@@ -5,7 +5,7 @@ Four things in this game used to put a variable into a sentence, and none of
 them knew about the others: narration templates (`{actor}`, `$pconj(hand)`),
 a world's description (`<user>`, spelled three ways), Evennia's funcparser in
 player speech, and f-strings in memory. This module is the one grammar they
-share. See docs/tokens-and-phrases.md.
+share. See docs/archived/tokens-and-phrases.md.
 
 **A token resolves to a phrase, not a string.** "a {fruit}" is "a apple", and
 "{count} {animal}" is "three sheeps", unless what a token comes to carries
@@ -64,7 +64,7 @@ from functools import lru_cache
 #: `cause` is last. It is whoever acted to bring about something a becomes
 #: rule fired for -- "collapses, struck down by {cause}" -- and is oblique in
 #: any sentence it is in. Nobody names one in a command. See
-#: docs/becoming-and-time.md 6.2.
+#: docs/archived/becoming-and-time.md 6.2.
 ROLES = ("actor", "direct", "target", "container", "source", "instrument",
          "cause")
 

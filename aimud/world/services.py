@@ -2,7 +2,7 @@
 Services: what the server owner has let this game reach outside itself for.
 
 An MCP server run as a command, one reached at a URL, or an OpenAPI service,
-added in game by whoever runs the machine. See docs/mcp-client.md, which this
+added in game by whoever runs the machine. See docs/archived/mcp-client.md, which this
 module is the register and the plumbing of.
 
 **Every credential is the server's.** A service is configured once, with the
@@ -491,7 +491,7 @@ def address_complaint(url):
     Why this address may not be a service, or ''.
 
     aimud's own MCP endpoint is refused: the game driving itself as an agent
-    would be a way round every gate in docs/mcp.md. §4.3.
+    would be a way round every gate in docs/archived/mcp.md. §4.3.
     """
     from django.conf import settings
 

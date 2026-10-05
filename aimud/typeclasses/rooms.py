@@ -34,7 +34,7 @@ class Room(ObjectParent, DefaultRoom):
 
         A world that has never registered a `light` trait has no darkness in it
         and never reaches the second branch. See world.conditions.sees and
-        docs/rulebooks-from-inform.md 8.1.
+        docs/archived/rulebooks-from-inform.md 8.1.
         """
         from world import conditions
 

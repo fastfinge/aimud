@@ -74,12 +74,16 @@ class Sponsor:
     cannot.
     """
 
-    __slots__ = ("world_root", "account", "actor")
+    __slots__ = ("world_root", "account", "actor", "unattended")
 
-    def __init__(self, world_root=None, account=None, actor=None):
+    def __init__(self, world_root=None, account=None, actor=None,
+                 unattended=False):
         self.world_root = world_root
         self.account = account
         self.actor = actor
+        #: Whether this may spend with nobody logged in. Only `for_upkeep`
+        #: sets it, and only for a world nobody else can stand in.
+        self.unattended = unattended
 
     # -- who is involved -------------------------------------------------
 
@@ -101,7 +105,8 @@ class Sponsor:
         Whether it *should* be asked about this particular sort of thing is
         `will`, which is the question most callers actually want.
         """
-        return bool(self.account and self.account.db.openrouter_api_key)
+        return bool(self.account and self.account.db.openrouter_api_key
+                    and (self.unattended or present(self.account)))
 
     def may(self, making):
         """
@@ -151,6 +156,8 @@ class Sponsor:
         stored = self.account.db.openrouter_api_key
         if not stored:
             return _no_key(self.account, self.actor)
+        if not (self.unattended or present(self.account)):
+            return _away(self.account)
         return stored
 
     @property
@@ -206,6 +213,30 @@ def _no_key(account, actor):
     )
 
 
+def _away(account):
+    owner = getattr(account, "key", "") or "whoever made it"
+    raise ValueError(
+        f"This world belongs to {owner}, who is not logged in, so nothing "
+        "new can happen here until they are back."
+    )
+
+
+def present(account):
+    """
+    Whether this account is logged in at all, and so may be spent.
+
+    Any session counts, idle or not, wherever its character is standing: how
+    attentive somebody is belongs to `world.activity`, and paying is the
+    simpler question. A world whose creator is away answers nothing, which
+    is what lets a shared world be visited without its creator's money being
+    spent behind their back. docs/archived/shared-worlds.md 5.1.
+    """
+    try:
+        return bool(account.sessions.count())
+    except AttributeError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Finding one
 # ---------------------------------------------------------------------------
@@ -238,6 +269,36 @@ def of_account(account, actor=None, world_root=None):
     definition the person who will own it.
     """
     return Sponsor(world_root=world_root, account=account, actor=actor)
+
+
+def is_creator(account, world_root):
+    """
+    Whether this account made this world: the creator and nobody else.
+
+    Narrower than `commands.subjects.owns`, which lets the superuser in to
+    repair what a world is made of. How a world runs -- its mode, what it may
+    generate, whether it is shared -- decides how its creator's money is
+    spent, and that is theirs alone. docs/archived/shared-worlds.md 6.1.
+    """
+    if account is None or world_root is None:
+        return False
+    return creator_of(world_root) == account
+
+
+def for_upkeep(world_root):
+    """
+    The sponsor for keeping a world's memories, which runs when nobody types.
+
+    The one exception to "nothing is spent while the creator is away"
+    (docs/archived/shared-worlds.md 5.4). Memory is summarised once the game has gone
+    quiet, which is usually after everybody has logged off, so a world nobody
+    else can enter keeps doing that. A shared world does not: what happens in
+    it is the creator's to pay for only while they are here.
+    """
+    from world import sharing
+
+    return Sponsor(world_root=world_root, account=creator_of(world_root),
+                   unattended=not sharing.is_shared(world_root))
 
 
 def creator_of(world_root):

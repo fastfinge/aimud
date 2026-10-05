@@ -535,7 +535,7 @@ def converse(sponsor, model, messages, toolbox, *, on_done, on_error,
     """
     Ask a model with tools, and keep going until it has answered.
 
-    The loop every generator shares: see docs/generator-tool-loops.md §3.
+    The loop every generator shares: see docs/archived/generator-tool-loops.md §3.
     Runs on the reactor and goes through `fetch` for every round, so a test's
     `immediately()` runs a whole conversation before this returns.
 

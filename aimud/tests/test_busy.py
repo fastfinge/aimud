@@ -1,7 +1,7 @@
 """
 Telling a player a model is still working, on a clock moved by hand.
 
-Phase 1 of docs/generator-tool-loops.md. Every test here moves time itself,
+Phase 1 of docs/archived/generator-tool-loops.md. Every test here moves time itself,
 because a test that waited ten real seconds to see a notice would be a test
 nobody ran.
 """

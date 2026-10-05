@@ -1,7 +1,7 @@
 """
 Services: the register, the owner's classification, the gate, and the wire.
 
-docs/mcp-client.md is the plan. These hold the parts of it that are about the
+docs/archived/mcp-client.md is the plan. These hold the parts of it that are about the
 server rather than about a world: what a tool is guessed to be and how the
 owner's answer outlives a relisting, the one gate (§5.3) as one test per cell,
 the addresses refused, and the manager actually talking to a server -- in

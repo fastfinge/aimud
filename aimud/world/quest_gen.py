@@ -290,7 +290,7 @@ def formalise_goal(sponsor, npc, want, on_success, on_error):
 
 
 # ---------------------------------------------------------------------------
-# The finish tools (docs/generator-tool-loops.md §4.2)
+# The finish tools (docs/archived/generator-tool-loops.md §4.2)
 # ---------------------------------------------------------------------------
 
 #: Rounds each may take (§10.3).
@@ -408,7 +408,7 @@ def use_quest_tool():
     every object named as it is really called. What it does not reuse is the
     asking: `description` is this character's own way of putting it, so an
     errand three people give is not the same sentence three times. See
-    world/quests.py and docs/player-building.md 10.2.
+    world/quests.py and docs/archived/player-building.md 10.2.
     """
     from world import quests
     from world import toolbox as tb

@@ -4,7 +4,7 @@ Rules that run because something became true.
 "When a person's health becomes at most 0, they are dead" is one rule, filed
 once, and not a line inside every verb that can hurt somebody. The door that
 makes a change takes the before; settling asks again and fires what went from
-false to true. See docs/becoming-and-time.md §6 and world/becoming.py.
+false to true. See docs/archived/becoming-and-time.md §6 and world/becoming.py.
 """
 
 from unittest import mock

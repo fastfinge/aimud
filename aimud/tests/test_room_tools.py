@@ -1,6 +1,6 @@
 """
 Rooms on finish tools: the second part of phase 6 of
-docs/generator-tool-loops.md.
+docs/archived/generator-tool-loops.md.
 
 The world plan, an area's plan, a room's name and its description are tool
 loops now. What the naming checks used to say in a conversation built by hand

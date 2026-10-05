@@ -4,7 +4,7 @@ States that are worth something to a person's figures.
 "Starving costs 3 strength" is said once, on `starving`, and `gear` sums it
 from scratch beside whatever somebody carries: the cost arrives when the state
 does and goes when it goes, with no accounting kept anywhere. See
-docs/becoming-and-time.md 5.6.
+docs/archived/becoming-and-time.md 5.6.
 """
 
 from django.test import tag

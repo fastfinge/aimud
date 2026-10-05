@@ -4,7 +4,7 @@ Has anything become true?
 A becomes rule runs because a fact changed rather than because somebody tried
 something: "when a person's health becomes at most 0, they are dead" is one
 rule, filed once, and not a line inside every verb that can hurt somebody. See
-docs/becoming-and-time.md §6.
+docs/archived/becoming-and-time.md §6.
 
 **Nothing ticks and nothing scans.** A rule is asked about a thing because
 that thing is changing, and only then. The doors every change already comes
@@ -766,7 +766,7 @@ def arm_everyone_awake():
 #   nobody arriving at noon hears a bell.
 #
 # That memo is on the world root, and holds only rooms somebody has been in
-# since the rule was written. See docs/becoming-and-time.md 8.4.
+# since the rule was written. See docs/archived/becoming-and-time.md 8.4.
 
 #: Where a world keeps what its place rules said about each room, and when:
 #: {rule id: {room id: [was true, real timestamp]}}.
@@ -1006,7 +1006,7 @@ def already_true(world_root, rule, candidates=None):
     A new rule waits for a change -- nothing crossed, so nothing fired -- and
     that is right, but it must not be hidden. This says what the rule would
     have fired for, so `view faults` can list it and `edit rules <id> apply`
-    can fire it once for exactly these. See docs/becoming-and-time.md 6.4.
+    can fire it once for exactly these. See docs/archived/becoming-and-time.md 6.4.
     """
     from world import conditions, rulebooks
 

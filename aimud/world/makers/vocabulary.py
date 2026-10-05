@@ -14,7 +14,7 @@ same record, folded the same way, with the same floor applied.
 here (`lexicon.senses`, `kinds.ANCHOR_RULE`), which is the whole of what
 "players can create terms" needed: the place invented vocabulary attaches to
 the dictionary already existed and only generators could reach it. See
-docs/player-building.md 11.
+docs/archived/player-building.md 11.
 """
 
 from world import affordances as af

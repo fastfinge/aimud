@@ -70,7 +70,7 @@ def _facts_from(items):
     return facts
 
 
-#: Rounds a distillation may take (docs/generator-tool-loops.md §10.3).
+#: Rounds a distillation may take (docs/archived/generator-tool-loops.md §10.3).
 FACT_ROUNDS = 6
 
 
@@ -129,33 +129,32 @@ def _world_of(where):
 
 def _account_for(where):
     """
-    Whoever pays for distilling these memories. Main thread.
+    The sponsor that pays for distilling these memories, or None. Main thread.
 
-    The world's creator, the same sponsor that paid for every room in it.
-    Reached directly now: a bank is named for a world rather than for one of
-    the characters standing in it, so finding the world no longer means
-    finding a character first and asking where they happen to be.
+    The world's creator, through `sponsor.for_upkeep`: an unshared world is
+    distilled with its creator logged out, and a shared one only while they
+    are here (docs/archived/shared-worlds.md 5.4). A bank is named for a world rather
+    than for one of the characters standing in it, so finding the world does
+    not mean finding a character first and asking where they happen to be.
 
-    Falls back to any account with a key, so memories in a world whose maker
-    has gone are not simply never thought about again.
+    This returned the creator's *account* for a while, which every caller
+    then used as a sponsor -- `sponsor.key()` on an account is calling its
+    name -- and every test replaced it with a fake sponsor, so nothing
+    noticed. It also fell back to any account with a key, which on a shared
+    server spends a stranger's key on somebody else's world.
     """
     from evennia.objects.models import ObjectDB
 
     from world import memory, sponsor as sponsor_mod
 
     owner = memory._owner_id(getattr(where, "bank", None))
-    if owner is not None:
-        world_root = ObjectDB.objects.filter(id=owner).first()
-        creator = sponsor_mod.creator_of(world_root)
-        if creator is not None and creator.db.openrouter_api_key:
-            return creator
-
-    from evennia.accounts.models import AccountDB
-
-    for account in AccountDB.objects.all():
-        if account.db.openrouter_api_key:
-            return account
-    return None
+    if owner is None:
+        return None
+    world_root = ObjectDB.objects.filter(id=owner).first()
+    if world_root is None:
+        return None
+    sponsor = sponsor_mod.for_upkeep(world_root)
+    return sponsor if sponsor.answers else None
 
 
 def distil(banks=None, on_done=None):
@@ -187,13 +186,12 @@ def distil(banks=None, on_done=None):
         if not summaries:
             return _next()
 
+        # A world nobody can pay for right now is skipped rather than ending
+        # the pass: one creator logged out is no reason to stop distilling
+        # everybody else's.
         sponsor = _account_for(where)
         if sponsor is None:
-            return _finish("no sponsor with an API key")
-        try:
-            sponsor.key()          # refuse early rather than mid-prompt
-        except ValueError:
-            return _finish("no API key")
+            return _next()
 
         model = sponsor.model_for("memory")
         world_root = _world_of(where)

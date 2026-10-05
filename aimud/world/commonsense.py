@@ -4,7 +4,7 @@ A second lexicon: what people think is true of a word, as opposed to what it can
 WordNet answers what a word **can be**. ConceptNet answers what people **think is
 true of it**. Those are different questions with different reliability, and the
 difference decides where this may be used and where it may not. See
-docs/rulebooks-from-inform.md 7.1 for the measurement that chose the uses.
+docs/archived/rulebooks-from-inform.md 7.1 for the measurement that chose the uses.
 
 The alignment with this codebase is exact, and four of its relations are
 definitionally four things this game has had to invent for itself:
@@ -480,7 +480,7 @@ def download(on_progress=None, source=None, path=None):
 
 
 # ---------------------------------------------------------------------------
-# Lookups (docs/generator-tool-loops.md §5)
+# Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 #: What `commonsense` may be asked, and how. Advisory everywhere, like the rest

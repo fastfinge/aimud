@@ -1,7 +1,7 @@
 """
 The loop every generator shares, driven by scripted replies.
 
-Phase 3 of docs/generator-tool-loops.md. Nothing here is a game: a finish tool
+Phase 3 of docs/archived/generator-tool-loops.md. Nothing here is a game: a finish tool
 that wants a number, a lookup that counts, an act that does nothing. What is
 held still is how a conversation goes round and how it ends.
 """

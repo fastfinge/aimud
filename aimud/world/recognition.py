@@ -5,7 +5,7 @@ The reverse of rendering. `world.tokens` turns what is known into words;
 this turns words back into what is known, for the one place the game hears
 names it never bound: speech and poses. "Hello, Raldor." is about Raldor, and
 said to him, and a memory of it that knows so can be found by asking about
-Raldor. See docs/tokens-and-phrases.md, phase 5.
+Raldor. See docs/archived/tokens-and-phrases.md, phase 5.
 
 **Conservative, because recall trusts what it is handed.** A mention written
 here becomes an annotation, and an annotation is what a later cue matches

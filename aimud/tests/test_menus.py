@@ -4,7 +4,7 @@ The menu engine: the keys every menu shares, and how each kind of form ends.
 Driven the way a player drives one -- a line of input at a time, reading back
 what was sent -- through `Driving.type`, rather than by calling node
 functions, because the keys are the contract and node functions are not.
-See docs/commands-and-settings.md §3.
+See docs/archived/commands-and-settings.md §3.
 """
 
 from unittest import mock

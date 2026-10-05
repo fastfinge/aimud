@@ -804,7 +804,7 @@ def _want_line(npc):
     waiting = dict(npc.db.goal_waiting or {})
     if waiting.get("until") and list(waiting.get("goal") or []) == goal:
         # So the model neither sends the character to try the step anyway nor
-        # forgets it wanted anything. See docs/becoming-and-time.md 7.4.
+        # forgets it wanted anything. See docs/archived/becoming-and-time.md 7.4.
         return (
             "What you want: " + ", then ".join(outstanding) + f".{owed}\n"
             "It cannot be done yet, so you are waiting -- "
@@ -1657,7 +1657,7 @@ def _npc_turn(sponsor, npc, room, on_success, on_error, remembered, asked,
         # names things have now reads the game's database, which a worker
         # thread may not touch -- and then out again for the model. One hop
         # more than when recall and the call shared a thread; see
-        # docs/tokens-and-phrases.md, phase 6.
+        # docs/archived/tokens-and-phrases.md, phase 6.
         from world.memory import format_recalled
 
         try:
@@ -1742,7 +1742,7 @@ def _toolbox_for(npc, room, depth=0):
 
 
 # ---------------------------------------------------------------------------
-# Lookups (docs/generator-tool-loops.md §5)
+# Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 def lookup_tools():

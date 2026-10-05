@@ -304,7 +304,7 @@ def action_text(root, verb):
 
 
 def edit_action(root, verb):
-    """Only the line that says what it means. See docs/player-building.md 6.4."""
+    """Only the line that says what it means. See docs/archived/player-building.md 6.4."""
     from world import actions, verbs
 
     verb = verbs.canonical_verb(str(verb or "").strip().lower())

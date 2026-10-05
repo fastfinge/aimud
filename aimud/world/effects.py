@@ -638,7 +638,7 @@ VOCABULARY = {
         # Not backwards, and that is the planner's whole argument about it:
         # what a call writes from its answer is something to find out, never
         # something it promises. Whatever else the same rule does is read as
-        # usual. See docs/mcp-client.md §9.
+        # usual. See docs/archived/mcp-client.md §9.
         "backwards": False, "answers": False,
     },
 }
@@ -837,7 +837,7 @@ def say(effect):
 #: that `conditions.achieves` cannot read backwards. Nothing is ever a goal "to
 #: have been told something"; what an NPC wants from looking is whatever an
 #: `after` rule does next, and that is a `set_trait` or a `set_state` like any
-#: other. See docs/rulebooks-from-inform.md 8.1.
+#: other. See docs/archived/rulebooks-from-inform.md 8.1.
 SPEAKS_FOR_ITSELF = tuple(sorted(
     name for name, entry in VOCABULARY.items() if entry.get("answers")))
 

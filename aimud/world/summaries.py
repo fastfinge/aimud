@@ -75,10 +75,6 @@ TIMEOUT = llm.SLOW_TIMEOUT
 _paying = {"sponsor": None, "model": None}
 
 
-class _Nobody(Exception):
-    """Raised for a bank with nobody to pay for it."""
-
-
 def paying_for(sponsor, model):
     """
     A context manager naming who pays for the summaries made inside it.
@@ -178,55 +174,38 @@ def installed():
     return getattr(backend, "name", "") == BACKEND_NAME
 
 
-def _anybody_with_a_key():
-    """Any account that could pay, or None. Main thread."""
-    from evennia.accounts.models import AccountDB
-
-    return next((found for found in AccountDB.objects.all()
-                 if found.db.openrouter_api_key), None)
-
-
-def payer_for(bank, spare=_Nobody):
+def payer_for(bank):
     """
     Whoever pays to summarise one bank, and the model they chose. Main thread.
 
     `(sponsor, model)`, or `(None, None)` for a bank nobody can pay for. The
-    same walk `fact_gen._account_for` makes -- a bank is named for its world,
-    the world's creator paid for every room in it, and any account with a key
-    stands in for a world whose maker has gone, so memories are not simply
-    never thought about again.
+    same answer `fact_gen._account_for` gives: a bank is named for its world,
+    and the world's creator pays, through `sponsor.for_upkeep` -- which lets
+    an unshared world be slept with its creator logged out and a shared one
+    not (docs/archived/shared-worlds.md 5.4).
 
-    `spare` is that stand-in, passed in by `payers_for` so a pass over forty
-    banks looks for one once rather than forty times. Left out, it is looked
-    for here, which is what a single call wants.
+    There used to be a stand-in: any account with a key paid for a world
+    whose maker had gone, so that its memories were still thought about. On
+    a server where worlds are shared that spends a stranger's key on
+    somebody else's world, so it is gone. A bank with no payer is still
+    slept, without a summary, as `memory._consolidate_sync` already allows.
     """
     from evennia.objects.models import ObjectDB
 
     from world import memory, sponsor as sponsor_mod
 
-    account = None
     owner = memory._owner_id(bank)
-    if owner is not None:
-        world_root = ObjectDB.objects.filter(id=owner).first()
-        creator = sponsor_mod.creator_of(world_root)
-        if creator is not None and creator.db.openrouter_api_key:
-            account = creator
-    if account is None:
-        account = _anybody_with_a_key() if spare is _Nobody else spare
-    if account is None:
+    if owner is None:
         return None, None
-    sponsor = sponsor_mod.of_account(account)
+    world_root = ObjectDB.objects.filter(id=owner).first()
+    if world_root is None:
+        return None, None
+    sponsor = sponsor_mod.for_upkeep(world_root)
+    if not sponsor.answers:
+        return None, None
     return sponsor, sponsor.model_for(JOB, "memory")
 
 
 def payers_for(banks):
-    """
-    {bank: (sponsor, model)} for a whole pass. Main thread.
-
-    One lookup for the stand-in account rather than one per bank: a world
-    whose creator is gone falls through to `_anybody_with_a_key`, and doing
-    that inside the loop meant scanning every account in the game once for
-    every bank on disk.
-    """
-    spare = _anybody_with_a_key()
-    return {bank: payer_for(bank, spare=spare) for bank in banks}
+    """{bank: (sponsor, model)} for a whole pass. Main thread."""
+    return {bank: payer_for(bank) for bank in banks}

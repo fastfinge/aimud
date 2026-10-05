@@ -223,7 +223,7 @@ def merge(*mappings):
 
     Which is the whole of the conflict rule, and the reason a kind may only
     ever add. There is no way here to say that a thing lacks what its kind
-    has, deliberately: see docs/kinds-and-affordances.md. When a thing cannot
+    has, deliberately: see docs/archived/kinds-and-affordances.md. When a thing cannot
     do what its kind does it is either in a state that stops it, or it is not
     really that kind.
     """

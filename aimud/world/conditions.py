@@ -33,7 +33,7 @@ asked about, the predicate says what must be true of it:
 
 The subject is the half that is new, and the half `launch` needed: a rule can
 now be about the ship somebody is standing in, which is not a word anybody
-typed. See docs/rulebooks-from-inform.md 5.4.
+typed. See docs/archived/rulebooks-from-inform.md 5.4.
 
 **Describing has two moods**, and it is worth knowing why rather than
 discovering it. A goal is a want -- "be carrying the brass key" -- and a
@@ -334,7 +334,7 @@ def evaluate(condition, ctx):
 # or a lockpick" had no form, not even as two rules. So a condition may be a
 # node instead of a leaf -- {"any": [...]} or {"all": [...]} -- with no subject
 # of its own, whose members are conditions or further nodes. `all` exists only
-# to be used inside `any`. See docs/becoming-and-time.md 4.2.
+# to be used inside `any`. See docs/archived/becoming-and-time.md 4.2.
 #
 # There is deliberately no `not`. Every predicate declares its own opposite
 # instead (OPPOSITES, below), and `negate` works a mirror out when something
@@ -585,7 +585,7 @@ def eventually(condition, ctx, depth=0):
     to -- because nobody can say when that will be. Only two things change
     with nobody acting, and both can be worked out: the clock, which is
     periodic, and a figure with a rate, which is linear. See
-    docs/becoming-and-time.md 7.4.
+    docs/archived/becoming-and-time.md 7.4.
 
     Closed per predicate, like opposites. An `any` is its soonest member. An
     `all` is the latest of its members not yet true, which is an estimate --
@@ -774,7 +774,7 @@ def negate(condition):
     Worked out, never stored, and never containing a `not`: a leaf becomes its
     opposite predicate, a list of several values becomes an `any` of their
     single opposites, and `all` and `any` swap (De Morgan). If any part refuses,
-    the whole negation does. See docs/becoming-and-time.md 4.4.
+    the whole negation does. See docs/archived/becoming-and-time.md 4.4.
     """
     kind, members = node_of(condition)
     if kind:
@@ -1598,7 +1598,7 @@ def _p_owned_by(subject, value, condition, ctx, mood):
     chest and you put your sword in it, the sword is still yours -- but a
     world with a landlord or a ship's captain in it means exactly this, and
     shipping the syntax is what keeps such a world from writing the inference
-    into every rule by hand. See docs/pronouns-and-ownership.md 6.3.
+    into every rule by hand. See docs/archived/pronouns-and-ownership.md 6.3.
     """
     from world import ownership
 
@@ -2117,7 +2117,7 @@ def achieves(effect, condition):
     This says only "that would help", and the step is checked afterwards.
 
     Every new effect type has to be answerable here, or goals that need it
-    become quietly unreachable. See docs/rulebooks-from-inform.md 11.1: an
+    become quietly unreachable. See docs/archived/rulebooks-from-inform.md 11.1: an
     effect nobody can read backwards is not a cheap effect, it is a hole in
     the planner.
     """

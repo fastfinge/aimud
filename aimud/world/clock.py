@@ -6,7 +6,7 @@ the server's local date and time, running at real speed. A world never turns a
 clock on, and "what time is it" always has an answer. The most usual change is
 only the year -- a Victorian London is real time in 1852, a starship real time
 in 2253 -- and a world that wants slower days sets a longer day. See
-docs/becoming-and-time.md §8.
+docs/archived/becoming-and-time.md §8.
 
 The date is a `datetime` in the real Gregorian calendar, so weekdays, month
 lengths and leap years come from the standard library and nothing here can get
@@ -127,7 +127,7 @@ def at_real(world_root, when):
     survives a world being moved to another year -- a memory written before
     the move is as long ago afterwards as it was before -- and what it does
     not survive is a change of speed, which is chosen when a world is made.
-    See docs/becoming-and-time.md 8.7.
+    See docs/archived/becoming-and-time.md 8.7.
     """
     elapsed = max(_real_now() - float(when), 0.0) * speed(world_root)
     try:

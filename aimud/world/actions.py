@@ -446,7 +446,7 @@ def prompt_block(world_root, action):
     return "\n".join(lines) + "\n"
 
 
-#: Rounds a declaration may take (docs/generator-tool-loops.md §10.3).
+#: Rounds a declaration may take (docs/archived/generator-tool-loops.md §10.3).
 LEARN_ROUNDS = 6
 
 
@@ -599,7 +599,7 @@ def learn(sponsor, world_root, action, bound, actor, on_success,
 
 
 # ---------------------------------------------------------------------------
-# Lookups (docs/generator-tool-loops.md §5)
+# Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 def lookup_tools():

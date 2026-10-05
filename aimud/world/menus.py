@@ -6,7 +6,7 @@ instead of printing its usage, and every menu has the same keys -- which is the
 point of there being one engine rather than a menu per command. A player who
 has learned `b`, `q` and `?` in `settings` knows them in `create world`, in a
 yes/no, and in whatever a plugin adds next year. See
-docs/commands-and-settings.md §3.
+docs/archived/commands-and-settings.md §3.
 
 **A menu is data.** A `Form` lists `Field`s, `Action`s and `Submenu`s, and
 the engine draws it, reads what is typed, and keeps the stack of where the
@@ -22,7 +22,7 @@ picker to what came back. A `Submenu` opened with `into=` answers its opener's
 draft the same way, adding to a list there when `append`. Those two are the
 whole of it, and they are here rather than in a helper because a register that
 can be added to from inside a menu is what
-docs/player-building.md is built on -- a rule's scope, a condition's state, an
+docs/archived/player-building.md is built on -- a rule's scope, a condition's state, an
 item's kind, an NPC's pronouns.
 
 **Two kinds of form.** An *edit* form changes something over several steps,
@@ -492,7 +492,7 @@ class Picker(Field):
 
     That is the whole of "offer what is there, and the chance to make one when
     none of it fits", and it is engine work rather than a helper in one module
-    because six forms in docs/player-building.md want it: a rule's scope, a
+    because six forms in docs/archived/player-building.md want it: a rule's scope, a
     condition's state, an item's kind, an NPC's pronouns, a quest's giver, an
     attribute's group. Each lists a register that is allowed to grow while
     somebody is standing in the middle of using it, which is exactly the case
@@ -563,7 +563,7 @@ class Action(Item):
 
     `run(ctx)` returns what to tell the player, or nothing, and raises
     `Refuse` to stay put with a message. `confirm` names the confirmation
-    that guards it (docs/commands-and-settings.md §8); `question` is what is
+    that guards it (docs/archived/commands-and-settings.md §8); `question` is what is
     asked. `after` says where the player is left.
     """
 

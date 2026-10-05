@@ -491,7 +491,7 @@ def _towards_derived(actor, world_root, obj, derived, depth):
     but "what would make its definition true", or false for `lacks`. The
     definition is asked about `obj`, as `implied_states` asks it, and read
     back into the goal shape the rest of the planner speaks. See
-    docs/becoming-and-time.md 5.8.
+    docs/archived/becoming-and-time.md 5.8.
     """
     from world import conditions
     from world.quests import is_person
@@ -765,7 +765,7 @@ def _towards_becoming(actor, world_root, condition, obj, depth):
     A goal `is: dead` is met by a rule that adds `dead` when health falls to 0,
     so the rule's `when` -- about `obj`, and without anything it asks of the
     cause -- is the subgoal. The same for `lacks` and a rule that removes the
-    state. See docs/becoming-and-time.md §10.
+    state. See docs/archived/becoming-and-time.md §10.
     """
     from world import becoming, conditions
     from world.model_json import listed
@@ -879,7 +879,7 @@ def _candidates(actor, world_root, condition, obj, outcome):
         # A call that asks needs somebody to answer it, and a planner has
         # nobody to ask. And an acts-outward call is made once per goal: a
         # goal that keeps failing must not send the same email twice.
-        # docs/mcp-client.md §9.
+        # docs/archived/mcp-client.md §9.
         if any(tool_calls.asks(effect) for effect in calls):
             continue
         if tool_calls.already_acted(actor, rule.get("effects")):
@@ -904,7 +904,7 @@ def _finding_out(actor, world_root, condition, obj):
     and meanwhile the goal waits rather than stalls -- the not-yet machinery,
     as for the clock -- so a sailor who saw a storm looks again later, not
     every turn. Never a call that asks, and never an acts-outward one: finding
-    something out changes nothing out there. docs/mcp-client.md §9.
+    something out changes nothing out there. docs/archived/mcp-client.md §9.
     """
     from world import actions, conditions, rulebooks, services, tool_calls
 
@@ -1043,7 +1043,7 @@ def next_move(actor, world_root, goal):
     the clock, or a figure with a rate -- and that is "not yet" rather than
     "no". Only when every unmet condition is one or the other, and at least one
     is "not yet", does this answer with a wait, the soonest there is. See
-    docs/becoming-and-time.md 7.4.
+    docs/archived/becoming-and-time.md 7.4.
     """
     from world import conditions
 
@@ -1146,7 +1146,7 @@ def advise(actor, world_root, goal):
 
 #: Why the planner can find nothing to do about a condition. What each one
 #: means for somebody else is in `blocker`; what the world can do about each
-#: is docs/generator-tool-loops.md §5.1.
+#: is docs/archived/generator-tool-loops.md §5.1.
 WAITING = "waiting"
 MISSING_THING = "missing_thing"
 MISSING_ROOM = "missing_room"

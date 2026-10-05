@@ -1,7 +1,7 @@
 """
 OAuth for a service: authorised once, by an admin, as the server.
 
-docs/mcp-client.md §11. The SDK's `OAuthClientProvider` runs the flow; this is
+docs/archived/mcp-client.md §11. The SDK's `OAuthClientProvider` runs the flow; this is
 what it needs from the game:
 
 * **A token store**, per service and never per account. Every credential is

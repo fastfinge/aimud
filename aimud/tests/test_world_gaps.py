@@ -1,7 +1,7 @@
 """
 What a world is missing: wants nothing can satisfy, and faults in its rules.
 
-Phase 4 of docs/generator-tool-loops.md, the free half of §5.1 and §5.2. No
+Phase 4 of docs/archived/generator-tool-loops.md, the free half of §5.1 and §5.2. No
 model is involved anywhere here. Players are told the truth about why a goal
 has no next step, a character that gives up says why, and the hints a
 generator will be given in later phases are worked out and held still.

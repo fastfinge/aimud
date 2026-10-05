@@ -34,7 +34,7 @@ has no database and is not allowed one; everything it needs to know about who
 somebody is, or what the game holds, is asked for here. The two functions
 below are the whole of that seam, and they are inputfuncs rather than
 something new because that is how structured messages already travel from a
-protocol into the game -- the same road GMCP and MSDP take. See docs/mcp.md
+protocol into the game -- the same road GMCP and MSDP take. See docs/archived/mcp.md
 §3.4.
 """
 

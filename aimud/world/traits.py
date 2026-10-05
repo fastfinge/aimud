@@ -68,7 +68,7 @@ BUILTIN = {
 #: Light is not a subsystem here: a lit room grants it, a lit lamp grants it
 #: while burning, and `gear` sums whatever is granted by what you carry and by
 #: the place you are standing in. So sight needs one number and no machinery of
-#: its own -- see docs/rulebooks-from-inform.md 8.1.
+#: its own -- see docs/archived/rulebooks-from-inform.md 8.1.
 #:
 #: Deliberately NOT in `BUILTIN`. A world opts into darkness by registering the
 #: trait, and until it does, `visible_to` reads the absence as daylight rather
@@ -204,7 +204,7 @@ def bands(world_root, slug, descs):
     already said what the bands are called. So each band becomes a state that
     holds while the figure is in it, in an exclusive group named after the
     figure, and rules ask for `starving` without anybody writing it twice. See
-    docs/becoming-and-time.md 5.7. Answers the states made.
+    docs/archived/becoming-and-time.md 5.7. Answers the states made.
     """
     from world import verbs
 
@@ -714,7 +714,7 @@ def offerable(world_root):
 
 
 # ---------------------------------------------------------------------------
-# Lookups (docs/generator-tool-loops.md §5)
+# Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 def lookup_tools():

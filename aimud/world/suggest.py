@@ -7,7 +7,7 @@ and the rule that would settle it is a guess -- a good guess, drawn from the
 world's own behaviour, and still a guess about meaning. So nothing here is ever
 in force. A proposal is a rule with `listed: false`, which already meant "in the
 book, not applying", plus a reason somebody can read and the counts that prompted
-it. See docs/rulebooks-from-inform.md 10.1.
+it. See docs/archived/rulebooks-from-inform.md 10.1.
 
 **Everything here is free.** No model, no network. That is what makes it safe to
 run on a command, on a timer, or at server start: the half that costs nothing
@@ -668,7 +668,7 @@ def judge(sponsor, world_root, on_success, on_error):
                  rounds=JUDGE_ROUNDS)
 
 
-#: Rounds a judgement may take (docs/generator-tool-loops.md §10.3).
+#: Rounds a judgement may take (docs/archived/generator-tool-loops.md §10.3).
 JUDGE_ROUNDS = 6
 
 

@@ -3,7 +3,7 @@ The `call_tool` effect: a rule asking a service something, or having it act.
 
 A tool reaches a world only through this effect, so players, characters and
 agents all reach one the same way: by using a verb whose rule calls it. See
-docs/mcp-client.md §6 and §7. `world/services.py` is the register and the
+docs/archived/mcp-client.md §6 and §7. `world/services.py` is the register and the
 wire; this module is what a rule says about a call and what becomes of the
 answer.
 

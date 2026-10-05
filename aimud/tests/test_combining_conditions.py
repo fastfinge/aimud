@@ -1,7 +1,7 @@
 """
 Conditions that say "or", and conditions that say the opposite.
 
-See docs/becoming-and-time.md §4. The three tests §4.6 names are the spine of
+See docs/archived/becoming-and-time.md §4. The three tests §4.6 names are the spine of
 this module, and the rest is everything that reads a condition learning that a
 condition may now be a node:
 

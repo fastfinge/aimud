@@ -1,6 +1,6 @@
 """
 Memory's model calls on tools: the last part of phase 7 of
-docs/generator-tool-loops.md.
+docs/archived/generator-tool-loops.md.
 
 Distilling facts answers through `record_facts`. `remember` has no finish
 tool -- a player is answered in prose -- and is offered `recall`, so a
@@ -58,6 +58,64 @@ class DistillingFacts(GameTest):
         self.assertEqual(stored, [(["Bram owes me a favour"], 7)])
         self.assertEqual(tallies, [{"characters": 1, "facts": 1}])
         self.assertEqual(recorder.count, 1)
+
+
+@tag("world")
+class WhoPaysForDistilling(GameTest):
+    """
+    The real `_account_for`, which every other test here replaces. It returned
+    an account where a sponsor was wanted, and nothing here could see it.
+    """
+
+    accounts = True
+
+    def setUp(self):
+        super().setUp()
+        from types import SimpleNamespace
+
+        from world import sponsor
+
+        self.room1.db.is_world_root = True
+        self.room1.db.world_root = self.room1
+        self.account.db.openrouter_api_key = "sk-test"
+        sponsor.claim(self.room1, self.account)
+        self.where = SimpleNamespace(bank=f"aimud-world-{self.room1.id}")
+
+    def test_the_creator_pays_through_a_sponsor(self):
+        found = fact_gen._account_for(self.where)
+        self.assertEqual(found.payer, self.account)
+        self.assertEqual(found.key(), "sk-test")
+
+    def test_a_shared_world_waits_for_its_creator(self):
+        self.room1.db.shared = True
+        self.assertIsNone(fact_gen._account_for(self.where))
+
+    def test_and_a_world_whose_maker_has_gone_is_nobody_else_s_to_pay_for(self):
+        from types import SimpleNamespace
+
+        self.account2.db.openrouter_api_key = "sk-somebody-else"
+        self.assertIsNone(fact_gen._account_for(
+            SimpleNamespace(bank="aimud-world-999999")))
+
+    def test_a_bank_nobody_can_pay_for_does_not_stop_the_rest(self):
+        from types import SimpleNamespace
+
+        stored = []
+
+        def distillable(where, callback):
+            callback(["I helped Bram mend the well."], 7)
+
+        def store_facts(where, facts, through, on_done=None):
+            stored.append(where.bank)
+            if on_done:
+                on_done(len(facts))
+
+        unpaid = SimpleNamespace(bank="aimud-world-999999")
+        with immediately(),                 replying(finishing(record_facts={"facts": ["Bram is grateful"]})),                 mock.patch("world.activity.quiet_enough_for_heavy_work",
+                           return_value=True),                 mock.patch("world.memory.distillable", distillable),                 mock.patch("world.memory.store_facts", store_facts),                 mock.patch.object(fact_gen, "_world_of",
+                                  return_value=self.room1):
+            fact_gen.distil(banks=[unpaid, self.where])
+        self.assertEqual(stored, [self.where.bank])
 
 
 @tag("world")

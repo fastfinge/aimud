@@ -852,7 +852,7 @@ def causes(verb, limit=3):
 
     Read the other way it answers a different and equally useful question --
     which verbs would bring a condition about -- and there it is deliberately
-    many-to-one. See docs/rulebooks-from-inform.md 5.1 for why that makes it a
+    many-to-one. See docs/archived/rulebooks-from-inform.md 5.1 for why that makes it a
     planner's index and emphatically not a test of whether two verbs are the
     same word.
     """
@@ -1025,7 +1025,7 @@ def anchor_prompt(phrase):
 
 
 # ---------------------------------------------------------------------------
-# Lookups (docs/generator-tool-loops.md §5)
+# Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 def lookup_tools():

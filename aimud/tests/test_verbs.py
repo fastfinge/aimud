@@ -1,7 +1,7 @@
 """
 The verb commands and their subjects: create, edit, delete, reset, view and
 enter world, enter start, and the parser rule that leaves every other use of
-those words to the world. See docs/commands-and-settings.md §2 and §4.
+those words to the world. See docs/archived/commands-and-settings.md §2 and §4.
 """
 
 from unittest import mock
@@ -13,6 +13,7 @@ from commands import subjects, world_subject
 from commands.unknown_cmd import retired_spelling
 from commands.verbs import CmdCreate, CmdDelete, CmdEdit, CmdEnter, CmdReset, CmdView
 from server.conf import cmdparser as parser
+from tests import support
 from tests.base import GameCommandTest, GameTest
 from world import activity, menus, sponsor, verbs
 
@@ -153,6 +154,7 @@ class _Worlds(GameCommandTest):
     def setUp(self):
         super().setUp()
         self.account.db.openrouter_api_key = "sk-abcdefgh12345678"
+        support.logged_in(self, self.account)
         self.world1 = self._world(self.room2, "Harbour")
         self.room3 = create_object("typeclasses.rooms.Room", key="Room3")
         self.world2 = self._world(self.room3, "Freighter")

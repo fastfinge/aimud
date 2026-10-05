@@ -16,6 +16,7 @@ import pathlib
 
 from django.test import SimpleTestCase, tag
 
+from tests import support
 from tests.base import GameTest
 from world import sponsor
 
@@ -62,6 +63,7 @@ class FindingWhoPays(GameTest):
         self.root.db.is_world_root = True
         self.room1.db.world_root = self.root
         self.account.db.openrouter_api_key = "sk-test"
+        support.logged_in(self, self.account)
 
     def test_a_world_names_its_maker_once_it_is_claimed(self):
         sponsor.claim(self.root, self.account)
@@ -143,6 +145,66 @@ class FindingWhoPays(GameTest):
         sponsor.claim(self.root, self.account)
         self.assertEqual(sponsor.of(self.char2).base_url,
                          "https://nano-gpt.com/api/v1")
+
+
+@tag("world")
+class ACreatorWhoIsAway(GameTest):
+    """
+    Nothing is spent while whoever pays is logged out. docs/archived/shared-worlds.md
+    5.1: a world somebody else can stand in must not spend its creator's
+    money behind their back, and must not fall back on the visitor's instead.
+    """
+
+    characters = 2
+    accounts = True
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+        self.account.db.openrouter_api_key = "sk-creator"
+        sponsor.claim(self.root, self.account)
+
+    def test_answers_nothing(self):
+        self.assertFalse(sponsor.of(self.char2).answers)
+
+    def test_and_will_make_nothing(self):
+        self.assertFalse(sponsor.of(self.char2).will("rooms"))
+
+    def test_and_a_caller_that_did_not_ask_still_cannot_spend(self):
+        """`key` is what `world.llm` reads, so it refuses too, in words."""
+        with self.assertRaises(ValueError) as caught:
+            sponsor.of(self.char2).key()
+        self.assertIn("not logged in", str(caught.exception))
+
+    def test_the_visitor_pays_for_nothing_either(self):
+        self.account2.db.openrouter_api_key = "sk-visitor"
+        support.logged_in(self, self.account2)
+        found = sponsor.of(self.char2)
+        self.assertEqual(found.payer, self.account)
+        self.assertFalse(found.answers)
+
+    def test_until_the_creator_is_back(self):
+        support.logged_in(self, self.account)
+        self.assertTrue(sponsor.of(self.char2).answers)
+        self.assertEqual(sponsor.of(self.char2).key(), "sk-creator")
+
+
+@tag("world")
+class PresentMeansLoggedIn(GameTest):
+    """`present` reads real sessions: the one place nothing stands in for it."""
+
+    session = True
+
+    def test_an_account_with_a_session_is_present(self):
+        self.assertTrue(sponsor.present(self.account))
+
+    def test_and_one_without_is_not(self):
+        self.assertFalse(sponsor.present(self.account2))
+
+    def test_nor_is_something_that_is_not_an_account(self):
+        self.assertFalse(sponsor.present(None))
 
 
 @tag("unit")

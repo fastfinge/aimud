@@ -1,6 +1,6 @@
 """
 Quests and goals on finish tools: the second part of phase 7 of
-docs/generator-tool-loops.md.
+docs/archived/generator-tool-loops.md.
 
 A request becomes a quest, and a want becomes a goal, through `write_quest`
 and `write_goal`. What `goals.sanitise` used to drop after the answer was

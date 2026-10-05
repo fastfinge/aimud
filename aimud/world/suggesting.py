@@ -11,7 +11,7 @@ being filled, the model is given a single finish tool with a parameter for
 each, and it answers once. Each value goes through the field's own `read`, the
 same check a typed value gets, and anything refused is sent back with the
 reason for the model to put right -- the loop every generator has used since
-docs/generator-tool-loops.md.
+docs/archived/generator-tool-loops.md.
 
 **Nothing secret is sent.** A secret field is never offered and never shown
 to the model, not even its label. That is decided in `menus.Field`, where

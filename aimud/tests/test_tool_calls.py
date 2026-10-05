@@ -1,7 +1,7 @@
 """
 The `call_tool` effect: a rule asking a service something, or having it act.
 
-docs/mcp-client.md §6 and §7. A tool reaches a world only through a rule, so
+docs/archived/mcp-client.md §6 and §7. A tool reaches a world only through a rule, so
 everything here is driven the way a player drives it: a verb typed, a rule
 found, the call made, and the answer landing -- as a condition, a figure, a
 description, or told privately to whoever asked. Never as narration, and never

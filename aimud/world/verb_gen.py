@@ -405,7 +405,7 @@ def narrate(sponsor, verb, bound, actor, raw, on_success, on_error, result=None)
 
 
 # ---------------------------------------------------------------------------
-# The finish tools (docs/generator-tool-loops.md §4.2)
+# The finish tools (docs/archived/generator-tool-loops.md §4.2)
 # ---------------------------------------------------------------------------
 
 #: Rounds each may take (§10.3). Admission is a yes or no a player waits on.

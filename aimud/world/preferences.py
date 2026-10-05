@@ -5,7 +5,7 @@ Before this, each preference was a command of its own -- `busy`, `apikey`,
 `models` -- with its own way of showing a value, its own words for "back to
 the default", and nowhere that listed them all. Now each is a `menus.Field`
 with a group and a scope, and the `settings` command, its menu, `help`, and
-later `~` all read the same description. See docs/commands-and-settings.md §5.
+later `~` all read the same description. See docs/archived/commands-and-settings.md §5.
 
 **Three scopes.** A setting belongs to the *account* (the person, everywhere),
 to the *character in this world* (who you are here), or to the *world* (how
@@ -70,7 +70,7 @@ JOB_NAMES = dict(JOBS)
 MODELS_CACHE = "openrouter_models_cache"
 
 #: Every confirmation, in the order the menu lists them: key, what it guards,
-#: and why it asks. docs/commands-and-settings.md §8.
+#: and why it asks. docs/archived/commands-and-settings.md §8.
 #: The confirmations that are not a maker's. Everything a maker asks before
 #: -- deleting one, forgetting one -- is generated from the table instead;
 #: `confirmations()` below is the whole list.
@@ -79,6 +79,11 @@ CONFIRMATIONS = [
     ("reset_world", "Resetting a world", "Every room is destroyed and built again."),
     ("world_always", "Putting a world into always mode",
      "Every character acts all the time, and each of them costs a model call."),
+    ("world_share", "Sharing a world",
+     "Anybody here can enter it, and what they do there is paid for with "
+     "your key while you are logged in."),
+    ("world_unshare", "Closing a world somebody is visiting",
+     "Everybody visiting is sent back to the start."),
     ("spend", "Asking a model for something on purpose",
      "Things like judging suggestions cost money when you ask for them."),
     ("bulk_rules", "Changing many rules at once",
@@ -123,14 +128,15 @@ def world_root_of(ctx):
 
 
 def owns_world(ctx):
-    """Whether this account may change how the world it is in runs."""
+    """
+    Whether this account may change how the world it is in runs.
+
+    Its creator only, not the superuser: the mode, the permits and sharing
+    spend the creator's money. docs/archived/shared-worlds.md 6.1.
+    """
     from world import sponsor
 
-    root = world_root_of(ctx)
-    account = ctx.account
-    if root is None or account is None:
-        return False
-    return bool(account.is_superuser or sponsor.creator_of(root) == account)
+    return sponsor.is_creator(ctx.account, world_root_of(ctx))
 
 
 def _has_account(ctx):
@@ -341,7 +347,7 @@ def confirmations():
     Every confirmation there is: the ones written above, and the makers'.
 
     A maker that can delete or forget something asks before it does, and the
-    rule in docs/commands-and-settings.md §8 is that every confirmation has a
+    rule in docs/archived/commands-and-settings.md §8 is that every confirmation has a
     setting. Hand-writing one per maker would have been a list that is missing
     an entry the day somebody adds a maker -- and a confirmation with no
     setting is not one the player has chosen to keep, it is one the register
@@ -1065,8 +1071,8 @@ MODE = m.Field(
           "in the room with them, and the world goes still when nobody is "
           "typing. always has every character act on every turn, watched or "
           "not, which is for watching a world run and costs a model call each "
-          "time any of them acts. Every world goes back to normal when the "
-          "last player logs out."),
+          "time any of them acts. A world goes back to normal when you log "
+          "out, whoever else is still here."),
 )
 
 def _permit_field(making, label, off):
@@ -1113,8 +1119,50 @@ def _permit_fields():
             for name, label, off in permits.MAKES]
 
 
+def _shared_get(ctx):
+    from world import sharing
+
+    return sharing.is_shared(world_root_of(ctx))
+
+
+def _shared_set(ctx, value):
+    from world import sharing
+
+    return sharing.share(ctx.account, world_root_of(ctx), bool(value))
+
+
+def _shared_confirm(ctx, value):
+    from world import lore, sharing
+
+    root = world_root_of(ctx)
+    name = lore.title(root)
+    if value and not sharing.is_shared(root):
+        return ("world_share",
+                f"Share {name}? Anybody on this server can enter it, and what "
+                f"happens to them there is paid for with your key while you "
+                f"are logged in. Nothing is spent while you are not.")
+    visiting = len(sharing.visitors_in(root)) if root is not None else 0
+    if not value and visiting:
+        return ("world_unshare",
+                f"Close {name}? The {visiting} visitor(s) in it are sent back "
+                f"to the start.")
+    return None
+
+
+SHARED = m.Field(
+    "shared", "Whether others may enter it", kind=m.BOOLEAN, required=True,
+    get=_shared_get, set=_shared_set, confirm=_shared_confirm,
+    help=("A shared world is listed under enter world public for everybody on "
+          "this server. They play in it as you do, and every model call made "
+          "for them is paid with your key -- but only while you are logged "
+          "in. While you are not, nothing new happens there: the people keep "
+          "to themselves and unexplored ways stay closed. Closing it again "
+          "sends anybody visiting back to the start."),
+)
+
+
 THIS_WORLD = m.Form(key="world", title=_world_title,
-                    items=lambda ctx: [MODE] + _permit_fields())
+                    items=lambda ctx: [MODE, SHARED] + _permit_fields())
 
 
 # ---------------------------------------------------------------------------

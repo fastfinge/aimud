@@ -13,7 +13,7 @@ Word lists and pronoun sets are here too, ported rather than left where they
 were. Not for tidiness: a table only tested against the things it was shaped
 around has not been tested. Carrying two it did not shape is what found the
 three things it was missing (`opens`, `extras`, `owner`) and the three it had
-quietly got wrong -- see docs/player-building.md, phase 1.
+quietly got wrong -- see docs/archived/player-building.md, phase 1.
 
 So a **maker** is a description of one creatable thing, and this is the table
 of them. Five separate pieces of work read it, which is the whole reason it is
@@ -75,7 +75,7 @@ class Maker:
     `remove=None` means there is no deleting one, and it is an answer rather
     than a gap: a trait half this world's rules test cannot be removed without
     breaking them silently, and suspending a rule -- which exists -- is the
-    honest alternative. See docs/player-building.md 3.1.
+    honest alternative. See docs/archived/player-building.md 3.1.
 
     `in_world` is whether this maker means anything outside a generated world.
     Everything here is a fact about a world, so it defaults to True.
@@ -113,7 +113,7 @@ class Maker:
         # where `edit` may not. The deliberate exception to "first answer
         # stands", made out loud, as `reset verb` already made it: a separate,
         # named, confirmed gesture that says what it invalidates before it
-        # does it. See docs/player-building.md 6.4.
+        # does it. See docs/archived/player-building.md 6.4.
         self.reset = reset
         self.reset_question = reset_question
         self.help = help
@@ -130,7 +130,7 @@ class Maker:
         # listing: the things in front of somebody, never the world. An item
         # is chosen by reaching for it, which is why `listing` is empty for
         # these and why `edit item lamp` can never mean a lamp elsewhere.
-        # See docs/player-building.md 5.
+        # See docs/archived/player-building.md 5.
         self.reached = reached
         # Which field `create kind datapad` puts the rest of the line in.
         # Named rather than worked out from the form: half these forms build

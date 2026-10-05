@@ -1,7 +1,7 @@
 """
 Counting the rounds each job's conversations take, and reading them back.
 
-Phase 3 of docs/generator-tool-loops.md. The budgets are set from these at the
+Phase 3 of docs/archived/generator-tool-loops.md. The budgets are set from these at the
 soak, so what is added up, and what `rounds clear` leaves alone, is held still
 here.
 """
