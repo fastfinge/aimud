@@ -174,7 +174,8 @@ CARRIED = {
     "token_choices": "rooms, things and people, as `choices`",
     # -- people ------------------------------------------------------------
     "is_npc": "implied: every person",
-    "pronoun_set": "people",
+    "pronouns": "people; a player's own stays with the player, who is not "
+                "part of a world",
     "manner": "people",
     "goal": "people",
     "following": "people",
@@ -224,7 +225,6 @@ LEFT = {
     "referents": "what `it` last meant, which is one conversation",
     "world_condition": "a crossing in progress",
     "busy_interval": "how often to say somebody is waiting; a preference",
-    "pronouns": "a player's own, set with `pronouns`",
     "verb_specifics": "a cache of what one attempt settled",
     # -- settings and preferences -------------------------------------------
     "menu_view_mode": "a player's preference",
@@ -762,7 +762,7 @@ def _person(obj, where, names):
         "description": obj.db.desc or "",
         "choices": plain(getattr(obj.db, token_lists.CHOICES, None) or {}),
         "manner": str(obj.db.manner or ""),
-        "pronouns": str(obj.db.pronoun_set or ""),
+        "pronouns": str(obj.db.pronouns or ""),
         "kinds": plain(obj.db.kinds or []),
         "states": plain(obj.db.states or []),
         "styles": verbs.styles(obj),
@@ -1461,7 +1461,7 @@ def _build_people(root, people, names):
     Before the things, because a thing may be in somebody's hands.
     """
     from evennia import create_object
-    from world import kinds, npc_gen, traits
+    from world import kinds, npc_gen, pronouns, traits
 
     for record in people:
         room = names.object(record.get("at"))
@@ -1478,7 +1478,7 @@ def _build_people(root, people, names):
         if record.get("manner"):
             npc_gen.characterise(npc, record["manner"])
         if record.get("pronouns"):
-            npc.db.pronoun_set = str(record["pronouns"])
+            pronouns.give(npc, str(record["pronouns"]), root)
         kinds.ensure_person(npc)
         if record.get("kinds"):
             npc.db.kinds = [str(kind) for kind in record["kinds"]]

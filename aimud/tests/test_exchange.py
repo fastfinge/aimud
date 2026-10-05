@@ -90,8 +90,8 @@ class WorldTest(GameTest):
         relations.place(lamp, table, "on")
 
         pronouns.register(root, {
-            "subject": "ze", "object": "hir", "possessive": "hir",
-            "possessive_pronoun": "hirs", "reflexive": "hirself",
+            "subject": "ze", "object": "hir", "adjective": "hir",
+            "possessive": "hirs", "reflexive": "hirself",
             "means": "for somebody who goes by ze"})
         npc = create_object("typeclasses.npcs.NPC", key="Mrs Hallow",
                             location=gym)
@@ -99,7 +99,7 @@ class WorldTest(GameTest):
         npc.db.world_root = root
         npc.db.desc = "Grey and unhurried."
         npc.db.manner = "Never raises her voice."
-        npc.db.pronoun_set = "ze"
+        pronouns.give(npc, "ze", root)
         kinds.ensure_person(npc)
         traits.ensure(npc, "dread", world_root=root)
         traits.adjust(npc, "dread", set_to=4, world_root=root, announce=False)
@@ -362,6 +362,19 @@ class SameWorld(WorldTest):
         hallow = next(obj for obj, _w in people if obj.key == "Mrs Hallow")
         self.assertEqual(list(hallow.db.goal or []),
                          list(made["npc"].db.goal or []))
+
+    def test_a_character_is_called_what_they_were_called(self):
+        # Written to an attribute nothing read, so everybody in an imported
+        # or reset world came back as "they".
+        from world import exchange, pronouns
+
+        root = self.world()
+        self.furnish(root)
+        _doc, new = self.built(root)
+
+        people, _things = exchange.contents_of(new)
+        hallow = next(obj for obj, _w in people if obj.key == "Mrs Hallow")
+        self.assertEqual(pronouns.of(hallow, new)["subject"], "ze")
 
     def test_a_thing_a_player_owned_comes_back_as_nobodys(self):
         """
