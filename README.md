@@ -828,6 +828,10 @@ your `default` to try everything at no cost, and expect rougher prose.
 - `reset world` regenerates an entire world and costs an entire world's worth.
 - A shared world spends your key on whoever visits, and only while you are
   logged in. Logging out stops it.
+- `MODEL_CALL_THREADS` (16) is how many model calls can be in flight at
+  once. More makes a busy world quicker and spends faster, and makes rate
+  limits from your provider likelier; the per-job fallback models are what
+  catch those.
 
 ---
 
@@ -1033,8 +1037,14 @@ commonsense` builds the index on the machine that will use it and it never leave
 ## How it fits together
 
 Evennia splits the server into a Portal and a Server process and uses Django
-underneath. Every network call to OpenRouter is deferred to a thread pool; all
-database work happens on the main Twisted thread.
+underneath. Every network call to OpenRouter is deferred to a thread pool of
+its own, `MODEL_CALL_THREADS` wide (16 by default), so up to that many model
+calls are in flight at once across every world; one that waits for a thread
+longer than a second says so in the log. All game database work happens on
+the main Twisted thread. Memory writes queue per world and are written in
+order in the background, on `MEMORY_THREADS` threads, while a character
+recalling something goes ahead of them; each world's memories have a lock of
+their own, so busy worlds do not wait for each other.
 
 ```
 aimud/

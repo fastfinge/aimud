@@ -149,6 +149,15 @@ it to `exchange.CARRIED` or `exchange.LEFT` with the reason -- an AST test
 (`tests/test_exchange.py`, `AttributesAreAccountedFor`) fails until you do, so
 that export cannot rot quietly. See docs/archived/import-and-export.md.
 
+**Slow work goes on its own pool, never Twisted's shared one.** A model call,
+or anything else that waits on the network for a model, goes through
+`llm.fetch` (the model pool, `world/workers.py`). A memory write goes through
+`memory._write_later`, which queues it in order behind that world's earlier
+writes; a recall goes inside `memory._reading`, which puts it ahead of them.
+Each world's memory has its own lock (`memory._Bank`); `memory._lock` is only
+for loading the library. Do not add `threads.deferToThread` for either: the
+shared pool is where they used to starve each other.
+
 **A file the game keeps is an asset.** `world/assets.py` is the register
 and `assets.add` the one writer: a file arrives on disk and is checked by its
 contents, its type's version, its size and the payer's quota before it is
