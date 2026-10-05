@@ -1139,9 +1139,13 @@ class NPC(ObjectParent, DefaultObject):
         # spell that weakens somebody has to actually weaken them, and a fight
         # an NPC loses has to cost the NPC its own stamina. Which figures move
         # and whose is the rule's decision, not this list's.
+        # call_tool too: a character asking a service something goes through
+        # the same gate a player does, and that gate already says a
+        # character needs somebody paying -- which is the check just above.
+        # See world/services.py `allowed`.
         allowed = {
             "create_object", "destroy_object", "move_object",
-            "modify_object", "set_state", "set_trait",
+            "modify_object", "set_state", "set_trait", "call_tool",
         } - NPC_FORBIDDEN_EFFECTS
 
         def deliver(actor_text, event=None):

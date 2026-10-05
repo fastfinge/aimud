@@ -205,6 +205,16 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
     if room is None:
         return
 
+    # Answers to what a rule's call to a service asks, typed in brackets on
+    # the end -- `forecast london [units=metric]`. The one way to answer
+    # without a menu, which is every agent and every character. Kept on the
+    # caller for this attempt only, and taken off the line before it is
+    # parsed, so the parser never sees them. See `world/tool_calls.py`.
+    from world import tool_calls
+
+    raw, typed = tool_calls.answers_in(raw)
+    caller.ndb.tool_answers = typed or None
+
     parsed = verbs.parse(raw, getattr(room.db, "world_root", None))
     verb = parsed["verb"]
     if not verb:
@@ -1055,6 +1065,8 @@ def _knows_the_word(world_root, verb, bound, caller, words, roles=None):
                                         words=words))
     except Exception:
         return False
+    from world import tool_calls
+
     for rule in book:
         for guard in (rule.get("when") or []):
             for leaf, _optional in conditions.leaves(guard):
@@ -1063,6 +1075,14 @@ def _knows_the_word(world_root, verb, bound, caller, words, roles=None):
                     continue
                 if not roles or conditions.role_of(leaf) in roles:
                     return True
+        # Or a call to a service that takes the word itself as an argument:
+        # `forecast london` is about whatever word was typed, and a London
+        # conjured out of the room's description first would be the wrong
+        # answer to it. Just as narrow -- only a call that names one of the
+        # roles that failed to bind.
+        for effect in (rule.get("effects") or []):
+            if tool_calls.is_call(effect) and tool_calls.takes_word(effect, roles):
+                return True
     return False
 
 
@@ -1312,6 +1332,13 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
     # on top of it would cost money to talk over the thing it was describing.
     speaks = effects_mod.speaks_for_itself(rule.get("effects"))
 
+    # What a service outside the game answered, for each `call_tool` this
+    # rule makes, keyed by the call as written; and what those answers told
+    # the actor privately. Filled before anything else here runs -- see
+    # `calling` at the bottom -- so `_finish` lands answers it already has.
+    answered = {}
+    told = []
+
     def _finish(actor_text, room_text, specifics=None):
         # The template is cached, not the finished line: the room text names
         # the actor as {actor}, so the same narration reads correctly when
@@ -1340,12 +1367,14 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             _store_specifics(bound, verb, specifics, caller)
         effective = _with_specifics(rule, bound, verb, caller)
         allowed = [
-            e for e in checks.effects_for(effective, outcome)
+            answered.get(_call_key(e), e) if _is_call(e) else e
+            for e in checks.effects_for(effective, outcome)
             if (allow_effects is None or e.get("type") in allow_effects)
             and not (allow_effects is not None and _hits_everyone(e))
         ]
         extra = effects_mod.apply(caller, room, allowed, bound=bound,
-                                  world_root=world_root, found=found)
+                                  world_root=world_root, found=found,
+                                  told=told)
         if speaks:
             # The effects produced the words, and they are an answer to
             # whoever acted rather than an announcement to the room: a look is
@@ -1377,6 +1406,12 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             # its own prose should not read differently in shape from one
             # that pays for it.
             actor_text = events_mod.render(event.room_template, caller, event)
+        if told:
+            # What the actor used the verb to find out, after what they read
+            # about doing it. Theirs alone: the room has the event, which
+            # never carries it. See `world/tool_calls.py` `_tell`.
+            actor_text = "\n".join(part for part in [actor_text] + told
+                                   if part).strip()
         # AFTER. What follows from it having worked. Every after rule's guards
         # are tested together, against the world as carry-out left it, and
         # only then does any of them land -- so a guard can ask how things
@@ -1433,6 +1468,65 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         from world.quests import review_room
         review_room(room)
 
+    def _narrated():
+        _narrate(caller, sponsor, verb, bound, raw, result, written, cached,
+                 speaks, _finish, release, waiter, guarded)
+
+    # A rule that asks a service something asks before anything else
+    # happens, and lands the answer with the rest of its effects. Two halves,
+    # because applying effects is synchronous and a call takes seconds; and if
+    # a call fails, nothing in the batch is applied -- a rule half done is
+    # worse than one not done. Not held against the rule either: a service
+    # that is down this afternoon says nothing about what the verb means.
+    calls = [e for e in checks.effects_for(rule, outcome)
+             if _is_call(e) and (allow_effects is None
+                                 or e.get("type") in allow_effects)]
+    if calls:
+        from world import tool_calls
+
+        def ready(copies):
+            for copy in copies:
+                if _is_call(copy) and tool_calls.ANSWER in copy:
+                    answered[_call_key(copy)] = copy
+            (_narrated if guarded is None else
+             (lambda: guarded(_narrated)))()
+
+        sessions = getattr(getattr(caller, "sessions", None), "all", None)
+        session = (sessions() or [None])[0] if callable(sessions) else None
+        heard = dict(words or {})
+        heard[tool_calls.TYPED] = tool_calls.typed_after_verb(raw)
+        tool_calls.prepare(caller, sponsor, world_root, room, bound,
+                           heard, calls, on_ready=ready,
+                           on_fail=lambda text: release(text),
+                           waiter=waiter, session=session)
+        return
+
+    _narrated()
+
+
+def _is_call(effect):
+    from world import tool_calls
+
+    return tool_calls.is_call(effect)
+
+
+def _call_key(effect):
+    """A `call_tool` effect as written, for finding its answered copy again."""
+    from world import tool_calls
+
+    return (str(effect.get("tool") or ""),
+            tuple(sorted(tool_calls.args_of(effect).items())),
+            tuple(sorted(tool_calls.results_of(effect).items())))
+
+
+def _narrate(caller, sponsor, verb, bound, raw, result, written, cached,
+             speaks, _finish, release, waiter, guarded):
+    """
+    The words for an attempt that is going ahead, and then `_finish`.
+
+    Its own function so a rule that calls a service can come back here once
+    the answer is in, by the same road as one that called nothing.
+    """
     # No narrator for a rule that speaks for itself, and no round trip: the
     # whole reason looking can be an action is that it costs nothing to run.
     if speaks:

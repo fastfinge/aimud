@@ -134,7 +134,9 @@ NPC_TOOLS = [
         "physical rather than describing it in an emote. Clothes work this "
         "way too: 'wear the grey coat', 'remove my apron'. Anyone looking at "
         "you sees what you have on, so what you put on or take off really "
-        "does change how you appear.",
+        "does change how you appear. If the world answers that it needs to "
+        "know something, say it in brackets on the end: 'forecast "
+        "[city=Lisbon]'.",
         {
             "type": "object",
             "properties": {

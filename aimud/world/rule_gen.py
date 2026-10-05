@@ -280,6 +280,19 @@ def validate(reply, offered, action, world_root=None):
                 "cannot carry, so write what the verb itself does and leave "
                 "setting anybody to work to a rule written by hand")
             continue
+        # A call to a service is held to what a person's is, less one thing:
+        # a model may not have it ask, because a rule it writes is used by
+        # characters and the planner, who cannot always be asked. What the
+        # tool does and its fingerprint are copied by `rulebooks.add`, never
+        # taken from the answer. docs/mcp-client.md §7.6.
+        from world import tool_calls
+
+        wrong = [line for effect in tool_calls.calls_in(effects)
+                 for line in tool_calls.complaints(effect, by_model=True)]
+        if wrong:
+            complaints.append("a call_tool that cannot be made: "
+                              + "; ".join(wrong))
+            continue
         written = _derived_written(effects, world_root)
         if written:
             complaints.append(
@@ -664,6 +677,40 @@ did name a thing, and powering a datapad would power the ship instead.
 """
 
 
+def _tools_said():
+    """
+    What the rule loop is told about calling a service, when there is one.
+
+    Nothing at all on a server with no tools switched on, so a world that
+    cannot reach outside is never invited to try.
+    """
+    from world import services
+
+    if not services.usable():
+        return ""
+    return """
+"call_tool" asks a service outside the game something, or has it do
+something, when the verb is used. list_tools says which tools this server
+offers and what each does; show_tool says what one takes and gives back.
+  {"type": "call_tool", "tool": "weather.forecast",
+   "args": {"city": "word:direct"},
+   "results": {"conditions": "state:here", "text": "actor"}}
+Each thing the tool takes comes from "typed" (everything typed after the verb,
+the usual answer for a search or a question), "value:<text>", "word:<role>"
+(the word typed for one part of the sentence -- nothing is made for it),
+"name:<role>", "trait:<role>:<trait>" or "state:<role>:<group>". Every one it
+requires must be given. What comes back has to land somewhere it matters: a
+field with a set of answers as a condition ("state:<role>", role "here" for
+this place), a number as a figure ("trait:<role>:<trait>"), or words -- the
+field "text" is everything it said -- as what something looks like
+("description:<role>") or told to whoever used the verb ("actor"). Nothing it
+says is ever narrated. Reach for it only when the verb is about the world
+outside: the weather, a search, a message sent. A rule that needs to know
+something first -- whether it is stormy before sailing -- checks a condition
+another verb's call puts something in.
+"""
+
+
 def prompt(world_root, action, bound, actor, offered, hints=()):
     """Everything the model is shown, assembled."""
     from world import actions, conditions, lore
@@ -762,7 +809,7 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
                  if rule.get("action") == action] if world_root else []
 
     system = _SYSTEM.replace("{conditions}", _CONDITIONS) \
-                    .replace("{effects}", _EFFECTS)
+                    .replace("{effects}", _EFFECTS + _tools_said())
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": prompt(
@@ -770,7 +817,8 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
             hints(world_root, action, bound, proposals))},
     ]
     box = tb.Toolbox(
-        [rules_tool(action, offered, proposals)] + lookups.named(*LOOKUPS),
+        [rules_tool(action, offered, proposals)]
+        + lookups.named(*(LOOKUPS + TOOL_LOOKUPS)),
         tb.ToolContext(world_root=world_root,
                        room=getattr(actor, "location", None), actor=actor,
                        bound=bound, sponsor=sponsor, job="commands"))
@@ -964,6 +1012,12 @@ LEARN_ROUNDS = 8
 LOOKUPS = ("list_states", "show_state", "list_state_groups", "list_traits",
            "show_trait", "verb_info", "list_rules", "show_rule",
            "world_faults", "kind_info", "commonsense", "find_rooms")
+
+#: The lookups that show this server's tools, offered to the rule loop alone.
+#: Not to the becomes loop, which may not call a tool (`validate_becoming`),
+#: and not to a character's conversation: a tool reaches a world through a
+#: rule, and this is where rules are written. docs/mcp-client.md §6, §7.6.
+TOOL_LOOKUPS = ("list_tools", "show_tool")
 
 #: The most wants shown as hints in one call (§5.1).
 MOST_WANTS = 3
@@ -1325,8 +1379,12 @@ def validate_becoming(reply, world_root=None):
             complaints.append("a rule where nothing follows and nothing is "
                               "said")
             continue
+        # And `call_tool`: something becoming true reaching outside the game
+        # would be a timer by another name -- the one this design keeps
+        # refusing. A call is made because somebody did something.
         refused = sorted({str(e.get("type")) for e in effects_given
-                          if str(e.get("type")) in ("try", "describe")})
+                          if str(e.get("type")) in ("try", "describe",
+                                                    "call_tool")})
         if refused:
             complaints.append(f"{', '.join(refused)} cannot follow from "
                               f"something becoming true")

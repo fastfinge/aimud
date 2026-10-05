@@ -173,7 +173,8 @@ def _protected(obj, room):
     return isinstance(obj, DefaultCharacter)
 
 
-def apply(actor, room, effects, bound=None, world_root=None, found=None):
+def apply(actor, room, effects, bound=None, world_root=None, found=None,
+          told=None):
     """
     Apply a list of effect dicts. Main thread only.
 
@@ -187,6 +188,11 @@ def apply(actor, room, effects, bound=None, world_root=None, found=None):
     caller with no conditions behind it, and then an effect naming a set finds
     nothing and does nothing, which is what an effect on nobody has always
     done.
+
+    `told` collects what a `call_tool` tells a player privately -- text they
+    used the verb to find out -- for the caller to add to what the actor
+    reads. Never the room's: see `world/tool_calls.py` `_tell`. Left None, it
+    is sent to them directly.
     """
     bound = bound or {}
     found = {} if found is None else found
@@ -198,6 +204,15 @@ def apply(actor, room, effects, bound=None, world_root=None, found=None):
 
     with becoming.caused_by(actor):
         for effect in effects or []:
+            from world import tool_calls
+
+            if tool_calls.is_call(effect):
+                try:
+                    announcements += tool_calls.apply(
+                        actor, room, effect, bound, world_root, told=told)
+                except Exception as exc:
+                    logger.log_info(f"verb effect failed ({effect!r}): {exc}")
+                continue
             try:
                 line = _apply_one(actor, room, effect, bound, world_root,
                                   found)
@@ -611,6 +626,21 @@ VOCABULARY = {
         "fields": ("quest", "name_role", "role"),
         "backwards": False, "answers": False,
     },
+    "call_tool": {
+        "means": "asks a service outside the game something, or has it do "
+                 "something, and puts what comes back into the world or "
+                 "tells whoever asked",
+        "takes": 'tool: "service.tool", args: {parameter: where it comes '
+                 'from}, results: {field: where it goes}, does, fingerprint',
+        # `does` and `fingerprint` are copied from the service when the rule
+        # is written and never typed; see `world/tool_calls.py` `complete`.
+        "fields": ("tool", "args", "results", "does", "fingerprint"),
+        # Not backwards, and that is the planner's whole argument about it:
+        # what a call writes from its answer is something to find out, never
+        # something it promises. Whatever else the same rule does is read as
+        # usual. See docs/mcp-client.md §9.
+        "backwards": False, "answers": False,
+    },
 }
 
 
@@ -786,6 +816,11 @@ def say(effect):
 
     if etype == "offer_quest":
         return f"offers {what} the errand {effect.get('quest') or ''}".rstrip()
+
+    if etype == "call_tool":
+        from world import tool_calls
+
+        return tool_calls.say(effect)
 
     return f"does something this game calls {etype or 'nothing'}"
 
@@ -1367,6 +1402,30 @@ def schema(ctx=None):
             "quest": {"type": "string",
                       "description": "offer_quest: which errand this world "
                                      "has already written"},
+            # Mappings of strings rather than lists of objects, so a rule's
+            # effects stay two lists deep. See `world/tool_calls.py`.
+            "tool": {"type": "string",
+                     "description": "call_tool: which tool, as "
+                                    "service.tool -- list_tools says what "
+                                    "there is"},
+            "args": {"type": "object",
+                     "description": "call_tool: each parameter the tool "
+                                    "takes, as name: where it comes from -- "
+                                    "'typed' (everything typed after the "
+                                    "verb), 'value:<text>', 'word:<role>' "
+                                    "(the word typed for one part), "
+                                    "'name:<role>', "
+                                    "'trait:<role>:<trait>' or "
+                                    "'state:<role>:<group>'"},
+            "results": {"type": "object",
+                        "description": "call_tool: each field of the answer "
+                                       "to keep, as name: where it goes -- "
+                                       "'state:<role>' (a field with set "
+                                       "answers), 'trait:<role>:<trait>' (a "
+                                       "number), 'description:<role>' or "
+                                       "'actor' (told to whoever used the "
+                                       "verb); the field 'text' is everything "
+                                       "it said. Role 'here' is this place"},
             # `set_goal`'s own field is deliberately absent, and it is the
             # one place in this schema where a field is withheld rather than
             # forgotten. A goal is a list of spelled-out conditions, and this

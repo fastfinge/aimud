@@ -1,6 +1,10 @@
 # Development plan: a world that reaches out
 
-Status: **scoped, not started.** This is the second half of the
+Status: **built**, phases 0 to 8, on the `mcp-client` branch. Where the
+building changed the plan, the change is marked **as built** under its phase
+in §14; the sections above it say what was scoped. Not yet run against the
+live server -- everything is held by the free suite, which drives the real SDK
+against servers in process and one real stdio process. This is the second half of the
 `future-plans.md` item that `docs/mcp.md` split in two. That plan let an agent
 reach *in*. This one lets a world reach *out*: real weather, a web search, a
 dice server, an email an innkeeper sends. It covers MCP servers and OpenAPI
@@ -695,11 +699,31 @@ Each phase ends green, with a full suite on settled code before a PR.
 
 **Phase 0: the spike.** §3.4. Ends with §3.2 and §3.3 confirmed or rewritten.
 
+*As built:* both held, spiked outside the Server rather than inside it. The
+SDK installed is 2.1.1, a major version past the one this plan was written
+against: a unified `Client` takes a URL, stdio parameters or an in-process
+server. Driven from one asyncio loop in a daemon thread it works, with one
+catch written into `services._Connection`: the client's task groups must be
+entered and left by the same task, so each service's session is owned by one
+task that serves a queue, and nothing calls the client directly. Measured: a
+stdio server connects in 0.7s and calls after that take milliseconds.
+`FastMCP.from_openapi` (fastmcp 4.0.11, which installs beside mcp 2.1.1)
+builds a real SDK `Server`, so OpenAPI is one more session as §3.3 hoped; it
+fills in no annotations, so an operation's level comes from its method.
+OAuth was not spiked; see phase 6.
+
 **Phase 1: the register and connections.** `world/services.py`: the register
 in `ServerConfig`, the loop thread, sessions, listing, fingerprints. The
 `services` subject and its forms, the permission split, masked secrets, the
 owner's tool list and classification, refusing aimud's own endpoint,
 `LOCKDOWN_MODE`. Ends when an admin can add a service and read its tools.
+
+*As built:* as scoped. Every point in the forms is reachable by typing as
+well (`edit service weather tool forecast acts`, `edit service weather key
+...`), because an agent has no menus. Listing and calling never raise: a
+service that cannot be reached is an `Answer` that says so, and a service that
+will not connect is saved anyway with the reason. `mcp` and `fastmcp` became
+dependencies; `mcp` had only been arriving through something else.
 
 **Phase 2: `call_tool` by hand.** The effect, argument sources, result
 mapping (told text included: shown to a player, labelled and remembered by a
@@ -709,27 +733,97 @@ the rule form, the add-action shortcut. Ends when a hand-built world has a verb
 that checks the weather and says so through a state, and another that a
 character uses to find pubs near London and then mentions one in conversation.
 
+*As built:* the call logic is `world/tool_calls.py`. Five differences:
+
+* **Stored as mappings of strings,** not lists of objects (§7.1 showed lists).
+  A list of spelled-out objects inside a rule's effects is three deep, which
+  `test_schema_portability` refuses, so `args` is `{"city": "word:direct"}`
+  and `results` is `{"conditions": "state:here", "text": "actor"}` -- the
+  shape `try`'s `roles` already has. `text` names everything the tool said.
+* **No NPC `answers` argument.** One way of answering serves everybody without
+  a menu: brackets on the end of the line, `forecast [city=Lisbon]`, taken off
+  by `attempt` before the line is parsed. The NPC `attempt` tool's description
+  says so. A player with a menu still gets a form built from the schemas.
+* **A failed call does not take the failure outcome.** It refuses with why --
+  "said no", "cannot be reached right now", "not what this rule was written
+  for" -- and applies nothing. Narrating a failure would have meant paying a
+  model to describe a network error.
+* **The word typed reaches the rule.** `forecast london` used to mean a London
+  waiting to be conjured out of the room; `attempt._knows_the_word` now also
+  counts a rule whose call takes that role's word.
+* **A figure needs something that keeps figures.** `trait:here:...` (the §7.1
+  example) does nothing, because a room keeps no traits; a place takes an
+  answer as a condition.
+
+Not done: **elicitation**, a service asking for input mid-call. No callback
+is wired, so the client does not advertise the capability, and a server that
+asks anyway is answered "Elicitation not supported" by the SDK. **The end condition was met by tests, not in play:** that a character
+is handed the pubs, labelled and remembered, is tested; that it then mentions
+one in conversation needs a live model and has not been watched.
+
 **Phase 3: models write it.** `list_tools`, `show_tool`, `rule_gen.validate`,
 `validate_becoming`, the schema portability test. Ends when a model learning
 `sail` writes a rule that checks the weather.
 
+*As built:* as scoped, and the system prompt explains `call_tool` only on a
+server with a tool switched on. The end condition was met with the model's
+answer scripted -- the lookups offered, the prompt sent, the rule filed with
+its description copied -- not by a live model.
+
 **Phase 4: the planner.** Promises and finding out, no blame for an answer,
 once per goal. Ends when a character with a goal to sail checks the weather
 first, waits when it is stormy, and sails when it clears.
+
+*As built:* two changes, both found by the end condition.
+
+* **Once per goal per condition could not be right** for finding out: a
+  sailor who saw a storm could never look again, so "sails when it clears"
+  was impossible. It is once per `tool_calls.FIND_OUT_EVERY` (fifteen
+  minutes) per goal instead, and in between the goal *waits* through the
+  not-yet machinery, as for the clock, rather than stalling. Recorded when a
+  call is made, not when a step is proposed, because hints ask the planner
+  for steps nobody takes.
+* **A place is still never a goal.** "Only in fair weather" is a check about
+  `here`, and a condition about a place has no goal form, by a decision older
+  than this plan. Finding out is offered there anyway, in `planner._towards`,
+  because looking the weather up changes nothing about the place.
+
+No blame was needed anywhere: the planner blames only learned verb rules, and
+a call is only ever in a rulebook rule.
 
 **Phase 5: export and import.** `requires.services` read off the rules,
 fingerprints, the four refusals, rulesets requiring services, `rulecheck` for
 drift. Ends when a world using a service round-trips, and the same document is
 refused by a server without it.
 
+*As built:* rulesets differ from §10.2. `rulesets.available()` is read once
+when the server starts, and a service can be added at any time, so a ruleset
+is held only to the *shape* of its calls (and refused if one is in a becomes
+rule); whether this server has the service is asked when a world switches the
+ruleset on, and `edit rulesets` refuses there. `rulecheck`'s new finding reads
+the server's register only for a world that calls something, so a scan with
+no database behind it still runs.
+
 **Phase 6: OAuth.** §11.
 
+*As built:* `world/service_auth.py`, for a service at a web address only.
+Tokens arrive on the loop thread, so the store keeps them in memory and writes
+them back on the reactor. Tested at every seam -- the store, the redirect
+telling the admin, the browser's return resolving the waiting provider by
+OAuth state, the view and its route -- but **not against a real authorisation
+server**, which is the first thing to try live.
+
 **Phase 7: OpenAPI.** §12.
+
+*As built:* as scoped, plus `services.spec_key`: a service set to an API key
+with no name for it sends the key where the spec's `securitySchemes` says.
 
 **Phase 8: the manual and the README.** A generated manual page listing this
 server's services, tools and levels. `extending` says services are the
 controlled way out. The README's admin section, including the dedicated
 account.
+
+*As built:* as scoped. The README section is "Letting the game reach outside".
 
 ---
 

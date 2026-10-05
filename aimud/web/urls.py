@@ -15,6 +15,8 @@ Search the Django documentation for "URL dispatcher" for more help.
 
 from django.urls import include, path
 
+from world import service_auth
+
 # default evennia patterns
 from evennia.web.urls import urlpatterns as evennia_default_urlpatterns
 
@@ -26,6 +28,9 @@ urlpatterns = [
     path("webclient/", include("web.webclient.urls")),
     # web admin
     path("admin/", include("web.admin.urls")),
+    # where a service's OAuth sends the admin's browser back to; see
+    # world/service_auth.py and docs/mcp-client.md 11
+    path(service_auth.CALLBACK_PATH, service_auth.callback_view),
     # add any extra urls here:
     # path("mypath/", include("path.to.my.urls.file")),
 ]

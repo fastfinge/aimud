@@ -279,6 +279,18 @@ def problems(doc, known=None):
             wrong.append(
                 f"{rule.get('name')!r} becomes true on a `when`, not on "
                 f"`conditions`; `world.becoming` never reads those")
+        # A call to a service is held to its shape here; whether the service
+        # is on this server is asked when a world switches the ruleset on,
+        # because a service may be added long after this was read.
+        from world import tool_calls
+
+        for effect in tool_calls.calls_in(rule.get("effects") or []):
+            if phase == rulebooks.BECOMES:
+                wrong.append(f"{rule.get('name')!r} calls a service when "
+                             f"something becomes true, which would be a timer "
+                             f"by another name")
+            for complaint in tool_calls.shape_complaints(effect):
+                wrong.append(f"in {rule.get('name')!r}, {complaint}")
 
     # What an action says a rule about it must do. Refused here rather than
     # dropped by `clean_must`, for the reason the mechanics below are: a
@@ -464,6 +476,21 @@ def seed(world_root, names=None):
         holding[name] = version
     setattr(world_root.db, ATTR, holding)
     return added
+
+
+def services_lacking(name):
+    """
+    What this server lacks of the services a ruleset's rules call, as
+    sentences; [] when it has them all, or the ruleset calls none.
+
+    Asked when a world switches the ruleset on rather than when the ruleset
+    is read, because a service can be added at any time. docs/mcp-client.md
+    10.2.
+    """
+    from world import tool_calls
+
+    doc = get(name) or {}
+    return tool_calls.missing(tool_calls.needed(doc.get("rules") or []))
 
 
 def apply_choice(world_root, names):

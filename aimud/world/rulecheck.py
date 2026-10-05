@@ -271,6 +271,7 @@ def scan(registers):
             registers.get("trait_vocabulary") or {}),
         "overlapping_bands": overlapping_bands(vocabulary),
         "ungrounded": ungrounded(registers.get("kind_specs") or {}),
+        "unreachable_calls": unreachable_calls(registers.get("rules") or {}),
         "inert": sorted(inert),
         "refusals": {kind: sorted(verbs) for kind, verbs in refusals.items()},
         "forked": forked(by_verb),
@@ -801,6 +802,44 @@ def dead_states(condition, made, field="is"):
         return set()
 
 
+def unreachable_calls(rules):
+    """
+    Rules that call a tool this server no longer has as they knew it.
+
+    [(rule id, tool, why)]: the service is gone, the tool is, its shape has
+    changed since the rule was written, or the owner switched it off. Such a
+    rule refuses when it is used and is not suspended: the service may be
+    fixed this afternoon, and a suspended rule would stay suspended. The one
+    finding here that reads the server rather than the world, because what a
+    world's call can reach is the server's. docs/mcp-client.md 10.4.
+    """
+    from world import services, tool_calls
+
+    # The register is read only for a world that calls something: everything
+    # else this scan reads is the world's, and a scan over a fixture with no
+    # database behind it must still run.
+    if not any(tool_calls.calls_in(getattr(rule, "get", lambda *_: [])("effects"))
+               for rule in (rules or {}).values()):
+        return []
+    records = services.register()
+    found = []
+    for rule_id, rule in sorted((rules or {}).items()):
+        try:
+            effects = rule.get("effects") or []
+        except AttributeError:
+            continue
+        for effect in tool_calls.calls_in(effects):
+            wanted = {}
+            service, tool = services.split_id(effect.get("tool"))
+            if not service:
+                continue
+            wanted[service] = {tool: str(effect.get("fingerprint") or "")}
+            for why in tool_calls.missing(wanted, records):
+                found.append((str(rule_id), services.tool_id(service, tool),
+                              why))
+    return found
+
+
 def ungrounded(kind_specs):
     """
     Kinds with no taxonomy above them at all, real or anchored.
@@ -912,6 +951,13 @@ def report(findings, name=""):
                      f"rulebooks.")
 
     trouble = []
+    if findings.get("unreachable_calls"):
+        lost = findings["unreachable_calls"]
+        trouble.append(
+            f"{len(lost)} rules call a tool this server no longer has as "
+            f"they knew it, so they refuse when used: "
+            + _listed([f"{rule_id} ({why})" for rule_id, _tool, why in lost])
+            + ".")
     if findings.get("self_defeating"):
         dead = findings["self_defeating"]
         verbs = sorted({action for _id, action, _states, _name in dead})

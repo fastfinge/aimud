@@ -150,6 +150,12 @@ NOT_OFFERED = {
                    "and a tool run from the Server's reactor thread would "
                    "stop the whole mud while it waited. Wants the deferred "
                    "shape `llm.fetch` uses before it can be offered",
+    "list_tools": "a service's tools reach a world through a rule, and these "
+                  "are offered to the loop that writes rules and nowhere "
+                  "else; an agent reads the same through `view services` and "
+                  "uses a tool by typing the verb. docs/mcp-client.md 6",
+    "show_tool": "the same as list_tools: written for the rule loop, and "
+                 "`view service <name>` says it in full to anybody",
 }
 
 #: The most one tool answer may say, and what is added when it is cut.

@@ -799,7 +799,7 @@ def _set_manner(ctx, value):
 
 
 def keep_npc(ctx):
-    from world import kinds, npc_gen, ownership, traits
+    from world import kinds, npc_gen, ownership, pronouns, traits
 
     caller, room = _caller(ctx), _here(ctx)
     if room is None or not room.db.is_ai_room:
@@ -820,7 +820,7 @@ def keep_npc(ctx):
     npc.db.world_root = _root(ctx)
     chosen = str(ctx.draft.get("pronouns") or "").strip()
     if chosen:
-        npc.db.pronoun_set = chosen
+        pronouns.give(npc, chosen, _root(ctx))
     kinds.ensure_person(npc)
     npc_gen.characterise(npc, ctx.draft.get("manner"))
     for entry in ctx.draft.get("traits") or []:

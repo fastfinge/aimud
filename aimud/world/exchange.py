@@ -174,7 +174,8 @@ CARRIED = {
     "token_choices": "rooms, things and people, as `choices`",
     # -- people ------------------------------------------------------------
     "is_npc": "implied: every person",
-    "pronoun_set": "people",
+    "pronouns": "people; a player's own stays with the player, who is not "
+                "part of a world",
     "manner": "people",
     "goal": "people",
     "following": "people",
@@ -214,6 +215,8 @@ LEFT = {
     "action_history": "what a character has been through, which is memory",
     "last_near_player": "true of a moment, not of a world",
     "goal_stalls": "how a plan is going, not what the plan is",
+    "goal_reaching": "how a plan is going, too: which calls outside the game "
+                     "a character has made for the goal it has now",
     "goal_waiting": "the same",
     "goal_from_quest": "a quest in progress, which does not travel",
     "becomes_seen": "an edge already crossed; the rules that watch for it do "
@@ -222,7 +225,6 @@ LEFT = {
     "referents": "what `it` last meant, which is one conversation",
     "world_condition": "a crossing in progress",
     "busy_interval": "how often to say somebody is waiting; a preference",
-    "pronouns": "a player's own, set with `pronouns`",
     "verb_specifics": "a cache of what one attempt settled",
     # -- settings and preferences -------------------------------------------
     "menu_view_mode": "a player's preference",
@@ -460,7 +462,18 @@ def _requires(root):
         # written after they do is refused clearly by a server from before
         # them, rather than imported wrongly. See docs/archived/import-and-export.md 14.
         "plugins": [],
+        # Every tool a rule here names, with the shape it was written
+        # against. Read off the rules, never stored, so it cannot drift from
+        # them; a world never carries where a service is or how to log in to
+        # it, only that it needs one by this name. docs/mcp-client.md 10.
+        "services": _services_needed(root),
     }
+
+
+def _services_needed(root):
+    from world import rulebooks, tool_calls
+
+    return tool_calls.needed(rulebooks.all_rules(root))
 
 
 def _setup(root):
@@ -749,7 +762,7 @@ def _person(obj, where, names):
         "description": obj.db.desc or "",
         "choices": plain(getattr(obj.db, token_lists.CHOICES, None) or {}),
         "manner": str(obj.db.manner or ""),
-        "pronouns": str(obj.db.pronoun_set or ""),
+        "pronouns": str(obj.db.pronouns or ""),
         "kinds": plain(obj.db.kinds or []),
         "states": plain(obj.db.states or []),
         "styles": verbs.styles(obj),
@@ -981,6 +994,19 @@ def _required(doc, known=None):
         wrong.append(
             f"it needs the plugin {', '.join(repr(str(p)) for p in plugins)}, "
             f"and this server has no plugins at all")
+
+    # The services it needs, by name and by shape. Refused rather than built
+    # with the rules that call them suspended, and never added: a world does
+    # not get to put a service on somebody else's server. docs/mcp-client.md
+    # 10.3.
+    needs = requires.get("services") or {}
+    if not hasattr(needs, "keys") or not all(
+            hasattr(tools, "keys") for tools in needs.values()):
+        wrong.append("requires.services is not an object of objects")
+    else:
+        from world import tool_calls
+
+        wrong.extend(tool_calls.missing(needs))
 
     wanted = requires.get("rulesets") or {}
     if not hasattr(wanted, "keys"):
@@ -1435,7 +1461,7 @@ def _build_people(root, people, names):
     Before the things, because a thing may be in somebody's hands.
     """
     from evennia import create_object
-    from world import kinds, npc_gen, traits
+    from world import kinds, npc_gen, pronouns, traits
 
     for record in people:
         room = names.object(record.get("at"))
@@ -1452,7 +1478,7 @@ def _build_people(root, people, names):
         if record.get("manner"):
             npc_gen.characterise(npc, record["manner"])
         if record.get("pronouns"):
-            npc.db.pronoun_set = str(record["pronouns"])
+            pronouns.give(npc, str(record["pronouns"]), root)
         kinds.ensure_person(npc)
         if record.get("kinds"):
             npc.db.kinds = [str(kind) for kind in record["kinds"]]

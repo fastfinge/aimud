@@ -398,6 +398,7 @@ EFFECT_FIELDS = {
     "try": ("action",),
     "offer_quest": ("quest", "name_role", "role"),
     "set_goal": ("role", "goal"),
+    "call_tool": ("tool", "args", "results"),
 }
 
 #: What a form deliberately does not ask for, and why. A gap on the record
@@ -408,6 +409,14 @@ NOT_ASKED = {
         "a redirect runs the other verb over the roles the parser already "
         "bound, which is what makes it useful; naming different ones is a "
         "shape no menu can express usefully and no rule has ever wanted",
+    ("call_tool", "does"):
+        "what the tool does is copied from the service when the rule is "
+        "kept, never typed, so a rule cannot claim a tool does something its "
+        "own service does not say -- see world/tool_calls.py complete",
+    ("call_tool", "fingerprint"):
+        "the shape of the tool as it was when the rule was written, copied "
+        "from the service so a changed tool is noticed rather than called "
+        "with arguments it no longer takes",
 }
 
 
@@ -515,6 +524,12 @@ def keep_effect(ctx):
                              for one in value if one.get("state")}
         elif field in ("trait_bonuses", "bonus_when", "bonus_while"):
             continue            # written together, below
+        elif field == "args":
+            effect[field] = {str(one.get("param")): str(one.get("source"))
+                             for one in value if one.get("param")}
+        elif field == "results":
+            effect[field] = {str(one.get("field")): str(one.get("target"))
+                             for one in value if one.get("field")}
 
         else:
             effect[STORED_AS.get(field, field)] = value
@@ -528,6 +543,14 @@ def keep_effect(ctx):
                            "or at what rate a second.")
     if etype == "create_object" and not effect.get("name"):
         raise menus.Refuse("Say what it produces.")
+    if etype == "call_tool":
+        from world import tool_calls
+
+        if not effect.get("tool"):
+            raise menus.Refuse("Say which tool it calls.")
+        wrong = tool_calls.complaints(effect)
+        if wrong:
+            raise menus.Refuse("; ".join(wrong).capitalize() + ".")
     if etype == "set_goal" and not effect.get("goal"):
         raise menus.Refuse(
             "Say what they are to work towards. A purpose with nothing in it "
@@ -645,6 +668,162 @@ def _gearing():
     return found
 
 
+def tool_options(ctx):
+    """Every tool a rule here may call, as the owner classified it."""
+    from world import services
+
+    return [(found, f"{found} -- {services.said_level(info.get('level'))}: "
+                    f"{services.does(info)[:120] or 'says nothing about itself'}")
+            for found, _record, info in services.usable()]
+
+
+def _tool_info(ctx):
+    from world import services
+
+    wanted = ctx.data.get("tool") or ctx.draft.get("tool")
+    _record, info = services.find(wanted)
+    return info or {}
+
+
+def _param_options(ctx):
+    from world import services
+
+    return [(name, f"{name}{'' if required else ' (optional)'}"
+                   + (f" -- {schema.get('description')}" if schema.get("description") else ""))
+            for name, schema, required in services.parameters(_tool_info(ctx).get("input"))]
+
+
+def _field_options(ctx):
+    from world import services, tool_calls
+
+    found = [(name, f"{name} -- {schema.get('type') or 'one of a set'}"
+                    + (": " + ", ".join(str(v) for v in schema["enum"])
+                       if "enum" in schema else ""))
+             for name, schema in services.outputs(_tool_info(ctx).get("output"))]
+    found.append((tool_calls.TEXT, "text -- everything it says, in words"))
+    return found
+
+
+def _tool_roles(ctx):
+    return ([(value, f"{value} -- {said}") for value, said in SUBJECTS
+             if value != "world"])
+
+
+def _source_is(*kinds):
+    return lambda ctx: str(ctx.draft.get("source") or "") in kinds
+
+
+def _keep_arg(ctx):
+    from world import tool_calls
+
+    kind = str(ctx.draft.get("source") or "")
+    source = {"from": kind, "role": ctx.draft.get("role") or "direct",
+              "name": str(ctx.draft.get("name") or "").strip(),
+              "value": str(ctx.draft.get("value") or "")}
+    if kind in ("trait", "state") and not source["name"]:
+        raise menus.Refuse("Say which figure, or which group of conditions.")
+    written = tool_calls.write_source(source)
+    if tool_calls.read_source(written) is None:
+        raise menus.Refuse("That source does not read; say where it comes from.")
+    return ({"param": str(ctx.draft.get("param")), "source": written},
+            f"{ctx.draft.get('param')}: {tool_calls.said_source(written)}")
+
+
+def _keep_result(ctx):
+    from world import tool_calls
+
+    kind = str(ctx.draft.get("to") or "")
+    target = {"to": kind, "role": ctx.draft.get("role") or "direct",
+              "name": str(ctx.draft.get("name") or "").strip()}
+    if kind == "trait" and not target["name"]:
+        raise menus.Refuse("Say which figure it sets.")
+    written = tool_calls.write_target(target)
+    if tool_calls.read_target(written) is None:
+        raise menus.Refuse("That does not read; say where it goes.")
+    return ({"field": str(ctx.draft.get("field")), "target": written},
+            f"{ctx.draft.get('field')}: {tool_calls.said_target(written)}")
+
+
+NEW_ARG = menus.Form(
+    key="new-tool-arg", title="Where one thing it takes comes from",
+    guided=True,
+    intro=lambda ctx: str(_tool_info(ctx).get("description") or ""),
+    items=[
+        menus.Picker("param", "Which of what it takes", options=_param_options,
+                     required=True),
+        menus.Field("source", "Where it comes from", kind=menus.CHOICE,
+                    required=True,
+                    choices=lambda ctx: [menus.Choice(v, f"{v} -- {said}")
+                                         for v, said in _sources()],
+                    help="The word typed is what makes `forecast london` "
+                         "work: whatever word somebody uses for that part of "
+                         "the sentence is passed on, and nothing is conjured "
+                         "for it. Asked means a menu when the verb is used, "
+                         "or answers in brackets on the end of the line."),
+        menus.Picker("role", "Which part of the sentence",
+                     options=_tool_roles,
+                     lock=_source_is("word", "name", "trait", "state")),
+        menus.Field("name", "Which figure, or which group of conditions",
+                    lock=_source_is("trait", "state")),
+        menus.Field("value", "The value", lock=_source_is("value")),
+        making.keeper("keep", "Keep this", _keep_arg),
+    ],
+)
+
+
+def _sources():
+    from world import tool_calls
+
+    return tool_calls.SOURCES
+
+
+def _targets():
+    from world import tool_calls
+
+    return tool_calls.TARGETS
+
+
+NEW_RESULT = menus.Form(
+    key="new-tool-result", title="Where one part of the answer goes",
+    guided=True,
+    intro="A condition needs a field with set answers, so the rules about "
+          "rain can be written before it rains; a figure needs a number; "
+          "text can become what something looks like, or be told to "
+          "whoever used the verb. Nothing an answer says is ever narrated.",
+    items=[
+        menus.Picker("field", "Which part of the answer",
+                     options=_field_options, required=True),
+        menus.Field("to", "Where it goes", kind=menus.CHOICE, required=True,
+                    choices=lambda ctx: [menus.Choice(v, f"{v} -- {said}")
+                                         for v, said in _targets()]),
+        menus.Picker("role", "Which part of the sentence",
+                     options=_tool_roles,
+                     lock=lambda ctx: str(ctx.draft.get("to") or "") not in
+                     ("", "actor")),
+        making.picker("name", "Which figure", "attribute",
+                      options=trait_options,
+                      lock=lambda ctx: str(ctx.draft.get("to") or "") == "trait"),
+        making.keeper("keep", "Keep this", _keep_result),
+    ],
+)
+
+
+def _arg_said(ctx, entry):
+    from world import tool_calls
+
+    return f"{entry.get('param')}: {tool_calls.said_source(entry.get('source'))}"
+
+
+def _result_said(ctx, entry):
+    from world import tool_calls
+
+    return f"{entry.get('field')}: {tool_calls.said_target(entry.get('target'))}"
+
+
+def _with_tool(ctx):
+    return {"tool": ctx.draft.get("tool")}
+
+
 EFFECT_INTRO = ("What a rule actually does. Everything a verb changes it "
                 "changes through one of these.")
 
@@ -672,6 +851,15 @@ EFFECT_NOTES = {
         "Nothing narrates a |wwhen something becomes true|x rule, though, so "
         "there this effect does nothing at all and |wWhat people see|x is "
         "the only way to say anything.|n"),
+    "call_tool": (
+        "|xA tool is something the server owner let this game reach outside "
+        "itself for: |wview services|x lists them, and what each does out "
+        "there. Whoever uses the verb uses the tool -- a player, a character "
+        "or an agent alike -- and a character only where somebody is paying "
+        "for this world, as for a model.\n"
+        "What comes back has to land somewhere it matters: a condition, a "
+        "figure, what something looks like, or told privately to whoever "
+        "used the verb. It is never narrated.|n"),
 }
 
 
@@ -824,6 +1012,26 @@ NEW_EFFECT = menus.Form(
                            "actually be offered -- already done, too soon, "
                            "something else first -- the effect decides, so "
                            "the rule does not have to."),
+        menus.Picker("tool", "Which tool", options=tool_options,
+                     lock=_asks("tool"),
+                     help="A tool a service on this server offers, and what "
+                          "it does outside the game. Only tools the owner "
+                          "has switched on, and that a rule can fill in, "
+                          "are here."),
+        making.listing_field(
+            "args", "Where what it takes comes from", NEW_ARG, _arg_said,
+            add_label="Say where one comes from", data=_with_tool,
+            empty="nothing yet -- every part it needs has to come from "
+                  "somewhere", lock=_asks("args"),
+            help="One for each thing the tool takes. Required ones have to "
+                 "be here, or the rule is refused."),
+        making.listing_field(
+            "results", "Where the answer goes", NEW_RESULT, _result_said,
+            add_label="Say where one part goes", data=_with_tool,
+            empty="nowhere -- the call is made and its answer dropped",
+            lock=_asks("results"),
+            help="What becomes of what comes back. A call whose answer goes "
+                 "nowhere is one made only for what it does out there."),
         making.keeper("keep", "Keep this effect", keep_effect),
     ],
 )

@@ -712,6 +712,14 @@ def _verb_for(actor, world_root, condition, obj, depth=0):
                 return action, key
             blocked.append((action, key, unmet))
 
+    # Nothing promises it -- but a call to a service may find out whether it
+    # is so already: check the weather before trying to sail. A step with no
+    # rule to blame, because an answer that is not the wanted one is not the
+    # rule's fault. See `_finding_out`.
+    step, _none = _finding_out(actor, world_root, condition, obj)
+    if step:
+        return step, None
+
     if depth >= MAX_SUBGOALS:
         return None, None
     waits_before = len(getattr(_WAITS, "found", None) or [])
@@ -807,6 +815,14 @@ def _towards(actor, world_root, condition, bound, depth):
     wanted = conditions.as_goal(condition, bound, actor)
     step, key = (_for_condition(actor, world_root, wanted, depth)
                  if wanted is not None else (None, None))
+    if not step and wanted is None:
+        # A condition with no goal form -- about this place, say, which is
+        # never something a character can go and change -- may still be
+        # something a call can find out: whether it is fair enough to sail is
+        # a question for the forecast. Finding out changes nothing here, so it
+        # keeps the rule that a place is not a goal. See `_finding_out`.
+        step, _none = _finding_out(actor, world_root, condition,
+                                   actor.location)
     if not step:
         # No step, but perhaps no step is needed: a shop that refuses at night
         # will not refuse in the morning. Asked of the condition as the check
@@ -847,6 +863,8 @@ def _candidates(actor, world_root, condition, obj, outcome):
 
     if outcome != "success":
         return                    # a rulebook rule has no failure branch to read
+    from world import tool_calls
+
     for rule in rulebooks.all_rules(world_root):
         if rule.get("phase") != rulebooks.CARRY_OUT:
             continue
@@ -857,9 +875,71 @@ def _candidates(actor, world_root, condition, obj, outcome):
             continue
         if not _achieves_any(rule.get("effects"), condition, obj.key):
             continue
+        calls = tool_calls.calls_in(rule.get("effects"))
+        # A call that asks needs somebody to answer it, and a planner has
+        # nobody to ask. And an acts-outward call is made once per goal: a
+        # goal that keeps failing must not send the same email twice.
+        # docs/mcp-client.md §9.
+        if any(tool_calls.asks(effect) for effect in calls):
+            continue
+        if tool_calls.already_acted(actor, rule.get("effects")):
+            continue
         seen.add(verb)
         yield (f"{verb} {obj.key}", None,
                conditions_unmet_for(actor, world_root, verb, obj))
+
+
+def _finding_out(actor, world_root, condition, obj):
+    """
+    A step that finds out whether `condition` is so, by asking a service.
+
+    A call's answer is never a promise -- the forecast may say rain -- so no
+    rule calling one is ever a way of bringing a condition about, and
+    `call_tool` is not readable backwards. But a rule elsewhere may need the
+    condition known (sailing needs it fair), and a call whose answer can put
+    something in it is how to know. Taken without blame: an answer that is not
+    the wanted one says nothing against the rule.
+
+    Not again for the same goal until `tool_calls.FIND_OUT_EVERY` has passed,
+    and meanwhile the goal waits rather than stalls -- the not-yet machinery,
+    as for the clock -- so a sailor who saw a storm looks again later, not
+    every turn. Never a call that asks, and never an acts-outward one: finding
+    something out changes nothing out there. docs/mcp-client.md §9.
+    """
+    from world import actions, conditions, rulebooks, services, tool_calls
+
+    if world_root is None or not services.usable():
+        return None, None
+    records = services.register()
+    soonest = None
+    for rule in rulebooks.all_rules(world_root):
+        if rule.get("phase") != rulebooks.CARRY_OUT or not rule.get("listed", True):
+            continue
+        verb = rule.get("action")
+        if not verb:
+            continue
+        for effect in tool_calls.calls_in(rule.get("effects")):
+            if tool_calls.asks(effect):
+                continue
+            if tool_calls.level_of(effect, records) == services.ACTS:
+                continue
+            if not tool_calls.could_tell(effect, condition, records):
+                continue
+            wait = tool_calls.find_out_wait(actor, tool_calls.call_key(effect))
+            if wait:
+                soonest = wait if soonest is None else min(soonest, wait)
+                continue
+            spec = actions.spec(world_root, verb) or {}
+            takes = any(entry.get("role") == "direct"
+                        for entry in spec.get("applies_to") or [])
+            return (f"{verb} {obj.key}" if takes else verb), None
+    if soonest is not None:
+        parts = (conditions.from_goal(condition) if "type" in condition
+                 else [condition])
+        if parts:
+            _note_not_yet(soonest, {"all": parts},
+                          conditions.context(None, actor, world_root))
+    return None, None
 
 
 def _achieves_any(effects, condition, obj_name):

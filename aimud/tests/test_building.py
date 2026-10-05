@@ -1552,6 +1552,18 @@ class MakingThings(Building):
         npc = next(obj for obj in self.room1.contents if obj.id == npc_id)
         self.assertEqual(npc.db.manner, "Hums when lying.")
 
+    def test_a_person_is_called_what_they_were_made_to_be_called(self):
+        from world import pronouns
+        from world.makers import things
+
+        ctx = _Draft({"name": "Hob the Alchemist",
+                      "description": "Ink-stained and cheerful.",
+                      "pronouns": "she"},
+                     self.root, self.char1)
+        npc_id, _said = things.keep_npc(ctx)
+        npc = next(obj for obj in self.room1.contents if obj.id == npc_id)
+        self.assertEqual(pronouns.of(npc, self.root)["subject"], "she")
+
     def test_and_their_characteristics_can_be_changed(self):
         from evennia import create_object
         from world.makers import things
