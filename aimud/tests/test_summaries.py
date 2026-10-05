@@ -275,9 +275,9 @@ class SleepingOneBankAtATime(SimpleTestCase):
     def run_pass(self, banks, keep_going=None, payers=None):
         held = []
 
-        def with_backend(action):
+        def with_backend(action, bank=None):
             # Records each turn of the lock, which is the thing under test.
-            held.append("taken")
+            held.append(bank)
             return action(self.backend())
 
         with mock.patch.object(self.memory, "_with_backend", with_backend):
@@ -309,7 +309,7 @@ class SleepingOneBankAtATime(SimpleTestCase):
         banks = ["aimud-world-1", "aimud-world-2", "aimud-world-3"]
         calls = {"n": 0}
 
-        def with_backend(action):
+        def with_backend(action, bank=None):
             calls["n"] += 1
             if calls["n"] == 2:
                 raise RuntimeError("that file is locked")
@@ -324,7 +324,7 @@ class SleepingOneBankAtATime(SimpleTestCase):
         banks = ["aimud-world-1", "aimud-world-2"]
         seen = []
 
-        def with_backend(action):
+        def with_backend(action, bank=None):
             return action(self.backend())
 
         real = summaries.paying_for

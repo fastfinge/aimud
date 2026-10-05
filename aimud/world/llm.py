@@ -43,7 +43,6 @@ import time
 import urllib.error
 import urllib.request
 
-from twisted.internet import threads
 from twisted.python.failure import Failure
 
 #: Where the service lives when nobody has chosen otherwise. One constant
@@ -754,8 +753,35 @@ def fetch(work, *args, on_success, on_error):
     first, and what reaches here is a caller that went through `fetch`
     directly, or a fault in the loop's own machinery.
     """
+    from world import workers
+
     succeeded, failed = callbacks(on_success, on_error)
-    return threads.deferToThread(work, *args).addCallbacks(succeeded, failed)
+    # The model pool, never Twisted's shared one: memory writes and asset
+    # downloads queue elsewhere, so a model call waits only for other model
+    # calls. A wait worth noticing is logged, so a backlog shows up in the log
+    # rather than as a slow world. See world/workers.py.
+    return workers.defer("model", workers.timed(work, _note_wait), *args) \
+        .addCallbacks(succeeded, failed)
+
+
+#: Seconds a call may wait for a thread before the wait is worth a log line.
+WAIT_WORTH_SAYING = 1.0
+
+
+def _note_wait(seconds):
+    """Called in the worker: say so when a call queued for long."""
+    if seconds < WAIT_WORTH_SAYING:
+        return
+    from evennia.utils import logger
+    from twisted.internet import reactor
+
+    from world import workers
+
+    behind = workers.waiting("model")
+    reactor.callFromThread(
+        logger.log_info,
+        f"llm: a call waited {seconds:.1f}s for a thread"
+        + (f"; {behind} more are waiting" if behind else ""))
 
 
 def callbacks(on_success, on_error):
