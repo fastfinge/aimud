@@ -18,6 +18,7 @@ MODULES = (
     "traits", "pronouns", "token_lists", "verbs", "lexicon", "commonsense",
     "rule_gen", "rulebooks", "kinds", "relations", "npc_gen", "zones", "goals",
     "actions", "memory", "rulecheck", "quests", "manual", "tool_calls",
+    "assets",
 )
 
 

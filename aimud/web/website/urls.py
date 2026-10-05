@@ -10,10 +10,12 @@ from django.urls import path
 
 from evennia.web.website.urls import urlpatterns as evennia_website_urlpatterns
 
+from web.website.views import assets as asset_views
+
 # add patterns here
 urlpatterns = [
-    # path("url-pattern", imported_python_view),
-    # path("url-pattern", imported_python_view),
+    # A file straight from a player's machine; docs/archived/assets.md 5.2.
+    path("assets/upload/", asset_views.upload, name="asset-upload"),
 ]
 
 # read by Django

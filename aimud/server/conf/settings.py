@@ -70,6 +70,37 @@ RULESET_DIRS = [os.path.join(GAME_DIR, "server", "conf", "rulesets")]
 # worlds somebody put on the machine by hand. See world/exchange.py.
 WORLD_DIRS = [os.path.join(GAME_DIR, "worlds")]
 
+# Assets: files the game keeps for its players and tools -- world documents
+# today, and sounds, images and the rest as the systems that use them arrive.
+# Players name and pick them and never see a path. See docs/archived/assets.md.
+INSTALLED_APPS += ["assets"]
+
+# How much each account may keep, in bytes; None for no limit. An admin can
+# set one account's own with `edit quota`. An asset counts against whoever
+# paid for it to exist, once, and never against somebody reusing it.
+ASSET_QUOTA = 500 * 1024 * 1024
+
+# How much the server keeps of assets their owners gave up. When it is full,
+# the least-used of them are deleted and marked missing wherever they were
+# used, so giving files up cannot fill the disk on nobody's quota.
+ASSET_POOL_QUOTA = 1024 * 1024 * 1024
+
+# Where asset files are kept: the class that stores them. The local one keeps
+# them under MEDIA_ROOT, which Evennia already serves at /media/ without
+# listing directories. Another class (S3, say) needs nothing else changed.
+ASSET_STORE = "world.asset_store.LocalStore"
+
+# This server's address as somebody outside it would type it, such as
+# "https://mud.example.com:4001". A server cannot work it out for itself, and
+# a world exported from here, or a sound sent to a client, needs a full URL.
+# Until it is set, exports name their assets by hash alone.
+ASSET_BASE_URL = ""
+
+# Ports a player-named download may use. The web's usual ones, and 4001,
+# Evennia's website port, so a world can be imported from another aimud.
+# Whatever is listed here, nothing is ever fetched from a private address.
+ASSET_FETCH_PORTS = (80, 443, 8080, 8443, 4001)
+
 # The MCP endpoint, which is how an agent plays and builds here. Off unless
 # this says otherwise, and listening on localhost when it is: turning it on
 # and reaching it from another machine are two separate decisions, and the

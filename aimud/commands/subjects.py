@@ -37,6 +37,7 @@ SUBJECT_MODULES = [
     "commands.term_subject",
     "commands.exchange_subject",
     "commands.services_subject",
+    "commands.assets_subject",
     # Every maker in world/making.py, as one subject each. Last, so a maker
     # can never take a word one of the hand-written subjects above already
     # answers to: `named` prefers the longest match, and registration order

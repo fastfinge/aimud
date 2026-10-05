@@ -1,0 +1,54 @@
+{% extends "website/base.html" %}
+
+{% block titleblock %}Add an asset{% endblock %}
+
+{% block body %}
+{% load addclass %}
+<div class="container main-content mt-4" id="main-copy">
+  <div class="row">
+    <div class="col-lg-8 offset-lg-2 col-sm-12">
+      <main class="card mt-3">
+        <div class="card-body">
+          <h1 class="card-title">Add an asset</h1>
+          <p>A file for the game to keep, for you and anybody else here to use. {{ quota }}</p>
+
+          {% if said %}
+          <div class="alert alert-info" role="status" aria-live="polite">{{ said }}</div>
+          {% endif %}
+
+          {% if form.errors %}
+          <div class="alert alert-danger" role="alert">
+            <ul class="mb-0">
+              {% for field in form %}{% for error in field.errors %}
+              <li>{{ field.label }}: {{ error }}</li>
+              {% endfor %}{% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+          <h2 class="h5">What this server keeps</h2>
+          <ul>
+            {% for label, most in kinds %}
+            <li>{{ label }}, up to {{ most }}</li>
+            {% endfor %}
+          </ul>
+
+          <form method="post" action="" enctype="multipart/form-data">
+            {% csrf_token %}
+            {% for field in form %}
+            <div class="form-field my-3">
+              {{ field.label_tag }}
+              {{ field | addclass:"form-control" }}
+              {% if field.help_text %}
+              <small class="form-text text-muted" id="{{ field.id_for_label }}_help">{{ field.help_text }}</small>
+              {% endif %}
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-primary">Keep it</button>
+          </form>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+{% endblock %}
