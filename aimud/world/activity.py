@@ -22,8 +22,8 @@ uses, so keepalives and other invisible traffic do not count as activity.
 
 The second and third rules have a release: a world put into `always` mode
 keeps thinking wherever its player is standing and however long since they
-typed. The first does not, and cannot -- a world with nobody logged in goes
-back to normal on its own, because that brake is the one stopping an
+typed. The first does not, and cannot -- a world whose creator has logged
+out goes back to normal on its own, because that brake is the one stopping an
 unattended game spending money forever.
 """
 
@@ -166,13 +166,6 @@ ALWAYS = "always"
 MODES = (NORMAL, ALWAYS)
 
 
-def anybody_logged_in():
-    """True while at least one session is connected and logged in."""
-    from evennia.server.sessionhandler import SESSIONS
-
-    return bool(SESSIONS.get_sessions())
-
-
 def mode(world_root):
     """This world's mode. A world with no say in the matter runs normally."""
     if world_root is None:
@@ -219,14 +212,21 @@ def normalise_unwatched():
 
 def always_on(world_root):
     """
-    True when this world runs regardless of who is watching -- and somebody
-    is still logged in to have asked it to.
+    True when this world runs regardless of who is watching -- and its
+    creator is still logged in to have asked it to.
+
+    The creator, not anybody: a visitor in a shared world is not paying, so
+    their being logged in is no reason for the creator's world to go on
+    thinking. A world whose creator is away goes back to normal, and only
+    that world. docs/archived/shared-worlds.md 6.2.
     """
     if mode(world_root) != ALWAYS:
         return False
-    if anybody_logged_in():
+    from world import sponsor
+
+    if sponsor.present(sponsor.creator_of(world_root)):
         return True
-    normalise_unwatched()
+    world_root.db.world_mode = NORMAL
     return False
 
 def npc_may_act(npc):

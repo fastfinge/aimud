@@ -4,7 +4,7 @@
 Every model reply here is scripted (`tests.support.replying`), so this costs
 nothing. What is tested is the contract: what the model is shown and not
 shown, that its answer passes the field's own check, and that nothing is
-written until the player keeps it. docs/commands-and-settings.md §6 and §9.
+written until the player keeps it. docs/archived/commands-and-settings.md §6 and §9.
 """
 
 from unittest import mock
@@ -12,6 +12,7 @@ from unittest import mock
 from django.test import SimpleTestCase, tag
 
 from commands.verbs import CmdCreate
+from tests import support
 from tests.base import GameCommandTest, GameTest
 from tests.support import FakeSponsor, immediately, replying, tool_call, tool_reply
 from world import menus, preferences, suggesting
@@ -244,6 +245,7 @@ class ANewWorldFromADescription(GameCommandTest):
 
     def test_title_and_guidance_are_filled_from_the_description(self):
         self.account.db.openrouter_api_key = "sk-abcdefgh12345678"
+        support.logged_in(self, self.account)
         heard = []
         self.account.msg = lambda text="", **kw: heard.append(
             str(text[0] if isinstance(text, tuple) else text))

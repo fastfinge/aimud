@@ -136,6 +136,27 @@ class Account(DefaultAccount):
 
     """
 
+    def at_post_login(self, session=None, **kwargs):
+        super().at_post_login(session=session, **kwargs)
+        # The first session only: a second window is not coming back.
+        if self.sessions.count() == 1:
+            from world import sharing
+
+            sharing.tell_visitors(
+                self, f"{self.key} is back. What happens here is paid for "
+                      f"again.")
+
+    def at_post_disconnect(self, **kwargs):
+        # Evennia calls this only once the last session has gone, which is
+        # exactly when this account stops paying for anything.
+        # docs/archived/shared-worlds.md 6.3.
+        from world import sharing
+
+        sharing.tell_visitors(
+            self, f"{self.key} has logged out. Nothing new will happen here "
+                  f"until they are back.")
+        super().at_post_disconnect(**kwargs)
+
     def get_openrouter_key(self):
         """Return the account's OpenRouter API key, or raise ValueError if unset."""
         key = self.db.openrouter_api_key

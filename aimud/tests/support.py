@@ -329,6 +329,28 @@ def clock():
     return task.Clock()
 
 
+def logged_in(test, *accounts):
+    """
+    Count these accounts as logged in, for as long as `test` runs.
+
+    A world's creator pays only while they are logged in (`sponsor.present`),
+    and a fixture account has no session unless the `session` dial gives it
+    one -- which would also make every message it is sent a real one. A test
+    whose player is paying for something they asked for wants them here and
+    nothing else, so this says exactly that: these accounts, and no others.
+    """
+    from world import sponsor
+
+    ids = {account.id for account in accounts}
+    real = sponsor.present
+    patcher = mock.patch(
+        "world.sponsor.present",
+        side_effect=lambda account: (getattr(account, "id", None) in ids
+                                     or real(account)))
+    patcher.start()
+    test.addCleanup(patcher.stop)
+
+
 class FakeSponsor:
     """
     Enough of a sponsor to be handed to a generator.

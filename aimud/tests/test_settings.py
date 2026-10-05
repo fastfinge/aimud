@@ -4,7 +4,7 @@ Settings: every preference in one register, reached by a command or a menu.
 Most of this drives `settings` the way somebody with no menu would -- a whole
 line at a time -- because that is the path an agent or a script takes, and
 every menu point has to be reachable that way. `InTheMenu` walks the same
-settings through the menu. See docs/commands-and-settings.md §5.
+settings through the menu. See docs/archived/commands-and-settings.md §5.
 """
 
 from unittest import mock
@@ -13,6 +13,7 @@ from django.test import SimpleTestCase, tag
 
 from commands.settings_cmds import CmdSettings
 from commands.unknown_cmd import retired_spelling
+from tests import support
 from tests.base import GameCommandTest
 from world import activity, busy, menus, preferences, pronouns, sponsor
 
@@ -233,6 +234,17 @@ class InAWorld(_Settings):
         self.assertNotIn("How the world runs", self.settings("list"))
         self.assertIn("no setting called", self.settings("mode always yes"))
 
+    def test_not_even_the_superuser(self):
+        """
+        Building stays open to the superuser; how a world runs does not,
+        because it spends its creator's money. docs/archived/shared-worlds.md 6.1.
+        """
+        self.room1.db.world_creator = self.account2
+        self.account.is_superuser = True
+        self.assertIn("no setting called", self.settings("mode always yes"))
+        self.assertIn("no setting called", self.settings("rooms never"))
+        self.assertEqual(activity.mode(self.room1), activity.NORMAL)
+
     def test_outside_a_world_there_is_no_you_here(self):
         self.room1.attributes.remove("world_root")
         self.assertNotIn("Your name here", self.settings("list"))
@@ -294,6 +306,7 @@ class InTheMenu(_Settings):
         from tests.support import immediately
 
         self.account.db.openrouter_api_key = "sk-abcdefgh12345678"
+        support.logged_in(self, self.account)
         listed = [{"id": "a/tools", "supported_parameters": ["tools"]}]
         with immediately(), \
                 mock.patch("world.llm.models", return_value=listed):

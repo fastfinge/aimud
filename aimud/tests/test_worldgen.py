@@ -18,6 +18,7 @@ from unittest import mock
 
 from django.test import tag
 
+from tests import support
 from tests.base import GameTest
 from tests.support import finishing, immediately, replying
 from world import sponsor as sponsor_mod
@@ -42,6 +43,7 @@ class MakingTheFirstRoom(GameTest):
         # real thing throughout. That is the point: the fake is exactly what
         # let the account-shaped bug through.
         self.account.db.openrouter_api_key = "sk-test"
+        support.logged_in(self, self.account)
 
     def generate(self, sponsor, **kwargs):
         """Run the whole path and report (room, error)."""
@@ -126,6 +128,7 @@ class ADoorThatCouldNotBeBuilt(GameTest):
     def setUp(self):
         super().setUp()
         self.account.db.openrouter_api_key = "sk-test"
+        support.logged_in(self, self.account)
         self.room1.db.is_world_root = True
         self.room1.db.world_root = self.room1
         self.room1.db.world_description = "A quiet hall."

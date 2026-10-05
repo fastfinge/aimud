@@ -2,7 +2,7 @@
 The manual an agent reads, written for something that is about to use it.
 
 The surviving half of the `future-plans.md` ACP item, and phase 8 of
-docs/mcp.md. The README tells a person how to switch the endpoint on; this
+docs/archived/mcp.md. The README tells a person how to switch the endpoint on; this
 tells whatever connects to it what there is to do here. Two different readers
 wanting two different documents, which is why this is not a copy of the README.
 
@@ -76,11 +76,14 @@ Start with these:
     help                  what you can type
     view worlds           the worlds this account has
     enter world 1         go into one
+    enter world public    worlds other people here have shared
     view world            what the world you are in is like
 
 A **world** is the unit of everything here. It holds its own rooms, things,
 people, words, rules and errands, and one account may have several. You are
 either standing in one or standing in the start room outside them all.
+A world's creator may share it; whoever made a world pays for what happens
+in it, and only while they are logged in.
 
 Menus are how anything gets made or changed. When one opens it tells you what
 to type: a number, a word, `b` to go back, `q` to quit, `?` for help on a
@@ -108,6 +111,7 @@ model, and that is deliberate.
     create world                the wizard: a new world, start to finish
     view worlds                 what this account has
     enter world <n>             go into one
+    enter world public <n>      go into one somebody else shared
     view world                  what this one is like
     export world                write it to the shared folder
     reset world                 put it back to its restore point
@@ -451,7 +455,7 @@ PAGES = {
 
 
 # ---------------------------------------------------------------------------
-# The tool (docs/generator-tool-loops.md §5)
+# The tool (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
 def lookup_tools():

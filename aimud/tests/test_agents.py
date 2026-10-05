@@ -27,7 +27,7 @@ every character in the game, so a shallow copy would close one character's
 Each of those was verified by planting the fault and watching it go red. The
 arrangement is `exchange.CARRIED` and `exchange.LEFT`'s, for its reason:
 without it the surface is right on the day it is written and quietly wrong
-afterwards. See docs/mcp.md §10.
+afterwards. See docs/archived/mcp.md §10.
 
 **The manual.** `TheManual` and `TheManualIsReachable`. Half of it is generated
 from the game's own registers, and the tests assert exactly that -- every
@@ -438,7 +438,7 @@ class TheRegisterHoldsEveryTool(NoWorldTest):
     beside the thing it reads, and whether it belongs on the register -- and so
     whether an agent should have it -- is a question nobody is asked. The same
     arrangement `exchange.CARRIED` and `exchange.LEFT` have with the attribute
-    test, and for the same reason. §10 of docs/mcp.md.
+    test, and for the same reason. §10 of docs/archived/mcp.md.
 
     Two directions, because one alone is half a guard. A tool built and not
     registered is a silence; a tool registered and never built is a name that
@@ -1054,3 +1054,36 @@ class TheRegistersModuleListsDoNotDrift(NoWorldTest):
             self.assertTrue(
                 hasattr(module, "lookup_tools") or hasattr(module, "tools"),
                 f"world/{name}.py is on the register and defines no tool")
+
+
+class WhoPaysForAnAgent(GameTest):
+    """
+    An agent is a player: in a world, the world's creator pays, as for anybody
+    standing there. It used to be the agent's own account, which on a shared
+    server spends a stranger's key on somebody else's world.
+    docs/archived/shared-worlds.md 5.3.
+    """
+
+    characters = 2
+    accounts = True
+
+    def setUp(self):
+        super().setUp()
+        from world import sponsor
+
+        self.room1.db.is_world_root = True
+        self.room1.db.world_root = self.room1
+        sponsor.claim(self.room1, self.account)
+
+    def context(self):
+        from world import agents
+
+        return agents._context(Session(account=self.account2,
+                                       puppet=self.char2, logged_in=True))
+
+    def test_in_a_world_its_creator_pays(self):
+        self.assertEqual(self.context().sponsor.payer, self.account)
+
+    def test_outside_every_world_the_agent_does(self):
+        self.room1.db.world_root = None
+        self.assertEqual(self.context().sponsor.payer, self.account2)

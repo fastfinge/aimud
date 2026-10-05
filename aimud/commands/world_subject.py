@@ -175,8 +175,11 @@ def _pick_world(caller, words):
 def _world_line(root, count, current):
     here = " (you are here)" if current is not None and current.id == root.id \
         else ""
+    from world import sharing
+
     rooms = f"{count} room{'s' if count != 1 else ''}"
-    return f"{lore.title(root)}, {rooms}{here}"
+    shared = ", shared" if sharing.is_shared(root) else ""
+    return f"{lore.title(root)}, {rooms}{shared}{here}"
 
 
 def _world_entries(ctx, make):
@@ -830,6 +833,9 @@ def _reset(caller, root):
         return problem
 
     def on_success(new_root):
+        from world import sharing
+
+        sharing.carry(root, new_root)
         removed = clear_world(root, account, destination=new_root,
                               message="|yThe world is being rebuilt around you.|n")
         caller.msg(f"|gRebuilt '|w{spec['title'] or description}|g', "
@@ -883,6 +889,9 @@ def _replay(caller, root):
     except exchange.Refused as refusal:
         return (f"|r{title} could not be put back: {refusal}|n\n"
                 f"Your existing world was left untouched.")
+    from world import sharing
+
+    sharing.carry(root, new_root)
     removed = clear_world(root, account, destination=new_root,
                           message="|yThe world is being put back as it was.|n")
     if caller.location is not new_root:
@@ -1075,13 +1084,38 @@ def _go(caller, destination, arriving):
 
 
 def enter_world(caller, root):
+    from world import sharing
+
     current = current_world_root(caller)
     if current is not None and current.id == root.id:
         return "You are already in that world."
     account = account_of(caller)
+    if not sharing.may_enter(account, root):
+        return (f"{lore.title(root)} is not shared, so only whoever made it "
+                f"can go in.")
     last = (account.db.world_last_locations or {}).get(str(root.id))
     destination = last if getattr(last, "pk", None) else root
-    return _go(caller, destination, f"Entering world: |w{lore.title(root)}|n")
+    said = _go(caller, destination, f"Entering world: |w{lore.title(root)}|n")
+    if said is None:
+        away = _creator_away_note(account, root)
+        if away:
+            caller.msg(away)
+    return said
+
+
+def _creator_away_note(account, root):
+    """
+    Said to a visitor arriving while the creator is logged out, once, so it
+    is not discovered by trying a door. docs/archived/shared-worlds.md 4.3.
+    """
+    from world import sponsor
+
+    creator = sponsor.creator_of(root)
+    if creator is None or creator == account or sponsor.present(creator):
+        return ""
+    return (f"|y{creator.key} is away, so nothing new happens here until they "
+            f"are back: the people here keep to themselves, and unexplored "
+            f"ways stay closed.|n")
 
 
 def enter_start(caller):
@@ -1099,23 +1133,123 @@ def _enter_entry(number, root, count, current):
         command=lambda ctx: f"enter world {number}")
 
 
-ENTER_WHICH = _which_world_form("enter", _enter_entry,
-                                "You haven't made any worlds yet.")
+def _public_line(root, current):
+    """`The Drowned Library, by fastfinge, online -- 14 rooms`. 4.1."""
+    from world import sharing, sponsor
+
+    creator = sponsor.creator_of(root)
+    if sponsor.present(creator):
+        state = "online"
+    else:
+        state = "away (nothing new happens there until they are back)"
+    count = len(sharing.rooms_of(root))
+    rooms = f"{count} room{'s' if count != 1 else ''}"
+    here = " (you are here)" if current is not None and current.id == root.id         else ""
+    return f"{lore.title(root)}, by {creator.key}, {state} -- {rooms}{here}"
+
+
+def _public_entries(ctx):
+    from world import sharing
+
+    current = current_world_root(ctx.character)
+    return [menus.Action(
+        f"public{root.id}", _public_line(root, current),
+        run=lambda ctx, root=root: enter_world(ctx.character or ctx.caller,
+                                               root),
+        after=menus.CLOSE, aliases=names_for(lore.title(root)),
+        command=lambda ctx, number=number: f"enter world public {number}")
+        for number, root in enumerate(
+            sharing.public_worlds(account_of(ctx.caller)), 1)]
+
+
+PUBLIC_WORLDS = menus.Form(
+    key="public-worlds", title="Public worlds",
+    intro=lambda ctx: "" if _public_entries(ctx)
+    else "Nobody here has shared a world yet.",
+    items=_public_entries,
+    command=lambda ctx: "enter world public",
+)
+
+
+def _public_submenu(ctx):
+    """Offered only when somebody else has shared a world. 4.1."""
+    from world import sharing
+
+    if not sharing.public_worlds(account_of(ctx.caller)):
+        return []
+    return [menus.Submenu("public", "Public worlds", PUBLIC_WORLDS, help=(
+        "Worlds other people here have shared. Whoever made one pays for what "
+        "happens in it, and only while they are logged in."))]
+
+
+def _enter_intro(ctx):
+    if resolve_worlds(account_of(ctx.caller)):
+        return ""
+    if _public_submenu(ctx):
+        return "You haven't made any worlds yet, but others have shared theirs."
+    return "You haven't made any worlds yet."
+
+
+ENTER_WHICH = menus.Form(
+    key="enter-world", title="Enter which world?", intro=_enter_intro,
+    items=lambda ctx: _world_entries(ctx, _enter_entry) + _public_submenu(ctx),
+    command=lambda ctx: "enter world",
+)
+
+
+def _pick_public(caller, words):
+    """A shared world by number or title, or None with the caller told. 4.2."""
+    from world import sharing
+
+    worlds = sharing.public_worlds(account_of(caller))
+    if not worlds:
+        caller.msg("Nobody here has shared a world yet.")
+        return None
+    said = " ".join(words).strip()
+    if said.isdigit():
+        index = int(said) - 1
+        if 0 <= index < len(worlds):
+            return worlds[index]
+        caller.msg(f"There is no public world {said}. Choose 1 to "
+                   f"{len(worlds)}; |wenter world public|n lists them.")
+        return None
+    lowered = said.lower().rstrip(".")
+    matches = [root for root in worlds
+               if lore.title(root).lower().rstrip(".") == lowered]
+    if not matches:
+        matches = [root for root in worlds
+                   if lowered in lore.title(root).lower()]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        caller.msg(f"No public world is called {said}. |wenter world public|n "
+                   f"lists them.")
+    else:
+        caller.msg(f"More than one public world matches {said}. Give its "
+                   f"number instead.")
+    return None
 
 
 def enter_world_run(cmd, ctx, words):
     if not words:
         menus.open_menu(cmd.caller, ENTER_WHICH, session=cmd.session)
         return
-    picked = _pick_world(cmd.caller, words)
-    if picked is not None:
-        said = enter_world(cmd.caller, picked[0])
+    if words[0].lower() == "public":
+        if len(words) == 1:
+            menus.open_menu(cmd.caller, PUBLIC_WORLDS, session=cmd.session)
+            return
+        root = _pick_public(cmd.caller, words[1:])
+    else:
+        picked = _pick_world(cmd.caller, words)
+        root = picked[0] if picked is not None else None
+    if root is not None:
+        said = enter_world(cmd.caller, root)
         if said:
             cmd.caller.msg(said)
 
 
 def enter_world_items(ctx):
-    return _world_entries(ctx, _enter_entry)
+    return _world_entries(ctx, _enter_entry) + _public_submenu(ctx)
 
 
 def enter_start_run(cmd, ctx, words):

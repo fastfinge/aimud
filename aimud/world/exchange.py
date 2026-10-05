@@ -206,6 +206,9 @@ LEFT = {
     "ai_fallbacks": "which models an account falls back to",
     "exported_worlds": "which exports an account wrote, so it may remove "
                        "them; per account, and never in the file",
+    "shared": "whether this server's other accounts may enter is a choice "
+              "about this server, not about the world; an imported world "
+              "arrives unshared, as it arrives with a new owner",
     "world_mode": "how hard a world thinks is what its owner spends, and the "
                   "importer is the one paying",
     "spend_totals": "the ledger, per account",
@@ -465,7 +468,7 @@ def _requires(root):
         # Every tool a rule here names, with the shape it was written
         # against. Read off the rules, never stored, so it cannot drift from
         # them; a world never carries where a service is or how to log in to
-        # it, only that it needs one by this name. docs/mcp-client.md 10.
+        # it, only that it needs one by this name. docs/archived/mcp-client.md 10.
         "services": _services_needed(root),
     }
 
@@ -997,7 +1000,7 @@ def _required(doc, known=None):
 
     # The services it needs, by name and by shape. Refused rather than built
     # with the rules that call them suspended, and never added: a world does
-    # not get to put a service on somebody else's server. docs/mcp-client.md
+    # not get to put a service on somebody else's server. docs/archived/mcp-client.md
     # 10.3.
     needs = requires.get("services") or {}
     if not hasattr(needs, "keys") or not all(

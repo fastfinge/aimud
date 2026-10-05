@@ -195,17 +195,21 @@ class CmdExport(VerbCommand):
 
 class CmdEnter(VerbCommand):
     """
-    Go into one of your worlds, or back to where everybody starts.
+    Go into a world, or back to where everybody starts.
 
     Usage:
       enter
       enter world [<number or title>]
+      enter world public [<number or title>]
       enter start
 
     |wenter world|n takes you to where you last were in that world, or to its
-    first room. |wenter start|n takes you back to the room everybody starts
-    in, outside every world; it also answers to that room's name, so |wenter
-    limbo|n works too. On its own, |wenter|n lists where you can go.
+    first room. |wenter world public|n lists the worlds other people here have
+    shared, who made each one and whether they are online; whoever made a
+    world pays for what happens in it, and only while they are logged in.
+    |wenter start|n takes you back to the room everybody starts in, outside
+    every world; it also answers to that room's name, so |wenter limbo|n works
+    too. On its own, |wenter|n lists where you can go.
     """
 
     key = "enter"

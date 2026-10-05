@@ -103,32 +103,53 @@ class WhoPaysForABank(GameTest):
 
     def setUp(self):
         super().setUp()
-        self.room1.db.is_world_root = True
-        self.room1.db.world_root = self.room1
-
-    def test_the_world_creator_pays_for_their_own_world(self):
         from world import sponsor as sponsor_mod
 
+        self.room1.db.is_world_root = True
+        self.room1.db.world_root = self.room1
         self.account.db.openrouter_api_key = "sk-test"
         sponsor_mod.claim(self.room1, self.account)
-        sponsor, model = summaries.payer_for(f"aimud-world-{self.room1.id}")
+        self.bank = f"aimud-world-{self.room1.id}"
+
+    def test_the_world_creator_pays_for_their_own_world(self):
+        sponsor, model = summaries.payer_for(self.bank)
         self.assertEqual(sponsor.account, self.account)
         self.assertTrue(model)
 
-    def test_a_world_whose_maker_has_gone_is_still_thought_about(self):
+    def test_an_unshared_world_is_slept_with_its_creator_logged_out(self):
         """
-        Any account with a key stands in. The alternative is memories that are
-        never summarised again, and mnemosyne deletes what it never slept.
+        The one exception to "nothing while the creator is away", chosen on
+        purpose: sleep runs once the game is quiet, which is usually after
+        everybody has gone. docs/archived/shared-worlds.md 5.4.
         """
-        self.account.db.openrouter_api_key = "sk-test"
-        sponsor, _model = summaries.payer_for("aimud-world-999999")
+        sponsor, _model = summaries.payer_for(self.bank)
+        self.assertEqual(sponsor.key(), "sk-test")
+
+    def test_a_shared_one_is_not(self):
+        self.room1.db.shared = True
+        self.assertEqual(summaries.payer_for(self.bank), (None, None))
+
+    def test_until_its_creator_is_back(self):
+        from tests import support
+
+        self.room1.db.shared = True
+        support.logged_in(self, self.account)
+        sponsor, _model = summaries.payer_for(self.bank)
         self.assertEqual(sponsor.account, self.account)
+
+    def test_a_world_whose_maker_has_gone_is_paid_for_by_nobody(self):
+        """
+        Any account with a key used to stand in, so the memories were still
+        thought about. On a shared server that is a stranger paying for
+        somebody else's world. The bank is still slept, without a summary.
+        """
+        self.account2.db.openrouter_api_key = "sk-somebody-else"
+        self.assertEqual(summaries.payer_for("aimud-world-999999"),
+                         (None, None))
 
     def test_a_game_with_no_key_anywhere_pays_for_nothing(self):
         self.account.db.openrouter_api_key = ""
-        self.account2.db.openrouter_api_key = ""
-        self.assertEqual(summaries.payer_for(f"aimud-world-{self.room1.id}"),
-                         (None, None))
+        self.assertEqual(summaries.payer_for(self.bank), (None, None))
 
     def test_the_summaries_model_is_asked_for_before_the_memory_one(self):
         """
@@ -136,28 +157,19 @@ class WhoPaysForABank(GameTest):
         and `remember` is a player waiting on an answer. `memory` is named as
         the fallback so a game that set only that one still works.
         """
-        self.account.db.openrouter_api_key = "sk-test"
         with mock.patch.object(type(self.account), "model_for") as chose:
-            summaries.payer_for(f"aimud-world-{self.room1.id}")
+            summaries.payer_for(self.bank)
         self.assertEqual(chose.call_args.args, ("summaries", "memory"))
 
     def test_and_it_is_a_job_somebody_can_choose(self):
         self.assertIn("summaries", dict(preferences.JOBS))
 
-    def test_a_whole_pass_looks_for_the_stand_in_account_once(self):
-        """
-        Not once per bank. A world whose creator has gone falls through to
-        any account with a key, and doing that in the loop scanned every
-        account in the game once for every bank on disk.
-        """
-        self.account.db.openrouter_api_key = "sk-test"
-        banks = [f"aimud-world-{n}" for n in range(900001, 900021)]
-        with mock.patch.object(summaries, "_anybody_with_a_key",
-                               return_value=self.account) as looked:
-            payers = summaries.payers_for(banks)
-        self.assertEqual(looked.call_count, 1)
-        self.assertEqual(len(payers), len(banks))
-        self.assertTrue(all(who is not None for who, _model in payers.values()))
+    def test_a_whole_pass_answers_for_every_bank(self):
+        banks = [self.bank] + [f"aimud-world-{n}" for n in range(900001, 900004)]
+        payers = summaries.payers_for(banks)
+        self.assertEqual(set(payers), set(banks))
+        self.assertEqual(payers[self.bank][0].account, self.account)
+        self.assertEqual(payers["aimud-world-900001"], (None, None))
 
 
 @tag("unit")

@@ -1,7 +1,7 @@
 """
 Who an agent is, and what it is allowed to be.
 
-Phase 2 of docs/mcp.md. An agent reaches the game over MCP and has to say who
+Phase 2 of docs/archived/mcp.md. An agent reaches the game over MCP and has to say who
 it is before anything else happens. What it says is a token, minted here and
 kept on the account it belongs to.
 
@@ -144,7 +144,7 @@ def greeting(account):
 #: Tools that exist and are deliberately not offered to an agent, with the
 #: reason. Not a denylist to be filled in quietly: each line is an answer, and
 #: the guard test in `tests/test_agents.py` fails until a new tool is either
-#: offered or named here. §10 of docs/mcp.md.
+#: offered or named here. §10 of docs/archived/mcp.md.
 NOT_OFFERED = {
     "commonsense": "threaded: it reaches the second lexicon over the network, "
                    "and a tool run from the Server's reactor thread would "
@@ -153,7 +153,7 @@ NOT_OFFERED = {
     "list_tools": "a service's tools reach a world through a rule, and these "
                   "are offered to the loop that writes rules and nowhere "
                   "else; an agent reads the same through `view services` and "
-                  "uses a tool by typing the verb. docs/mcp-client.md 6",
+                  "uses a tool by typing the verb. docs/archived/mcp-client.md 6",
     "show_tool": "the same as list_tools: written for the rule loop, and "
                  "`view service <name>` says it in full to anybody",
 }
@@ -180,12 +180,18 @@ def _context(session):
     room = getattr(character, "location", None) if character else None
     world_root = room.db.world_root if room is not None else None
     account = getattr(session, "account", None)
+    # Inside a world, its creator pays, as for anybody standing there; an
+    # agent is a player. Outside every world there is nobody else to ask.
+    # docs/archived/shared-worlds.md 5.3.
+    if world_root is not None:
+        sponsor = sponsor_mod.of_world(world_root, actor=character)
+    elif account is not None:
+        sponsor = sponsor_mod.of_account(account, actor=character)
+    else:
+        sponsor = None
     return tb.ToolContext(
         world_root=world_root, room=room, actor=character,
-        sponsor=sponsor_mod.of_account(account, actor=character,
-                                       world_root=world_root)
-        if account is not None else None,
-        job="agent")
+        sponsor=sponsor, job="agent")
 
 
 def offered_tools(ctx):
@@ -204,7 +210,7 @@ def offered_tools(ctx):
     * **It does not act.** Only lookups are offered, plus this module's own
       document tools. An agent that wanted to move or speak types it with
       `send`, where the parser, the rules and the room all get their say --
-      which is the whole argument of docs/mcp.md §5.1.
+      which is the whole argument of docs/archived/mcp.md §5.1.
     * **`NOT_OFFERED` names it**, with the reason, for a tool that is runnable
       and a lookup and still cannot be offered as it stands.
 
@@ -309,7 +315,7 @@ def document_tools():
     """
     Reading a world out and building one from a document.
 
-    These are the reason this surface is worth having (§6 of docs/mcp.md). A
+    These are the reason this surface is worth having (§6 of docs/archived/mcp.md). A
     test fixture is one `import_world` rather than four hundred menu answers,
     and what comes back out of `export_world` is the assertion.
 
@@ -401,7 +407,7 @@ def _import_handler(ctx, args, answer):
     except ValueError as exc:
         answer(tb.complain(f"that is not a document this can read: {exc}"))
         return
-    account = getattr(ctx.sponsor, "account", None)
+    account = _account_of(ctx)
     if account is None:
         answer(tb.complain("Only an account can hold a world."))
         return
@@ -420,12 +426,21 @@ def _import_handler(ctx, args, answer):
            f"on your key when you play it.")
 
 
+def _account_of(ctx):
+    """
+    The agent's own account: whose worlds it can name, and who owns one it
+    imports. Not the sponsor's -- in a world that is whoever made it, which
+    is who pays and nothing else (docs/archived/shared-worlds.md 5.3).
+    """
+    return getattr(ctx.actor, "account", None)
+
+
 def _world_for(ctx, said):
     """The world a tool was asked about, or (None, why not)."""
     from commands.world_subject import resolve_worlds
     from world import exchange, lore
 
-    account = getattr(ctx.sponsor, "account", None)
+    account = _account_of(ctx)
     if not said:
         if ctx.world_root is not None:
             return ctx.world_root, ""
