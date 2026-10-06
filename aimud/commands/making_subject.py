@@ -58,7 +58,12 @@ def listing_text(maker, root):
                 f"|wcreate {maker.key}|n makes one.")
     lines = [f"|w{maker.label}|n", ""]
     for value, label, helped in entries:
-        lines.append(f"  |w{value}|n -- {label}")
+        # A picker's label usually leads with the value already ("box.n.01
+        # -- get"), and saying it twice reads "box.n.01 -- box.n.01 -- get".
+        if str(label).startswith(str(value)):
+            label = str(label)[len(str(value)):].lstrip(" -")
+        lines.append(f"  |w{value}|n -- {label}" if label
+                     else f"  |w{value}|n")
         if helped:
             lines.append(f"      |x{helped}|n")
     return "\n".join(lines)

@@ -3454,3 +3454,22 @@ class WhatAnEditFormOpensHolding(Building):
         draft = self.char1.ndb._evmenu.stack[-1].ctx.draft
         self.assertEqual(draft["trait_bonuses"],
                          [{"trait": "defence", "amount": 1}])
+
+
+@tag("unit")
+class AListingSaysEachThingOnce(SimpleTestCase):
+    """`view kinds` read "box.n.01 -- box.n.01 -- get"."""
+
+    def test_a_label_that_leads_with_its_value_is_not_repeated(self):
+        from types import SimpleNamespace
+
+        from commands.making_subject import listing_text
+
+        maker = SimpleNamespace(
+            key="kind", label="Sorts of thing",
+            entries=lambda root: [("box.n.01", "box.n.01 -- get", ""),
+                                  ("dawn", "the sun coming up", "")])
+        said = listing_text(maker, None)
+        self.assertIn("box.n.01|n -- get", said)
+        self.assertNotIn("box.n.01 -- box.n.01", said)
+        self.assertIn("dawn|n -- the sun coming up", said)
