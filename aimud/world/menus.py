@@ -961,8 +961,12 @@ class GameMenu(EvMenu):
         filterable = len(entries) > FILTER_FROM
         visible, shown, start, notes = self._page(frame, entries)
         lines.append("")
-        if not shown:
+        if not shown and entries:
+            # A filter left nothing. An empty form is not a failed search:
+            # its intro says why it is empty, or this does.
             lines.append("Nothing matches.")
+        elif not shown and not intro:
+            lines.append("There is nothing to choose from here.")
         for number, entry in enumerate(shown, start + 1):
             lines.append(f"{number}. {self._item_line(ctx, entry)}")
         lines += [""] + notes if notes else [""]

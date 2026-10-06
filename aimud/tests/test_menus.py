@@ -141,6 +141,14 @@ class EditingAForm(Driving):
         self.type("title")
         self.assertIn("Type the title", self.last)
 
+    def test_an_empty_form_is_not_a_search_that_found_nothing(self):
+        form = menus.Form(key="test", title="Public worlds",
+                          intro="Nobody here has shared a world yet.",
+                          items=lambda ctx: [])
+        self.open(form)
+        self.assertIn("Nobody here has shared", self.last)
+        self.assertNotIn("Nothing matches", self.last)
+
     def test_a_label_that_is_a_clause_is_asked_for_without_the(self):
         form = menus.Form(key="test", title="A thing", items=[
             menus.Field("name", "What it is called")])
