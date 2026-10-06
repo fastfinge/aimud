@@ -146,10 +146,6 @@ def greeting(account):
 #: the guard test in `tests/test_agents.py` fails until a new tool is either
 #: offered or named here. §10 of docs/archived/mcp.md.
 NOT_OFFERED = {
-    "commonsense": "threaded: it reaches the second lexicon over the network, "
-                   "and a tool run from the Server's reactor thread would "
-                   "stop the whole mud while it waited. Wants the deferred "
-                   "shape `llm.fetch` uses before it can be offered",
     "list_tools": "a service's tools reach a world through a rule, and these "
                   "are offered to the loop that writes rules and nowhere "
                   "else; an agent reads the same through `view services` and "
@@ -223,7 +219,7 @@ def offered_tools(ctx):
     ours = {tool.name for tool in document_tools()}
     found = {}
     for name, tool in toolkit.every_tool().items():
-        if not tool.runnable or name in NOT_OFFERED or tool.threaded:
+        if not tool.runnable or name in NOT_OFFERED:
             continue
         if tool.kind != tb.LOOKUP and name not in ours:
             continue
@@ -248,9 +244,14 @@ def tool_schemas(session):
     return schemas
 
 
-def run_tool(session, name, args):
+def run_tool(session, name, args, later=None):
     """
     Run one tool and answer `(what to say, whether it went wrong)`.
+
+    A tool that answers later -- `recall` searches on the worker pool, and a
+    `threaded` one runs there whole -- returns None here and calls
+    `later(said, failed)` when it has answered. With no `later` to call, it
+    says it could not wait instead.
 
     Never raises past its caller: the Portal is holding an HTTP request open,
     and a traceback that reaches nobody is a timeout with no reason attached.
@@ -273,15 +274,45 @@ def run_tool(session, name, args):
         return "; ".join(wrong), True
 
     said = []
-    tool.handler(ctx, args, said.append)
-    if not said:
-        # Every tool offered here answers before it returns. One that does not
-        # has grown a callback, and saying so is better than an empty result
-        # that reads like a world with nothing in it.
-        return (f"{name} did not answer. It has probably grown an "
-                f"asynchronous step, which this surface cannot carry yet."
-                ), True
-    answer = said[0]
+    waiting = []
+
+    def answered(answer):
+        # Once only, like every handler's `answer`; and if the caller has
+        # already been told to wait, this is what it is waiting for.
+        if said:
+            return
+        said.append(answer)
+        if waiting:
+            try:
+                later(*_rendered(name, answer))
+            except Exception:
+                logger.log_trace(f"agents: answering {name} late")
+
+    if tool.threaded:
+        from world import llm
+
+        def failed(failure):
+            logger.log_err(f"agents: {name} failed: "
+                           f"{failure.getErrorMessage()}")
+            answered(tb.Complaint("That lookup failed."))
+
+        llm.fetch(tool.handler, ctx, args,
+                  on_success=answered, on_error=failed)
+    else:
+        tool.handler(ctx, args, answered)
+    if said:
+        return _rendered(name, said[0])
+    if later is None:
+        return (f"{name} answers later, and nothing here was waiting to "
+                f"hear it."), True
+    waiting.append(True)
+    return None
+
+
+def _rendered(name, answer):
+    """A handler's answer as `(what to say, whether it went wrong)`."""
+    from world import toolbox as tb
+
     if isinstance(answer, tb.Complaint):
         return _shortened(name, str(answer)), True
     if isinstance(answer, tb.Accepted):

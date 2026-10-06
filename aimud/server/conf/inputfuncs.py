@@ -87,11 +87,15 @@ def mcp_tool(session, ticket="", name="", args=None, **kwargs):
     """
     from world import agents
 
+    def reply(said, failed):
+        session.msg(mcp_tool=((ticket, said, failed), {}))
+
     try:
-        said, failed = agents.run_tool(session, name, args or {})
+        answer = agents.run_tool(session, name, args or {}, later=reply)
     except Exception:
         from evennia.utils import logger
 
         logger.log_trace()
-        said, failed = "Something went wrong running that tool.", True
-    session.msg(mcp_tool=((ticket, said, failed), {}))
+        answer = "Something went wrong running that tool.", True
+    if answer is not None:
+        reply(*answer)

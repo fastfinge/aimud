@@ -49,9 +49,12 @@ PROTOCOL_VERSION = "2025-06-18"
 #: you prints the room, and a command that wakes an NPC may print again a
 #: moment later. Waiting for quiet is the honest way to read a stream with no
 #: end marker, and it is what a person staring at a terminal does too.
+#: Quiet is counted from the first thing said, not from the line being typed:
+#: a reply that takes longer than this to start (`help` does) is still a reply.
 SETTLE = 0.25
 
-#: The longest a single `send` waits for quiet, however talkative the room is.
+#: The longest a single `send` waits for quiet, however talkative the room is,
+#: and so also the longest it waits for a command that says nothing at all.
 MOST_WAIT = 10.0
 
 #: The longest `poll` blocks when the mud has said nothing at all.
@@ -295,12 +298,16 @@ class McpResource(resource.Resource):
         """
         Call `then` when the mud has been quiet for `settle` seconds, or when
         `until()` first says yes, or when `most` seconds have gone by.
+
+        Quiet starts with the first line: until the mud has said something
+        there is nothing to have gone quiet after, and a command that takes a
+        moment to answer would otherwise come back empty with its reply left
+        for the next call. `stirred` starts the settle timer when it arrives.
         """
         self._finish(sess)
         sess.waiting = {"then": then, "settle": settle, "until": until,
                         "deadline": time.time() + most}
-        sess.timer = reactor.callLater(
-            most if until is not None else settle, self._finish, sess)
+        sess.timer = reactor.callLater(most, self._finish, sess)
 
     # -- sessions -----------------------------------------------------------
 

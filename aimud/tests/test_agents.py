@@ -40,8 +40,10 @@ by running it; what these hold level is the half that lives in the game.
 """
 
 import ast
+import contextlib
 import json
 import pathlib
+from unittest import mock
 
 from tests.base import GameTest, NoWorldTest
 
@@ -338,6 +340,170 @@ class ToolsAreOffered(GameTest):
 
         long = "x" * (agents.MOST_RESULT + 500)
         self.assertEqual(agents._shortened("export_world", long), long)
+
+
+@contextlib.contextmanager
+def held():
+    """
+    `llm.fetch` as the game has it, a callback that comes later, with the
+    test deciding when. `immediately` would hide exactly what is being tested
+    here: a tool that answers after `run_tool` has returned.
+    """
+    from world import llm
+
+    pending = []
+
+    def fetch(work, *args, on_success, on_error):
+        pending.append(lambda: on_success(work(*args)))
+
+    def release():
+        while pending:
+            pending.pop(0)()
+
+    with mock.patch.object(llm, "fetch", fetch):
+        yield release
+
+
+class ToolsThatAnswerLater(GameTest):
+    """
+    A tool whose answer comes off the worker pool. `recall` is one, and it
+    answered every agent with "did not answer" until `run_tool` could wait.
+    """
+
+    accounts = True
+
+    def agent_session(self):
+        return Session(account=self.account, puppet=self.char1,
+                       logged_in=True)
+
+    def offering(self, tool):
+        from world import agents
+
+        return mock.patch.object(agents, "offered_tools",
+                                 lambda ctx: {tool.name: tool})
+
+    def slow_tool(self, kept):
+        from world import toolbox as tb
+
+        return tb.Tool("slow", "Answers when it is ready.",
+                       tb.params({}, []),
+                       lambda ctx, args, answer: kept.append(answer),
+                       looks=True)
+
+    def test_a_late_answer_is_passed_on(self):
+        from world import agents
+
+        kept, heard = [], []
+        with self.offering(self.slow_tool(kept)):
+            now = agents.run_tool(self.agent_session(), "slow", {},
+                                  later=lambda *said: heard.append(said))
+        self.assertIsNone(now)
+        self.assertEqual(heard, [])
+        kept[0]("here it is")
+        self.assertEqual(heard, [("here it is", False)])
+
+    def test_it_is_passed_on_once(self):
+        from world import agents
+
+        kept, heard = [], []
+        with self.offering(self.slow_tool(kept)):
+            agents.run_tool(self.agent_session(), "slow", {},
+                            later=lambda *said: heard.append(said))
+        kept[0]("first")
+        kept[0]("second")
+        self.assertEqual(heard, [("first", False)])
+
+    def test_with_nobody_to_tell_it_says_so(self):
+        from world import agents
+
+        with self.offering(self.slow_tool([])):
+            said, failed = agents.run_tool(self.agent_session(), "slow", {})
+        self.assertTrue(failed)
+        self.assertIn("later", said)
+
+    def test_a_threaded_tool_runs_on_the_pool(self):
+        from world import agents, toolbox as tb
+
+        ran = []
+
+        def handler(ctx, args):
+            ran.append(True)
+            return "from the pool"
+
+        tool = tb.Tool("pooled", "Runs off the reactor.", tb.params({}, []),
+                       handler, looks=True, threaded=True)
+        heard = []
+        with self.offering(tool), held() as release:
+            now = agents.run_tool(self.agent_session(), "pooled", {},
+                                  later=lambda *said: heard.append(said))
+            self.assertIsNone(now)
+            self.assertEqual(ran, [], "it ran on the reactor")
+            release()
+        self.assertEqual(heard, [("from the pool", False)])
+
+    def test_recall_reaches_the_portal_by_its_ticket(self):
+        """The bug as an agent met it, through the inputfunc the Portal calls."""
+        from server.conf import inputfuncs
+        from world import memory
+
+        session = self.agent_session()
+        with held() as release, \
+                mock.patch.object(memory, "available", lambda: True), \
+                mock.patch.object(memory, "recall_rows_sync",
+                                  lambda *args: []):
+            inputfuncs.mcp_tool(session, ticket="7", name="recall",
+                                args={"query": "the red box"})
+            self.assertNotIn("mcp_tool", session.said)
+            release()
+        ticket, said, failed = session.said["mcp_tool"][0]
+        self.assertEqual(ticket, "7")
+        self.assertFalse(failed)
+        self.assertIn("the red box", said)
+
+
+class SendWaitsForTheReply(NoWorldTest):
+    """
+    The Portal's waiting, on a clock the test turns by hand.
+
+    `send` used to start counting quiet the moment the line was typed, so a
+    reply that took more than `SETTLE` to begin -- `help` does -- came back as
+    "(nothing was said)" and turned up on the next call instead.
+    """
+
+    def setUp(self):
+        from types import SimpleNamespace
+
+        from twisted.internet import task
+
+        from server.conf import mcp_protocol
+
+        super().setUp()
+        self.mcp = mcp_protocol
+        self.clock = task.Clock()
+        patcher = mock.patch.object(mcp_protocol, "reactor", self.clock)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.resource = mcp_protocol.McpResource(sessionhandler=None)
+        self.sess = SimpleNamespace(waiting=None, timer=None, lines=[])
+        self.answered = []
+
+    def wait(self):
+        self.resource._wait(self.sess, lambda: self.answered.append(True))
+
+    def test_a_slow_reply_is_waited_for(self):
+        self.wait()
+        self.clock.advance(self.mcp.SETTLE * 4)
+        self.assertEqual(self.answered, [], "gave up before anything was said")
+        self.resource.stirred(self.sess)
+        self.clock.advance(self.mcp.SETTLE / 2)
+        self.assertEqual(self.answered, [])
+        self.clock.advance(self.mcp.SETTLE)
+        self.assertEqual(self.answered, [True])
+
+    def test_silence_is_answered_in_the_end(self):
+        self.wait()
+        self.clock.advance(self.mcp.MOST_WAIT)
+        self.assertEqual(self.answered, [True])
 
 
 class DocumentsTravel(WorldTest):
@@ -726,7 +892,8 @@ class WhatAnAgentIsAndIsNotOffered(GameTest):
     def test_every_lookup_that_can_answer_is_offered(self):
         """
         The half that makes this worth doing: a lookup added tomorrow beside
-        the register it reads reaches an agent with nobody wiring it up.
+        the register it reads reaches an agent with nobody wiring it up --
+        a `threaded` one too, since `run_tool` can wait for it.
         """
         from world import agents, toolbox as tb, toolkit
 
@@ -735,24 +902,11 @@ class WhatAnAgentIsAndIsNotOffered(GameTest):
         for name, tool in toolkit.every_tool().items():
             if tool.kind != tb.LOOKUP or not tool.runnable:
                 continue
-            if name in agents.NOT_OFFERED or tool.threaded:
+            if name in agents.NOT_OFFERED:
                 continue
             if not tool.offered(ctx):
                 continue
             self.assertIn(name, offered, name)
-
-    def test_what_is_left_out_is_left_out_on_purpose(self):
-        from world import agents, toolbox as tb, toolkit
-
-        unaccounted = sorted(
-            name for name, tool in toolkit.every_tool().items()
-            if tool.kind == tb.LOOKUP and tool.runnable and tool.threaded
-            and name not in agents.NOT_OFFERED)
-        self.assertEqual(
-            unaccounted, [],
-            "these lookups cannot be offered as they are and nothing says so; "
-            "add each to agents.NOT_OFFERED with the reason, or give it the "
-            "deferred shape an agent can call")
 
     def test_nothing_is_left_out_that_no_longer_exists(self):
         from world import agents, toolkit
