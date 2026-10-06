@@ -181,6 +181,23 @@ class AskingEachOne(GameTest):
     def test_a_sort_of_thing(self):
         self.assertIn("weapon.n.01", self.ask("kind_info", kind="sword.n.01"))
 
+    def test_a_sort_of_thing_by_the_word_this_world_settled(self):
+        """
+        "lamp" asked in a world that knows lamp.n.01 used to answer that
+        neither the dictionary nor the world knew anything about it.
+        """
+        from world import kinds
+
+        kinds.remember(self.root, "lamp.n.01", {"get": True})
+        said = self.ask("kind_info", kind="lamp")
+        self.assertIn("lamp.n.01", said)
+        self.assertIn("illumination", said)
+
+    def test_a_word_with_senses_to_choose_between_offers_them(self):
+        said = self.ask("kind_info", kind="chest")
+        self.assertIn("chest.n.02", said)
+        self.assertNotIn("knows anything", said)
+
     def test_examining_a_thing(self):
         said = self.ask("examine", name=self.obj1.key)
         self.assertIn(self.obj1.key, said)

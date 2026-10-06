@@ -673,6 +673,34 @@ def _is_room(obj):
 # Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
+def _kind_for_word(world_root, said):
+    """
+    The kind `kind_info` was asked about, or the senses to choose between.
+
+    A synset is itself. A word is first what this world has made of it -- a
+    noun fold, or the one kind it has settled on that word -- because "lamp"
+    asked in a world that knows `lamp.n.01` means that. Failing those, a word
+    the dictionary can settle unaided is settled (`canonical`); one it cannot
+    answers with its senses, since guessing between a chest you open and a
+    chest you breathe with is the one thing a lookup must not do quietly.
+    """
+    from world import folds, lexicon
+
+    kind = canonical(said)
+    if not kind or lexicon.ancestors(kind) or spec(world_root, kind):
+        return kind
+    word = str(said or "").strip().lower()
+    folded = folds.nouns_of(world_root).get(word) if world_root else ""
+    if folded:
+        return folded
+    noun = lexicon.head_noun(word)
+    settled = [known for known in vocabulary(world_root)
+               if lexicon.word_of(known) == noun]
+    if len(settled) == 1:
+        return settled[0]
+    return lexicon.senses(noun) or kind
+
+
 def lookup_tools():
     """`kind_info`: what the dictionary and this world say about a sort of thing."""
     from world import toolbox as tb
@@ -680,8 +708,11 @@ def lookup_tools():
     def informing(ctx, args):
         from world import lexicon
 
-        kind = canonical(str(args.get("kind") or ""))
         root = ctx.world_root
+        kind = _kind_for_word(root, str(args.get("kind") or ""))
+        if isinstance(kind, list):
+            return ("That word has several senses; ask again by one:\n"
+                    + "\n".join(f"{sense} -- {gloss}" for sense, gloss in kind))
         above = sorted(ancestors(root, kind) - {kind},
                        key=lambda name: -len(lexicon.ancestors(name)))
         entry = spec(root, kind) or {}
