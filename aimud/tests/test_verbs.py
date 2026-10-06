@@ -282,6 +282,17 @@ class DeletingWorlds(_Worlds):
         for gone in (chest, coin, npc, coat):
             self.assertIsNone(gone.pk, gone.key)
 
+    def test_nor_what_somebody_carried_out_of_it_and_left_waiting(self):
+        """What is carried stays in its world (world/crossing.py), so goes with it."""
+        start = self.char1.location
+        self.char1.move_to(self.room3, quiet=True)
+        lamp = create_object("typeclasses.objects.Object", key="lamp",
+                             location=self.char1)
+        self.char1.move_to(start, quiet=True)
+        self.assertIsNone(lamp.location)
+        self.said_into(CmdDelete, "world 2 yes")
+        self.assertIsNone(lamp.pk)
+
     def test_not_the_one_you_are_standing_in_and_nothing_is_asked(self):
         self.char1.move_to(self.room3, quiet=True)
         said = self.said_into(CmdDelete, "world 2")

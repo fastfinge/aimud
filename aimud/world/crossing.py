@@ -25,6 +25,14 @@ That is wrong twice over, and one of the two is unplayable.
 So condition is stashed on the way out and restored on the way in, under the
 same key the names and descriptions use.
 
+**What they carry stays behind as well.** A flashlight carried out of an
+office block and into a hand-built fixture brought its `light` with it, the
+fixture learned darkness from it, and every room there went black for anyone
+without one. A thing belongs to the world it was made in, and a body carrying
+it across is the one way it could leave. So what a character holds is put
+away when they leave a place and handed back when they return -- out of
+every world too, since the start room is a place things are left in.
+
 **What crosses anyway** is the account, the API key, what the player
 remembers, and what they know how to do. Those are facts about the person
 playing rather than about the body, which is the line drawn here.
@@ -35,6 +43,15 @@ from evennia.utils import logger
 #: Where a character keeps each world's condition. Keyed by world root id,
 #: exactly as `world_names` and `world_descs` are.
 ATTR = "world_condition"
+
+#: Where a character keeps what they were carrying in each place they left:
+#: {world root id, or OUTSIDE: [the things]}. The things themselves are
+#: nowhere (no location) while they wait, so no room shows them and no
+#: world's sums count them.
+CARRIED_ATTR = "world_carried"
+
+#: The key for what was carried outside every world, in the start room.
+OUTSIDE = "outside"
 
 #: Evennia's Traits contrib keeps its data in one attribute, and these are the
 #: two halves of its name. Read here rather than through the handler because
@@ -149,13 +166,88 @@ def restore(character, world_root):
     return record
 
 
-def cross(character, leaving, arriving):
+def _place(world_root):
+    return _key(world_root) or OUTSIDE
+
+
+def _carried(character):
+    try:
+        return dict(getattr(character.db, CARRIED_ATTR, None) or {})
+    except (AttributeError, TypeError, ValueError):
+        return {}
+
+
+def put_away(character, world_root):
+    """
+    Leave what this character holds in the place they are leaving.
+
+    Set straight on `location` rather than moved: nothing was dropped or
+    given, nobody saw anything, and no rule about putting things down should
+    fire because somebody walked through a door.
+    """
+    from evennia.objects.objects import DefaultCharacter
+
+    held = [obj for obj in list(character.contents)
+            if not isinstance(obj, DefaultCharacter)
+            and getattr(obj, "destination", None) is None]
+    if not held:
+        return []
+    record = _carried(character)
+    place = _place(world_root)
+    record[place] = [obj for obj in (record.get(place) or []) if obj] + held
+    for obj in held:
+        obj.location = None
+    setattr(character.db, CARRIED_ATTR, record)
+    return held
+
+
+def take_out(character, world_root):
+    """Hand back what this character left in the place they have come to."""
+    record = _carried(character)
+    waiting = [obj for obj in (record.pop(_place(world_root), None) or [])
+               if obj is not None and getattr(obj, "pk", None)]
+    for obj in waiting:
+        obj.location = character
+    setattr(character.db, CARRIED_ATTR, record)
+    return waiting
+
+
+def forget_world(world_root_id):
+    """
+    Destroy whatever anybody left waiting in a world that is going.
+
+    A deleted or reset world takes its things with it, and the ones somebody
+    was carrying when they left are its things too.
+    """
+    from evennia.utils.search import search_object_attribute
+
+    place = str(world_root_id or "")
+    if not place:
+        return 0
+    gone = 0
+    for character in search_object_attribute(key=CARRIED_ATTR):
+        record = _carried(character)
+        if place not in record:
+            continue
+        for obj in record.pop(place) or []:
+            if obj is not None and getattr(obj, "pk", None):
+                obj.delete()
+                gone += 1
+        setattr(character.db, CARRIED_ATTR, record)
+    return gone
+
+
+def cross(character, leaving, arriving, walked=True):
     """
     Carry a character over the threshold between two worlds.
 
     Does nothing at all within one world, which is almost every move: the test
     is the world root and not the room, so walking from a corridor into a
     cellar is not a crossing and costs one comparison.
+
+    `walked` is False for a character arriving from no location at all --
+    made, or stowed at logout -- who has left nowhere, and so has nothing to
+    leave behind or to pick up again.
     """
     if character is None:
         return False
@@ -164,6 +256,10 @@ def cross(character, leaving, arriving):
         return False
     if leaving is None and arriving is None:
         return False
+
+    if walked:
+        put_away(character, leaving)
+        take_out(character, arriving)
 
     if leaving is not None:
         stash(character, leaving)

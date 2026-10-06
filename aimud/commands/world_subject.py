@@ -134,6 +134,11 @@ def clear_world(root, account, destination=None, message=None):
                 destroy(obj)
     for room in rooms:
         room.delete()
+    # And what anybody carried out of it, left waiting for their return --
+    # including what the people just sent away were holding.
+    from world import crossing
+
+    crossing.forget_world(root_id)
 
     # A world nobody owns is a real case: `exchange.build` takes away a world
     # it half made, and a test may build one with no account behind it. The

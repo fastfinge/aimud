@@ -220,7 +220,8 @@ class Character(ObjectParent, DefaultCharacter):
         # traits they write are this world's.
         from world import crossing
 
-        crossing.cross(self, came_from_root, room.db.world_root)
+        crossing.cross(self, came_from_root, room.db.world_root,
+                       walked=source_location is not None)
 
         # What this room is worth to them changed by walking into it, and what
         # they were worth to the room behind them changed by leaving. Both are
