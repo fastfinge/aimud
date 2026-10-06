@@ -14,7 +14,7 @@ from commands.unknown_cmd import retired_spelling
 from commands.verbs import CmdCreate, CmdDelete, CmdEdit, CmdEnter, CmdReset, CmdView
 from server.conf import cmdparser as parser
 from tests import support
-from tests.base import GameCommandTest, GameTest
+from tests.base import GameCommandTest, GameTest, NoWorldTest
 from world import activity, menus, sponsor, verbs
 
 
@@ -51,6 +51,41 @@ class NamingASubject(SimpleTestCase):
         self.assertFalse(subjects.claims("import", "rules"))
         self.assertFalse(subjects.claims("import", "tokens"))
         self.assertTrue(subjects.claims("import", "world"))
+
+
+
+@tag("world")
+class TheGameNamesRealCommands(NoWorldTest):
+    """Some subjects read the database for their words (`enter start`)."""
+
+    def test_every_command_the_game_tells_a_player_to_type_exists(self):
+        """
+        Help text that names a command a player cannot type sends them off to
+        do something in the world instead: the form for a new room said to
+        join a taken direction with `create exit`, and there is no such
+        subject -- it is `create way`, because `exit` quits every menu.
+        """
+        import pathlib
+        import re
+
+        game = pathlib.Path(__file__).resolve().parent.parent
+        verbs = "create|edit|delete|reset|view|import|export|enter"
+        told = re.compile(rf"\|w({verbs}) ([a-z]+)")
+        missing = set()
+        # The start room answers to its own name, and the help says
+        # `enter limbo` because that is what it is called on a real server.
+        limbo = mock.Mock(key="Limbo")
+        with mock.patch.object(world_subject, "start_room", lambda: limbo):
+            self._told(game, told, missing)
+        self.assertEqual(sorted(missing), [])
+
+    def _told(self, game, told, missing):
+        for folder in ("world", "commands"):
+            for path in (game / folder).rglob("*.py"):
+                for verb, word in told.findall(
+                        path.read_text(encoding="utf-8")):
+                    if not subjects.claims(verb, word):
+                        missing.add(f"{verb} {word} ({path.name})")
 
 
 class _Verbs(GameTest):

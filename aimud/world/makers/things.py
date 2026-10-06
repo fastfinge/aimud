@@ -465,7 +465,7 @@ NEW_ROOM = menus.Form(
                      options=direction_options, required=True,
                      help="Only the ways nothing already leads. A direction "
                           "with a room already in it is joined with "
-                          "|wcreate exit|n instead, which is what lets a "
+                          "|wcreate way|n instead, which is what lets a "
                           "world close back on itself."),
         menus.Field("name", "What it is called", required=True,
                     suggestible=True,
