@@ -55,6 +55,13 @@ class ItAfterGetAndDrop(GameCommandTest, Stage):
         self.call(CmdAIGet(), "pipe")
         self.assertIs(referents.recall(self.char1, "it"), self.pipe)
 
+    def test_picking_it_up_says_a_pipe_as_dropping_it_does(self):
+        from commands.look_take_cmds import CmdAIGet
+
+        self.pipe.location = self.room1
+        said = self.call(CmdAIGet(), "pipe")
+        self.assertIn("You pick up a pipe.", said)
+
     def test_and_then_dropping_it_works(self):
         """
         End to end, in the words that were typed. This is the report.

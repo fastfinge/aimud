@@ -212,7 +212,8 @@ def _do_take(caller, obj):
     room = caller.location
     success = obj.move_to(caller, quiet=True)
     if success:
-        caller.msg(f"You pick up {obj.get_display_name(caller)}.")
+        caller.msg("You pick up "
+                   f"{obj.get_numbered_name(1, caller, return_string=True)}.")
         obj.at_get(caller)
         _note(caller, obj)
         # And whatever this world says follows from having taken something --

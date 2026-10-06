@@ -94,6 +94,11 @@ BOOLEAN = "boolean"
 CHOICE = "choice"
 SECRET = "secret"
 
+#: A field label starting with one of these is asked for without "the": it
+#: is a clause rather than a noun, or it has its article already.
+NO_ARTICLE = ("what", "how", "where", "who", "when", "which", "whether",
+              "why", "whose", "the", "a", "an")
+
 #: How a view menu behaves after showing what it is for. §3.9.
 WALK_AWAY = "walk_away"
 CLOSE_VIEW = "close"
@@ -1035,7 +1040,10 @@ class GameMenu(EvMenu):
         typed = _call(field.prompt, ctx, "")
         if not typed:
             label = strip_ansi(field.label_for(ctx)).lower()
-            typed = (f"Type the {label}" if field.kind != LONG_TEXT
+            # "Type what it is called" and "Type the word", never "Type the
+            # what it is called" or "Type the the word".
+            article = "" if label.split(" ", 1)[0] in NO_ARTICLE else "the "
+            typed = (f"Type {article}{label}" if field.kind != LONG_TEXT
                      else "Type it")
         typed = typed.rstrip(".")
         if not field.required and field.is_set(ctx):
