@@ -210,6 +210,14 @@ class AskingEachOne(GameTest):
         self.assertIn("too close", self.ask("name_taken", name="Yuna Park"))
         self.assertIn("is free", self.ask("name_taken", name="Mira Holt"))
 
+    def test_a_world_with_no_areas_says_so(self):
+        """`view zones` printed a heading over nothing in a world without any."""
+        from commands.contents_subject import zones_report
+
+        self.assertIn("no areas", zones_report(self.char1, self.root))
+        zones.register(self.root, "Harbour", purpose="where the ships tie up")
+        self.assertIn("Harbour", zones_report(self.char1, self.root))
+
     def test_areas(self):
         zones.register(self.root, "Harbour", purpose="where the ships tie up")
         self.assertIn("where the ships tie up", self.ask("list_zones"))
