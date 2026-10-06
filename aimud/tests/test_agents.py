@@ -540,6 +540,25 @@ class SendWaitsForTheReply(NoWorldTest):
         self.assertNotIn("You are fine.", first.text())
         self.assertIn("You are fine.", second.text())
 
+    def test_what_does_not_fit_is_kept_for_the_next_poll(self):
+        """A crowded room's `look` lost everything past the limit."""
+        lines = [f"a thing numbered {n}" for n in range(400)]
+        first = self.send("look")
+        self.say("\n".join(lines))
+        self.clock.advance(self.mcp.SETTLE * 2)
+        shown = first.text()
+        self.assertTrue(shown.endswith(self.mcp.MORE))
+        self.assertLessEqual(len(shown), self.mcp.MOST_RESULT
+                             + len(self.mcp.MORE))
+        heard = []
+        while shown.endswith(self.mcp.MORE):
+            heard.append(shown[:-len(self.mcp.MORE)])
+            rest = Request()
+            self.resource._poll(rest, self.sess, 99, {"wait": 0})
+            shown = rest.text()
+        heard.append(shown)
+        self.assertEqual("\n".join(heard).splitlines(), lines)
+
     def test_a_call_given_up_on_does_not_hold_up_the_next(self):
         first, second = self.send("look"), self.send("score")
         first.give_up()

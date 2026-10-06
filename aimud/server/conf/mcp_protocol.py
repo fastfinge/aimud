@@ -74,6 +74,10 @@ SWEEP = 60
 MOST_RESULT = 4000
 CUT_SHORT = "\n[... cut short: ask again for less, or for the rest]"
 
+#: What `send` and `poll` say when the mud said more than one answer holds.
+#: The rest is still in the buffer, so it is not lost: the next poll has it.
+MORE = "\n[... more: poll for the rest]"
+
 #: JSON-RPC's own codes, plus the one MCP adds for a dead session.
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -549,7 +553,7 @@ class McpResource(resource.Resource):
 
         def answered():
             self._reply(request, _result(
-                id_, _content(_said(sess.drain()) or "(nothing was said)")))
+                id_, _content(_heard(sess) or "(nothing was said)", whole=True)))
 
         def start():
             self._wait(sess, answered, settle=SETTLE, most=MOST_WAIT,
@@ -566,7 +570,7 @@ class McpResource(resource.Resource):
 
         def answered():
             self._reply(request, _result(id_, _content(
-                _said(sess.drain()) or "(nothing has been said)")))
+                _heard(sess) or "(nothing has been said)", whole=True)))
 
         def start():
             if sess.lines or wait <= 0:
@@ -639,6 +643,25 @@ class McpResource(resource.Resource):
         except Exception:
             logger.log_trace()
         return server.NOT_DONE_YET
+
+
+def _heard(sess):
+    """
+    What the mud has said since last time, as much as one answer holds.
+
+    A mud's output is a stream rather than an answer to ask again, so what
+    does not fit is put back at the front of the buffer for the next `poll`
+    rather than cut off: a crowded room's `look` used to lose everything past
+    four thousand characters with no way to get it back.
+    """
+    text = _said(sess.drain())
+    if len(text) <= MOST_RESULT:
+        return text
+    cut = text.rfind("\n", 0, MOST_RESULT)
+    if cut <= 0:
+        cut = MOST_RESULT
+    sess.lines.insert(0, {"text": text[cut:].lstrip("\n"), "prompt": False})
+    return text[:cut] + MORE
 
 
 def _said(lines):
