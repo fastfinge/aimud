@@ -450,8 +450,8 @@ aimud shipping them.
 
 ### 9.1 What it is
 
-genny (github.com/ogomez92/genny) is a procedural sound generator by Oriol
-Gómez, written in Python with only numpy and scipy. It renders a JSON spec to
+genny (github.com/ogomez92/genny) is a procedural sound generator,
+written in Python with only numpy and scipy. It renders a JSON spec to
 a WAV: 82 instruments, drums, about fifty sound effects, a car engine, a
 formant speech synthesiser with character voices, an effects rack, seamless
 loops, and `genny info` measures of loudness and sharpness. It calls no

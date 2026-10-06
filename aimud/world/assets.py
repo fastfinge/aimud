@@ -195,7 +195,7 @@ def add(path, *, name, description, added_by, origin, charged_to=_SAME,
     if refused:
         raise Refused([refused])
 
-    asset_store.store().put(hash_, found.extension, path)
+    asset_store.store().put(hash_, found.extension_for(version), path)
     if existing is not None:
         # Missing, and somebody has brought it back: whoever did is who paid
         # for it to exist this time. Its name and description stay, since
@@ -441,6 +441,8 @@ def delete(asset, force=False):
     """
     from world import asset_store
 
+    if is_builtin(asset):
+        raise Refused([f"{asset.name} ships with the game, and stays"])
     using = uses_of(asset)
     if using and not force:
         raise Refused([f"{asset.name} is in use: " + "; ".join(
@@ -462,6 +464,22 @@ def delete(asset, force=False):
 #: How full the pool may be before its owners hear what is next in line.
 NEARLY_FULL = 0.9
 
+#: Charged to nobody without being the pool's: shipped with the game, or made
+#: from another asset and gone when it goes. Never evicted, never counted.
+OUTSIDE_THE_POOL = ("builtin", "derived")
+
+
+def pooled():
+    """What owners gave up and the server is keeping: what eviction reads."""
+    return _model().objects.filter(charged_to__isnull=True,
+                                   status="present").exclude(
+        origin__in=OUTSIDE_THE_POOL)
+
+
+def is_builtin(asset):
+    """Whether the game ships this asset, so nobody may remove it."""
+    return getattr(asset, "origin", "") == "builtin"
+
 
 def pool_quota():
     found = getattr(settings, "ASSET_POOL_QUOTA", None)
@@ -471,14 +489,13 @@ def pool_quota():
 def pool_used():
     from django.db.models import Sum
 
-    total = _model().objects.filter(
-        charged_to__isnull=True, status="present").aggregate(Sum("size"))
+    total = pooled().aggregate(Sum("size"))
     return int(total["size__sum"] or 0)
 
 
 def _eviction_order(exclude=None):
     """The pool, least used first: fewest users, then longest unused."""
-    pool = _model().objects.filter(charged_to__isnull=True, status="present")
+    pool = pooled()
     if exclude is not None:
         pool = pool.exclude(pk=exclude.pk)
 
@@ -539,6 +556,9 @@ def give_up(account, asset):
     Hand an asset to the server: it stops counting against whoever gave it
     up, and everything using it keeps it. Returns a sentence.
     """
+    if is_builtin(asset):
+        raise Refused([f"{asset.name} ships with the game, and is nobody's "
+                       f"to give up"])
     if asset.charged_to_id != getattr(account, "id", None):
         raise Refused(["only whoever is charged for an asset can give it up"])
     allowed = pool_quota()
@@ -569,8 +589,7 @@ def given_up_in(world_root):
     if world_root is None:
         return []
     found = []
-    for asset in _model().objects.filter(charged_to__isnull=True,
-                                         status="present"):
+    for asset in pooled():
         if any(hasattr(use, "get") and use.get("world") == world_root
                for use in uses_of(asset)):
             found.append(asset)
@@ -581,6 +600,9 @@ def adopt(account, asset):
     """Take a given-up asset onto one's own quota, out of the pool's reach."""
     if asset.charged_to_id is not None:
         raise Refused([f"{asset.name} is already somebody's"])
+    if asset.origin in OUTSIDE_THE_POOL:
+        raise Refused([f"{asset.name} is the game's own, and needs nobody "
+                       f"to keep it"])
     if asset.status != _model().PRESENT:
         raise Refused([f"{asset.name} is missing; fetch it again instead"])
     refused = room_for(account, asset.size)
@@ -973,6 +995,111 @@ def take_in_folder():
 
 
 # ---------------------------------------------------------------------------
+# Assets the game ships. docs/sound.md 4.3
+# ---------------------------------------------------------------------------
+
+#: Where the game keeps its own assets, beside the code: `<group>/<name>.<ext>`
+#: with a `<name>.json` saying what it is called, what it is, who made it and
+#: how. Named in settings and rulesets as `group/name`, never by a path.
+BUILTIN_DIRS = (os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "sounds"),)
+
+_builtin_hashes = None
+
+
+def builtin_files():
+    """{ref: (file path, what its json says)} for every built-in asset."""
+    import json
+
+    found = {}
+    for root in BUILTIN_DIRS:
+        if not os.path.isdir(root):
+            continue
+        for group in sorted(os.listdir(root)):
+            folder = os.path.join(root, group)
+            if group.startswith("_") or not os.path.isdir(folder):
+                continue
+            for entry in sorted(os.listdir(folder)):
+                stem, dot, extension = entry.rpartition(".")
+                if not dot or extension == "json":
+                    continue
+                described = os.path.join(folder, stem + ".json")
+                if not os.path.isfile(described):
+                    continue
+                with open(described, encoding="utf-8") as handle:
+                    found[f"{group}/{stem}"] = (os.path.join(folder, entry),
+                                                json.load(handle))
+    return found
+
+
+def _hashes():
+    """{ref: hash}, read once: the files only change when the code does."""
+    global _builtin_hashes
+    if _builtin_hashes is None:
+        _builtin_hashes = {ref: hash_of(path)
+                           for ref, (path, _doc) in builtin_files().items()}
+    return _builtin_hashes
+
+
+def builtin(ref):
+    """The built-in asset `group/name` names, or None while it is not kept."""
+    hash_ = _hashes().get(str(ref or ""))
+    return find(hash_) if hash_ else None
+
+
+def builtin_ref(asset):
+    """`group/name` for a built-in asset, or "" for any other."""
+    for ref, hash_ in _hashes().items():
+        if asset is not None and hash_ == asset.hash:
+            return ref
+    return ""
+
+
+def take_in_builtins():
+    """
+    Keep every asset the game ships, at server start. Returns how many were
+    new.
+
+    Charged to nobody and outside the pool, so nothing evicts one and nobody
+    deletes one. A file somebody had already added becomes the game's: it was
+    always going to be here, and nobody should pay for it. A record whose
+    file has gone from the store has it put back.
+    """
+    from evennia.utils import logger
+
+    from world import asset_store
+
+    Asset = _model()
+    added = 0
+    for ref, (path, doc) in builtin_files().items():
+        try:
+            existing = find(hash_of(path))
+            if existing is not None:
+                if (existing.origin != Asset.BUILTIN
+                        or existing.charged_to_id is not None
+                        or existing.status != Asset.PRESENT):
+                    existing.origin = Asset.BUILTIN
+                    existing.charged_to = None
+                    existing.status = Asset.PRESENT
+                    existing.save()
+                if not asset_store.store().exists(existing.hash,
+                                                  extension_of(existing)):
+                    asset_store.store().put(existing.hash,
+                                            extension_of(existing), path)
+                continue
+            add(path, name=str(doc.get("name") or ref),
+                description=str(doc.get("description") or ""),
+                added_by=None, charged_to=None, origin=Asset.BUILTIN,
+                author=str(doc.get("author") or ""),
+                licence=str(doc.get("licence") or ""),
+                made_with=dict(doc.get("made_with") or {}))
+            added += 1
+        except (OSError, ValueError, Refused) as exc:
+            logger.log_err(f"assets: the built-in {ref} was not kept: {exc}")
+    return added
+
+
+# ---------------------------------------------------------------------------
 # Assets that tools make. docs/archived/assets.md 11
 # ---------------------------------------------------------------------------
 
@@ -1096,7 +1223,7 @@ def extension_of(asset):
     from world import asset_types
 
     found = asset_types.get(asset.type)
-    return found.extension if found is not None else ""
+    return found.extension_for(asset.version) if found is not None else ""
 
 
 def opened(asset):

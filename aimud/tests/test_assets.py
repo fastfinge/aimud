@@ -169,7 +169,8 @@ class TheTypes(SimpleTestCase):
 
     def test_no_registered_type_is_code(self):
         for key, found in asset_types.every().items():
-            self.assertNotIn(found.extension, asset_types.NEVER, key)
+            for extension in found.every_extension():
+                self.assertNotIn(extension, asset_types.NEVER, key)
 
     def test_a_type_that_is_code_cannot_be_registered(self):
         class Script(asset_types.AssetType):

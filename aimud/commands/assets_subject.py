@@ -144,7 +144,7 @@ def view_run(cmd, ctx, words):
         if going:
             head += " Next to go: " + ", ".join(a.name for a in going) + "."
         caller.msg(head + "\n" + _listing(
-            assets.search().filter(charged_to__isnull=True), account,
+            assets.pooled(), account,
             "Nobody has given an asset up."))
         return
     if said.split()[0] == "recent":

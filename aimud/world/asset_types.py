@@ -46,6 +46,9 @@ class AssetType:
     #: What files of this type are served as. Never used to decide what a
     #: file is.
     extension = ""
+    #: Every extension a file of this type may be served as, for a type whose
+    #: files come in more than one format. `extension_for` picks among them.
+    extensions = ()
     most_bytes = 0
     #: The `permits.MAKES` entry governing a tool making one, or "" for a
     #: type only players supply.
@@ -66,6 +69,20 @@ class AssetType:
     def refuses(self, version):
         """Why this server cannot use this version, or ""."""
         return ""
+
+    def extension_for(self, version):
+        """
+        What a file of this type, at this version, is served as.
+
+        A version is whatever `check` read off the file, which for a sound is
+        its codec: an Ogg file and a WAV are one type with two extensions,
+        and the record already says which it is, so the store's name for the
+        file comes from that rather than from a column of its own.
+        """
+        return self.extension
+
+    def every_extension(self):
+        return {self.extension, *self.extensions} - {""}
 
     def uses(self, asset):
         """
@@ -96,8 +113,9 @@ def register(asset_type):
     extension = str(asset_type.extension or "").lstrip(".").lower()
     if not key or not extension:
         raise ValueError("an asset type needs a key and an extension")
-    if extension in NEVER:
-        raise ValueError(f"{extension} files are code, and never an asset")
+    for each in asset_type.every_extension():
+        if str(each).lstrip(".").lower() in NEVER:
+            raise ValueError(f"{each} files are code, and never an asset")
     if key in _types and type(_types[key]) is not type(asset_type):
         raise ValueError(f"asset type {key!r} is already registered")
     _types[key] = asset_type
@@ -185,3 +203,88 @@ class WorldDocument(AssetType):
 
 
 register(WorldDocument())
+
+
+# ---------------------------------------------------------------------------
+# sound: what MSP, Client.Media and the web client play. docs/sound.md 4
+# ---------------------------------------------------------------------------
+
+#: What each codec a sound may be in is served as. A codec missing from here
+#: is one no MUD client can be relied on to play, and is refused by name.
+SOUND_CODECS = {"pcm": "wav", "vorbis": "ogg", "mp3": "mp3"}
+
+#: How a codec is said to somebody whose file was refused.
+_CODEC_SAID = {"opus": "Opus", "mp2": "MPEG layer II", "mp1": "MPEG layer I",
+               "float": "floating-point WAV"}
+
+
+class SoundFile(AssetType):
+    """
+    A sound, as a client fetches and plays it.
+
+    Recognised by its first bytes, and then decoded from end to end by
+    libsndfile (`soundfile`): a file that only starts like a sound is not one,
+    and a client should never be the first thing to find out. Its version is
+    its codec, which is also what decides the extension it is served under.
+    """
+
+    key = "sound"
+    label = "A sound: WAV, Ogg Vorbis or MP3"
+    extension = "ogg"
+    extensions = tuple(SOUND_CODECS.values())
+    most_bytes = 10 * 1024 * 1024
+    permit = ""
+
+    def sniff(self, head):
+        head = bytes(head)
+        if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
+            return True
+        if head[:4] == b"OggS" or head[:3] == b"ID3":
+            return True
+        # A bare MPEG audio frame: eleven set bits of frame sync.
+        return len(head) > 1 and head[0] == 0xFF and head[1] & 0xE0 == 0xE0
+
+    def check(self, path):
+        try:
+            import soundfile
+        except ImportError:
+            return "", "this server cannot read sounds: soundfile is missing"
+        try:
+            info = soundfile.info(path)
+            codec = _codec(info.format, info.subtype)
+            if codec in SOUND_CODECS:
+                # Decoded to the end, a block at a time: a header that
+                # parses over a body that does not is the case this is for.
+                for _block in soundfile.blocks(path, blocksize=65536):
+                    pass
+        except Exception as exc:
+            return "", f"it is not a sound this can play: {exc}"
+        if info.frames <= 0:
+            return "", "it is a sound with nothing in it"
+        return codec, ""
+
+    def refuses(self, version):
+        if version in SOUND_CODECS:
+            return ""
+        said = _CODEC_SAID.get(version, version or "a format nothing names")
+        return (f"it is {said}, which MUD clients cannot all play. WAV, Ogg "
+                f"Vorbis and MP3 can be")
+
+    def extension_for(self, version):
+        return SOUND_CODECS.get(str(version or ""), self.extension)
+
+
+def _codec(format_, subtype):
+    """The codec libsndfile found, said the way a sound's version is."""
+    format_, subtype = str(format_ or "").upper(), str(subtype or "").upper()
+    if format_ in ("WAV", "WAVEX"):
+        return "pcm" if subtype.startswith("PCM_") else "float"
+    if format_ == "OGG":
+        return {"VORBIS": "vorbis", "OPUS": "opus"}.get(subtype, subtype.lower())
+    if format_ == "MP3":
+        return {"MPEG_LAYER_III": "mp3", "MPEG_LAYER_II": "mp2",
+                "MPEG_LAYER_I": "mp1"}.get(subtype, "mp3")
+    return format_.lower()
+
+
+register(SoundFile())
