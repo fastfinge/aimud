@@ -511,7 +511,9 @@ def view_run(cmd, ctx, words):
         caller.msg("This server reaches nothing outside the game: no services "
                    "have been added. An admin adds one with |wcreate service|n.")
         return
-    lines = [f"|w{len(records)} services|n this server may reach. "
+    count = len(records)
+    lines = [f"|w{count} service{'' if count == 1 else 's'}|n this server "
+             f"may reach. "
              f"|wview service <name>|n says what each tool does in full."]
     for name in sorted(records):
         lines.append(summary(records[name]))

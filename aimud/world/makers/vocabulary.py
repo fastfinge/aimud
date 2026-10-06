@@ -272,7 +272,9 @@ def kind_entries(root):
 def kind_text(root, kind):
     from world import kinds, rulebooks
 
-    settled = kinds.canonical(str(kind or "").strip())
+    settled = kinds.for_word(root, str(kind or "").strip())
+    if isinstance(settled, list):
+        return ""
     entry = kinds.spec(root, settled)
     if entry is None:
         return ""

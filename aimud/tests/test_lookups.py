@@ -192,6 +192,10 @@ class AskingEachOne(GameTest):
         said = self.ask("kind_info", kind="lamp")
         self.assertIn("lamp.n.01", said)
         self.assertIn("illumination", said)
+        # And `view kind lamp`, which said this world held no such kind.
+        from world.makers.vocabulary import kind_text
+
+        self.assertIn("lamp.n.01", kind_text(self.root, "lamp"))
 
     def test_a_word_with_senses_to_choose_between_offers_them(self):
         said = self.ask("kind_info", kind="chest")

@@ -673,9 +673,10 @@ def _is_room(obj):
 # Lookups (docs/archived/generator-tool-loops.md §5)
 # ---------------------------------------------------------------------------
 
-def _kind_for_word(world_root, said):
+def for_word(world_root, said):
     """
-    The kind `kind_info` was asked about, or the senses to choose between.
+    The kind a person or a lookup means by what they said, or the senses
+    to choose between. `kind_info` and `view kind` both ask this.
 
     A synset is itself. A word is first what this world has made of it -- a
     noun fold, or the one kind it has settled on that word -- because "lamp"
@@ -709,7 +710,7 @@ def lookup_tools():
         from world import lexicon
 
         root = ctx.world_root
-        kind = _kind_for_word(root, str(args.get("kind") or ""))
+        kind = for_word(root, str(args.get("kind") or ""))
         if isinstance(kind, list):
             return ("That word has several senses; ask again by one:\n"
                     + "\n".join(f"{sense} -- {gloss}" for sense, gloss in kind))
