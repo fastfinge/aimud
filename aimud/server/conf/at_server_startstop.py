@@ -50,7 +50,7 @@ def at_server_start():
     _take_in_world_folder()
     _take_in_builtins()
     # Menus make their sounds through the presenter they were built with a
-    # hook for. docs/sound.md 8.
+    # hook for. docs/archived/sound.md 8.
     from world import sound
 
     sound.install()
@@ -167,7 +167,7 @@ def _take_in_builtins():
     """
     Keep the assets the game ships -- the menu sounds, first -- in the
     register, so a setting or a ruleset naming one finds it. Passed over by
-    hash once kept. docs/sound.md 4.3.
+    hash once kept. docs/archived/sound.md 4.3.
     """
     from evennia.utils import logger
 

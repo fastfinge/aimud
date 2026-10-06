@@ -2358,6 +2358,12 @@ def apply_states(obj, add=(), remove=(), world_root=None, announce=True):
 
         if is_person(obj):
             gear.recompute(obj)
+    # And what it sounds like, for whoever is near enough to hear: a fire
+    # that is lit starts to crackle. docs/archived/sound.md 6.3.
+    if changed:
+        from world import sound
+
+        sound.refresh_around(obj)
     return obj.db.states
 
 

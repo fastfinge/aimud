@@ -1,0 +1,73 @@
+{
+  "name": "a dripping cave",
+  "description": "Water dripping slowly in a large, echoing cave, over a low hush.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "noise",
+          "params": {
+            "dur": 8,
+            "color": "brown"
+          },
+          "gain": 0.3,
+          "fx": [
+            {
+              "type": "lowpass",
+              "cutoff": 300
+            }
+          ]
+        },
+        {
+          "type": "group",
+          "layers": [
+            {
+              "type": "sfx",
+              "kind": "bubble",
+              "params": {
+                "freq": 1200
+              },
+              "at": 0.5,
+              "gain": 0.6
+            },
+            {
+              "type": "sfx",
+              "kind": "bubble",
+              "params": {
+                "freq": 1200
+              },
+              "at": 3.1,
+              "gain": 0.6
+            },
+            {
+              "type": "sfx",
+              "kind": "bubble",
+              "params": {
+                "freq": 1200
+              },
+              "at": 5.9,
+              "gain": 0.6
+            }
+          ],
+          "fx": [
+            {
+              "type": "reverb",
+              "mix": 0.5,
+              "size": 0.95
+            }
+          ]
+        }
+      ],
+      "fx": [],
+      "duration": 8,
+      "loop": 0.5,
+      "normalize": -10,
+      "sr": 44100
+    }
+  }
+}

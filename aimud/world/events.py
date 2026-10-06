@@ -109,12 +109,12 @@ class Event:
 
     __slots__ = ("actor", "room", "verb", "roles", "outcome", "effects",
                  "actor_text", "room_template", "raw", "manner", "contested",
-                 "quotes")
+                 "quotes", "sounds")
 
     def __init__(self, actor=None, room=None, verb="", roles=None,
                  outcome="success", effects=(), actor_text="",
                  room_template="", raw="", manner=(), contested=False,
-                 quotes=None):
+                 quotes=None, sounds=None):
         self.actor = actor
         self.room = room if room is not None else getattr(actor, "location", None)
         self.verb = verb
@@ -127,6 +127,11 @@ class Event:
         self.manner = list(manner)
         self.contested = contested
         self.quotes = dict(quotes or {})
+        # What `play_sound` effects made it sound like, heard once everybody
+        # has read it. A list the caller may still be adding to, which is
+        # how an `after` rule's sound joins the event it follows. See
+        # `world.sound.gathering` and docs/archived/sound.md 5.2.
+        self.sounds = sounds if sounds is not None else []
 
     @property
     def seen(self):
@@ -635,12 +640,29 @@ def deliver(event, to_actor=True):
     if to_actor and event.actor_text and actor is not None:
         actor.msg(event.actor_text)
 
-    if not event.seen or room is None:
-        return
+    if event.seen and room is not None:
+        template = event.template()
+        show_the_room(event, template)
+        _tell_the_characters(event, template)
+    hear(event)
 
-    template = event.template()
-    show_the_room(event, template)
-    _tell_the_characters(event, template)
+
+def hear(event):
+    """
+    Play what the event sounded like, after everybody has read it, once.
+
+    After, so that a caption lands beneath the sentence it belongs to; once,
+    because an event delivered twice -- shown, then delivered with the rest
+    of a bulk action -- must not be heard twice.
+    """
+    sounds = getattr(event, "sounds", None)
+    if not sounds:
+        return
+    from world import sound
+
+    pending = list(sounds)
+    del sounds[:]
+    sound.hear(pending)
 
 
 def noticed(room, actor, about=None, exclude=None):
@@ -743,7 +765,10 @@ def deliver_many(events, actor_text="", actor=None, room=None):
     line knows the first was read: "Jessica drops the mug. She drops the
     plate."
     """
-    events = [event for event in events if event is not None and event.seen]
+    # Heard whether or not there is anything to read: a sound is something
+    # that happened even when nobody wrote a sentence about it.
+    every = [event for event in events or () if event is not None]
+    events = [event for event in every if event.seen]
     if actor is None and events:
         actor = events[0].actor
     if room is None and events:
@@ -752,6 +777,8 @@ def deliver_many(events, actor_text="", actor=None, room=None):
     if actor_text and actor is not None:
         actor.msg(actor_text)
     if not events or room is None:
+        for event in every:
+            hear(event)
         return
 
     templates = [event.template() for event in events]
@@ -766,6 +793,8 @@ def deliver_many(events, actor_text="", actor=None, room=None):
 
     for template, event in zip(templates, events):
         _tell_the_characters(event, template)
+    for event in every:
+        hear(event)
 
 
 def _tell_the_characters(event, template):

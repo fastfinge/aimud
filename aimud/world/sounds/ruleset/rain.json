@@ -1,0 +1,48 @@
+{
+  "name": "rain falling",
+  "description": "Steady rain falling and pattering on everything around.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "noise",
+          "params": {
+            "dur": 8,
+            "color": "pink"
+          },
+          "gain": 0.6,
+          "fx": [
+            {
+              "type": "highpass",
+              "cutoff": 300
+            },
+            {
+              "type": "lowpass",
+              "cutoff": 5000
+            }
+          ]
+        },
+        {
+          "type": "sfx",
+          "kind": "vinyl",
+          "params": {
+            "dur": 8,
+            "crackle": 60,
+            "hiss": 0.0
+          },
+          "gain": 0.4
+        }
+      ],
+      "fx": [],
+      "duration": 8,
+      "loop": 0.5,
+      "normalize": -10,
+      "sr": 44100
+    }
+  }
+}

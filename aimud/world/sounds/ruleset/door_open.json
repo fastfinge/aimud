@@ -1,0 +1,45 @@
+{
+  "name": "a door opening",
+  "description": "A door creaking open on its hinges.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "spring",
+          "params": {
+            "action": "pull",
+            "tension": 0.4
+          }
+        },
+        {
+          "type": "sfx",
+          "kind": "spring",
+          "params": {
+            "action": "pull",
+            "tension": 0.6
+          },
+          "at": 0.18,
+          "gain": 0.7
+        }
+      ],
+      "fx": [
+        {
+          "type": "lowpass",
+          "cutoff": 2500
+        },
+        {
+          "type": "reverb",
+          "mix": 0.15,
+          "size": 0.4
+        }
+      ],
+      "normalize": -6,
+      "sr": 44100
+    }
+  }
+}

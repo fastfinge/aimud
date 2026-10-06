@@ -42,8 +42,8 @@ class Asset(models.Model):
 
     UPLOAD, URL, IMPORT, TOOL = "upload", "url", "import", "tool"
     EXPORT, FOLDER = "export", "folder"
-    #: Shipped with the game (docs/sound.md 4.3), and a copy made from
-    #: another asset, such as a sound panned left (docs/sound.md 3.4).
+    #: Shipped with the game (docs/archived/sound.md 4.3), and a copy made from
+    #: another asset, such as a sound panned left (docs/archived/sound.md 3.4).
     #: Neither is anybody's, and neither is the pool's to evict.
     BUILTIN, DERIVED = "builtin", "derived"
     ORIGINS = [(UPLOAD, "uploaded"), (URL, "fetched from a URL"),

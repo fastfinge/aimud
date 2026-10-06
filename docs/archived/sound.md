@@ -1,6 +1,6 @@
 # Development plan: sound
 
-Status: **phases 0 to 2 built** on the `sound` branch; §17 says where the
+Status: **built**, phases 0 to 9, on the `sound` branch; §17 says where the
 building changed the plan. This answers the `future-plans.md` item on MSP, and the
 part of the assets item that was waiting for "the first type with a
 consumer". It covers sending sounds to a player's client, keeping sounds as
@@ -685,7 +685,9 @@ None.
 
 ## 17. As built
 
-Where building phases 0 to 2 departed from the plan above, and what it found.
+Where the building departed from the plan above, and what it found.
+
+### Phases 0 to 2
 
 * **A sound's codec names its file (§4.1).** The plan gave a type
   `extension_of(path)`. A sound's version is already its codec (`pcm`,
@@ -741,3 +743,90 @@ Where building phases 0 to 2 departed from the plan above, and what it found.
   `Client.Media` and in MUSHclient over MSP, from a server on localhost with
   `ASSET_BASE_URL` set. VIP Mud has not been tried yet.
 
+### Phases 3 to 9
+
+* **A sound waits for its event (§5.2).** `effects.apply` takes a `sounds`
+  list and opens `sound.gathering`: a `play_sound` applied inside it waits in
+  the list, and `events.deliver` plays the list once everybody has read the
+  event. An attempt passes one list to carry-out and to its `after` rules, so
+  an `after` rule's sound joins the event it follows; a `becomes` rule's goes
+  on its report's event. Applied with no list and no gathering open, a sound
+  is heard at once. `deliver_many` plays the sounds of events with nothing to
+  read, too.
+* **`direction`, not `from` (§5.2).** `from` is already `move_contents`'
+  preposition, and a Python keyword in a form; the effect takes the
+  `direction` field `create_room` already has, and works the pan out from it
+  (or from a way out of the room that names one).
+* **A rule keeps a sound's whole hash.** A model is given twelve characters
+  of it, as every asset id; `sound.resolve` accepts any prefix of six or more
+  that names one asset, and the rule form and `rule_gen.validate` store the
+  whole hash, so a later asset sharing the prefix cannot change what a rule
+  plays. Rulesets name built-ins by `group/name`, which stays a name and is
+  resolved when played.
+* **Only people hear.** Everything in a room has a `msg`; a sound, and its
+  caption, go to whoever has a session or is a person.
+* **Captions** are the description in grey brackets under what happened, per
+  session: a connection playing the sound does not get one unless the player
+  asks, and one that is not (an agent) does unless the player says never.
+* **Ambience is re-sent from five doors (§6.3):** `ObjectParent.at_post_move`
+  (both ends of any move, counted from the outside of what a thing is in),
+  `verbs.apply_states` when a condition really changed, `zones.apply_states`
+  (the whole world, since a zone is many rooms), puppeting and unpuppeting,
+  and every sound setting. Each session remembers what it was told -- the
+  protocol, the loops, MSP's one loop -- so changing protocol or turning sound
+  off stops what the old way started (`Client.Media.Stop` by the `ambience`
+  tag, or `!!MUSIC(Off)`).
+* **A kind's ambience covers its hyponyms** by the most specific ancestor
+  that has any: a rain forest sounds like a forest.
+* **`listen` gives way to the world.** It answers from ambience when there is
+  any, and otherwise hands the line on exactly as the unknown-command handler
+  would, so a world's own rules about listening still run.
+* **`look` says what you hear for everybody**, darkness included.
+* **An area's ambience is set from the room you stand in.** Zones have no
+  form of their own, so the room form has both "What this place sounds like"
+  and "What this whole area sounds like". Item, person, kind and condition
+  forms have one each. All six edit the live list.
+* **Export found a side effect.** The first version of the usage scan asked
+  `zones.all_zones`, which builds a world's zone tree the first time anything
+  asks -- so exporting a world twice gave two documents. The scan reads the
+  stored records instead. Ambience travels on rooms, things and people, and on
+  kinds; zone and condition records travel whole. Import keeps it by hash,
+  unchecked, because a world's sounds may arrive after it.
+* **A ruleset's kind named only for its sound is not settled.** Settling a
+  kind is first-one-wins, so the loader now calls `kinds.remember` only for an
+  entry that says what the kind affords.
+* **genny reads only WAV** in a `file` layer, so each named sound is decoded
+  to a temporary WAV for the render. Names of layer types, instruments, drums,
+  sound effects and effects are checked against genny's catalog first;
+  parameters are left to genny, and what it says is relayed without the
+  temporary path. Length is checked again after the render, since a sequence's
+  length is only known by playing it.
+* **Trying is a real render.** `Try it` keeps the result as a "(trying)"
+  sound on the player's quota, plays it, and deletes it when the form closes
+  unkept; `Keep it` with the same spec renames it rather than rendering again.
+* **Models:** the `sounds` permit, `make_sound` (built by
+  `sound_gen.make_sound_tool`, offered to the rule loop with `list_assets` and
+  `sound_catalog`, only where the world permits it), and `~` on the spec,
+  gated the same way. Agents are offered lookups only, as always, so they make
+  a sound by typing `create sound genny`. **Not built:** the room and item
+  generators writing ambience for what they make (`future-plans.md`).
+* **A tool's sound file** is a `file` result sent to `sound:<who>`: kept once
+  per identical request through `assets.from_tool`, and played through
+  `play_sound`, so it lands on the verb's event like any other sound.
+* **The ruleset** covers forests, fields, shores, rivers, caves and machines,
+  burning, raining and flowing, and doors, eating, drinking, taking and
+  dropping. Left out: footsteps, because moving is a command rather than an
+  attempt and no rule hears it; streets and taverns, because genny cannot
+  make a convincing crowd; and an indoor room tone, which would hum in nearly
+  every room there is. Its fourteen sounds were measured, not heard: each is
+  soft and loops cleanly by the numbers, and wants ears.
+* **The web client** loads `aimud_sound.js` from an override of Evennia's
+  `webclient.html`. It says `Client.Media 1` as Mudlet does, so the server
+  treats it as any `Client.Media` client, except that it alone is sent the pan
+  (a key no MUD client reads). It was driven in Node against a stand-in Web
+  Audio; not yet in a browser.
+* **Two tests read this machine's settings.** `ASSET_BASE_URL` set locally made
+  an assets test fail that assumed the default; it now says the setting it
+  wants.
+* **Not heard live yet:** event sounds, ambience, panned copies, the ruleset's
+  sounds and the web client.

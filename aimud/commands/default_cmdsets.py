@@ -27,6 +27,7 @@ from commands.drop_cmds import CmdAIDrop
 from commands.follow_cmds import CmdFollow
 from commands.give_cmds import CmdAIGive
 from commands.goal_cmds import CmdGoal
+from commands.listen_cmds import CmdListen
 from commands.help_cmds import CmdAIHelp
 from commands.memory_cmds import CmdRemember
 from commands.name_cmds import CmdName
@@ -71,6 +72,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdPronouns())
         self.add(CmdQuests())
         self.add(CmdGoal())
+        self.add(CmdListen())
         for verb in VERB_COMMANDS:
             self.add(verb())
         self.add(CmdAIUnknown())

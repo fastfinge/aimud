@@ -1,5 +1,5 @@
 """
-MSP, the MUD Sound Protocol, on Evennia's telnet. docs/sound.md 3.2.
+MSP, the MUD Sound Protocol, on Evennia's telnet. docs/archived/sound.md 3.2.
 
 Evennia speaks GMCP, MSDP and MXP and has no MSP, so this adds it: one more
 telnet option (90) offered in the handshake, a protocol flag the Server can

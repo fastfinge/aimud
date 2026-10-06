@@ -1,0 +1,40 @@
+{
+  "name": "picking something up",
+  "description": "A soft rustle and click as something is picked up.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "noise",
+          "params": {
+            "dur": 0.12,
+            "color": "pink"
+          },
+          "fx": [
+            {
+              "type": "highpass",
+              "cutoff": 1500
+            }
+          ]
+        },
+        {
+          "type": "sfx",
+          "kind": "click",
+          "params": {
+            "tone": 1500
+          },
+          "at": 0.08,
+          "gain": 0.4
+        }
+      ],
+      "fx": [],
+      "normalize": -12,
+      "sr": 44100
+    }
+  }
+}

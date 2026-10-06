@@ -1,0 +1,47 @@
+{
+  "name": "a forest",
+  "description": "Leaves stirring in a light wind, and now and then a bird calling.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "wind",
+          "params": {
+            "dur": 8
+          },
+          "gain": 0.5,
+          "fx": [
+            {
+              "type": "lowpass",
+              "cutoff": 1800
+            }
+          ]
+        },
+        {
+          "type": "seq",
+          "inst": "whistle",
+          "vel": 0.45,
+          "gain": 0.25,
+          "steps": "-:0.7 G6:0.08 B6:0.1 -:2.2 A6:0.06 C7:0.08 A6:0.06 -:2.6 E6:0.12 G6:0.1",
+          "fx": [
+            {
+              "type": "reverb",
+              "mix": 0.3,
+              "size": 0.6
+            }
+          ]
+        }
+      ],
+      "fx": [],
+      "duration": 8,
+      "loop": 0.5,
+      "normalize": -10,
+      "sr": 44100
+    }
+  }
+}

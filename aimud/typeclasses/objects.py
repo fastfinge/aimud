@@ -167,6 +167,12 @@ class ObjectParent:
 
         if not gear.is_person(self):
             gear.recount_around(source_location, self)
+        # What it sounds like went with it: whoever is listening at either
+        # end hears the difference, and a listener who moved hears where they
+        # are now. docs/archived/sound.md 6.3.
+        from world import sound
+
+        sound.moved(self, source_location)
         if move_type == "teleport" or source_location is None:
             return
         from world import memory, relations, tokens

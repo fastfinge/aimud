@@ -67,11 +67,20 @@ TARGETS = (
     ("trait", "a figure kept about somebody, from a number"),
     ("description", "what something looks like, from text"),
     ("actor", "told privately to whoever used the verb, from text"),
+    ("sound", "a sound the tool sent back, kept and played to whoever is "
+              "named, from the file"),
 )
 TARGET_NAMES = tuple(name for name, _said in TARGETS)
 
 #: The answer's key for everything it said, rather than one field of it.
 TEXT = "text"
+
+#: The answer's key for a sound it sent back as a file.
+#: docs/archived/sound.md 9.5.
+FILE = "file"
+
+#: Who a sound may be played to, besides a role.
+HEARERS = ("everyone", "others")
 
 #: Where `attempt` puts everything typed after the verb, among the words for
 #: each role. No role is called this, so nothing can mistake it for one.
@@ -142,6 +151,8 @@ def read_target(text):
     role = parts[0] if parts and parts[0] else ""
     if kind in ("state", "description") and role in ROLES:
         return {"to": kind, "role": role}
+    if kind == "sound" and (role in ROLES + HEARERS or not role):
+        return {"to": "sound", "role": role or "everyone"}
     if kind == "trait" and role in ROLES and len(parts) > 1 and parts[1]:
         return {"to": "trait", "role": role, "name": parts[1]}
     return None
@@ -208,6 +219,8 @@ def said_target(text):
         return f"a condition of {role}"
     if kind == "trait":
         return f"{role}'s {target.get('name')}"
+    if kind == "sound":
+        return f"a sound played to {role}"
     return f"what {role} looks like"
 
 
@@ -298,6 +311,11 @@ def complaints(effect, records=None, by_model=False):
             said.append(f"where {field} goes, {text!r}, is not one this game reads")
             continue
         schema = fields.get(field)
+        if field == FILE or target["to"] == "sound":
+            if field != FILE or target["to"] != "sound":
+                said.append("a sound comes from the file a tool sends back, "
+                            "and a file can only be a sound played")
+            continue
         if field == TEXT:
             if target["to"] not in ("description", "actor"):
                 said.append("what a tool says in words can only become a "
@@ -776,10 +794,18 @@ def apply(actor, room, effect, bound, world_root, told=None):
         target = read_target(text)
         if target is None:
             continue
+        kind = target["to"]
+        if kind == "sound":
+            heard = _sound_from(answer, effect, actor, called)
+            if heard is not None:
+                lines += effects_mod.apply(
+                    actor, room, [{"type": "play_sound", "sound": heard.hash,
+                                   "to": target.get("role") or "everyone"}],
+                    bound=bound, world_root=world_root)
+            continue
         value = answer.text if field == TEXT else answer.field(field)
         if value is None or value == "":
             continue
-        kind = target["to"]
         if kind == "actor":
             _tell(actor, called, str(value), told)
             continue
@@ -813,6 +839,40 @@ def apply(actor, room, effect, bound, world_root, told=None):
         lines += effects_mod.apply(actor, room, [sub], bound=lent,
                                    world_root=world_root)
     return lines
+
+
+def _sound_from(answer, effect, actor, called):
+    """
+    The sound a tool sent back, kept as an asset -- or the one it sent back
+    last time it was asked the same, which is not kept twice. None when it
+    sent no sound, or the file is not one. docs/archived/sound.md 9.5.
+    """
+    from world import assets, sponsor as sponsor_mod
+
+    files = [data for data, mime in getattr(answer, "files", None) or []
+             if str(mime or "").lower().startswith("audio/")]
+    if not files:
+        return None
+    service, _dot, tool = str(effect.get("tool") or "").partition(".")
+    arguments = dict(called or {})
+    already = assets.made_before(service, tool, arguments)
+    if already is not None:
+        return already
+    sponsor = sponsor_mod.of(actor) if actor is not None else None
+    if sponsor is None:
+        return None
+    try:
+        asset, _said = assets.from_tool(
+            files[0], sponsor=sponsor, service=service, tool=tool,
+            arguments=arguments, name=f"{tool} from {service}",
+            description=(answer.text.strip()[:300] or
+                         f"A sound {service}'s {tool} sent back."),
+            wanted="sound")
+    except assets.Refused as refusal:
+        logger.log_info(f"tool_calls: {effect.get('tool')}'s sound was not "
+                        f"kept: {refusal}")
+        return None
+    return asset
 
 
 def _tell(actor, called, text, told):

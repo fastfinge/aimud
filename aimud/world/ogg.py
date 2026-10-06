@@ -1,5 +1,6 @@
 """
-Ogg files that are the same whenever their sound is. docs/sound.md 4.3.
+Ogg files that are the same whenever their sound is.
+docs/archived/sound.md 4.3.
 
 libsndfile gives every Ogg stream it writes a random serial number, so
 encoding the same sound twice gives two files with two hashes -- and an asset

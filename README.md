@@ -27,6 +27,7 @@ you can reach through [OpenRouter](https://openrouter.ai/).
 - [Playing](#playing)
 - [Sharing a world](#sharing-a-world)
 - [Assets](#assets)
+- [Sound](#sound)
 - [Command reference](#command-reference)
 - [Menus](#menus)
 - [What it costs](#what-it-costs)
@@ -505,7 +506,7 @@ because it is the one setting that lets somebody else spend your key.
 
 ## Assets
 
-An asset is a file the game keeps: a world document today, and the sounds,
+An asset is a file the game keeps: world documents and sounds today, and the
 images and other files later systems will use. You name an asset, describe
 it, and pick it from menus. You never see where it lives.
 
@@ -543,6 +544,48 @@ it, and pick it from menus. You never see where it lives.
 
 ---
 
+## Sound
+
+The game sends sounds to a client that can play them: Mudlet (over GMCP
+`Client.Media`), MUSHclient, VIP Mud and other MSP clients, and the web
+client in your browser. A client says what it can play when it connects, and
+is sent only that.
+
+- **Set the server's address first.** A client fetches each sound from the
+  game's web server, so `ASSET_BASE_URL` in `server/conf/settings.py` (or
+  `secret_settings.py`) must be the address a player's client can reach --
+  `http://localhost:4001` if you only play on this machine. Until it is set,
+  no sound is sent, and an admin is told why when they log in.
+- **Menus sound like menus.** Opening, closing, choosing and "that is not one
+  of the choices" each have a sound, and a command the game does not
+  understand gets a short drum hit. They ship with the game.
+- **Worlds can sound like places.** A room, an area, a sort of thing, a
+  condition or one thing can keep making a sound -- wind on a moor, a fire
+  that crackles while it burns -- and a rule can play one when something
+  happens. Set them from the edit forms (`edit room`, `edit item`,
+  `edit kind <kind>`, `edit condition <name>`), or choose the **sound**
+  ruleset when making a world for forests, shores, rivers, caves, fire, rain,
+  doors, eating and drinking. Walking between places, a sound in both carries
+  on rather than starting again.
+- **Every sound is also text.** `look` ends with what you can hear, `listen`
+  asks for it, and on a connection that is not playing sounds -- an agent, or
+  a client without them -- what is heard is written out. Nobody misses
+  anything for not having speakers.
+- **Make your own with genny.** `create sound genny` opens a form built from
+  genny's own list of instruments, drums, sound effects, voices and effects:
+  choose, try it to hear it, and keep it. Nothing is paid for. A world can let
+  its models make sounds too, through the `sounds` permit in `settings`.
+  `view sound <name>` plays one and says what it is like.
+- **Your settings.** `settings` then **Sound**: sounds on or off, how they are
+  sent, a volume for menus, for what happens and for where you are, whether
+  sounds come from the left or right, when they are written out, and which
+  sound each menu moment makes -- any sound on the server, or none.
+
+genny (github.com/ogomez92/genny) is installed from its author's repository
+by `uv sync`, pinned to one commit; aimud does not carry a copy.
+
+---
+
 ## Command reference
 
 ### Account level
@@ -569,6 +612,9 @@ it, and pick it from menus. You never see where it lives.
 | `reset world [<n or title>] [yes]` | Put a world back. A world you have imported or exported goes back to *that* -- free, instant, and exactly as it was. A world that has done neither is wiped and regenerated from the same setup, which costs model calls. `view world <n>` says which yours will do. Asks first unless you add `yes`. |
 | `export world [<n or title>] [yes]` | Keep a world as a world asset, which anybody on this server can build from. Also makes today's state the one `reset world` comes back to. Costs nothing. |
 | `import world <name>` | Build a world from a world asset. It becomes yours -- you own it, you pay for it -- and building it costs nothing at all. Any assets it uses come with it, on your quota. |
+| `view sounds` / `view sound <name>` | Every sound the server keeps, or one played to you with what it is like: how long, how loud, how sharp. |
+| `create sound [genny]` / `edit sound <name>` | Make a sound with genny, from a form built from its own catalog; editing one opens the form on how it was made, and keeps the result as a new sound. |
+| `listen [to <something>]` | What this place, or one thing in it, sounds like, in words. |
 | `view assets [world \| missing \| pool \| recent]` | Files the game keeps, with your quota. `world` lists world documents; `missing` what could not be fetched; `pool` what owners gave up and what goes next; `recent` is for admins. |
 | `view asset <name>` | One asset in full: what it is, who added it, its credit and licence, and what is using it. |
 | `create asset [<url>]` | Fetch a file from a web address and keep it. The website's upload page takes one from your machine. |
@@ -1086,6 +1132,9 @@ The interesting half is `world/`:
 | `hints.py` | Giving a player the same help an NPC gets |
 | `memory.py` | Per-character memory, written and recalled by relevance |
 | `exchange.py` | A world as a document: writing one out, refusing a bad one, building one |
+| `assets.py` | The files the game keeps, checked by what is in them, with quotas and a pool |
+| `sound.py` | Playing a sound to whoever can hear it, and what a place sounds like |
+| `sound_gen.py` | Making a sound with genny, from a checked spec, in a process of its own |
 | `agents.py` | Who an agent is and what it may call: the token, and the tools MCP offers |
 | `toolkit.py` | Every tool the game defines, gathered, and what kind each one is |
 | `manual.py` | The documentation an agent reads, half of it built from the registers |

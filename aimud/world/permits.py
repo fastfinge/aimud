@@ -72,6 +72,9 @@ MAKES = (
      "a verb does only what a rule written here says it does"),
     ("quests", "Errands characters ask for",
      "characters hand out the errands this world has written, and invent none"),
+    ("sounds", "Sounds, made with genny for what a world writes",
+     "a rule or a place may play a sound somebody already has, and no new "
+     "one is made"),
 )
 
 MADE = tuple(name for name, _label, _off in MAKES)

@@ -224,6 +224,7 @@ class TheStore(SimpleTestCase):
 @tag("world")
 class WhereItCanBeFetched(_Stored):
 
+    @override_settings(ASSET_BASE_URL="")
     def test_nowhere_until_the_server_knows_its_own_address(self):
         asset, _said = self.add()
         self.assertEqual(assets.public_url(asset), "")

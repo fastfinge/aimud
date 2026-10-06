@@ -404,14 +404,21 @@ def fire(world_root, rule, obj, cause=None, silent=False):
         bound["cause"] = cause
     logger.log_info(f"becomes: {rule.get('id')} fired for {obj}"
                     + (f", caused by {cause}" if cause is not None else ""))
+    heard = []
     with caused_by(cause, force=True):
         lines = effects.apply(person, room, rule.get("effects") or [],
-                              bound=bound, world_root=world_root)
+                              bound=bound, world_root=world_root,
+                              sounds=heard)
     if not silent:
-        _report(rule, person, room, bound, lines)
+        _report(rule, person, room, bound, lines, heard)
+    elif heard:
+        # Nothing is said, and what it sounds like is still heard.
+        from world import sound
+
+        sound.hear(heard)
 
 
-def _report(rule, person, room, bound, lines):
+def _report(rule, person, room, bound, lines, heard=()):
     """
     Tell the room what happened, in the rule's own words.
 
@@ -426,10 +433,14 @@ def _report(rule, person, room, bound, lines):
     if "{cause" in template and "cause" not in bound:
         template = ""
     if room is None or not (template.strip() or lines):
+        if heard:
+            from world import sound
+
+            sound.hear(list(heard))
         return
     event = events.Event(actor=person, room=room, verb="", roles=bound,
                          outcome="success", effects=list(lines or []),
-                         room_template=template)
+                         room_template=template, sounds=list(heard))
     events.deliver(event, to_actor=False)
     if person is not None and hasattr(person, "msg"):
         line = events.render(event.template(), person, event)

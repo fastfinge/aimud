@@ -206,7 +206,8 @@ register(WorldDocument())
 
 
 # ---------------------------------------------------------------------------
-# sound: what MSP, Client.Media and the web client play. docs/sound.md 4
+# sound: what MSP, Client.Media and the web client play.
+# docs/archived/sound.md 4
 # ---------------------------------------------------------------------------
 
 #: What each codec a sound may be in is served as. A codec missing from here
@@ -233,7 +234,7 @@ class SoundFile(AssetType):
     extension = "ogg"
     extensions = tuple(SOUND_CODECS.values())
     most_bytes = 10 * 1024 * 1024
-    permit = ""
+    permit = "sounds"
 
     def sniff(self, head):
         head = bytes(head)
@@ -272,6 +273,16 @@ class SoundFile(AssetType):
 
     def extension_for(self, version):
         return SOUND_CODECS.get(str(version or ""), self.extension)
+
+    def uses(self, asset):
+        from world import sound
+
+        return sound.uses(asset)
+
+    def used_in(self, world_root):
+        from world import sound
+
+        return sound.used_in(world_root)
 
 
 def _codec(format_, subtype):

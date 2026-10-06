@@ -1,0 +1,44 @@
+{
+  "name": "eating",
+  "description": "A couple of crunching bites.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "hit",
+          "params": {
+            "dur": 0.12,
+            "tone": 300,
+            "crunch": 1.0
+          },
+          "at": 0,
+          "gain": 0.6
+        },
+        {
+          "type": "sfx",
+          "kind": "hit",
+          "params": {
+            "dur": 0.12,
+            "tone": 300,
+            "crunch": 1.0
+          },
+          "at": 0.35,
+          "gain": 0.6
+        }
+      ],
+      "fx": [
+        {
+          "type": "lowpass",
+          "cutoff": 3000
+        }
+      ],
+      "normalize": -9,
+      "sr": 44100
+    }
+  }
+}

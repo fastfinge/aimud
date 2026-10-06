@@ -149,7 +149,7 @@ class Account(DefaultAccount):
             # away: given up, next in line, gone. docs/archived/assets.md 7.1.
             assets.deliver_notices(self)
         # Every session, since each one is a client that may play sounds.
-        # docs/sound.md 3.3.
+        # docs/archived/sound.md 3.3.
         from world import sound
 
         sound.at_login(self, session)

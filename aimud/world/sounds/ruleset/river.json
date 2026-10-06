@@ -1,0 +1,55 @@
+{
+  "name": "running water",
+  "description": "Water running over stones, burbling as it goes.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "noise",
+          "params": {
+            "dur": 8,
+            "color": "pink"
+          },
+          "fx": [
+            {
+              "type": "bandpass",
+              "center": 900,
+              "q": 0.7
+            }
+          ]
+        },
+        {
+          "type": "sfx",
+          "kind": "bubble",
+          "params": {
+            "freq": 500
+          },
+          "gain": 0.3,
+          "repeat": 20,
+          "every": 0.37
+        },
+        {
+          "type": "sfx",
+          "kind": "bubble",
+          "params": {
+            "freq": 800
+          },
+          "gain": 0.2,
+          "at": 0.2,
+          "repeat": 12,
+          "every": 0.61
+        }
+      ],
+      "fx": [],
+      "duration": 8,
+      "loop": 0.5,
+      "normalize": -10,
+      "sr": 44100
+    }
+  }
+}

@@ -19,6 +19,7 @@ docs/archived/player-building.md 11.
 
 from world import affordances as af
 from world import lexicon, making, menus
+from world.makers import sounding
 
 # ---------------------------------------------------------------------------
 # Shared
@@ -433,6 +434,13 @@ def edit_kind(root, kind):
                         or "nothing",
                         help="Whether things can be put in, on, under or "
                              "behind one. Several, separated by spaces."),
+            sounding.submenu(
+                sounding.of_kind(root, settled),
+                label="What one sounds like",
+                help="Sounds every one of these keeps making -- and every "
+                     "place of this sort, and every sort under it, unless "
+                     "it says otherwise: a forest's birdsong is a pine "
+                     "wood's too."),
         ],
     )
 
@@ -911,7 +919,12 @@ def edit_condition(root, slug):
             "means", "What it means", suggestible=True,
             get=lambda ctx: (verbs.vocabulary(root) or {}).get(
                 slug, {}).get("means"),
-            set=set_means)],
+            set=set_means),
+            sounding.submenu(
+                sounding.of_condition(root, slug),
+                label="What it sounds like",
+                help="Sounds anything in this condition keeps making while "
+                     "it is in it: whatever is burning crackles.")],
     )
 
 

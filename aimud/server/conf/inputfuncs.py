@@ -102,7 +102,7 @@ def mcp_tool(session, ticket="", name="", args=None, **kwargs):
 
 
 # ---------------------------------------------------------------------------
-# GMCP Core.Supports: what a client says it can do. docs/sound.md 3.2
+# GMCP Core.Supports: what a client says it can do. docs/archived/sound.md 3.2
 # ---------------------------------------------------------------------------
 #
 # Mudlet, and the clients that copied it, list the GMCP packages they handle

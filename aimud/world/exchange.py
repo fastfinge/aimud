@@ -151,6 +151,8 @@ CARRIED = {
     "zone": "map.rooms",
     "coord": "map.rooms, as `at`",
     "trait_bonuses": "rooms and things",
+    "ambience": "rooms, things and people; zones, kinds and conditions keep "
+                "theirs in their own records, which travel whole",
     "bonus_when": "rooms and things",
     "bonus_while": "things",
     # -- ways --------------------------------------------------------------
@@ -546,7 +548,9 @@ def _vocabulary(root, names):
                                   .get("affordances") or {}),
              "accepts": plain((kinds.spec(root, kind) or {})
                               .get("holds") or []),
-             "under": str((kinds.spec(root, kind) or {}).get("under") or "")}
+             "under": str((kinds.spec(root, kind) or {}).get("under") or ""),
+             "ambience": plain((kinds.spec(root, kind) or {})
+                               .get("ambience") or [])}
             for kind in kinds.vocabulary(root)
         ],
         "attributes": [
@@ -686,6 +690,7 @@ def _room(room, names):
         "styles": verbs.styles(room),
         "trait_bonuses": plain(room.db.trait_bonuses or {}),
         "bonus_when": str(room.db.bonus_when or ""),
+        "ambience": plain(room.db.ambience or []),
     }
 
 
@@ -749,6 +754,7 @@ def _thing(obj, where, names):
         "bonus_when": str(obj.db.bonus_when or ""),
         "bonus_while": str(obj.db.bonus_while or ""),
         "clothing_type": str(obj.db.clothing_type or ""),
+        "ambience": plain(obj.db.ambience or []),
     }
     # `relation_of` and not the `relation_to` attribute, which only the
     # pointer relations -- under, behind -- ever set. A lamp *on* a table is
@@ -791,6 +797,7 @@ def _person(obj, where, names):
         "goal": plain(obj.db.goal or []),
         "at": names.of(where),
         "following": names.of(obj.db.following),
+        "ambience": plain(obj.db.ambience or []),
     }
 
 
@@ -1417,6 +1424,21 @@ def _write_room(room, record):
         room.db.bonus_when = str(record.get("bonus_when") or "present")
     _write_choices(room, record)
     _write_styles(room, record)
+    _write_ambience(room, record)
+
+
+def _write_ambience(obj, record):
+    """
+    What it sounds like, as the document says, by hash. Not checked against
+    what this server keeps: the sounds a world uses arrive with it, or are
+    marked missing and fetched later, and either way the world still says
+    what it sounds like. docs/archived/sound.md 6.1.
+    """
+    from world import sound
+
+    written = sound.written_ambience(record.get("ambience"))
+    if written:
+        obj.db.ambience = written
 
 
 def _write_choices(obj, record):
@@ -1522,6 +1544,7 @@ def _build_people(root, people, names):
             npc.db.goal = list(record["goal"])
         _write_choices(npc, record)
         _write_styles(npc, record)
+        _write_ambience(npc, record)
 
     # Following is a second pass: somebody may follow somebody made later.
     for record in people:
@@ -1581,6 +1604,7 @@ def _build_things(root, things, names):
         _write_affordances(obj, record)
         _write_choices(obj, record)
         _write_styles(obj, record)
+        _write_ambience(obj, record)
         owner = record.get("owner") or {}
         if owner:
             _write_owner(obj, owner, names)

@@ -470,6 +470,7 @@ def delete(asset, force=False):
         raise Refused([f"{asset.name} is in use: " + "; ".join(
             str(use.get("said", use)) for use in using)])
     asset_store.store().delete(asset.hash, extension_of(asset))
+    _forget_copies(asset)
     if using:
         _go_missing(asset, f"|w{asset.name}|n was removed by an admin, and is "
                            f"missing now.")
@@ -636,7 +637,16 @@ def adopt(account, asset):
             f"{size_said(asset.size)} against your quota.")
 
 
+def _forget_copies(asset):
+    """What was made from an asset goes with it: a sound's panned copies."""
+    if asset.type == "sound":
+        from world import sound_gen
+
+        sound_gen.forget_copies(asset)
+
+
 def _go_missing(asset, told):
+    _forget_copies(asset)
     asset.status = _model().MISSING
     asset.charged_to = None
     asset.save()
@@ -1017,7 +1027,7 @@ def take_in_folder():
 
 
 # ---------------------------------------------------------------------------
-# Assets the game ships. docs/sound.md 4.3
+# Assets the game ships. docs/archived/sound.md 4.3
 # ---------------------------------------------------------------------------
 
 #: Where the game keeps its own assets, beside the code: `<group>/<name>.<ext>`
@@ -1210,20 +1220,26 @@ def lookup_tools():
             lines.append("made with " + ", ".join(
                 f"{key} {value}" for key, value in sorted(asset.made_with.items())
                 if key != "request"))
+        if asset.type == "sound":
+            from world import sound
+
+            measured = sound.measure(asset)
+            if measured:
+                lines.append(measured)
         return "\n".join(lines)
 
     kinds = sorted(asset_types.every())
     return [
         tb.Tool("list_assets",
-                "Files this game keeps -- world documents now, sounds and "
-                "images later -- each with its id, type and description.",
+                "Files this game keeps -- worlds, sounds -- each with its "
+                "id, type and description.",
                 tb.params({**tb.PAGE, "type": {
                     "type": "string", "enum": kinds,
                     "description": "Optional. Only assets of this type"}}),
                 tb.answering(listing), doing="looking through the assets",
                 looks=True),
-        tb.Tool("show_asset", "One asset in full: what it is, its credit, "
-                              "and how it was made.",
+        tb.Tool("show_asset", "One asset in full: its credit, how it was "
+                              "made, and a sound measured.",
                 tb.params({"id": {"type": "string",
                                   "description": "Its id, as list_assets "
                                                  "gives it"}}, ["id"]),

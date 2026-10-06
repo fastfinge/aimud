@@ -1,7 +1,9 @@
 """
 Sound: the asset type, the sounds the game ships, steady Ogg files, and
-sending a sound to a client, and what menus and the parser sound like.
-docs/sound.md, phases 0 to 2.
+sending a sound to a client, what menus and the parser sound like, and
+what happens in a world and the places in it sound like, and making sounds
+with genny, for players and for models, the sound ruleset, and the web
+client. docs/archived/sound.md, phases 0 to 8.
 
 Every file here is made by `soundfile` in memory, so the type is tested
 against what a real encoder writes rather than against bytes that only
@@ -9,6 +11,7 @@ start the right way.
 """
 
 import io
+import json
 import os
 import shutil
 import tempfile
@@ -153,7 +156,7 @@ class KeepingASound(_Stored):
 
 @tag("world")
 class TheGamesOwnSounds(_Stored):
-    """docs/sound.md 4.3."""
+    """docs/archived/sound.md 4.3."""
 
     MENU = ("menu/open", "menu/close", "menu/select", "menu/error",
             "menu/huh")
@@ -216,7 +219,7 @@ class TheGamesOwnSounds(_Stored):
 
 @tag("unit")
 class SteadyOgg(SimpleTestCase):
-    """The same sound is the same file. docs/sound.md 4.3."""
+    """The same sound is the same file. docs/archived/sound.md 4.3."""
 
     def test_encoding_twice_gives_one_file(self):
         first, second = tone(), tone()
@@ -236,7 +239,7 @@ class SteadyOgg(SimpleTestCase):
 
 
 # ---------------------------------------------------------------------------
-# Sending. docs/sound.md 3, phase 1
+# Sending. docs/archived/sound.md 3, phase 1
 # ---------------------------------------------------------------------------
 
 class FakeSession:
@@ -490,7 +493,7 @@ class TheMspHandshake(SimpleTestCase):
 
 
 # ---------------------------------------------------------------------------
-# Menus and the parser. docs/sound.md 8, phase 2
+# Menus and the parser. docs/archived/sound.md 8, phase 2
 # ---------------------------------------------------------------------------
 
 from tests.test_menus import Driving, Recorder, a_form  # noqa: E402
@@ -565,7 +568,7 @@ class ARefusalIsHeard(Driving):
 
 @tag("world")
 class ChoosingYourOwn(_Stored):
-    """docs/sound.md 8.3."""
+    """docs/archived/sound.md 8.3."""
 
     def setUp(self):
         super().setUp()
@@ -617,7 +620,7 @@ class ChoosingYourOwn(_Stored):
 
 @tag("world")
 class NotUnderstood(GameTest):
-    """The parser's drum hit. docs/sound.md 8.1."""
+    """The parser's drum hit. docs/archived/sound.md 8.1."""
 
     def heard(self, line):
         with mock.patch.object(sound, "cue") as cue:
@@ -629,3 +632,881 @@ class NotUnderstood(GameTest):
 
     def test_a_command_that_exists_is_not_a_drum_hit(self):
         self.assertEqual(self.heard("look"), [])
+
+
+# ---------------------------------------------------------------------------
+# Event sounds. docs/archived/sound.md 5, phase 3
+# ---------------------------------------------------------------------------
+
+class _Sounding(_Stored):
+    """The built-ins kept, and every `heard` written down instead of sent."""
+
+    characters = 2
+
+    def setUp(self):
+        super().setUp()
+        assets.take_in_builtins()
+        self.opened = assets.builtin("menu/open")
+        self.played = []
+        patcher = mock.patch.object(
+            sound, "heard", lambda listener, found, **kwargs:
+            self.played.append((listener, found, kwargs)) or 1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def effect(self, **extra):
+        found = {"type": "play_sound", "sound": self.opened.hash}
+        found.update(extra)
+        return found
+
+    def who(self):
+        return [listener for listener, _found, _kwargs in self.played]
+
+
+@tag("world")
+class PlayingASoundIsAnEffect(_Sounding):
+
+    def test_it_is_in_the_vocabulary_and_says_what_it_plays(self):
+        from world import effects
+
+        self.assertIn("play_sound", effects.VOCABULARY)
+        self.assertFalse(effects.VOCABULARY["play_sound"]["backwards"])
+        said = effects.say(self.effect(to="actor"))
+        self.assertEqual(said, f"plays {self.opened.name} to whoever acted")
+
+    def test_with_nothing_waiting_it_is_heard_at_once(self):
+        from world import effects
+
+        lines = effects.apply(self.char1, self.room1, [self.effect()])
+        self.assertEqual(lines, [])
+        self.assertEqual(set(self.who()), {self.char1, self.char2})
+        self.assertEqual(self.played[0][2]["category"], sound.EVENT)
+
+    def test_who_hears_it(self):
+        from world import effects
+
+        for to, expected in ((sound.ACTOR, [self.char1]),
+                             (sound.OTHERS, [self.char2]),
+                             ("direct", [self.char2])):
+            self.played = []
+            effects.apply(self.char1, self.room1, [self.effect(to=to)],
+                          bound={"direct": self.char2})
+            self.assertEqual(self.who(), expected, to)
+
+    def test_a_sound_this_server_does_not_have_plays_nothing(self):
+        from world import effects
+
+        effects.apply(self.char1, self.room1,
+                      [self.effect(sound="0" * 64)])
+        self.assertEqual(self.played, [])
+
+    def test_a_direction_becomes_a_pan(self):
+        from world import effects
+
+        effects.apply(self.char1, self.room1, [self.effect(direction="e")])
+        self.assertEqual(self.played[0][2]["pan"], 100)
+        self.assertEqual(sound.pan_toward("west"), -100)
+        self.assertEqual(sound.pan_toward("northeast"), 50)
+        self.assertEqual(sound.pan_toward("up"), 0)
+        self.assertEqual(sound.pan_toward("the hatch"), 0)
+
+
+@tag("world")
+class TheEventCarriesIt(_Sounding):
+
+    def test_it_waits_for_the_event_and_is_heard_once(self):
+        from world import effects, events
+
+        heard = []
+        effects.apply(self.char1, self.room1, [self.effect()], sounds=heard)
+        self.assertEqual(self.played, [])
+        event = events.Event(actor=self.char1, room=self.room1,
+                             room_template="{actor} opens the door.",
+                             sounds=heard)
+        events.deliver(event)
+        self.assertEqual(set(self.who()), {self.char1, self.char2})
+        events.deliver(event)
+        self.assertEqual(len(self.played), 2)
+
+    def test_after_everybody_has_read_it(self):
+        from world import events
+
+        order = []
+        self.char2.msg = lambda *args, **kwargs: order.append("read")
+        sound.heard = lambda listener, found, **kwargs: order.append("heard")
+        event = events.Event(actor=self.char1, room=self.room1,
+                             room_template="{actor} opens the door.",
+                             sounds=[{"asset": self.opened, "to": "others",
+                                      "volume": 100, "pan": 0,
+                                      "actor": self.char1,
+                                      "room": self.room1, "roles": {}}])
+        events.deliver(event)
+        self.assertEqual(order, ["read", "heard"])
+
+    def test_a_sound_with_nothing_to_read_is_still_heard(self):
+        from world import events
+
+        event = events.Event(actor=self.char1, room=self.room1, sounds=[
+            {"asset": self.opened, "to": "everyone", "volume": 100, "pan": 0,
+             "actor": self.char1, "room": self.room1, "roles": {}}])
+        events.deliver_many([event], actor=self.char1, room=self.room1)
+        self.assertEqual(set(self.who()), {self.char1, self.char2})
+
+
+@override_settings(ASSET_BASE_URL="https://mud.example.com:4001")
+@tag("world")
+class Captions(_Stored):
+    """Every sound is also a line of text. docs/archived/sound.md 7."""
+
+    def setUp(self):
+        super().setUp()
+        assets.take_in_builtins()
+        self.opened = assets.builtin("menu/open")
+        self.speakers = FakeSession(CLIENT_MEDIA=True)
+        self.agent = FakeSession("mcp")
+        self.read = []
+        self.listener = Listener(self.account, self.speakers, self.agent)
+        self.listener.msg = lambda text, session=None: self.read.append(
+            (session, text))
+
+    def test_the_window_with_speakers_hears_it_and_the_other_reads_it(self):
+        sent = sound.heard(self.listener, self.opened, category=sound.EVENT)
+        self.assertEqual(sent, 1)
+        self.assertEqual(len(self.speakers.media()), 1)
+        (session, text), = self.read
+        self.assertIs(session, self.agent)
+        self.assertIn(self.opened.description.rstrip("."), text)
+
+    def test_always_and_never(self):
+        self.account.attributes.add("sound_captions_event", "on")
+        sound.heard(self.listener, self.opened, category=sound.EVENT)
+        self.assertEqual(len(self.read), 2)
+        self.read.clear()
+        self.account.attributes.add("sound_captions_event", "off")
+        sound.heard(self.listener, self.opened, category=sound.EVENT)
+        self.assertEqual(self.read, [])
+
+    def test_nobody_without_a_session_is_given_one(self):
+        npc = Listener(None)
+        npc.msg = mock.Mock()
+        sound.heard(npc, self.opened, category=sound.EVENT)
+        npc.msg.assert_not_called()
+
+
+@tag("world")
+class WritingOneIntoARule(_Sounding):
+
+    def keep(self, **draft):
+        from world.makers import rules
+
+        ctx = menus.Context(self.char1)
+        ctx.draft.update(draft)
+        return rules.keep_effect(ctx)
+
+    def test_the_form_keeps_the_whole_hash_and_everyone_by_default(self):
+        effect, said = self.keep(type="play_sound",
+                                 sound=self.opened.hash[:12], volume=60)
+        self.assertEqual(effect, {"type": "play_sound",
+                                  "sound": self.opened.hash, "volume": 60,
+                                  "to": "everyone"})
+        self.assertIn(self.opened.name, said)
+
+    def test_and_refuses_one_with_no_sound(self):
+        with self.assertRaises(menus.Refuse):
+            self.keep(type="play_sound", hearers="actor")
+
+    def test_a_model_must_name_a_sound_the_server_keeps(self):
+        from world import rule_gen
+
+        offered = [("world", "everywhere", {"world": True})]
+        rule = {"phase": "carry_out", "scope": "world",
+                "effects": [{"type": "play_sound", "sound": "feedface0000"}]}
+        kept, complaints = rule_gen.validate({"rules": [rule]}, offered,
+                                             "ring")
+        self.assertEqual(kept, [])
+        self.assertIn("play_sound naming no sound", complaints[0])
+        rule["effects"][0]["sound"] = self.opened.hash[:12]
+        kept, complaints = rule_gen.validate({"rules": [rule]}, offered,
+                                             "ring")
+        self.assertEqual(complaints, [])
+        self.assertEqual(kept[0]["effects"][0]["sound"], self.opened.hash)
+
+    def test_a_world_whose_rule_plays_it_is_using_it(self):
+        from world import rulebooks
+
+        self.room1.db.is_world_root = True
+        self.room1.db.world_root = self.room1
+        rulebooks.add(self.room1, rulebooks.blank(
+            action="ring", phase=rulebooks.CARRY_OUT,
+            effects=[self.effect()]))
+        self.assertEqual(sound.used_in(self.room1), [self.opened])
+        use, = sound.uses(self.opened)
+        self.assertIs(use["world"], self.room1)
+        self.assertIn("a rule", use["said"])
+
+
+# ---------------------------------------------------------------------------
+# Ambience. docs/archived/sound.md 6, phase 4
+# ---------------------------------------------------------------------------
+
+class _Ambient(_Stored):
+    """A world of one room, its built-in sounds, and listeners to give it."""
+
+    second_room = True
+    loose_objects = 1
+
+    def setUp(self):
+        super().setUp()
+        assets.take_in_builtins()
+        self.wind = assets.builtin("menu/open")
+        self.fire = assets.builtin("menu/close")
+        self.rain = assets.builtin("menu/huh")
+        for room in (self.room1, self.room2):
+            room.db.world_root = self.room1
+            room.tags.add(str(self.room1.id), category="ai_world")
+        self.room1.db.is_world_root = True
+        self.sessions = {}
+        patcher = mock.patch.object(
+            sound, "_sessions",
+            lambda listener: list(self.sessions.get(getattr(listener, "id",
+                                                            None), [])))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def listen(self, *sessions):
+        for session in sessions:
+            session.account = self.account
+        self.sessions[self.char1.id] = list(sessions)
+        return sessions
+
+    def heard(self, room=None):
+        _place, every = sound.ambience_for(self.char1, room)
+        return [asset for asset, _volume, _pan in every]
+
+
+@tag("world")
+class WhatAPlaceSoundsLike(_Ambient):
+
+    def test_a_room_s_own_comes_first_and_alone(self):
+        from world import zones
+
+        zones.attach(self.room1, self.room1, "The Moor")
+        sound.set_zone_ambience(self.room1, "the_moor", [{"sound": self.wind}])
+        self.assertEqual(self.heard(), [self.wind])
+        sound.set_ambience(self.room1, [{"sound": self.rain.hash}])
+        self.assertEqual(self.heard(), [self.rain])
+
+    def test_a_kind_is_heard_in_every_place_of_that_kind(self):
+        self.room1.db.kinds = ["forest.n.01"]
+        sound.set_kind_ambience(self.room1, "forest.n.01",
+                                [{"sound": "menu/open"}])
+        self.assertEqual(self.heard(), [self.wind])
+
+    def test_and_in_every_sort_under_it(self):
+        self.room1.db.kinds = ["rain_forest.n.01"]
+        sound.set_kind_ambience(self.room1, "forest.n.01",
+                                [{"sound": "menu/open"}])
+        self.assertEqual(self.heard(), [self.wind])
+
+    def test_things_and_their_conditions_are_heard_beside_the_place(self):
+        from world import verbs
+
+        sound.set_ambience(self.room1, [{"sound": self.wind, "volume": 40}])
+        verbs.register_state(self.room1, "burning")
+        sound.set_state_ambience(self.room1, "burning",
+                                 [{"sound": self.fire, "volume": 70}])
+        self.assertEqual(self.heard(), [self.wind])
+        verbs.apply_states(self.obj1, add=["burning"], world_root=self.room1,
+                           announce=False)
+        self.assertEqual(self.heard(), [self.fire, self.wind])
+
+    def test_nothing_inside_something_else_is_heard(self):
+        sound.set_ambience(self.obj1, [{"sound": self.fire}])
+        self.assertEqual(self.heard(), [self.fire])
+        from evennia.utils.create import create_object
+
+        box = create_object("typeclasses.objects.Object", key="box",
+                            location=self.room1)
+        self.obj1.move_to(box, quiet=True)
+        self.assertEqual(self.heard(), [])
+
+    def test_one_of_each_sound_the_loudest_and_at_most_four(self):
+        sound.set_ambience(self.room1, [{"sound": self.wind, "volume": 20},
+                                        {"sound": self.wind, "volume": 90}])
+        _place, every = sound.ambience_for(self.char1)
+        self.assertEqual([(asset, volume) for asset, volume, _pan in every],
+                         [(self.wind, 90)])
+        loops = [assets.builtin(ref) for ref in sound.MOMENTS.values()]
+        sound.set_ambience(self.obj1, [{"sound": asset} for asset in loops])
+        _place, every = sound.ambience_for(self.char1)
+        self.assertEqual(len(every), sound.MOST_LOOPS)
+
+    def test_a_sound_this_server_does_not_keep_cannot_be_chosen(self):
+        self.assertEqual(sound.set_ambience(self.room1,
+                                            [{"sound": "0" * 64}]), [])
+
+    def test_look_and_listen_say_it(self):
+        sound.set_ambience(self.room1, [{"sound": self.wind}])
+        said = self.room1.return_appearance(self.char1)
+        self.assertIn("You hear:", said)
+        self.assertIn(self.wind.description.rstrip("."), said)
+        heard = []
+        self.char1.msg = lambda text="", **kwargs: heard.append(str(text))
+        self.char1.execute_cmd("listen")
+        self.assertIn("You hear:", heard[-1])
+
+    def test_a_world_that_keeps_making_a_sound_is_using_it(self):
+        sound.set_ambience(self.room2, [{"sound": self.rain}])
+        self.assertIn(self.rain, sound.used_in(self.room1))
+        self.assertTrue(sound.uses(self.rain))
+        with self.assertRaises(assets.Refused):
+            assets.delete(self.rain)
+
+
+@override_settings(ASSET_BASE_URL="https://mud.example.com:4001")
+@tag("world")
+class CrossingBetweenPlaces(_Ambient):
+
+    def setUp(self):
+        super().setUp()
+        sound.set_ambience(self.room1, [{"sound": self.wind}])
+        sound.set_ambience(self.room2, [{"sound": self.wind},
+                                        {"sound": self.rain, "volume": 50}])
+
+    def test_client_media_starts_what_is_new_and_leaves_what_carries_on(self):
+        media, = self.listen(FakeSession(CLIENT_MEDIA=True))
+        sound.refresh(self.char1)
+        first, = media.media()
+        self.assertEqual(first["key"], "ambience-" + self.wind.hash)
+        self.assertEqual((first["loops"], first["fadein"]), (-1, 1000))
+        self.char1.move_to(self.room2, quiet=True)
+        plays = media.media()
+        self.assertEqual(len(plays), 2)
+        self.assertEqual(plays[1]["key"], "ambience-" + self.rain.hash)
+        self.char1.move_to(self.room1, quiet=True)
+        self.assertEqual(media.media("client_media_stop")[-1],
+                         {"key": "ambience-" + self.rain.hash,
+                          "fadeout": 1000})
+        self.assertEqual(len(media.media()), 2)
+
+    def test_msp_gets_the_one_loudest_loop_of_the_place(self):
+        telnet, = self.listen(FakeSession(MSP=True))
+        sound.refresh(self.char1)
+        self.char1.move_to(self.room2, quiet=True)
+        lines = telnet.msp()
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith(f"!!MUSIC({self.wind.hash}.ogg"))
+        sound.set_ambience(self.room2, [])
+        self.assertEqual(telnet.msp()[-1], "!!MUSIC(Off)")
+
+    def test_somebody_reading_is_told_what_changed_once(self):
+        agent, = self.listen(FakeSession("mcp"))
+        read = []
+        self.char1.msg = lambda text="", **kwargs: read.append(str(text))
+        sound.refresh(self.char1)
+        self.assertIn("You hear:", read[-1])
+        sound.refresh(self.char1)
+        self.assertEqual(len(read), 1)
+        self.char1.move_to(self.room2, quiet=True)
+        self.assertIn(self.rain.description[1:20], read[-1])
+        self.char1.move_to(self.room1, quiet=True)
+        self.assertIn("Fading:", read[-1])
+
+    def test_turning_sound_off_stops_what_is_playing(self):
+        media, = self.listen(FakeSession(CLIENT_MEDIA=True))
+        sound.refresh(self.char1)
+        self.account.attributes.add("sound_on", False)
+        self.account.attributes.add("sound_captions_ambience", "off")
+        sound.refresh(self.char1)
+        self.assertEqual(media.media("client_media_stop")[-1],
+                         {"tag": "ambience", "fadeout": 1000})
+
+    def test_a_condition_starting_is_heard_at_once(self):
+        from world import verbs
+
+        media, = self.listen(FakeSession(CLIENT_MEDIA=True))
+        sound.refresh(self.char1)
+        verbs.register_state(self.room1, "burning")
+        sound.set_state_ambience(self.room1, "burning",
+                                 [{"sound": self.fire}])
+        verbs.apply_states(self.obj1, add=["burning"], world_root=self.room1,
+                           announce=False)
+        self.assertEqual(media.media()[-1]["key"],
+                         "ambience-" + self.fire.hash)
+
+    def test_leaving_the_character_stops_it(self):
+        media, = self.listen(FakeSession(CLIENT_MEDIA=True))
+        sound.refresh(self.char1)
+        sound.forget_hearing(media)
+        self.assertEqual(media.media("client_media_stop")[-1]["tag"],
+                         "ambience")
+
+
+@tag("world")
+class AmbienceTravelsWithAWorld(_Ambient):
+
+    def test_a_room_s_ambience_is_in_its_record_and_comes_back(self):
+        from world import exchange
+
+        sound.set_ambience(self.room1, [{"sound": self.wind, "pan": 30}])
+        record = exchange._room(self.room1, exchange.Names())
+        self.assertEqual(record["ambience"],
+                         [{"sound": self.wind.hash, "volume": 100,
+                           "pan": 30}])
+        exchange._write_ambience(self.room2, record)
+        self.assertEqual(sound.own_ambience(self.room2), record["ambience"])
+
+    def test_a_document_may_name_a_sound_not_here_yet(self):
+        written = sound.written_ambience([{"sound": "AB" * 32},
+                                          {"sound": "menu/huh"},
+                                          {"sound": ""}])
+        self.assertEqual([entry["sound"] for entry in written],
+                         ["ab" * 32, self.rain.hash])
+
+    def test_a_ruleset_says_what_a_kind_and_a_condition_sound_like(self):
+        from world import rulesets
+
+        rulesets._apply(self.room1, {
+            "name": "noises",
+            "kinds": [{"kind": "forest.n.01", "affordances": {},
+                       "ambience": [{"sound": "menu/open"}]}],
+            "conditions": [{"state": "crackling", "means": "on fire",
+                            "ambience": [{"sound": "menu/close"}]}]}, {})
+        self.assertEqual(sound.kind_ambience(self.room1, "forest.n.01")[0]
+                         ["sound"], self.wind.hash)
+        self.assertEqual(sound.state_ambience(self.room1, "crackling")[0]
+                         ["sound"], self.fire.hash)
+
+
+@tag("world")
+class SayingItInAForm(_Ambient):
+
+    def test_adding_and_taking_out_live(self):
+        from world.makers import sounding
+
+        where = sounding.of_object(lambda ctx: self.room1)
+        ctx = menus.Context(self.char1, ambience_where=where(None))
+        ctx.draft.update({"sound": self.wind.hash, "volume": 60, "pan": -20})
+        said = sounding._add(ctx)
+        self.assertIn(self.wind.name, said)
+        self.assertEqual(sound.own_ambience(self.room1),
+                         [{"sound": self.wind.hash, "volume": 60,
+                           "pan": -20}])
+        sounding._dropper(0)(ctx)
+        self.assertEqual(sound.own_ambience(self.room1), [])
+
+    def test_the_area_s_only_when_there_is_an_area(self):
+        from world import zones
+        from world.makers import sounding
+
+        where = sounding.of_zone(lambda ctx: self.room2)
+        self.assertIsNone(where(None))
+        zones.attach(self.room1, self.room2, "The Cellars")
+        self.assertIsNotNone(where(None))
+
+
+# ---------------------------------------------------------------------------
+# genny. docs/archived/sound.md 9, phase 5
+# ---------------------------------------------------------------------------
+
+from world import sound_gen  # noqa: E402
+
+BEEP = {"layers": [{"type": "sfx", "kind": "beep",
+                    "params": {"dur": 0.05}}]}
+
+
+@tag("unit")
+class CheckingASpec(SimpleTestCase):
+    """Nothing genny would read or write a path for gets through."""
+
+    def wrong(self, spec):
+        return " ".join(sound_gen.check(spec)[1])
+
+    def test_a_good_spec_passes_and_loses_its_out(self):
+        spec, wrong = sound_gen.check(dict(BEEP, out="C:/anywhere.wav",
+                                           out_dir="/etc"))
+        self.assertEqual(wrong, [])
+        self.assertNotIn("out", spec)
+        self.assertNotIn("out_dir", spec)
+
+    def test_a_file_layer_may_not_name_a_path(self):
+        with mock.patch("world.sound.resolve", return_value=None):
+            said = self.wrong({"layers": [{"type": "file",
+                                           "path": "C:/secret.wav"}]})
+        self.assertIn("never a path", said)
+
+    def test_names_genny_does_not_have(self):
+        self.assertIn("no sound effect called nope", self.wrong(
+            {"layers": [{"type": "sfx", "kind": "nope"}]}))
+        self.assertIn("no instruments", self.wrong(
+            {"layers": [{"type": "seq", "inst": "kazoo9"}]}).replace(
+                "no instrument", "no instruments"))
+        self.assertIn("no effect called wobble", self.wrong(
+            dict(BEEP, fx=[{"type": "wobble"}])))
+        self.assertIn("no layer type", self.wrong(
+            {"layers": [{"type": "nonsense"}]}))
+
+    def test_the_limits(self):
+        self.assertIn("longer than 30", self.wrong(dict(BEEP, duration=40)))
+        self.assertEqual(sound_gen.check(dict(BEEP, duration=40,
+                                              loop=True))[1], [])
+        self.assertIn("more than 64", self.wrong(
+            {"layers": [dict(BEEP["layers"][0], repeat=1000)]}))
+        many = {"layers": [dict(BEEP["layers"][0]) for _ in range(40)]}
+        self.assertIn("40 layers", self.wrong(many))
+        deep = {"type": "group", "layers": [dict(BEEP["layers"][0])]}
+        for _ in range(5):
+            deep = {"type": "group", "layers": [deep]}
+        self.assertIn("nest", self.wrong({"layers": [deep]}))
+        self.assertIn("sample rate", self.wrong(dict(BEEP, sr=8000)))
+
+    def test_one_sound_at_a_time(self):
+        self.assertIn("one sound at a time", self.wrong({"sounds": [BEEP]}))
+        self.assertIn("not JSON", self.wrong("{nope"))
+
+
+@tag("world")
+class Rendering(_Stored):
+
+    def render(self, spec, **kwargs):
+        found = {}
+        given = dict(name="a beep", description="A short high beep.",
+                     added_by=self.account, charged_to=self.account,
+                     on_done=lambda asset, said: found.update(asset=asset,
+                                                              said=said),
+                     on_fail=lambda why: found.update(why=why), wait=True)
+        given.update(kwargs)
+        sound_gen.render(spec, **given)
+        return found
+
+    def test_a_spec_becomes_a_steady_ogg_asset(self):
+        found = self.render(BEEP)
+        asset = found["asset"]
+        self.assertEqual((asset.type, asset.version, asset.origin),
+                         ("sound", "vorbis", "tool"))
+        self.assertEqual(asset.charged_to, self.account)
+        self.assertEqual(asset.made_with["tool"], "render")
+        self.assertEqual(asset.made_with["spec"], BEEP)
+        self.assertIn("genny", asset.author)
+
+    def test_asked_once(self):
+        first = self.render(BEEP)["asset"]
+        with mock.patch.object(sound_gen, "_render_file") as again:
+            second = self.render(BEEP)
+        again.assert_not_called()
+        self.assertEqual(second["asset"].pk, first.pk)
+
+    def test_a_render_that_runs_too_long_is_stopped(self):
+        import subprocess
+
+        with mock.patch.object(subprocess, "run",
+                               side_effect=subprocess.TimeoutExpired("x", 1)):
+            found = self.render(BEEP)
+        self.assertIn("was stopped", found["why"])
+
+    def test_what_genny_refuses_is_said_without_a_path(self):
+        spec = {"layers": [{"type": "sfx", "kind": "beep",
+                            "params": {"nonsense": 1}}]}
+        found = self.render(spec)
+        self.assertIn("genny could not make it", found["why"])
+        self.assertNotIn("aimud-genny-", found["why"])
+
+    def test_a_file_layer_builds_on_a_sound_here(self):
+        base = self.render(BEEP)["asset"]
+        found = self.render({"layers": [{"type": "file",
+                                         "path": base.hash[:12]}],
+                             "fx": [{"type": "reverb", "mix": 0.3}]},
+                            name="a beep in a hall")
+        self.assertNotEqual(found["asset"].hash, base.hash)
+
+    def test_a_panned_copy_belongs_to_its_source(self):
+        base = self.render(BEEP)["asset"]
+        self.assertIs(sound_gen.panned(base, 0), base)
+        copy_made = sound_gen.panned(base, 80, wait=True)
+        self.assertEqual(copy_made.origin, "derived")
+        self.assertEqual(copy_made.made_with["pan"], 67)
+        self.assertIsNone(copy_made.charged_to)
+        self.assertEqual(sound_gen.panned(base, 70).pk, copy_made.pk)
+        self.assertEqual(assets.pool_used(), 0)
+        assets.delete(base)
+        self.assertIsNone(assets.find(copy_made.hash))
+
+    def test_where_a_pan_lands(self):
+        self.assertEqual([sound_gen.position(pan) for pan in
+                          (-100, -60, -10, 0, 20, 55, 99)],
+                         [-100, -67, 0, 0, 33, 67, 100])
+
+
+@tag("world")
+class TheGennyForm(_Stored):
+
+    def test_a_sound_effect_with_its_parameters_and_effects(self):
+        from commands import sound_subject
+
+        spec = sound_subject.spec_of({
+            "how": "sfx", "which": "beep", "p_freq": "880", "p_dur": "0.1",
+            "fx": "reverb:mix=0.3 lowpass:cutoff=2000", "loop": True,
+            "seconds": 4})
+        self.assertEqual(spec["layers"], [{"type": "sfx", "kind": "beep",
+                                           "params": {"freq": 880,
+                                                      "dur": 0.1}}])
+        self.assertEqual(spec["fx"], [{"type": "reverb", "mix": 0.3},
+                                      {"type": "lowpass", "cutoff": 2000}])
+        self.assertEqual((spec["loop"], spec["duration"]), (True, 4))
+
+    def test_the_fields_are_genny_s_own(self):
+        from commands import sound_subject
+
+        ctx = menus.Context(self.char1)
+        ctx.draft.update({"how": "sfx", "which": "beep"})
+        keys = {field.key for field in sound_subject._param_fields(ctx)}
+        self.assertEqual(keys, {"p_" + name for name in
+                                sound_gen.catalog()["sfx"]["beep"]["params"]})
+        names = [value for value, _label in
+                 sound_subject._which_options(ctx)]
+        self.assertIn("beep", names)
+
+    def test_editing_one_opens_on_how_it_was_made(self):
+        from commands import sound_subject
+
+        found = {}
+        sound_gen.render(BEEP, name="a beep", description="A beep.",
+                         added_by=self.account, charged_to=self.account,
+                         on_done=lambda asset, said: found.update(a=asset),
+                         on_fail=found.update, wait=True)
+        draft = sound_subject.draft_of(found["a"])
+        self.assertEqual(draft["how"], "spec")
+        self.assertEqual(sound_subject.spec_of(draft), BEEP)
+
+    def test_create_sound_offers_its_sources(self):
+        from commands import sound_subject
+
+        self.assertEqual([key for key, *_rest in sound_subject.SOURCES],
+                         ["genny"])
+
+
+@tag("world")
+class ForAModel(_Stored):
+
+    def test_the_catalog_is_a_lookup(self):
+        from world import lookups, toolbox
+
+        tool = lookups.named("sound_catalog")[0]
+        said = []
+        tool.handler(toolbox.ToolContext(), {"section": "sfx",
+                                             "name": "beep"}, said.append)
+        self.assertIn("freq", said[0])
+        said = []
+        tool.handler(toolbox.ToolContext(), {}, said.append)
+        self.assertIn("instruments", said[0])
+
+    def test_the_manual_has_a_page(self):
+        from world import manual
+
+        self.assertIn("sound", manual.PAGES)
+        self.assertIn("play_sound", manual.page("sound"))
+
+    def test_a_sound_is_measured_for_whoever_cannot_hear_it(self):
+        assets.take_in_builtins()
+        said = sound.measure(assets.builtin("menu/huh"))
+        self.assertIn("seconds", said)
+        self.assertIn("sharpness", said)
+
+
+# ---------------------------------------------------------------------------
+# Models. docs/archived/sound.md 9.5, phase 6
+# ---------------------------------------------------------------------------
+
+@tag("world")
+class AModelMakingASound(_Stored):
+
+    def setUp(self):
+        super().setUp()
+        from tests.support import FakeSponsor
+
+        self.room1.db.world_root = self.room1
+        self.sponsor = FakeSponsor(world_root=self.room1, actor=self.char1)
+        self.sponsor.account = self.account
+
+    def call(self, args):
+        from world import toolbox
+
+        said = []
+        tool = sound_gen.make_sound_tool()
+        ctx = toolbox.ToolContext(world_root=self.room1, sponsor=self.sponsor)
+        real = sound_gen.render
+        with mock.patch.object(sound_gen, "render",
+                               lambda *a, **k: real(*a, **dict(k, wait=True))):
+            tool.handler(ctx, args, said.append)
+        return said[0], tool.offered(ctx)
+
+    def test_sounds_are_a_permit_and_the_type_names_it(self):
+        from world import permits
+
+        self.assertIn("sounds", permits.MADE)
+        self.assertEqual(asset_types.get("sound").permit, "sounds")
+
+    def test_it_makes_one_and_answers_its_id(self):
+        said, offered = self.call({"spec": json.dumps(BEEP), "name": "a beep",
+                                   "description": "A short beep."})
+        self.assertTrue(offered)
+        made = assets.search("sound").get(name="a beep")
+        self.assertIn(made.hash[:12], said)
+        self.assertEqual(made.charged_to, self.account)
+        self.assertEqual(made.made_with["asked_by"], "model")
+
+    def test_a_world_that_says_never_is_not_offered_it(self):
+        from world import permits
+
+        permits.choose(self.room1, "sounds", permits.NEVER)
+        said, offered = self.call({"spec": json.dumps(BEEP), "name": "a beep",
+                                   "description": "A short beep."})
+        self.assertFalse(offered)
+        self.assertIn("does not have new sounds made", said)
+        self.assertFalse(assets.search("sound").filter(name="a beep").exists())
+
+    def test_the_rule_loop_is_told_only_what_it_may_do(self):
+        from world import permits, rule_gen
+
+        self.assertEqual(rule_gen._sounds_said(self.sponsor), "")
+        assets.take_in_builtins()
+        said = rule_gen._sounds_said(self.sponsor)
+        self.assertIn("play_sound", said)
+        self.assertIn("make_sound", said)
+        permits.choose(self.room1, "sounds", permits.NEVER)
+        said = rule_gen._sounds_said(self.sponsor)
+        self.assertIn("play_sound", said)
+        self.assertNotIn("make_sound", said)
+
+
+@tag("world")
+class AServiceSendingASound(_Stored):
+    """A tool's sound file is kept and heard. docs/archived/sound.md 9.5."""
+
+    def setUp(self):
+        super().setUp()
+        self.room1.db.world_root = self.room1
+
+    def test_the_destination_reads_and_is_said(self):
+        from world import tool_calls
+
+        self.assertEqual(tool_calls.read_target("sound:everyone"),
+                         {"to": "sound", "role": "everyone"})
+        self.assertEqual(tool_calls.read_target("sound"),
+                         {"to": "sound", "role": "everyone"})
+        self.assertIn("a sound played to",
+                      tool_calls.said_target("sound:actor"))
+
+    def test_the_file_is_kept_once_and_played(self):
+        from world import services, tool_calls
+
+        answer = services.Answer(text="A bell rings once.",
+                                 files=[(tone(), "audio/ogg")])
+        effect = {"type": "call_tool", "tool": "bells.ring",
+                  "results": {"file": "sound:everyone"},
+                  tool_calls.ANSWER: answer, tool_calls.CALLED: {"n": "1"}}
+        played = []
+        with mock.patch("world.sponsor.of", return_value=mock.Mock(
+                payer=self.account, actor=self.char1)), \
+                mock.patch.object(sound, "heard", lambda listener, found,
+                                  **kwargs: played.append(found) or 1), \
+                mock.patch("world.services.find", return_value=(None, {})):
+            tool_calls.apply(self.char1, self.room1, effect, {}, self.room1)
+            tool_calls.apply(self.char1, self.room1, effect, {}, self.room1)
+        kept = assets.search("sound").filter(origin="tool")
+        self.assertEqual(kept.count(), 1)
+        self.assertEqual(kept[0].description, "A bell rings once.")
+        self.assertEqual(played, [kept[0], kept[0]])
+
+
+# ---------------------------------------------------------------------------
+# The sound ruleset. docs/archived/sound.md 10, phase 7
+# ---------------------------------------------------------------------------
+
+@tag("world")
+class TheSoundRuleset(_Ambient):
+
+    def setUp(self):
+        super().setUp()
+        from world import rulesets
+
+        self.doc = rulesets.get("sound")
+
+    def test_it_is_a_ruleset_this_game_reads_and_not_a_default(self):
+        from world import rulesets
+
+        self.assertIsNotNone(self.doc)
+        self.assertEqual(rulesets.problems(self.doc), [])
+        self.assertFalse(self.doc.get("default"))
+
+    def test_every_sound_it_names_ships_with_the_game(self):
+        named = set()
+        for entry in self.doc.get("kinds", []) + self.doc.get("conditions",
+                                                              []):
+            named |= {one["sound"] for one in entry.get("ambience", [])}
+        for rule in self.doc["rules"]:
+            named |= {effect["sound"] for effect in rule["effects"]}
+        for ref in sorted(named):
+            found = assets.builtin(ref)
+            self.assertIsNotNone(found, ref)
+            self.assertEqual(found.type, "sound", ref)
+            self.assertTrue(found.description, ref)
+
+    def test_a_world_using_it_hears_its_places_and_its_fires(self):
+        from world import rulesets, verbs
+
+        rulesets._apply(self.room1, self.doc, {})
+        self.room1.db.kinds = ["rain_forest.n.01"]
+        self.assertEqual([asset.name for asset in self.heard()],
+                         ["a forest"])
+        verbs.apply_states(self.obj1, add=["burning"], world_root=self.room1,
+                           announce=False)
+        self.assertIn("a fire burning",
+                      [asset.name for asset in self.heard()])
+
+    def test_naming_a_kind_for_its_sound_does_not_settle_it(self):
+        from world import kinds, rulesets
+
+        rulesets._apply(self.room1, self.doc, {})
+        self.assertNotIn("affordances",
+                         kinds.spec(self.room1, "forest.n.01") or {})
+
+    def test_its_rules_play_through_the_effect(self):
+        from world import effects, rulebooks, rulesets
+
+        rulesets._apply(self.room1, self.doc, {})
+        opened = [rule for rule in rulebooks.all_rules(self.room1)
+                  if rule.get("name") == "a door creaks open"]
+        self.assertEqual(len(opened), 1)
+        played = []
+        with mock.patch.object(sound, "heard", lambda listener, found,
+                               **kwargs: played.append(found) or 1):
+            effects.apply(self.char1, self.room1, opened[0]["effects"])
+        self.assertEqual([found.name for found in played],
+                         ["a door opening"])
+        self.assertIn(assets.builtin("ruleset/door_open"),
+                      sound.used_in(self.room1))
+
+
+# ---------------------------------------------------------------------------
+# The web client. docs/archived/sound.md 3.1, phase 8
+# ---------------------------------------------------------------------------
+
+@tag("unit")
+class TheWebClient(SimpleTestCase):
+
+    def test_its_page_loads_the_sound_plugin_beside_evennia_s_own(self):
+        from django.contrib.auth.models import AnonymousUser
+        from django.template.loader import get_template
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/webclient/")
+        request.user = AnonymousUser()
+        html = get_template("webclient/webclient.html").render({}, request)
+        self.assertIn("webclient/js/plugins/aimud_sound.js", html)
+        self.assertIn("webclient/js/plugins/default_in.js", html)
+
+    def test_it_is_told_the_pan_and_no_other_client_is(self):
+        web = FakeSession("webclient/websocket", CLIENT_MEDIA=True)
+        self.assertTrue(sound._web(web))
+        self.assertFalse(sound._web(FakeSession(CLIENT_MEDIA=True)))

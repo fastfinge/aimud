@@ -99,8 +99,18 @@ ASSET_BASE_URL = ""
 # Telnet that also offers MSP, the MUD Sound Protocol, which Evennia does not
 # speak by itself. Telnet over TLS builds on this class, so it offers MSP
 # too. A client that declines is never sent a line of it. See
-# server/conf/telnet_msp.py and docs/sound.md.
+# server/conf/telnet_msp.py and docs/archived/sound.md.
 TELNET_PROTOCOL_CLASS = "server.conf.telnet_msp.MspTelnetProtocol"
+
+# Making sounds with genny, which a spec must fit before anything is rendered,
+# and how many renders may run at once. Each render is a process of its own,
+# stopped if it runs over. See world/sound_gen.py and docs/archived/sound.md.
+SOUND_MOST_SECONDS = 30
+SOUND_MOST_LOOP_SECONDS = 60
+SOUND_MOST_LAYERS = 32
+SOUND_MOST_REPEATS = 64
+SOUND_RENDER_SECONDS = 20
+SOUND_RENDER_THREADS = 2
 
 # Threads for model calls, which spend nearly all their time waiting on the
 # network: this many may be waiting at once, across every world on the

@@ -143,7 +143,8 @@ def _try_direction(caller, cmd_verb, args):
 
 def _huh(caller, session=None):
     """
-    The sound of the game not understanding a command. docs/sound.md 8.1.
+    The sound of the game not understanding a command.
+    docs/archived/sound.md 8.1.
 
     Only where it truly did not: outside a world, and a near-miss for a
     command. Inside a world anything else typed is something to try, and

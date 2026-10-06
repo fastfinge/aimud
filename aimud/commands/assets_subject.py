@@ -80,6 +80,13 @@ def detail(asset, account=None):
     origin = dict(asset.ORIGINS).get(asset.origin, asset.origin)
     who = asset.added_by.key if asset.added_by_id else "nobody now"
     lines.append(f"It was {origin}, by {who}, on {asset.added:%Y-%m-%d}.")
+    if asset.type == "sound":
+        # What it is like to hear, for somebody who cannot.
+        from world import sound
+
+        measured = sound.measure(asset)
+        if measured:
+            lines.append(measured)
     if asset.source:
         lines.append(f"From: {asset.source}")
     if asset.author or asset.licence:

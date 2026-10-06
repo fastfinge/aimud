@@ -1,5 +1,5 @@
 """
-Make the built-in sounds again from their specs. docs/sound.md 4.3.
+Make the built-in sounds again from their specs. docs/archived/sound.md 4.3.
 
 Every built-in sound is a `<name>.ogg` beside a `<name>.json` that says what
 it is called, what it sounds like, who made it, and the genny spec that made

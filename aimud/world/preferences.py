@@ -319,8 +319,23 @@ GENERAL = m.Form(
 
 
 # ---------------------------------------------------------------------------
-# Sound. docs/sound.md 3.6
+# Sound. docs/archived/sound.md 3.6
 # ---------------------------------------------------------------------------
+
+def _resounding(said):
+    """
+    A sound setting's message, and what it changes heard at once: turning
+    sound off stops the loops playing, and turning the ambience down turns
+    the wind down now rather than at the next room.
+    """
+    def told(ctx, value):
+        from world import sound
+
+        sound.refresh_account(ctx.account)
+        return said(ctx, value) if callable(said) else said
+
+    return told
+
 
 def _sound_said(ctx, value):
     return ("Sounds are on." if value is None or value
@@ -332,7 +347,7 @@ SOUND_ON = _attribute_setting(
     help=("Whether the game sends sounds to a client that can play them: "
           "menus opening and closing, and more as worlds make use of it. "
           "Off sends nothing at all."),
-    said=_sound_said,
+    said=_resounding(_sound_said),
 )
 
 _PROTOCOL_CHOICES = [
@@ -351,12 +366,12 @@ SOUND_PROTOCOL = _attribute_setting(
           "Client.Media, and MSP clients agree to MSP. Leave this on auto "
           "unless your client plays MSP without saying so, as some do; then "
           "choose MSP. A client that has both is only ever sent one."),
-    said=lambda ctx, value: "Sounds will be sent " + {
+    said=_resounding(lambda ctx, value: "Sounds will be sent " + {
         None: "however your client says it can play them.",
         "auto": "however your client says it can play them.",
         "media": "as GMCP Client.Media.",
         "msp": "as MSP, on telnet connections.",
-        "off": "to no connection at all."}[value],
+        "off": "to no connection at all."}[value]),
 )
 
 
@@ -368,6 +383,10 @@ def _volume_field(category, label, help):
             ctx.account.attributes.remove(attr)
         else:
             ctx.account.attributes.add(attr, int(value))
+        # Back to the default changes what is heard as much as any value.
+        from world import sound
+
+        sound.refresh_account(ctx.account)
         return f"{label} are at {100 if value is None else int(value)}."
 
     def show(ctx, stored):
@@ -382,6 +401,59 @@ def _volume_field(category, label, help):
 UI_VOLUME = _volume_field(
     "ui", "Menu sounds",
     "How loud the sounds menus make are, from 0 for none to 100.")
+
+EVENT_VOLUME = _volume_field(
+    "event", "Sounds of what happens",
+    "How loud the sounds a world plays when something happens are -- a door "
+    "creaking, a bell ringing -- from 0 for none to 100.")
+
+_CAPTION_CHOICES = [
+    m.Choice("auto", "Only on a connection that is not playing sounds",
+             keys=("auto",)),
+    m.Choice("on", "Always", keys=("on", "always", "yes")),
+    m.Choice("off", "Never", keys=("off", "never", "no")),
+]
+
+
+def _captions_field(kind, key, label, help):
+    return _attribute_setting(
+        key, label, "sound_captions_" + kind, "auto", kind=m.CHOICE,
+        choices=_CAPTION_CHOICES, help=help,
+        said=_resounding(lambda ctx, value: f"{label}: " + {
+            None: "only where sounds are not playing.",
+            "auto": "only where sounds are not playing.",
+            "on": "always.", "off": "never."}[value]))
+
+
+SOUND_PAN = _attribute_setting(
+    "soundpan", "Sounds from the left or the right", "sound_pan", True,
+    kind=m.BOOLEAN,
+    help=("A world may say where a sound comes from: a door slamming to the "
+          "east is heard on the right. Off plays every sound from the centre, "
+          "for anybody who hears with one ear or listens in mono."),
+    said=_resounding(lambda ctx, value: (
+        "Sounds come from where the world says." if value is None or value
+        else "Every sound plays from the centre.")),
+)
+
+AMBIENCE_VOLUME = _volume_field(
+    "ambience", "Sounds of where you are",
+    "How loud the sounds a place keeps making are -- wind, rain, a crowd, a "
+    "fire -- from 0 for none to 100.")
+
+AMBIENCE_CAPTIONS = _captions_field(
+    "ambience", "ambiencecaptions", "Where you are, written out",
+    "When what you can hear changes -- walking out of the rain, into a "
+    "tavern -- a line says so. Auto writes it only on a connection that is "
+    "not playing sounds. What a place sounds like is always at the end of "
+    "look, and listen asks for it.")
+
+EVENT_CAPTIONS = _captions_field(
+    "event", "eventcaptions", "Sounds written out",
+    "Every sound is also a line of text: what it is, in brackets, under "
+    "what happened. Auto writes it out only on a connection that is not "
+    "playing sounds -- an agent, or a client without them -- so a player "
+    "who can hear it is not told twice.")
 
 
 def _moment_field(moment, key, label, help):
@@ -458,7 +530,9 @@ def _sound_intro(ctx):
 
 SOUND = m.Form(
     key="sound", title="Sound", intro=_sound_intro,
-    items=[SOUND_ON, SOUND_PROTOCOL, UI_VOLUME] + MOMENT_FIELDS,
+    items=[SOUND_ON, SOUND_PROTOCOL, UI_VOLUME, EVENT_VOLUME,
+           AMBIENCE_VOLUME, SOUND_PAN, EVENT_CAPTIONS, AMBIENCE_CAPTIONS]
+    + MOMENT_FIELDS,
 )
 
 

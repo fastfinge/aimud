@@ -1,0 +1,48 @@
+{
+  "name": "sound",
+  "title": "Sounds",
+  "version": 1,
+  "default": false,
+  "means": "What common places, conditions and doings sound like: forests, shores, rivers, caves, fire, rain, doors, eating and drinking. Every sound is made with genny and ships with the game, and every one is also read as text by anybody without sound.",
+  "requires": ["default"],
+  "conflicts": [],
+
+  "kinds": [
+    {"kind": "forest.n.01", "ambience": [{"sound": "ruleset/forest", "volume": 70}]},
+    {"kind": "field.n.01", "ambience": [{"sound": "ruleset/wind", "volume": 60}]},
+    {"kind": "shore.n.01", "ambience": [{"sound": "ruleset/waves", "volume": 70}]},
+    {"kind": "river.n.01", "ambience": [{"sound": "ruleset/river", "volume": 70}]},
+    {"kind": "cave.n.01", "ambience": [{"sound": "ruleset/cave", "volume": 70}]},
+    {"kind": "machine.n.01", "ambience": [{"sound": "ruleset/machine", "volume": 50}]}
+  ],
+
+  "conditions": [
+    {"state": "burning", "means": "on fire",
+     "ambience": [{"sound": "ruleset/fire", "volume": 80}]},
+    {"state": "raining", "means": "rain is falling on it",
+     "ambience": [{"sound": "ruleset/rain", "volume": 70}]},
+    {"state": "flowing", "means": "water is running through or out of it",
+     "ambience": [{"sound": "ruleset/river", "volume": 60}]}
+  ],
+
+  "rules": [
+    {"name": "a door creaks open", "phase": "after", "action": "open",
+     "scope": {"kind": "door.n.01"}, "about": "direct",
+     "effects": [{"type": "play_sound", "sound": "ruleset/door_open", "to": "everyone"}]},
+    {"name": "a door thuds shut", "phase": "after", "action": "close",
+     "scope": {"kind": "door.n.01"}, "about": "direct",
+     "effects": [{"type": "play_sound", "sound": "ruleset/door_close", "to": "everyone"}]},
+    {"name": "eating crunches", "phase": "after", "action": "eat",
+     "scope": {"world": true}, "about": "direct",
+     "effects": [{"type": "play_sound", "sound": "ruleset/eat", "to": "everyone", "volume": 70}]},
+    {"name": "drinking gulps", "phase": "after", "action": "drink",
+     "scope": {"world": true}, "about": "direct",
+     "effects": [{"type": "play_sound", "sound": "ruleset/drink", "to": "everyone", "volume": 70}]},
+    {"name": "picking something up rustles", "phase": "after", "action": "get",
+     "scope": {"world": true}, "about": "direct",
+     "effects": [{"type": "play_sound", "sound": "ruleset/take", "to": "actor", "volume": 60}]},
+    {"name": "setting something down tocks", "phase": "after", "action": "drop",
+     "scope": {"world": true}, "about": "direct",
+     "effects": [{"type": "play_sound", "sound": "ruleset/drop", "to": "everyone", "volume": 60}]}
+  ]
+}

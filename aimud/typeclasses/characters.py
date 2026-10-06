@@ -192,6 +192,22 @@ class Character(ObjectParent, DefaultCharacter):
         traits.notice_changes(self)
         becoming.settle()
         becoming.arm_around(self)
+        # And what this place sounds like, from the start.
+        # docs/archived/sound.md 6.3.
+        from world import sound
+
+        sound.refresh(self)
+
+    def at_post_unpuppet(self, account=None, session=None, **kwargs):
+        """
+        Nobody is playing this character from that session any more: what it
+        was hearing here stops there. docs/archived/sound.md 6.3.
+        """
+        super().at_post_unpuppet(account=account, session=session, **kwargs)
+        if session is not None:
+            from world import sound
+
+            sound.forget_hearing(session)
 
     def at_post_move(self, source_location, move_type="move", **kwargs):
         super().at_post_move(source_location, move_type=move_type, **kwargs)
