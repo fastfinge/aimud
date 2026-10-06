@@ -1553,8 +1553,8 @@ def _narrate(caller, sponsor, verb, bound, raw, result, written, cached,
         # that also swallows the effects.
         #
         # It is what the permit says on its face: turning verbs off means "a
-        # verb nobody has written a rule for does nothing", and this is a verb
-        # somebody has. A world built by hand, with no key at all, runs its
+        # verb does only what a rule written here says it does", and this is
+        # a rule somebody wrote. A world built by hand, with no key at all, runs its
         # own rules and reads a little flatly, which is the trade its builder
         # made. See world/permits.py.
         _finish(_said_plainly(raw), "")

@@ -69,7 +69,7 @@ MAKES = (
     ("people", "Characters",
      "nobody new arrives. Whoever is here stays, and still talks"),
     ("verbs", "What a verb means here: actions, and the rules about them",
-     "a verb nobody has written a rule for does nothing"),
+     "a verb does only what a rule written here says it does"),
     ("quests", "Errands characters ask for",
      "characters hand out the errands this world has written, and invent none"),
 )

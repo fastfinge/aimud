@@ -674,7 +674,7 @@ def home_of(name):
     history, a cache, a login -- keeps it here, as the server's, and not in
     the game directory or in whoever runs the server's own profile. Found
     with the first real service: on Windows the SDK passes a child no `HOME`,
-    so kagi wrote `.\.cache` into the game directory. §4.4: every credential
+    so kagi wrote `.\\.cache` into the game directory. §4.4: every credential
     is the server's, and so is every file.
 
     (kagi's searches still failed here, with "failed to lock ... Access is
