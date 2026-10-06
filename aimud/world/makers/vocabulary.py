@@ -284,9 +284,12 @@ def kind_text(root, kind):
     under = kinds.anchor(root, settled)
     if under:
         lines.append(f"  hangs beneath |w{under}|n")
-    above = sorted(lexicon.ancestors(under or settled))
+    # Nearest first, as `kind_info` says them, and never the kind itself:
+    # sorted by name this read "instrumentality.n.03, lamp.n.01, ...".
+    above = sorted(set(lexicon.ancestors(under or settled)) - {settled},
+                   key=lambda name: -len(lexicon.ancestors(name)))
     if above:
-        lines.append(f"  |xa sort of: {', '.join(above[-6:])}|n")
+        lines.append(f"  |xa sort of: {', '.join(above[:6])}|n")
     lines.append(f"  can be {', '.join(can) or 'nothing in particular'}")
     if cannot:
         lines.append(f"  cannot be {', '.join(cannot)}")
