@@ -511,7 +511,7 @@ def admit(world_root, obj_kinds, verb, allowed):
     store[kind] = entry
     setattr(world_root.db, ATTR, store)
     logger.log_info(
-        f"kinds: {kind} {'can' if allowed else 'cannot'} be {verb}ed"
+        f"kinds: {kind} {'affords' if allowed else 'does not afford'} {verb}"
     )
 
 

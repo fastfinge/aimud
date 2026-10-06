@@ -66,6 +66,12 @@ HOST_ATTR = "relation_to"
 INVERSE = {"in": "holding", "on": "under", "under": "over",
            "behind": "in front of"}
 
+#: The way a thing comes away from each: out of a box, off a tray, from under
+#: a rug. Where it was is not where it is going -- "you take the key in the
+#: box" says the first.
+AWAY_FROM = {"in": "out of", "on": "off", "under": "from under",
+             "behind": "from behind"}
+
 #: Where things go is now a fact about a kind rather than an affordance --
 #: see `world.kinds.PLACEMENT` and the note in `accepts` below. "under" and
 #: "behind" ask nothing of the host: everything has an underneath.
@@ -634,10 +640,11 @@ def _take_from(caller, obj, host, on_message):
     obj.at_get(caller)
     label = obj.get_numbered_name(1, caller, return_string=True)
     where = host.get_numbered_name(1, caller, return_string=True)
+    away = AWAY_FROM.get(preposition, "from")
     on_message(
-        f"You take {label} {preposition} {where}.",
+        f"You take {label} {away} {where}.",
         _event(caller, "get", {"direct": obj, "source": host},
-               f"{{actor}} $pconj(take) {{direct}} {preposition} {{source}}."))
+               f"{{actor}} $pconj(take) {{direct}} {away} {{source}}."))
     # Taking a thing out of a drawer is taking it, so whatever this world says
     # follows from that applies here too -- it is the same action arriving by
     # a different door. See `attempt.consequences`.
