@@ -148,6 +148,8 @@ class EditingAForm(Driving):
         self.open(form)
         self.assertIn("Nobody here has shared", self.last)
         self.assertNotIn("Nothing matches", self.last)
+        self.assertNotIn("Choose by number", self.last)
+        self.assertNotIn("\n\n\n", self.last)
 
     def test_a_label_that_is_a_clause_is_asked_for_without_the(self):
         form = menus.Form(key="test", title="A thing", items=[

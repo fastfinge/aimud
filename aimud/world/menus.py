@@ -969,9 +969,14 @@ class GameMenu(EvMenu):
             lines.append("There is nothing to choose from here.")
         for number, entry in enumerate(shown, start + 1):
             lines.append(f"{number}. {self._item_line(ctx, entry)}")
-        lines += [""] + notes if notes else [""]
-        lines.append(self._keys_line(frame, self._paged(len(visible)),
-                                     filterable))
+        if shown or lines[-1]:
+            lines += [""] + notes if notes else [""]
+        keys = self._keys_line(frame, self._paged(len(visible)), filterable)
+        if not entries:
+            # Nothing to choose by number, so it does not offer to.
+            keys = keys.replace("Choose by number. ", "", 1)
+            keys = keys[:1].upper() + keys[1:]
+        lines.append(keys)
         return "\n".join(lines)
 
     def _item_line(self, ctx, entry):
