@@ -1407,12 +1407,17 @@ def state_bonuses(world_root):
 DERIVED_OF = ("world",)
 
 
+def _of(entry):
+    """What a derived state may be true of: "world", or "" for anything."""
+    try:
+        return str(entry.get("of") or "")
+    except AttributeError:
+        return ""
+
+
 def _about_this(entry, obj, world_root):
     """Whether a derived state's `of` lets it be true of `obj` at all."""
-    try:
-        of = str(entry.get("of") or "")
-    except AttributeError:
-        return True
+    of = _of(entry)
     if of == "world":
         return world_root is not None and obj is not None             and getattr(obj, "id", None) == getattr(world_root, "id", None)
     return True
@@ -2184,7 +2189,13 @@ def condition(obj, looker=None):
     room = obj if getattr(obj, "location", None) is None \
         else getattr(obj, "location", None)
     world_root = getattr(getattr(room, "db", None), "world_root", None)
-    current = sorted(states(obj) | derived_holds(obj, world_root))
+    # A state of the world -- night, day -- is not said of the first room
+    # just because that room is where the world keeps its states. Every other
+    # room is silent about it (`DERIVED_OF`), and this one said "It is day."
+    of_world = {slug for slug, entry in derived_states(world_root).items()
+                if _of(entry) == "world"}
+    current = sorted((states(obj) | derived_holds(obj, world_root))
+                     - of_world)
     if not current:
         return ""
     # With the phrase saying how, where there is one: "It is worn, slung over

@@ -135,6 +135,16 @@ class TimesOfDay(ClockTest):
         self.assertNotIn("night", verbs.implied_states(self.obj1))
         self.assertNotIn("night", verbs.condition(self.obj1))
 
+    def test_nor_is_it_said_under_the_first_room(self):
+        """
+        The world keeps its states on its first room, which then read "It is
+        day." under every look while every other room said nothing.
+        """
+        clock.seed_periods(self.root)
+        self.now = at(2026, 9, 16, 22, 0)
+        self.assertIn("night", verbs.implied_states(self.root))
+        self.assertNotIn("night", verbs.condition(self.root))
+
     def test_a_rule_asks_for_it_by_name(self):
         clock.seed_periods(self.root)
         ctx = C.context({}, self.char1, self.root)
