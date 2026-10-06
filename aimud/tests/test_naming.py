@@ -467,7 +467,7 @@ class TakingSomethingOffSomething(Naming):
         relations.place(self.lamp, self.table, "on")
         said = self.attempted("get lamp on table")
         self.assertIs(self.lamp.location, self.char1)
-        self.assertIn("on", said.lower())
+        self.assertIn("off a table", said.lower())
 
     def test_and_not_when_it_is_not_there(self):
         self.assertFalse(relations.handle(

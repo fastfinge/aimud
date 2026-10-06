@@ -14,7 +14,7 @@ from commands.unknown_cmd import retired_spelling
 from commands.verbs import CmdCreate, CmdDelete, CmdEdit, CmdEnter, CmdReset, CmdView
 from server.conf import cmdparser as parser
 from tests import support
-from tests.base import GameCommandTest, GameTest
+from tests.base import GameCommandTest, GameTest, NoWorldTest
 from world import activity, menus, sponsor, verbs
 
 
@@ -51,6 +51,41 @@ class NamingASubject(SimpleTestCase):
         self.assertFalse(subjects.claims("import", "rules"))
         self.assertFalse(subjects.claims("import", "tokens"))
         self.assertTrue(subjects.claims("import", "world"))
+
+
+
+@tag("world")
+class TheGameNamesRealCommands(NoWorldTest):
+    """Some subjects read the database for their words (`enter start`)."""
+
+    def test_every_command_the_game_tells_a_player_to_type_exists(self):
+        """
+        Help text that names a command a player cannot type sends them off to
+        do something in the world instead: the form for a new room said to
+        join a taken direction with `create exit`, and there is no such
+        subject -- it is `create way`, because `exit` quits every menu.
+        """
+        import pathlib
+        import re
+
+        game = pathlib.Path(__file__).resolve().parent.parent
+        verbs = "create|edit|delete|reset|view|import|export|enter"
+        told = re.compile(rf"\|w({verbs}) ([a-z]+)")
+        missing = set()
+        # The start room answers to its own name, and the help says
+        # `enter limbo` because that is what it is called on a real server.
+        limbo = mock.Mock(key="Limbo")
+        with mock.patch.object(world_subject, "start_room", lambda: limbo):
+            self._told(game, told, missing)
+        self.assertEqual(sorted(missing), [])
+
+    def _told(self, game, told, missing):
+        for folder in ("world", "commands"):
+            for path in (game / folder).rglob("*.py"):
+                for verb, word in told.findall(
+                        path.read_text(encoding="utf-8")):
+                    if not subjects.claims(verb, word):
+                        missing.add(f"{verb} {word} ({path.name})")
 
 
 class _Verbs(GameTest):
@@ -229,6 +264,34 @@ class DeletingWorlds(_Worlds):
         said = self.said_into(CmdDelete, "world 2 yes")
         self.assertIn("Deleted world", said)
         self.assertEqual(self.account.db.created_worlds, [self.room2.id])
+
+    def test_nothing_it_held_is_left_in_limbo(self):
+        """
+        Deleting a thing sends what it holds home, and home is Limbo: a
+        chest's contents and every NPC's clothes piled up there.
+        """
+        chest = create_object("typeclasses.objects.Object", key="chest",
+                              location=self.room3)
+        coin = create_object("typeclasses.objects.Object", key="coin",
+                             location=chest)
+        npc = create_object("typeclasses.npcs.NPC", key="Mira",
+                            location=self.room3)
+        coat = create_object("typeclasses.objects.Object", key="coat",
+                             location=npc)
+        self.said_into(CmdDelete, "world 2 yes")
+        for gone in (chest, coin, npc, coat):
+            self.assertIsNone(gone.pk, gone.key)
+
+    def test_nor_what_somebody_carried_out_of_it_and_left_waiting(self):
+        """What is carried stays in its world (world/crossing.py), so goes with it."""
+        start = self.char1.location
+        self.char1.move_to(self.room3, quiet=True)
+        lamp = create_object("typeclasses.objects.Object", key="lamp",
+                             location=self.char1)
+        self.char1.move_to(start, quiet=True)
+        self.assertIsNone(lamp.location)
+        self.said_into(CmdDelete, "world 2 yes")
+        self.assertIsNone(lamp.pk)
 
     def test_not_the_one_you_are_standing_in_and_nothing_is_asked(self):
         self.char1.move_to(self.room3, quiet=True)

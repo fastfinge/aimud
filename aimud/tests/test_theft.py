@@ -155,6 +155,22 @@ class TheRule(GameCommandTest):
         self.assertIn("not yours", said[0])
         self.assertIsNot(self.stone.location, self.char1)
 
+    def test_what_comes_out_of_something_is_said_to(self):
+        from world import kinds, relations
+
+        chest = create_object(key="chest", location=self.room1)
+        chest.db.kinds = ["chest.n.01"]
+        store = dict(getattr(self.room1.db, kinds.ATTR, None) or {})
+        store["chest.n.01"] = {"affordances": {}, "holds": ["in"]}
+        setattr(self.room1.db, kinds.ATTR, store)
+        ownership.disown(self.stone)
+        relations.place(self.stone, chest, "in", quiet=True)
+        said = []
+        relations._take_from(self.char1, self.stone, chest,
+                             lambda text, event=None: said.append(text))
+        self.assertEqual(self.stone.location, self.char1)
+        self.assertIn("out of", said[0])
+
     def test_restoring_it_survives_the_next_edition(self):
         """
         A world restores this rule to say what sort of place it is, and a new

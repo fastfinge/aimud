@@ -181,6 +181,31 @@ class AskingEachOne(GameTest):
     def test_a_sort_of_thing(self):
         self.assertIn("weapon.n.01", self.ask("kind_info", kind="sword.n.01"))
 
+    def test_a_sort_of_thing_by_the_word_this_world_settled(self):
+        """
+        "lamp" asked in a world that knows lamp.n.01 used to answer that
+        neither the dictionary nor the world knew anything about it.
+        """
+        from world import kinds
+
+        kinds.remember(self.root, "lamp.n.01", {"get": True})
+        said = self.ask("kind_info", kind="lamp")
+        self.assertIn("lamp.n.01", said)
+        self.assertIn("illumination", said)
+        # And `view kind lamp`, which said this world held no such kind.
+        from world.makers.vocabulary import kind_text
+
+        shown = kind_text(self.root, "lamp")
+        self.assertIn("lamp.n.01", shown)
+        sort_of = [line for line in shown.splitlines() if "a sort of" in line]
+        self.assertIn("source_of_illumination.n.01", sort_of[0])
+        self.assertNotIn("lamp.n.01", sort_of[0])
+
+    def test_a_word_with_senses_to_choose_between_offers_them(self):
+        said = self.ask("kind_info", kind="chest")
+        self.assertIn("chest.n.02", said)
+        self.assertNotIn("knows anything", said)
+
     def test_examining_a_thing(self):
         said = self.ask("examine", name=self.obj1.key)
         self.assertIn(self.obj1.key, said)
@@ -192,6 +217,14 @@ class AskingEachOne(GameTest):
                       location=self.room1)
         self.assertIn("too close", self.ask("name_taken", name="Yuna Park"))
         self.assertIn("is free", self.ask("name_taken", name="Mira Holt"))
+
+    def test_a_world_with_no_areas_says_so(self):
+        """`view zones` printed a heading over nothing in a world without any."""
+        from commands.contents_subject import zones_report
+
+        self.assertIn("no areas", zones_report(self.char1, self.root))
+        zones.register(self.root, "Harbour", purpose="where the ships tie up")
+        self.assertIn("Harbour", zones_report(self.char1, self.root))
 
     def test_areas(self):
         zones.register(self.root, "Harbour", purpose="where the ships tie up")

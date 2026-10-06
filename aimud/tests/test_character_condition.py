@@ -108,13 +108,8 @@ class BeingToldWhatHappenedToYou(ACharacter):
 
 
 @tag("world")
-class ConditionIsPerWorld(ACharacter):
-    """
-    A name is per world and so is a description. Condition was not, so being
-    killed in the infinite dungeon made a character dead at the magical girl
-    university as well -- and a world that has no way back had taken every
-    other world with it.
-    """
+class TwoWorlds(ACharacter):
+    """The world they are in, and another one to walk into."""
 
     def setUp(self):
         super().setUp()
@@ -126,6 +121,16 @@ class ConditionIsPerWorld(ACharacter):
         self.other_root.db.world_root = self.other_root
         self.elsewhere = create_object("typeclasses.rooms.Room", key="Cloister")
         self.elsewhere.db.world_root = self.other_root
+
+
+@tag("world")
+class ConditionIsPerWorld(TwoWorlds):
+    """
+    A name is per world and so is a description. Condition was not, so being
+    killed in the infinite dungeon made a character dead at the magical girl
+    university as well -- and a world that has no way back had taken every
+    other world with it.
+    """
 
     def test_a_state_does_not_cross(self):
         verbs.apply_states(self.char1, add=["dead"], world_root=self.root)
@@ -180,6 +185,58 @@ class ConditionIsPerWorld(ACharacter):
         verbs.apply_states(self.char1, add=["dead"], world_root=self.root)
         self.char1.move_to(limbo, quiet=True)
         self.assertIn("dead", verbs.states(self.char1))
+
+
+@tag("world")
+class WhatIsCarriedStaysInItsWorld(TwoWorlds):
+    """
+    A flashlight carried out of one world brought its light into another,
+    which learned darkness from it and went black for everybody else.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from evennia import create_object
+
+        self.torch = create_object("typeclasses.objects.Object", key="torch",
+                                   location=self.char1)
+
+    def test_it_is_left_behind(self):
+        self.char1.move_to(self.elsewhere, quiet=True)
+        self.assertIsNone(self.torch.location)
+        self.assertNotIn(self.torch, self.elsewhere.contents)
+
+    def test_and_is_in_hand_again_on_coming_back(self):
+        self.char1.move_to(self.elsewhere, quiet=True)
+        self.char1.move_to(self.room2, quiet=True)
+        self.assertIs(self.torch.location, self.char1)
+
+    def test_what_was_picked_up_elsewhere_stays_there(self):
+        from evennia import create_object
+
+        self.char1.move_to(self.elsewhere, quiet=True)
+        bell = create_object("typeclasses.objects.Object", key="bell",
+                             location=self.char1)
+        self.char1.move_to(self.room2, quiet=True)
+        self.assertIsNone(bell.location)
+        self.assertIs(self.torch.location, self.char1)
+        self.char1.move_to(self.elsewhere, quiet=True)
+        self.assertIs(bell.location, self.char1)
+
+    def test_walking_about_inside_one_world_keeps_it(self):
+        self.char1.move_to(self.room1, quiet=True)
+        self.assertIs(self.torch.location, self.char1)
+
+    def test_arriving_from_nowhere_leaves_nothing_behind(self):
+        """Logging in or being made is not walking out of anywhere."""
+        self.char1.location = None
+        self.char1.move_to(self.elsewhere, quiet=True)
+        self.assertIs(self.torch.location, self.char1)
+
+    def test_a_world_that_goes_takes_what_was_left_in_it(self):
+        self.char1.move_to(self.elsewhere, quiet=True)
+        crossing.forget_world(self.root.id)
+        self.assertIsNone(self.torch.pk)
 
 
 @tag("world")

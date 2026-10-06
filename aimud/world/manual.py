@@ -77,7 +77,7 @@ Start with these:
     view worlds           the worlds this account has
     enter world 1         go into one
     enter world public    worlds other people here have shared
-    view world            what the world you are in is like
+    view world 1          what one of them is like
 
 A **world** is the unit of everything here. It holds its own rooms, things,
 people, words, rules and errands, and one account may have several. You are
@@ -112,7 +112,7 @@ model, and that is deliberate.
     view worlds                 what this account has
     enter world <n>             go into one
     enter world public <n>      go into one somebody else shared
-    view world                  what this one is like
+    view world <n>              what one is like
     export world                keep it as a world asset
     view assets                 files the game keeps: worlds, and later sounds
     reset world                 put it back to its restore point
@@ -252,9 +252,12 @@ errands run out, the clock moves.
 
 Worth knowing:
 
-  * A world in `settings mode none` calls no model at all, so a hand-built
-    world imported and played costs nothing and behaves the same way every
-    time. Check with `view world`.
+  * A document whose `setup.generation` says `never` for all five of
+    `rooms`, `items`, `people`, `verbs` and `quests` makes a world that
+    invents nothing: a verb nobody wrote a rule for does nothing, at once.
+    With no characters in it either, it calls no model at all, so it costs
+    nothing and behaves the same way every time. `settings`, then `This
+    world`, shows what a world may make.
   * `world_faults` tells you what is wrong with a world's rules without
     playing it.
   * You are an ordinary session. `who` lists you. An idle connection is

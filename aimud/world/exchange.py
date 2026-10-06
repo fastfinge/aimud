@@ -231,6 +231,8 @@ LEFT = {
     "becomes_overflow": "the same",
     "referents": "what `it` last meant, which is one conversation",
     "world_condition": "a crossing in progress",
+    "world_carried": "what a player left in each world they walked out of; "
+                     "it is the player's, and a document carries no players",
     "busy_interval": "how often to say somebody is waiting; a preference",
     "verb_specifics": "a cache of what one attempt settled",
     # -- settings and preferences -------------------------------------------

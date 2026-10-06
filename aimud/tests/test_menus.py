@@ -141,6 +141,31 @@ class EditingAForm(Driving):
         self.type("title")
         self.assertIn("Type the title", self.last)
 
+    def test_an_empty_form_is_not_a_search_that_found_nothing(self):
+        form = menus.Form(key="test", title="Public worlds",
+                          intro="Nobody here has shared a world yet.",
+                          items=lambda ctx: [])
+        self.open(form)
+        self.assertIn("Nobody here has shared", self.last)
+        self.assertNotIn("Nothing matches", self.last)
+        self.assertNotIn("Choose by number", self.last)
+        self.assertNotIn("\n\n\n", self.last)
+
+    def test_a_label_that_is_a_clause_is_asked_for_without_the(self):
+        form = menus.Form(key="test", title="A thing", items=[
+            menus.Field("name", "What it is called")])
+        self.open(form)
+        self.type("1")
+        self.assertIn("Type what it is called.", self.last)
+
+    def test_nor_one_that_has_its_article_already(self):
+        form = menus.Form(key="test", title="A sort", items=[
+            menus.Field("word", "The word")])
+        self.open(form)
+        self.type("1")
+        self.assertIn("Type the word.", self.last)
+        self.assertNotIn("the the", self.last)
+
     def test_a_bad_value_is_refused_and_the_field_stays_open(self):
         self.open(a_form())
         self.type("2")

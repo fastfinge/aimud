@@ -28,6 +28,7 @@ Two tools are answered here and every other tool is forwarded. `send` and
 game, and the game is in the other process.
 """
 
+import collections
 import json
 import time
 import uuid
@@ -49,9 +50,12 @@ PROTOCOL_VERSION = "2025-06-18"
 #: you prints the room, and a command that wakes an NPC may print again a
 #: moment later. Waiting for quiet is the honest way to read a stream with no
 #: end marker, and it is what a person staring at a terminal does too.
+#: Quiet is counted from the first thing said, not from the line being typed:
+#: a reply that takes longer than this to start (`help` does) is still a reply.
 SETTLE = 0.25
 
-#: The longest a single `send` waits for quiet, however talkative the room is.
+#: The longest a single `send` waits for quiet, however talkative the room is,
+#: and so also the longest it waits for a command that says nothing at all.
 MOST_WAIT = 10.0
 
 #: The longest `poll` blocks when the mud has said nothing at all.
@@ -69,6 +73,10 @@ SWEEP = 60
 #: the same number for the same reason, and cannot be imported here.
 MOST_RESULT = 4000
 CUT_SHORT = "\n[... cut short: ask again for less, or for the rest]"
+
+#: What `send` and `poll` say when the mud said more than one answer holds.
+#: The rest is still in the buffer, so it is not lost: the next poll has it.
+MORE = "\n[... more: poll for the rest]"
 
 #: JSON-RPC's own codes, plus the one MCP adds for a dead session.
 PARSE_ERROR = -32700
@@ -176,6 +184,7 @@ class McpSession(session.Session):
         self.timer = None
         self.last_seen = time.time()
         self.tools = {}
+        self.queue = collections.deque()
 
     # -- the session handler's side -----------------------------------------
 
@@ -283,31 +292,71 @@ class McpResource(resource.Resource):
             return
         sess.timer = reactor.callLater(waiting["settle"], self._finish, sess)
 
-    def _finish(self, sess):
+    def _finish(self, sess, then_next=True):
         waiting, sess.waiting = sess.waiting, None
         if sess.timer and sess.timer.active():
             sess.timer.cancel()
         sess.timer = None
         if waiting and waiting.get("then"):
             waiting["then"]()
+        if then_next:
+            self._next(sess)
 
-    def _wait(self, sess, then, settle=SETTLE, most=MOST_WAIT, until=None):
+    def _in_turn(self, request, sess, id_, start):
+        """
+        Run `start` once nothing else on this session is waiting.
+
+        One session has one stream of output, and a reply is "what the mud said
+        after this". Two calls in flight at once -- an agent that sends tools in
+        parallel does -- would cut each other short and share out one reply
+        between them, so a call arriving while another waits waits its turn.
+        """
+        sess.queue.append((request, id_, start))
+        request.notifyFinish().addErrback(
+            lambda _: self._dropped(sess, request))
+        self._next(sess)
+        return server.NOT_DONE_YET
+
+    def _next(self, sess):
+        while sess.waiting is None and sess.queue:
+            request, _id, start = sess.queue.popleft()
+            if request.finished or request._disconnected:
+                continue
+            start()
+
+    def _dropped(self, sess, request):
+        """A client gave up: stop waiting for it, and only for it."""
+        waiting = sess.waiting
+        if waiting is not None and waiting.get("request") is request:
+            self._finish(sess)
+
+    def _wait(self, sess, then, settle=SETTLE, most=MOST_WAIT, until=None,
+              request=None):
         """
         Call `then` when the mud has been quiet for `settle` seconds, or when
         `until()` first says yes, or when `most` seconds have gone by.
+
+        Quiet starts with the first line: until the mud has said something
+        there is nothing to have gone quiet after, and a command that takes a
+        moment to answer would otherwise come back empty with its reply left
+        for the next call. `stirred` starts the settle timer when it arrives.
         """
-        self._finish(sess)
+        self._finish(sess, then_next=False)
         sess.waiting = {"then": then, "settle": settle, "until": until,
-                        "deadline": time.time() + most}
-        sess.timer = reactor.callLater(
-            most if until is not None else settle, self._finish, sess)
+                        "deadline": time.time() + most, "request": request}
+        sess.timer = reactor.callLater(most, self._finish, sess)
 
     # -- sessions -----------------------------------------------------------
 
     def session_closed(self, csessid):
         sess = self.sessions.pop(csessid, None)
         if sess is not None:
-            self._finish(sess)
+            self._finish(sess, then_next=False)
+            while sess.queue:
+                request, id_, _start = sess.queue.popleft()
+                self._reply(request, _error(
+                    id_, INVALID_REQUEST,
+                    "The session closed before this call's turn came."), 404)
 
     def _sweep(self):
         reactor.callLater(SWEEP, self._sweep)
@@ -504,32 +553,32 @@ class McpResource(resource.Resource):
 
         def answered():
             self._reply(request, _result(
-                id_, _content(_said(sess.drain()) or "(nothing was said)")))
+                id_, _content(_heard(sess) or "(nothing was said)", whole=True)))
 
-        self._wait(sess, answered, settle=SETTLE, most=MOST_WAIT)
-        request.notifyFinish().addErrback(lambda _: self._finish(sess))
-        sess.data_in(text=((line,), {}))
-        return server.NOT_DONE_YET
+        def start():
+            self._wait(sess, answered, settle=SETTLE, most=MOST_WAIT,
+                       request=request)
+            sess.data_in(text=((line,), {}))
+
+        return self._in_turn(request, sess, id_, start)
 
     def _poll(self, request, sess, id_, args):
-        if sess.lines:
-            return self._reply(request, _result(id_, _content(
-                _said(sess.drain()))))
         try:
             wait = min(float(args.get("wait", POLL_WAIT)), POLL_WAIT)
         except (TypeError, ValueError):
             wait = POLL_WAIT
-        if wait <= 0:
-            return self._reply(request, _result(
-                id_, _content("(nothing has been said)")))
 
         def answered():
             self._reply(request, _result(id_, _content(
-                _said(sess.drain()) or "(nothing has been said)")))
+                _heard(sess) or "(nothing has been said)", whole=True)))
 
-        self._wait(sess, answered, most=wait, until=lambda: bool(sess.lines))
-        request.notifyFinish().addErrback(lambda _: self._finish(sess))
-        return server.NOT_DONE_YET
+        def start():
+            if sess.lines or wait <= 0:
+                return answered()
+            self._wait(sess, answered, most=wait,
+                       until=lambda: bool(sess.lines), request=request)
+
+        return self._in_turn(request, sess, id_, start)
 
     def _forward(self, request, sess, id_, name, args):
         """A tool the Server owns: hand it over and wait for the answer."""
@@ -549,13 +598,15 @@ class McpResource(resource.Resource):
             self._reply(request, _result(
                 id_, _content(text, failed=failed, whole=True)))
 
-        self._wait(sess, arrived, most=TOOL_WAIT,
-                   until=lambda: any(
-                       entry["args"] and entry["args"][0] == ticket
-                       for entry in sess.structured.get("mcp_tool", [])))
-        request.notifyFinish().addErrback(lambda _: self._finish(sess))
-        sess.data_in(mcp_tool=((ticket, name, args), {}))
-        return server.NOT_DONE_YET
+        def start():
+            self._wait(sess, arrived, most=TOOL_WAIT,
+                       until=lambda: any(
+                           entry["args"] and entry["args"][0] == ticket
+                           for entry in sess.structured.get("mcp_tool", [])),
+                       request=request)
+            sess.data_in(mcp_tool=((ticket, name, args), {}))
+
+        return self._in_turn(request, sess, id_, start)
 
     # -- small helpers -------------------------------------------------------
 
@@ -592,6 +643,25 @@ class McpResource(resource.Resource):
         except Exception:
             logger.log_trace()
         return server.NOT_DONE_YET
+
+
+def _heard(sess):
+    """
+    What the mud has said since last time, as much as one answer holds.
+
+    A mud's output is a stream rather than an answer to ask again, so what
+    does not fit is put back at the front of the buffer for the next `poll`
+    rather than cut off: a crowded room's `look` used to lose everything past
+    four thousand characters with no way to get it back.
+    """
+    text = _said(sess.drain())
+    if len(text) <= MOST_RESULT:
+        return text
+    cut = text.rfind("\n", 0, MOST_RESULT)
+    if cut <= 0:
+        cut = MOST_RESULT
+    sess.lines.insert(0, {"text": text[cut:].lstrip("\n"), "prompt": False})
+    return text[:cut] + MORE
 
 
 def _said(lines):

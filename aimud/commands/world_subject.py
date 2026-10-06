@@ -109,16 +109,36 @@ def clear_world(root, account, destination=None, message=None):
     memory.forget_world(root)
     ledger.forget_world(account, root_id)
 
+    def send_away(character):
+        if message and character.sessions.count():
+            character.msg(message)
+        character.move_to(destination or getattr(character, "home", None),
+                          quiet=True)
+
+    def destroy(obj):
+        # Innermost first. Deleting a thing sends what it holds home, and
+        # home is Limbo: a chest's contents and every NPC's clothes were
+        # turning up there by the hundred after a reset.
+        for inner in list(obj.contents):
+            if isinstance(inner, DefaultCharacter):
+                send_away(inner)
+            else:
+                destroy(inner)
+        obj.delete()
+
     for room in rooms:
         for obj in list(room.contents):
             if isinstance(obj, DefaultCharacter):
-                if message and obj.sessions.count():
-                    obj.msg(message)
-                obj.move_to(destination or getattr(obj, "home", None), quiet=True)
+                send_away(obj)
             else:
-                obj.delete()
+                destroy(obj)
     for room in rooms:
         room.delete()
+    # And what anybody carried out of it, left waiting for their return --
+    # including what the people just sent away were holding.
+    from world import crossing
+
+    crossing.forget_world(root_id)
 
     # A world nobody owns is a real case: `exchange.build` takes away a world
     # it half made, and a test may build one with no account behind it. The

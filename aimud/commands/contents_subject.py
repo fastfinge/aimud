@@ -43,7 +43,9 @@ def zones_report(caller, root):
     """
     from world import zones
 
-    if not zones.all_zones(root):
+    # The world itself is a zone (`zones.ROOT`) and is never listed, so a
+    # world holding only that has no areas to show.
+    if not set(zones.all_zones(root)) - {zones.ROOT}:
         return "This world has no areas recorded yet."
     location = getattr(caller, "location", None)
     here = zones.slugify(location.db.zone) if location else ""
