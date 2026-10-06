@@ -168,6 +168,15 @@ of that type (`assets.search(type)`). Never add a type whose files are code; the
 refuses one. Nothing downloads a file a player named except `assets.fetch`,
 and no player, model or page is ever shown a path. See docs/archived/assets.md.
 
+**A sound is played through `world/sound.py`, and nowhere else.** `play` and
+`stop` take an asset (or a built-in's `group/name`) and a category, and send
+MSP or GMCP `Client.Media` to each session according to what it negotiated
+(`server/conf/telnet_msp.py`, `server/conf/inputfuncs.py`). Nothing outside
+that module writes `!!SOUND` or names a GMCP package. Sounds the game ships
+live in `world/sounds/<group>/` beside the genny spec that made each one, and
+are kept as `builtin` assets at startup; change a spec and run
+`world/sounds/rebuild.py`, never edit an `.ogg` by hand. See docs/sound.md.
+
 **Nothing in building calls a model.** `~` is the only paid key and it is
 always optional. A test (`tests/test_building.py`, `NoModels`) drives the forms
 with the LLM layer patched to raise.

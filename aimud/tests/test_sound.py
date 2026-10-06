@@ -1,6 +1,7 @@
 """
-Sound: the asset type, the sounds the game ships, and steady Ogg files.
-docs/sound.md, phase 0.
+Sound: the asset type, the sounds the game ships, steady Ogg files, and
+sending a sound to a client, and what menus and the parser sound like.
+docs/sound.md, phases 0 to 2.
 
 Every file here is made by `soundfile` in memory, so the type is tested
 against what a real encoder writes rather than against bytes that only
@@ -11,13 +12,15 @@ import io
 import os
 import shutil
 import tempfile
+from types import SimpleNamespace
+from unittest import mock
 
 import numpy as np
 import soundfile
-from django.test import SimpleTestCase, tag
+from django.test import SimpleTestCase, override_settings, tag
 
 from tests.base import GameTest
-from world import asset_store, asset_types, assets, ogg
+from world import asset_store, asset_types, assets, ogg, sound
 
 
 def tone(format_="OGG", subtype="VORBIS", seconds=0.1, rate=44100, pitch=10):
@@ -230,3 +233,399 @@ class SteadyOgg(SimpleTestCase):
             ogg.steady(b"RIFF" + b"\0" * 60)
         with self.assertRaises(ValueError):
             ogg.steady(tone()[:100])
+
+
+# ---------------------------------------------------------------------------
+# Sending. docs/sound.md 3, phase 1
+# ---------------------------------------------------------------------------
+
+class FakeSession:
+    """What `world.sound` reads of a session, and what it was sent."""
+
+    def __init__(self, key="telnet", **flags):
+        self.protocol_key = key
+        self.protocol_flags = dict(flags)
+        self.ndb = SimpleNamespace()
+        self.account = None
+        self.sent = []
+
+    def msg(self, *args, **kwargs):
+        if args:
+            kwargs["text"] = args[0]
+        self.sent.append(kwargs)
+
+    def media(self, name="client_media_play"):
+        return [kwargs[name][1] for kwargs in self.sent if name in kwargs]
+
+    def msp(self):
+        return [kwargs["msp"][0][0] for kwargs in self.sent if "msp" in kwargs]
+
+
+class Listener:
+    """A character with these sessions, played by `account`."""
+
+    def __init__(self, account, *sessions):
+        self.account = account
+        self.sessions = SimpleNamespace(all=lambda: list(sessions))
+
+
+@tag("unit")
+class WhatASessionSpeaks(SimpleTestCase):
+
+    def speaks(self, session, **settings):
+        account = mock.Mock()
+        account.attributes.get = lambda attr: settings.get(attr)
+        return sound.speaks(session, account)
+
+    def test_a_client_that_asked_for_client_media(self):
+        self.assertEqual(self.speaks(FakeSession(CLIENT_MEDIA=True)),
+                         sound.MEDIA)
+
+    def test_a_telnet_client_that_agreed_to_msp(self):
+        self.assertEqual(self.speaks(FakeSession(MSP=True)), sound.MSP)
+        self.assertEqual(self.speaks(FakeSession("telnet/ssl", MSP=True)),
+                         sound.MSP)
+
+    def test_one_that_has_both_is_sent_client_media_only(self):
+        self.assertEqual(self.speaks(FakeSession(MSP=True, CLIENT_MEDIA=True)),
+                         sound.MEDIA)
+
+    def test_nothing_else_is_sent_anything(self):
+        self.assertEqual(self.speaks(FakeSession()), "")
+        self.assertEqual(self.speaks(FakeSession("mcp")), "")
+        self.assertEqual(self.speaks(FakeSession("webclient/websocket",
+                                                 MSP=True)), "")
+
+    def test_sounds_off_or_protocol_off_sends_nothing(self):
+        session = FakeSession(CLIENT_MEDIA=True, MSP=True)
+        self.assertEqual(self.speaks(session, sound_on=False), "")
+        self.assertEqual(self.speaks(session, sound_protocol="off"), "")
+
+    def test_a_player_can_insist(self):
+        self.assertEqual(self.speaks(FakeSession(), sound_protocol="msp"),
+                         sound.MSP)
+        self.assertEqual(self.speaks(FakeSession("mcp"),
+                                     sound_protocol="msp"), "")
+        self.assertEqual(self.speaks(FakeSession(MSP=True),
+                                     sound_protocol="media"), sound.MEDIA)
+
+
+@override_settings(ASSET_BASE_URL="https://mud.example.com:4001")
+@tag("world")
+class PlayingOne(_Stored):
+
+    characters = 2
+
+    def setUp(self):
+        super().setUp()
+        assets.take_in_builtins()
+        self.media = FakeSession(CLIENT_MEDIA=True)
+        self.telnet = FakeSession(MSP=True)
+        self.listener = Listener(self.account, self.media, self.telnet)
+        self.opened = assets.builtin("menu/open")
+        self.name = f"{self.opened.hash}.ogg"
+        self.url = "https://mud.example.com:4001/media/assets/"
+
+    def test_client_media_is_told_where_and_what_it_is(self):
+        self.assertEqual(sound.play(self.listener, "menu/open",
+                                    category=sound.UI, volume=80), 2)
+        payload, = self.media.media()
+        self.assertEqual(payload["name"], self.name)
+        self.assertEqual(payload["url"], self.url)
+        self.assertEqual((payload["type"], payload["tag"]), ("sound", "ui"))
+        self.assertEqual((payload["volume"], payload["loops"]), (80, 1))
+        self.assertEqual(payload["caption"], self.opened.description)
+        self.assertNotIn("key", payload)
+
+    def test_msp_gets_a_line_of_its_own(self):
+        sound.play(self.listener, self.opened, category=sound.UI, volume=80)
+        line, = self.telnet.msp()
+        self.assertEqual(line, f"!!SOUND({self.name} V=80 L=1 P=50 T=ui "
+                               f"U={self.url})")
+
+    def test_a_loop_is_keyed_and_carries_on(self):
+        sound.play(self.listener, self.opened, category=sound.AMBIENCE,
+                   loop=True, key="wind", fade=1000)
+        payload, = self.media.media()
+        self.assertEqual(payload["loops"], -1)
+        self.assertEqual((payload["key"], payload["continue"]), ("wind", True))
+        self.assertEqual(payload["fadein"], 1000)
+        line, = self.telnet.msp()
+        self.assertTrue(line.startswith(f"!!MUSIC({self.name} "))
+        self.assertIn(" L=-1 C=1 T=ambience ", line)
+
+    def test_stopping_a_loop(self):
+        sound.play(self.listener, self.opened, category=sound.AMBIENCE,
+                   loop=True, key="wind")
+        # MSP cannot stop a sound by name, so only its one loop is stopped.
+        self.assertEqual(sound.stop(self.listener, "rain"), 1)
+        self.assertEqual(len(self.telnet.msp()), 1)
+        sound.stop(self.listener, "wind", fade=500)
+        self.assertEqual(self.media.media("client_media_stop")[-1],
+                         {"key": "wind", "fadeout": 500})
+        self.assertEqual(self.telnet.msp()[-1], "!!MUSIC(Off)")
+
+    def test_the_players_own_volume_scales_it(self):
+        self.account.attributes.add("sound_volume_ui", 50)
+        sound.play(self.listener, self.opened, category=sound.UI, volume=80)
+        self.assertEqual(self.media.media()[0]["volume"], 40)
+        self.assertIn(" V=40 ", self.telnet.msp()[0])
+
+    def test_turned_all_the_way_down_nothing_is_sent(self):
+        self.account.attributes.add("sound_volume_ui", 0)
+        self.assertEqual(sound.play(self.listener, self.opened,
+                                    category=sound.UI), 0)
+        self.assertEqual(self.media.sent + self.telnet.sent, [])
+
+    def test_playing_one_says_it_was_used(self):
+        sound.play(self.listener, self.opened, category=sound.UI)
+        self.assertIsNotNone(assets.find(self.opened.hash).last_used)
+
+    def test_a_missing_sound_or_nobody_listening_plays_nothing(self):
+        self.opened.status = "missing"
+        self.opened.save()
+        self.assertEqual(sound.play(self.listener, self.opened,
+                                    category=sound.UI), 0)
+        self.assertEqual(sound.play(self.char2, "menu/close",
+                                    category=sound.UI), 0)
+
+    def test_the_menu_sounds_are_fetched_ahead(self):
+        self.assertEqual(sound.preload(self.media, sound.ui_sounds(None)), 5)
+        self.assertEqual(sound.preload(self.telnet, sound.ui_sounds(None)), 0)
+        first = self.media.media("client_media_load")[0]
+        self.assertEqual(first, {"name": self.name, "url": self.url})
+
+    @override_settings(ASSET_BASE_URL="")
+    def test_without_an_address_nothing_is_sent(self):
+        self.assertEqual(sound.play(self.listener, self.opened,
+                                    category=sound.UI), 0)
+        self.assertEqual(self.media.sent + self.telnet.sent, [])
+
+    @override_settings(ASSET_BASE_URL="")
+    def test_and_an_admin_is_told_why_when_they_log_in(self):
+        self.account.permissions.add("Admin")
+        sound.at_login(self.account, self.media)
+        said, = [kwargs["text"] for kwargs in self.media.sent]
+        self.assertIn("ASSET_BASE_URL", str(said))
+        player = FakeSession(CLIENT_MEDIA=True)
+        self.account2.permissions.remove("Developer")
+        sound.at_login(self.account2, player)
+        self.assertEqual(player.sent, [])
+
+
+@tag("unit")
+class TheWire(SimpleTestCase):
+    """What the Portal makes of what `world.sound` sends."""
+
+    def test_client_media_is_named_as_gmcp_names_it(self):
+        from evennia.server.portal.gmcp_utils import encode_gmcp
+
+        for evennia, gmcp in (("client_media_play", "Client.Media.Play"),
+                              ("client_media_stop", "Client.Media.Stop"),
+                              ("client_media_load", "Client.Media.Load")):
+            self.assertTrue(encode_gmcp(evennia, key="x").startswith(
+                gmcp + " "))
+
+    def test_core_supports_set_reaches_ours(self):
+        from evennia.server.portal.gmcp_utils import decode_gmcp
+
+        self.assertEqual(decode_gmcp('Core.Supports.Set ["Client.Media 1"]'),
+                         {"supports_set": [["Client.Media 1"], {}]})
+
+    def test_client_media_in_the_list_sets_the_flag(self):
+        from server.conf import inputfuncs
+
+        session = FakeSession()
+        session.sessid, session.logged_in = 1, False
+        session.sessionhandler = mock.Mock()
+        inputfuncs.supports_set(session, "Char 1", "Client.Media 1")
+        self.assertTrue(session.protocol_flags["CLIENT_MEDIA"])
+        inputfuncs.supports_remove(session, "Client.Media")
+        self.assertFalse(session.protocol_flags["CLIENT_MEDIA"])
+        inputfuncs.supports_add(session, ["client.media 1"])
+        self.assertTrue(session.protocol_flags["CLIENT_MEDIA"])
+        inputfuncs.supports_set(session, "Char 1")
+        self.assertFalse(session.protocol_flags["CLIENT_MEDIA"])
+
+
+@tag("unit")
+class TheMspHandshake(SimpleTestCase):
+
+    def protocol(self):
+        from server.conf import telnet_msp
+
+        found = telnet_msp.MspTelnetProtocol.__new__(
+            telnet_msp.MspTelnetProtocol)
+        found.protocol_flags = {}
+        found.sendLine = mock.Mock()
+        found.handshake_done = mock.Mock()
+        return found
+
+    def test_agreeing_turns_it_on_and_counts_the_handshake(self):
+        found = self.protocol()
+        found._msp_yes(None)
+        self.assertTrue(found.protocol_flags["MSP"])
+        found.handshake_done.assert_called_once()
+
+    def test_declining_leaves_it_off_and_counts_too(self):
+        found = self.protocol()
+        found._msp_no(None)
+        self.assertFalse(found.protocol_flags["MSP"])
+        found.handshake_done.assert_called_once()
+
+    def test_a_line_is_written_only_to_a_client_that_agreed(self):
+        found = self.protocol()
+        found.send_msp("!!SOUND(a.ogg)")
+        found.sendLine.assert_not_called()
+        found.protocol_flags["MSP"] = True
+        found.send_msp("!!SOUND(a.ogg)")
+        found.sendLine.assert_called_once_with("!!SOUND(a.ogg)")
+
+    def test_a_client_asking_first_is_agreeing(self):
+        from server.conf import telnet_msp
+
+        found = self.protocol()
+        self.assertTrue(found.enableLocal(telnet_msp.MSP))
+        self.assertTrue(found.protocol_flags["MSP"])
+
+
+# ---------------------------------------------------------------------------
+# Menus and the parser. docs/sound.md 8, phase 2
+# ---------------------------------------------------------------------------
+
+from tests.test_menus import Driving, Recorder, a_form  # noqa: E402
+from world import menus  # noqa: E402
+
+
+class _Cued(Driving):
+    """The real sound presenter, with what it would play written down."""
+
+    def setUp(self):
+        super().setUp()
+        self.presenter = sound._presenter_class()()
+        patcher = mock.patch.object(menus, "PRESENTER", self.presenter)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.cues = []
+        player = mock.patch.object(
+            sound, "play", lambda listener, found, **kwargs:
+            self.cues.append(found) or 1)
+        player.start()
+        self.addCleanup(player.stop)
+
+
+@tag("world")
+class WhatAMenuSoundsLike(_Cued):
+
+    def test_each_moment_has_its_sound(self):
+        self.open(a_form())
+        self.assertEqual(self.cues, ["menu/open"])
+        # A field is chosen when it is answered, not when its prompt opens.
+        self.type("1")
+        self.assertEqual(self.cues, ["menu/open"])
+        self.type("Harbour")
+        self.assertEqual(self.cues[-1], "menu/select")
+        self.type("fly")
+        self.assertEqual(self.cues[-1], "menu/error")
+        self.type("4")
+        self.type("no")
+        self.assertEqual(self.cues[-1], "menu/close")
+        self.assertTrue(self.is_open)
+        self.type("4")
+        self.type("yes")
+        self.assertEqual(self.cues[-2:], ["menu/select", "menu/select"])
+        # The title is unsaved, so quitting asks first.
+        self.type("q")
+        self.type("yes")
+        self.assertEqual(self.cues[-2:], ["menu/select", "menu/close"])
+        self.assertFalse(self.is_open)
+
+    def test_a_sound_that_fails_never_takes_the_menu_with_it(self):
+        with mock.patch.object(sound, "play", side_effect=RuntimeError):
+            self.open(a_form())
+            self.type("1")
+        self.assertTrue(self.is_open)
+
+
+@tag("world")
+class ARefusalIsHeard(Driving):
+    """An action that says no is "not one of the choices" too."""
+
+    def test_an_action_refusing_reaches_the_presenter(self):
+        def refuse(ctx):
+            raise menus.Refuse("That cannot be done here.")
+
+        form = menus.Form(key="t", title="T", items=[
+            menus.Action("go", "Go", run=refuse)])
+        self.open(form)
+        said = self.type("1")
+        self.assertIn("That cannot be done here.", said)
+        self.assertEqual(len(self.presenter.named("refused")), 1)
+
+
+@tag("world")
+class ChoosingYourOwn(_Stored):
+    """docs/sound.md 8.3."""
+
+    def setUp(self):
+        super().setUp()
+        assets.take_in_builtins()
+        from world import preferences
+
+        self.fields = {field.key: field for field in preferences.MOMENT_FIELDS}
+        self.ctx = menus.Context(self.account)
+        self.ctx.account = self.account
+
+    def test_the_game_s_own_until_somebody_chooses(self):
+        self.assertEqual(sound.ui_sound(self.account, sound.OPEN), "menu/open")
+        self.assertEqual(sound.ui_sound(None, sound.HUH), "menu/huh")
+
+    def test_any_sound_can_be_chosen_and_is_kept_by_hash(self):
+        mine = self.add(tone("WAV", "PCM_16"), name="my bell")
+        offered = [choice.value for choice in
+                   self.fields["menuopen"].choices_for(self.ctx)]
+        self.assertIn(mine.hash, offered)
+        self.assertIn(sound.SILENT, offered)
+        self.fields["menuopen"].store(self.ctx, mine.hash)
+        self.assertEqual(self.account.attributes.get("sound_moment_open"),
+                         mine.hash)
+        self.assertEqual(sound.ui_sound(self.account, sound.OPEN), mine)
+
+    def test_a_built_in_is_kept_by_its_name(self):
+        error = assets.builtin("menu/error")
+        self.fields["menuopen"].store(self.ctx, error.hash)
+        self.assertEqual(self.account.attributes.get("sound_moment_open"),
+                         "menu/error")
+        self.fields["menuopen"].store(self.ctx, assets.builtin("menu/open")
+                                      .hash)
+        self.assertIsNone(self.account.attributes.get("sound_moment_open"))
+
+    def test_silence_and_clearing(self):
+        self.fields["huhsound"].store(self.ctx, sound.SILENT)
+        self.assertIsNone(sound.ui_sound(self.account, sound.HUH))
+        self.assertEqual(sound.cue(self.account, sound.HUH), 0)
+        self.fields["huhsound"].store(self.ctx, None)
+        self.assertEqual(sound.ui_sound(self.account, sound.HUH), "menu/huh")
+
+    def test_a_chosen_sound_that_has_gone_falls_back(self):
+        mine = self.add(tone("WAV", "PCM_16"), name="my bell")
+        self.fields["menuclose"].store(self.ctx, mine.hash)
+        assets.delete(mine)
+        self.assertEqual(sound.ui_sound(self.account, sound.CLOSE),
+                         "menu/close")
+
+
+@tag("world")
+class NotUnderstood(GameTest):
+    """The parser's drum hit. docs/sound.md 8.1."""
+
+    def heard(self, line):
+        with mock.patch.object(sound, "cue") as cue:
+            self.char1.execute_cmd(line)
+        return [call.args[1] for call in cue.call_args_list]
+
+    def test_outside_a_world(self):
+        self.assertEqual(self.heard("xyzzyplugh"), [sound.HUH])
+
+    def test_a_command_that_exists_is_not_a_drum_hit(self):
+        self.assertEqual(self.heard("look"), [])

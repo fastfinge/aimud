@@ -368,6 +368,28 @@ def search(type_=None, words="", status="present"):
     return found
 
 
+def picker(key, label, type_, extra=(), **kwargs):
+    """
+    A `menus.Picker` offering the assets of one type, by name, with each
+    one's description as its help. docs/archived/assets.md 10.
+
+    Copies made from another asset (`derived`) are never offered: they are
+    the game's, made on demand, and choosing one would be choosing a file
+    rather than a sound. `extra` are choices offered before the assets, such
+    as "no sound". The value is the asset's hash.
+    """
+    from world import menus
+
+    def options(ctx):
+        found = list(extra)
+        for asset in search(type_).exclude(origin="derived").order_by("name"):
+            found.append(menus.Choice(asset.hash, asset.name,
+                                      help=asset.description))
+        return found
+
+    return menus.Picker(key, label, options=options, **kwargs)
+
+
 def named(said, type_=None, status=None):
     """
     `(asset, "")` for the asset somebody named, or `(None, why not)`.

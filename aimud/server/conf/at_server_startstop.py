@@ -49,6 +49,11 @@ def at_server_start():
     _normalise_world_modes()
     _take_in_world_folder()
     _take_in_builtins()
+    # Menus make their sounds through the presenter they were built with a
+    # hook for. docs/sound.md 8.
+    from world import sound
+
+    sound.install()
     _warm_lexicon()
     _arm_crossings()
 

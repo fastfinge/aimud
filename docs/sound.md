@@ -1,6 +1,7 @@
 # Development plan: sound
 
-Status: **planned**. This answers the `future-plans.md` item on MSP, and the
+Status: **phases 0 to 2 built** on the `sound` branch; §17 says where the
+building changed the plan. This answers the `future-plans.md` item on MSP, and the
 part of the assets item that was waiting for "the first type with a
 consumer". It covers sending sounds to a player's client, keeping sounds as
 assets, deciding what makes a sound and when, ambience that follows a player
@@ -681,3 +682,62 @@ None.
    at one of seven positions (§3.4).
 5. **`create sound` is a menu of sources (2026-10-06).** genny is its only
    entry for now, as `create sound genny`, and Freesound can join it later.
+
+## 17. As built
+
+Where building phases 0 to 2 departed from the plan above, and what it found.
+
+* **A sound's codec names its file (§4.1).** The plan gave a type
+  `extension_of(path)`. A sound's version is already its codec (`pcm`,
+  `vorbis`, `mp3`), so a type answers `extension_for(version)` instead, and
+  the record needs no new column. `register` checks every extension a type
+  may use against the list of code extensions.
+* **Ogg files are steadied (§4.3, §9.3).** libsndfile writes a random serial
+  number into every Ogg stream, so encoding the same sound twice gave two
+  hashes. `world/ogg.py` sets the serial to a fixed number and recomputes
+  each page's checksum, so the same samples give the same file. Without it,
+  "asked once" and "the same panned copy every time" would not have held.
+* **Vorbis quality 0.2.** libsndfile's default lost an audible part of the
+  bright chirps. At compression level 0.2 the menu sounds come back within
+  6% of genny's WAV, at about 10 KB each. `world/sounds/rebuild.py` uses
+  this level, and phase 5 should use the same.
+* **The built-ins carry their spec.** Each `world/sounds/<group>/<name>.json`
+  holds the name, the description, the author and licence, and
+  `made_with: {tool, commit, spec}`. `rebuild.py` renders the specs with a
+  pinned genny through `uv run --with`, so rebuilding needs genny only on a
+  developer's machine.
+* **A copy of a built-in becomes the built-in.** A player who had uploaded
+  the same file as a built-in stops being charged for it once the game ships
+  it. The new `derived` origin is there for phase 5 already, so the
+  migration only has to be run once.
+* **Telnet over TLS needed nothing (§3.2).** Evennia's SSL protocol
+  subclasses whatever `TELNET_PROTOCOL_CLASS` names, so MSP comes with it. A
+  second class for it would have been a circular import.
+* **`Core.Supports.Set` was being read wrongly.** Evennia mapped it to
+  `client_options`, which reads keyword arguments only. Mudlet sends a list
+  of package names, which was ignored, and the session's options were sent
+  back. `server/conf/inputfuncs.py` now reads the list, and hands on any
+  keyword arguments as before.
+* **Settings arrive with their sounds (§3.6).** The Sound group has sound
+  on or off, the protocol, the menu-sound volume, and a sound for each
+  moment. Event volume, ambience volume, panning and captions are added in
+  the phases that play those sounds, so no setting does nothing.
+* **Select plays when a field is answered (§8.1).** The menu engine reports
+  a field as chosen when its value is set, not when its prompt opens, so
+  that is when choosing sounds. Actions and submenus sound when chosen.
+* **Two moments, not one, are "not understood" (§8.1).** They are Evennia's
+  "Huh?" outside a world, and a near miss for a command ("There is no
+  worldg command. Did you mean...?"). Inside a world, anything else typed is
+  attempted as an action, and the world answers it in words, so it was
+  understood.
+* **A sound plays to the session that asked.** A menu is open in one
+  window, so `play(session=...)` sends its sounds there and not to every
+  window the player has.
+* **Refusals inside a menu now reach the presenter.** A `Refuse` raised by
+  an action or a field was being printed directly, past `refused`, so it
+  would have been silent. Both places now go through the same refusal as
+  "that is not one of the choices".
+* **Heard live (2026-10-06).** Menu sounds play in Mudlet over GMCP
+  `Client.Media` and in MUSHclient over MSP, from a server on localhost with
+  `ASSET_BASE_URL` set. VIP Mud has not been tried yet.
+

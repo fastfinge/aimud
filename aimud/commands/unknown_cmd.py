@@ -141,6 +141,24 @@ def _try_direction(caller, cmd_verb, args):
     return True
 
 
+def _huh(caller, session=None):
+    """
+    The sound of the game not understanding a command. docs/sound.md 8.1.
+
+    Only where it truly did not: outside a world, and a near-miss for a
+    command. Inside a world anything else typed is something to try, and
+    the world answers it in words.
+    """
+    from world import sound
+
+    try:
+        sound.cue(caller, sound.HUH, session=session)
+    except Exception:
+        from evennia.utils import logger
+
+        logger.log_trace("sound: the not-understood sound failed")
+
+
 class CmdAIUnknown(SystemNoMatch):
     """
     Intercepts unrecognized commands in AI worlds and treats them as verbs.
@@ -166,11 +184,13 @@ class CmdAIUnknown(SystemNoMatch):
             return
 
         if not _in_ai_world(room):
+            _huh(caller, self.session)
             super().func()
             return
 
         raw = self.raw_string.strip()
         if not raw:
+            _huh(caller, self.session)
             super().func()
             return
 
@@ -185,6 +205,7 @@ class CmdAIUnknown(SystemNoMatch):
         # spending a model call narrating a mistyped command name.
         suggestion = _closest_command(self, cmd_verb)
         if suggestion:
+            _huh(caller, self.session)
             caller.msg(
                 f"There is no |w{cmd_verb}|n command. Did you mean |w{suggestion}|n?"
             )

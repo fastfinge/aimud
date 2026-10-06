@@ -96,6 +96,12 @@ ASSET_STORE = "world.asset_store.LocalStore"
 # Until it is set, exports name their assets by hash alone.
 ASSET_BASE_URL = ""
 
+# Telnet that also offers MSP, the MUD Sound Protocol, which Evennia does not
+# speak by itself. Telnet over TLS builds on this class, so it offers MSP
+# too. A client that declines is never sent a line of it. See
+# server/conf/telnet_msp.py and docs/sound.md.
+TELNET_PROTOCOL_CLASS = "server.conf.telnet_msp.MspTelnetProtocol"
+
 # Threads for model calls, which spend nearly all their time waiting on the
 # network: this many may be waiting at once, across every world on the
 # server. They have a pool of their own, so memory writes and downloads never
