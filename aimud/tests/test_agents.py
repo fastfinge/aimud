@@ -40,6 +40,7 @@ by running it; what these hold level is the half that lives in the game.
 """
 
 import ast
+import collections
 import contextlib
 import json
 import pathlib
@@ -484,8 +485,26 @@ class SendWaitsForTheReply(NoWorldTest):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.resource = mcp_protocol.McpResource(sessionhandler=None)
-        self.sess = SimpleNamespace(waiting=None, timer=None, lines=[])
+        self.typed = []
+        self.sess = SimpleNamespace(
+            waiting=None, timer=None, lines=[], queue=collections.deque(),
+            data_in=lambda **kwargs: self.typed.append(kwargs["text"][0][0]))
+        self.sess.drain = self.drain
         self.answered = []
+
+    def drain(self):
+        lines, self.sess.lines = self.sess.lines, []
+        return lines
+
+    def say(self, text):
+        self.sess.lines.append({"text": text, "prompt": False})
+        self.resource.stirred(self.sess)
+
+    def send(self, line):
+        request = Request()
+        self.resource._send(request, self.sess, len(self.typed),
+                            {"line": line})
+        return request
 
     def wait(self):
         self.resource._wait(self.sess, lambda: self.answered.append(True))
@@ -504,6 +523,66 @@ class SendWaitsForTheReply(NoWorldTest):
         self.wait()
         self.clock.advance(self.mcp.MOST_WAIT)
         self.assertEqual(self.answered, [True])
+
+    def test_two_sends_at_once_take_turns(self):
+        """
+        An agent that calls tools in parallel sent `view worlds` and `view
+        world` together, and the second cut the first short.
+        """
+        first, second = self.send("look"), self.send("score")
+        self.assertEqual(self.typed, ["look"], "typed before its turn")
+        self.say("A bare hall.")
+        self.clock.advance(self.mcp.SETTLE * 2)
+        self.assertEqual(self.typed, ["look", "score"])
+        self.say("You are fine.")
+        self.clock.advance(self.mcp.SETTLE * 2)
+        self.assertIn("A bare hall.", first.text())
+        self.assertNotIn("You are fine.", first.text())
+        self.assertIn("You are fine.", second.text())
+
+    def test_a_call_given_up_on_does_not_hold_up_the_next(self):
+        first, second = self.send("look"), self.send("score")
+        first.give_up()
+        self.assertEqual(self.typed, ["look", "score"])
+        self.say("You are fine.")
+        self.clock.advance(self.mcp.SETTLE * 2)
+        self.assertIn("You are fine.", second.text())
+
+
+class Request:
+    """Just enough of a Twisted request to be answered, or abandoned."""
+
+    def __init__(self):
+        from twisted.internet import defer
+
+        self.finished = False
+        self._disconnected = False
+        self.body = b""
+        self._gone = defer.Deferred()
+
+    def notifyFinish(self):
+        return self._gone
+
+    def setResponseCode(self, code):
+        pass
+
+    def setHeader(self, name, value):
+        pass
+
+    def write(self, data):
+        self.body += data
+
+    def finish(self):
+        self.finished = True
+
+    def give_up(self):
+        self._disconnected = True
+        self._gone.errback(ConnectionError("gone"))
+
+    def text(self):
+        if not self.body:
+            return ""
+        return json.loads(self.body)["result"]["content"][0]["text"]
 
 
 class DocumentsTravel(WorldTest):
