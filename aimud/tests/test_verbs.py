@@ -265,6 +265,23 @@ class DeletingWorlds(_Worlds):
         self.assertIn("Deleted world", said)
         self.assertEqual(self.account.db.created_worlds, [self.room2.id])
 
+    def test_nothing_it_held_is_left_in_limbo(self):
+        """
+        Deleting a thing sends what it holds home, and home is Limbo: a
+        chest's contents and every NPC's clothes piled up there.
+        """
+        chest = create_object("typeclasses.objects.Object", key="chest",
+                              location=self.room3)
+        coin = create_object("typeclasses.objects.Object", key="coin",
+                             location=chest)
+        npc = create_object("typeclasses.npcs.NPC", key="Mira",
+                            location=self.room3)
+        coat = create_object("typeclasses.objects.Object", key="coat",
+                             location=npc)
+        self.said_into(CmdDelete, "world 2 yes")
+        for gone in (chest, coin, npc, coat):
+            self.assertIsNone(gone.pk, gone.key)
+
     def test_not_the_one_you_are_standing_in_and_nothing_is_asked(self):
         self.char1.move_to(self.room3, quiet=True)
         said = self.said_into(CmdDelete, "world 2")
