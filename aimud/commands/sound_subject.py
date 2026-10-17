@@ -424,16 +424,13 @@ def _search(words, longest, on_found, on_failed):
 
 def _searched(ctx, proceed, fail):
     """The search a results list needs before it can be drawn."""
-    from world import freesound
-
     words = " ".join(str(ctx.draft.get("words") or "").split())
     if not words:
         return fail("Say what to search for first.")
 
     def found(results, count):
         if not results:
-            return fail(f"Nothing on Freesound matches {words} under a "
-                        f"licence this server keeps ({freesound.allowed_said()}).")
+            return fail(_nothing(words))
         ctx.draft["found"] = results
         ctx.draft["count"] = count
         proceed()
@@ -445,6 +442,15 @@ def _searched(ctx, proceed, fail):
 
 #: The longest sound a search asks for, in seconds, unless it says.
 LONGEST = 60
+
+
+def _nothing(words):
+    from world import freesound
+
+    return (f"Nothing on Freesound matches {words} under a licence this "
+            f"server keeps ({freesound.allowed_said()}). A sound is found "
+            f"only when every word is in its name, tags or description, so "
+            f"fewer words find more.")
 
 
 def _fetch_result(ctx, result, name, description, on_kept):
@@ -526,7 +532,7 @@ def _keep_result(ctx):
     caller = _caller(ctx)
     account = _account(ctx)
     ctx.dirty = False
-    credited = (f" Credit, which goes everywhere it does: "
+    credited = (f" Its credit goes wherever it does: "
                 f"{freesound.credit(result)}; {result['licence']}.")
     tried = assets.find(ctx.draft.get("tried"))
     if tried is not None and tried.status == "present" \
@@ -671,11 +677,7 @@ def _open_freesound(cmd, words):
 
     def found(results, count):
         if not results:
-            from world import freesound
-
-            caller.msg(f"Nothing on Freesound matches {words} under a "
-                       f"licence this server keeps "
-                       f"({freesound.allowed_said()}).")
+            caller.msg(_nothing(words))
             return
         draft.update(found=results, count=count)
         menus.open_menu(caller, freesound_form(), session=cmd.session,

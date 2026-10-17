@@ -127,6 +127,13 @@ class Searching(SimpleTestCase):
         self.assertEqual([result["id"] for result in found], [1, 3])
         self.assertEqual(count, 3)
 
+    def test_the_little_words_are_left_out_of_a_search(self):
+        _found, calls = self.search(_Answer(200, {"count": 0,
+                                                  "results": []}))
+        self.assertEqual(calls[0]["params"]["query"], "door creak")
+        self.assertEqual(freesound.keywords("rain on a tent"), "rain tent")
+        self.assertEqual(freesound.keywords("the"), "the")
+
     def test_what_goes_wrong_is_said(self):
         import httpx
 
@@ -191,7 +198,8 @@ class TheFreesoundForm(_Stored):
         self.assertEqual(asset.source, self.result["preview"])
         self.assertIn("by someone", asset.author)
         self.assertEqual(asset.licence, f"CC-BY 4.0, {BY}")
-        self.assertIn("Credit", "\n".join(self.heard))
+        self.assertIn("credit goes wherever it does: \"Door_creak.wav\" by "
+                      "someone", "\n".join(self.heard))
 
     def test_one_heard_then_kept_is_fetched_once_and_renamed(self):
         from commands import sound_subject
@@ -219,6 +227,12 @@ class TheFreesoundForm(_Stored):
         self.ctx.draft["description"] = ""
         with self.assertRaises(menus.Refuse):
             sound_subject._keep_result(self.ctx)
+
+    def test_the_licences_are_said_as_a_list(self):
+        self.assertEqual(freesound.allowed_said(), "CC0 and CC-BY")
+        with override_settings(FREESOUND_NONCOMMERCIAL=True):
+            self.assertEqual(freesound.allowed_said(),
+                             "CC0, CC-BY and CC-BY-NC")
 
     def test_each_result_opens_holding_freesound_s_own_words(self):
         from commands import sound_subject

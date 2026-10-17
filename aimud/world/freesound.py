@@ -99,7 +99,22 @@ def allowed(url):
 
 def allowed_said():
     """The licences this server keeps, for a player to read."""
-    return "CC0, CC-BY" + (" and CC-BY-NC" if noncommercial() else "")
+    return "CC0, CC-BY and CC-BY-NC" if noncommercial() else "CC0 and CC-BY"
+
+
+#: Words a search leaves out. Freesound finds only sounds every word of a
+#: search is found in, and nobody tags a recording "on" or "a", so "rain on
+#: a tent" finds nothing where "rain tent" finds a page of them.
+LITTLE_WORDS = frozenset(
+    "a an the on in of at to into onto with and or for from by under over "
+    "near some".split())
+
+
+def keywords(words):
+    """`words` without the little ones, unless that leaves nothing."""
+    said = str(words or "").split()
+    kept = [word for word in said if word.lower() not in LITTLE_WORDS]
+    return " ".join(kept or said)
 
 
 def _filter(longest):
@@ -164,7 +179,7 @@ def search(words, longest=None, page=1):
 
     if not available():
         raise Unavailable("this server has no Freesound key")
-    words = " ".join(str(words or "").split())
+    words = keywords(words)
     if not words:
         raise Unavailable("there is nothing to search for")
     try:
