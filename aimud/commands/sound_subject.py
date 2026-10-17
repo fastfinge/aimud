@@ -3,17 +3,18 @@ Sounds, as a subject of the verbs. docs/sound.md 9.4.
 
   view sounds                  every sound this server keeps
   view sound <name>            hear it, and what it is
-  create sound                 the ways to make one: genny, for now
+  create sound                 the ways to make one: genny, and Freesound
   create sound genny           a form, built from genny's own catalog
+  create sound freesound [<words>]  search Freesound, hear, keep
   edit sound <name>            the same form, opened on how it was made
 
 A sound is an asset, so it is kept, given up, adopted and deleted as one
 (`commands/assets_subject.py`). What is here is what only a sound has:
 hearing one, and making one.
 
-**`create sound` is a menu of sources.** genny is the only one today;
-Freesound, or a paid service, is another entry in `SOURCES` and touches
-nothing else.
+**`create sound` is a menu of sources.** genny, and Freesound where this
+server has a key (`world/freesound.py`); a paid service is another entry in
+`SOURCES` and touches nothing else.
 
 **The form is genny's catalog.** Which sound effects, instruments, drums and
 effects there are, and every parameter each takes with its default and its
@@ -292,7 +293,11 @@ def sound_gen_seconds(asset):
 
 def _forget_tried(ctx, why):
     """A sound tried and not kept is not kept."""
-    tried = assets.find(ctx.draft.get("tried"))
+    _forget(ctx.draft.get("tried"))
+
+
+def _forget(hash_):
+    tried = assets.find(hash_)
     if tried is not None and tried.description == TRYING \
             and not assets.uses_of(tried):
         try:
@@ -398,13 +403,254 @@ def genny_form():
         ])
 
 
-#: The ways a sound can be made: (key, label, form, help). Freesound, or a
-#: paid service, is one more line here.
+# ---------------------------------------------------------------------------
+# The Freesound form
+# ---------------------------------------------------------------------------
+
+def _search(words, longest, on_found, on_failed):
+    """Search Freesound in a thread, and answer on the main one."""
+    from twisted.internet import threads
+
+    from world import freesound
+
+    def failed(failure):
+        why = failure.value
+        on_failed(str(why) if isinstance(why, freesound.Unavailable)
+                  else "Freesound could not be searched")
+
+    threads.deferToThread(freesound.search, words, longest) \
+        .addCallbacks(lambda answer: on_found(*answer), failed)
+
+
+def _searched(ctx, proceed, fail):
+    """The search a results list needs before it can be drawn."""
+    from world import freesound
+
+    words = " ".join(str(ctx.draft.get("words") or "").split())
+    if not words:
+        return fail("Say what to search for first.")
+
+    def found(results, count):
+        if not results:
+            return fail(f"Nothing on Freesound matches {words} under a "
+                        f"licence this server keeps ({freesound.allowed_said()}).")
+        ctx.draft["found"] = results
+        ctx.draft["count"] = count
+        proceed()
+
+    _caller(ctx).msg(f"Searching Freesound for {words}...")
+    _search(words, ctx.draft.get("longest") or LONGEST, found,
+            lambda why: fail(f"|rNot searched:|n {why}."))
+
+
+#: The longest sound a search asks for, in seconds, unless it says.
+LONGEST = 60
+
+
+def _fetch_result(ctx, result, name, description, on_kept):
+    """Fetch a result's preview in a thread, and keep it on the main one."""
+    import os
+
+    from twisted.internet import threads
+
+    from world import freesound
+
+    caller = _caller(ctx)
+    account = _account(ctx)
+
+    def kept(path):
+        try:
+            asset, said = assets.add(
+                path, name=name, description=description, added_by=account,
+                origin="url", source=result["preview"],
+                author=freesound.credit(result),
+                licence=freesound.licence(result), wanted="sound")
+        except assets.Refused as refusal:
+            caller.msg(f"|rNot kept:|n {refusal}.")
+            return
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+        on_kept(asset, said)
+
+    def failed(failure):
+        refusal = failure.value
+        caller.msg(f"|rNot fetched:|n {refusal}." if isinstance(
+            refusal, assets.Refused) else "|rNot fetched:|n it could not be "
+                                          "fetched.")
+
+    threads.deferToThread(assets.fetch, result["preview"],
+                          assets.largest()).addCallbacks(kept, failed)
+
+
+def _hear_result(ctx):
+    """Fetch it to hear it: kept as a sound being tried, until it is kept."""
+    from world import sound
+
+    result = ctx.result
+    caller = _caller(ctx)
+    tried = ctx.draft.get("tried")
+    asset = assets.find(tried) if tried else None
+    if asset is not None and asset.status == "present":
+        sound.heard(caller, asset, category=sound.UI, caption=True)
+        return None
+    if not _has_account(ctx):
+        raise menus.Refuse("Only an account can fetch a sound.")
+    draft, root = ctx.draft, ctx.root_draft
+
+    def done(asset, _said):
+        draft["tried"] = asset.hash
+        if asset.description == TRYING:
+            root.setdefault("tried_all", []).append(asset.hash)
+        caller.msg(f"Here is how it sounds. |x({result['seconds']:g} "
+                   f"seconds)|n")
+        sound.heard(caller, asset, category=sound.UI, caption=True)
+
+    caller.msg("Fetching it, to hear...")
+    _fetch_result(ctx, result, f"(trying) {result['name']}", TRYING, done)
+    return None
+
+
+def _keep_result(ctx):
+    from world import freesound
+
+    result = ctx.result
+    name = " ".join(str(ctx.draft.get("name") or "").split())
+    description = str(ctx.draft.get("description") or "").strip()
+    if not (name and description):
+        raise menus.Refuse("A sound needs a name, and a description: the "
+                           "description is all anybody without sound, or a "
+                           "model, ever has of it.")
+    if not _has_account(ctx):
+        raise menus.Refuse("Only an account can keep a sound.")
+    caller = _caller(ctx)
+    account = _account(ctx)
+    ctx.dirty = False
+    credited = (f" Credit, which goes everywhere it does: "
+                f"{freesound.credit(result)}; {result['licence']}.")
+    tried = assets.find(ctx.draft.get("tried"))
+    if tried is not None and tried.status == "present" \
+            and tried.description == TRYING \
+            and tried.charged_to_id == getattr(account, "id", None):
+        assets.edit(tried, name=name, description=description)
+        return f"|w{tried.name}|n is kept, as a sound." + credited
+
+    caller.msg("Fetching it, to keep...")
+    _fetch_result(ctx, result, name, description,
+                  lambda _asset, said: caller.msg(said + credited))
+    return None
+
+
+def _result_form(result):
+    from world import freesound
+
+    def intro(ctx):
+        lines = [freesound.line(result), result["description"]]
+        if result.get("tags"):
+            lines.append("Tagged: " + ", ".join(result["tags"]) + ".")
+        lines.append(f"Credit: {freesound.credit(result)}; licence "
+                     f"{result['licence']}.")
+        return "\n".join(lines)
+
+    return menus.Form(
+        key="freesound-result", title=result["name"], intro=intro,
+        items=[
+            menus.Field("name", "What it is called", required=True,
+                        help="What players pick it by. Freesound's own name "
+                             "for it is filled in."),
+            menus.Field("description", "What it sounds like",
+                        kind=menus.LONG_TEXT, required=True,
+                        help="Said instead of the sound to anybody who "
+                             "cannot hear it, and all a model knows of it. "
+                             "What its recordist wrote is filled in, and is "
+                             "often about the microphone rather than the "
+                             "sound."),
+            menus.Action("hear", "Hear it", _hear_result,
+                         help="Fetches it and plays it to you. It is not "
+                              "kept unless you keep it."),
+            menus.Action("keep", "Keep it", _keep_result, after=menus.CLOSE,
+                         help="Kept as a sound, with its author and licence, "
+                              "and counted against your quota."),
+        ])
+
+
+def _results_items(ctx):
+    """
+    One submenu a result, each with a draft of its own holding Freesound's
+    name and description for it, and the form's own draft as `root_draft`,
+    where a result heard and not kept is remembered to be thrown away.
+    """
+    from world import freesound
+
+    return [menus.Submenu(
+        f"r{index}", freesound.line(result), _result_form(result),
+        fresh_draft=True, help=result["description"],
+        data=lambda c, result=result: {"result": result,
+                                       "root_draft": c.draft},
+        draft=lambda c, result=result: {"name": result["name"],
+                                        "description": result["description"]})
+        for index, result in enumerate(ctx.draft.get("found") or [], 1)]
+
+
+def _forget_all_tried(ctx, why):
+    """Every result heard and not kept is not kept."""
+    for hash_ in ctx.draft.get("tried_all") or []:
+        _forget(hash_)
+
+
+def freesound_form():
+    from world import freesound
+
+    return menus.Form(
+        key="new-sound-freesound", title="A sound from Freesound",
+        guided=True, on_close=_forget_all_tried,
+        intro=lambda ctx: (
+            "Sounds people have recorded and shared on freesound.org. Search, "
+            "hear one, and keep it. Only sounds under "
+            f"{freesound.allowed_said()} are offered, and each is kept with "
+            "who to credit for it."),
+        items=[
+            menus.Field("words", "What to search for", required=True,
+                        help="A few words: door creak, rain on a tent, "
+                             "distant thunder."),
+            menus.Field("longest", "Longest, in seconds", kind=menus.NUMBER,
+                        minimum=1, maximum=600,
+                        help=f"Only sounds this long or shorter. Left out, "
+                             f"{LONGEST}."),
+            menus.Submenu(
+                "search", "Search", menus.Form(
+                    key="freesound-results", title="On Freesound",
+                    intro=lambda ctx: (
+                        f"{ctx.draft.get('count', 0)} sounds match; the "
+                        f"first {len(ctx.draft.get('found') or [])} are "
+                        f"here."),
+                    items=_results_items),
+                prepare=_searched,
+                help="Searches Freesound, and lists what it finds."),
+        ])
+
+
+def _freesound_available():
+    from world import freesound
+
+    return freesound.available()
+
+
+#: The ways a sound can be made: (key, label, form, help, available). A paid
+#: service is one more line here.
 SOURCES = [
     ("genny", "Made by genny, here, for nothing", genny_form,
      "Instruments, drums, sound effects and a voice, with effects, made on "
-     "this server and costing nothing but a moment."),
+     "this server and costing nothing but a moment.", lambda: True),
+    ("freesound", "Found on Freesound", freesound_form,
+     "Recorded by people, shared on freesound.org, and kept with who to "
+     "credit.", _freesound_available),
 ]
+
+
+def _sources():
+    return [(key, label, form, help)
+            for key, label, form, help, ready in SOURCES if ready()]
 
 
 def _sources_form():
@@ -415,19 +661,44 @@ def _sources_form():
         items=lambda ctx: [
             menus.Submenu(key, label, form(), fresh_draft=True,
                           command=f"create sound {key}", help=help)
-            for key, label, form, help in SOURCES])
+            for key, label, form, help in _sources()])
+
+
+def _open_freesound(cmd, words):
+    """`create sound freesound rain`: searched, and opened on the results."""
+    caller = cmd.caller
+    draft = {"words": words}
+
+    def found(results, count):
+        if not results:
+            from world import freesound
+
+            caller.msg(f"Nothing on Freesound matches {words} under a "
+                       f"licence this server keeps "
+                       f"({freesound.allowed_said()}).")
+            return
+        draft.update(found=results, count=count)
+        menus.open_menu(caller, freesound_form(), session=cmd.session,
+                        draft=draft, path=("search",))
+
+    caller.msg(f"Searching Freesound for {words}...")
+    _search(words, LONGEST, found,
+            lambda why: caller.msg(f"|rNot searched:|n {why}."))
 
 
 def create_run(cmd, ctx, words):
-    said = " ".join(words).strip().lower()
-    for key, _label, form, _help in SOURCES:
-        if said == key:
+    said = " ".join(words).strip()
+    first, _space, rest = said.partition(" ")
+    for key, _label, form, _help in _sources():
+        if first.lower() == key:
+            if key == "freesound" and rest.strip():
+                return _open_freesound(cmd, " ".join(rest.split()))
             menus.open_menu(cmd.caller, form(), session=cmd.session)
             return
     if said:
         cmd.caller.msg(f"There is no way to make a sound called {said}. "
                        f"There is: " + ", ".join(key for key, *_rest
-                                                 in SOURCES) + ".")
+                                                 in _sources()) + ".")
         return
     menus.open_menu(cmd.caller, _sources_form(), session=cmd.session)
 
@@ -437,7 +708,8 @@ def create_items(ctx):
         return []
     return [menus.Submenu("sound", "A sound", _sources_form(),
                           command="create sound",
-                          help="Made here, by genny, for nothing.")]
+                          help="Made here by genny, or found on Freesound "
+                               "where this server has a key.")]
 
 
 # ---------------------------------------------------------------------------

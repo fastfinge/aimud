@@ -576,6 +576,11 @@ is sent only that.
   choose, try it to hear it, and keep it. Nothing is paid for. A world can let
   its models make sounds too, through the `sounds` permit in `settings`.
   `view sound <name>` plays one and says what it is like.
+- **Or find one on Freesound.** `create sound freesound <words>` searches
+  freesound.org: hear what it finds, and keep one, with who to credit and its
+  licence kept beside it. Only CC0 and CC-BY sounds are offered; a server
+  that makes no money can offer CC-BY-NC too. The server needs a Freesound
+  key, below.
 - **Your settings.** `settings` then **Sound**: sounds on or off, how they are
   sent, a volume for menus, for what happens and for where you are, whether
   sounds come from the left or right, when they are written out, and which
@@ -583,6 +588,16 @@ is sent only that.
 
 genny (github.com/ogomez92/genny) is installed from its author's repository
 by `uv sync`, pinned to one commit; aimud does not carry a copy.
+
+For Freesound, make an API application at freesound.org/apiv2/apply and put
+its keys in `server/conf/secret_settings.py`:
+
+```python
+FREESOUND_CLIENT_ID = "..."
+FREESOUND_CLIENT_SECRET = "..."
+# Only if this server makes no money from anybody: also offer CC-BY-NC sounds.
+FREESOUND_NONCOMMERCIAL = True
+```
 
 ---
 
@@ -614,6 +629,7 @@ by `uv sync`, pinned to one commit; aimud does not carry a copy.
 | `import world <name>` | Build a world from a world asset. It becomes yours -- you own it, you pay for it -- and building it costs nothing at all. Any assets it uses come with it, on your quota. |
 | `view sounds` / `view sound <name>` | Every sound the server keeps, or one played to you with what it is like: how long, how loud, how sharp. |
 | `create sound [genny]` / `edit sound <name>` | Make a sound with genny, from a form built from its own catalog; editing one opens the form on how it was made, and keeps the result as a new sound. |
+| `create sound freesound [<words>]` | Search Freesound, hear what it finds, and keep one with its credit and licence. Only where the server has a Freesound key. |
 | `listen [to <something>]` | What this place, or one thing in it, sounds like, in words. |
 | `view assets [world \| missing \| pool \| recent]` | Files the game keeps, with your quota. `world` lists world documents; `missing` what could not be fetched; `pool` what owners gave up and what goes next; `recent` is for admins. |
 | `view asset <name>` | One asset in full: what it is, who added it, its credit and licence, and what is using it. |
@@ -1135,6 +1151,7 @@ The interesting half is `world/`:
 | `assets.py` | The files the game keeps, checked by what is in them, with quotas and a pool |
 | `sound.py` | Playing a sound to whoever can hear it, and what a place sounds like |
 | `sound_gen.py` | Making a sound with genny, from a checked spec, in a process of its own |
+| `freesound.py` | Searching Freesound, and which of its licences this server keeps |
 | `agents.py` | Who an agent is and what it may call: the token, and the tools MCP offers |
 | `toolkit.py` | Every tool the game defines, gathered, and what kind each one is |
 | `manual.py` | The documentation an agent reads, half of it built from the registers |

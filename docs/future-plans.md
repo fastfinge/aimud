@@ -11,8 +11,7 @@ These are plans for things I want to do later maybe. They range from good ideas 
 muffled with genny's `muffle`, which needs a decision about how far sound carries; music, whose category and volume
 setting are reserved; footsteps on moving, which is a command rather than an attempt and so no rule hears it; the
 room and item generators writing ambience for what they make (`make_sound` exists, and only the rule loop is offered
-it); Freesound as a second entry in `create sound` (`SOURCES` in `commands/sound_subject.py`), arriving with author
-and licence; and a paid generator like ElevenLabs, which needs nothing but a service, since a tool's sound file
+it); and a paid generator like ElevenLabs, which needs nothing but a service, since a tool's sound file
 already becomes a played asset (`sound:` results in `tool_calls`).
 * gmcp/msdp: sending all the data we have via OOB protocols to mud clients in a standard machine-readable format, so
 they can use mappers, create health gages, etc.

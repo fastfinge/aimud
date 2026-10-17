@@ -112,6 +112,20 @@ SOUND_MOST_REPEATS = 64
 SOUND_RENDER_SECONDS = 20
 SOUND_RENDER_THREADS = 2
 
+# Freesound, which `create sound freesound` searches. Its API key is the
+# client secret Freesound gives an application, and belongs in
+# secret_settings.py; until it is set, Freesound is not offered. The client
+# id is only for signing players in to Freesound, which nothing here needs.
+# See world/freesound.py.
+FREESOUND_CLIENT_ID = ""
+FREESOUND_CLIENT_SECRET = ""
+
+# Whether this server makes no money from anybody, so that sounds Freesound
+# shares only for non-commercial use (CC-BY-NC) may be kept here too. Say so
+# only if it is true: a sound kept under it stays in every world that uses
+# it, and goes with every world exported from here.
+FREESOUND_NONCOMMERCIAL = False
+
 # Threads for model calls, which spend nearly all their time waiting on the
 # network: this many may be waiting at once, across every world on the
 # server. They have a pool of their own, so memory writes and downloads never

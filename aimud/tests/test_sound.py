@@ -1282,7 +1282,7 @@ class TheGennyForm(_Stored):
         from commands import sound_subject
 
         self.assertEqual([key for key, *_rest in sound_subject.SOURCES],
-                         ["genny"])
+                         ["genny", "freesound"])
 
 
 @tag("world")
