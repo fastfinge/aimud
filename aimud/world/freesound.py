@@ -97,6 +97,31 @@ def allowed(url):
     return found[1] or noncommercial()
 
 
+def refused(licence_text):
+    """
+    Why a file under this licence may not be brought to this server, or "".
+
+    For a file another server kept: one in a world being imported, or a
+    missing one fetched again. Only a licence this can read is refused --
+    a Creative Commons non-commercial one, by its address or its name --
+    since what a player typed as a licence ("my own", "public domain") is
+    not something to guess at. A non-commercial licence is the sound's,
+    and never the world's: the world is built, and only the file is left
+    out. Files kept here before the server's owner changed their mind are
+    not touched; `view asset` says so of them.
+    """
+    if noncommercial():
+        return ""
+    said = str(licence_text or "")
+    found = re.search(r"creativecommons\.org/licenses/by-nc[\w-]*/", said,
+                      flags=re.IGNORECASE) or re.search(
+        r"\bCC[- ]?BY[- ]NC\b", said, flags=re.IGNORECASE)
+    if not found:
+        return ""
+    return ("it is for non-commercial use only, and this server is not "
+            "set up as a non-commercial one")
+
+
 def allowed_said():
     """The licences this server keeps, for a player to read."""
     return "CC0, CC-BY and CC-BY-NC" if noncommercial() else "CC0 and CC-BY"

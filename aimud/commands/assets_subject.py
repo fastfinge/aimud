@@ -92,6 +92,11 @@ def detail(asset, account=None):
     if asset.author or asset.licence:
         lines.append(f"Credit: {asset.author or 'unknown'}; licence: "
                      f"{asset.licence or 'not said'}.")
+        refused = assets.licence_refused(asset.licence)
+        if refused and asset.status == "present":
+            # Kept while the server took it, and left alone since: its owner
+            # decides what to do about it, not this.
+            lines.append(f"This server would not take it now: {refused}.")
     if asset.made_with:
         made = ", ".join(f"{key} {value}" for key, value in
                          sorted(asset.made_with.items()) if key != "request")

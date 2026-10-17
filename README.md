@@ -580,7 +580,9 @@ is sent only that.
   freesound.org: hear what it finds, and keep one, with who to credit and its
   licence kept beside it. Only CC0 and CC-BY sounds are offered; a server
   that makes no money can offer CC-BY-NC too. The server needs a Freesound
-  key, below.
+  key, below. A world imported onto a server that does not take CC-BY-NC is
+  still built, with only its CC-BY-NC sounds left out and listed as missing:
+  that licence is the sound's, never the world's.
 - **Your settings.** `settings` then **Sound**: sounds on or off, how they are
   sent, a volume for menus, for what happens and for where you are, whether
   sounds come from the left or right, when they are written out, and which

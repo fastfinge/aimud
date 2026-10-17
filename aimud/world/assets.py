@@ -825,12 +825,20 @@ def to_bring(doc):
 
 def room_to_bring(doc, account):
     """Why `account` has no room for what an import would bring, or ""."""
-    needed = sum(int(entry.get("size") or 0) for entry in to_bring(doc))
+    needed = sum(int(entry.get("size") or 0) for entry in to_bring(doc)
+                 if not licence_refused(entry.get("licence")))
     if not needed:
         return ""
     refused = room_for(account, needed)
     return (f"its assets need {size_said(needed)} of your quota: {refused}"
             if refused else "")
+
+
+def licence_refused(licence_text):
+    """Why this server does not bring in a file under this licence, or ""."""
+    from world import freesound
+
+    return freesound.refused(licence_text)
 
 
 def _record_missing(entry, account):
@@ -883,7 +891,9 @@ def bring_in(doc, account, on_done):
     call `on_done(problems)`. Known hashes are reused without a download --
     the reset-on-the-same-server case. Fetching runs in a thread, one at a
     time; keeping runs here. Anything that cannot be fetched, or is not the
-    file named, is recorded missing and does not stop the import.
+    file named, is recorded missing and does not stop the import. Nor does
+    a file under a licence this server does not keep, which is recorded
+    missing without being fetched at all.
     """
     import os
 
@@ -897,6 +907,12 @@ def bring_in(doc, account, on_done):
             on_done(problems)
             return
         entry = queue.pop(0)
+        refused = licence_refused(entry.get("licence"))
+        if refused:
+            _record_missing(entry, account)
+            problems.append(f"{entry.get('name')} was left out: {refused}")
+            next_one()
+            return
         if not entry.get("url"):
             _record_missing(entry, account)
             problems.append(f"{entry.get('name')} has nowhere to fetch it from")
@@ -935,6 +951,10 @@ def fetch_again(account, asset, on_done):
         return
     if not asset.source:
         on_done(f"{asset.name} has nowhere to fetch it from")
+        return
+    refused = licence_refused(asset.licence)
+    if refused:
+        on_done(refused)
         return
     entry = {"hash": asset.hash, "name": asset.name, "type": asset.type,
              "url": asset.source, "description": asset.description}

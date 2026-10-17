@@ -51,6 +51,16 @@ class WhichLicences(SimpleTestCase):
             self.assertTrue(freesound.allowed(BY_NC))
             self.assertFalse(freesound.allowed(SAMPLING))
 
+    def test_a_file_from_elsewhere_is_refused_only_by_a_licence_it_can_read(self):
+        for said in (BY_NC, "CC-BY-NC 4.0", "cc by-nc-sa 3.0",
+                     "https://creativecommons.org/licenses/by-nc-nd/4.0/"):
+            self.assertIn("non-commercial", freesound.refused(said), said)
+        for said in (CC0, BY, "CC-BY 4.0", "my own", "public domain", "",
+                     "not for commercial use"):
+            self.assertEqual(freesound.refused(said), "", said)
+        with override_settings(FREESOUND_NONCOMMERCIAL=True):
+            self.assertEqual(freesound.refused(BY_NC), "")
+
     def test_the_search_asks_for_only_what_is_kept(self):
         said = freesound._filter(30)
         self.assertIn('"Creative Commons 0" OR "Attribution"', said)
@@ -220,6 +230,19 @@ class TheFreesoundForm(_Stored):
                          sound_subject.TRYING)
         sound_subject._forget_all_tried(self.root, "quit")
         self.assertFalse(assets.search("sound").exists())
+
+    def test_one_kept_before_the_server_stopped_taking_it_stays_and_says_so(self):
+        from commands import assets_subject, sound_subject
+
+        with override_settings(FREESOUND_NONCOMMERCIAL=True):
+            self.ctx.data["result"] = freesound.result_of(raw(license=BY_NC))
+            sound_subject._keep_result(self.ctx)
+        asset = assets.search("sound").get()
+        said = assets_subject.detail(asset)
+        self.assertIn("would not take it now", said)
+        with override_settings(FREESOUND_NONCOMMERCIAL=True):
+            self.assertNotIn("would not take it now",
+                             assets_subject.detail(asset))
 
     def test_it_needs_a_name_and_a_description(self):
         from commands import sound_subject

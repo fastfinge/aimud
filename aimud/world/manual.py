@@ -276,7 +276,9 @@ with its length, its recordist and its licence. Choose one to hear it, give
 it a name and a description of what it sounds like, and keep it. Only CC0
 and CC-BY sounds are offered, and CC-BY-NC as well on a server whose owner
 says it is non-commercial; each kept sound carries who to credit, in its
-author and licence, into every world that uses it.
+author and licence, into every world that uses it. Importing a world onto a
+server that does not take CC-BY-NC builds the world and leaves only those
+sounds out, recorded as missing.
 
 **Choosing one.** `list_assets` with type `sound` gives every sound's id and
 description; `show_asset` measures one -- how long, how loud, how sharp -- so
