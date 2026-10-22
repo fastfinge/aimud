@@ -237,6 +237,37 @@ class WhereItCanBeFetched(_Stored):
                 f"https://mud.example.com:4001/media/assets/{asset.hash}.json")
 
 
+class WhereToUploadOne(SimpleTestCase):
+    """The website's upload page, which the game never used to mention."""
+
+    @override_settings(ASSET_BASE_URL="https://mud.example.com:4001/")
+    def test_at_the_address_assets_are_fetched_from(self):
+        self.assertEqual(assets.upload_url(),
+                         "https://mud.example.com:4001/assets/upload/")
+
+    @override_settings(ASSET_BASE_URL="",
+                       SERVICES_PUBLIC_URL="https://mud.example.com")
+    def test_or_the_one_a_browser_is_sent_back_to(self):
+        self.assertEqual(assets.upload_url(),
+                         "https://mud.example.com/assets/upload/")
+
+    @override_settings(ASSET_BASE_URL="", SERVICES_PUBLIC_URL="",
+                       WEBSERVER_PORTS=[(4001, 4005)])
+    def test_or_this_machine_when_neither_is_set(self):
+        self.assertEqual(assets.upload_url(),
+                         "http://localhost:4001/assets/upload/")
+
+    def test_the_create_form_says_where(self):
+        from types import SimpleNamespace
+
+        from commands import assets_subject
+
+        nobody = SimpleNamespace(character=None, caller=None)
+        with override_settings(ASSET_BASE_URL="https://mud.example.com"):
+            intro = assets_subject.ASSET.intro_for(nobody)
+        self.assertIn("https://mud.example.com/assets/upload/", intro)
+
+
 class _Sound(asset_types.AssetType):
     """A stand-in type for these tests: something a world can be using."""
 

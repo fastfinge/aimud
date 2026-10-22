@@ -54,7 +54,7 @@ def modify_complaints(obj, new_name="", new_description="", world_root=None,
     Permission is not asked here. A rule's effect is the result of a verb the
     world already allowed; a character's tool asks `attempt.permitted` itself.
     """
-    from world import token_lists, tokens, verbs
+    from world import token_lists, verbs
 
     if obj is None:
         return ["there is nothing by that name to change"]
@@ -71,16 +71,7 @@ def modify_complaints(obj, new_name="", new_description="", world_root=None,
                 f"in, and {', '.join(wrong)} "
                 f"{'is a condition' if len(wrong) == 1 else 'are conditions'}")
     if new_description:
-        unknown = sorted(
-            name for name in token_lists.references(new_description)
-            if name not in _BUILTIN_SLOTS
-            and name not in tokens._PROVIDED_SLOTS
-            and (world_root is None
-                 or token_lists.get(world_root, name) is None))
-        if unknown:
-            complaints.append(
-                "the description asks for word lists this world does not "
-                "keep: " + ", ".join("{" + name + "}" for name in unknown))
+        complaints += token_lists.brace_complaints(new_description, world_root)
     return complaints
 
 

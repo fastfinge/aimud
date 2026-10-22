@@ -1302,3 +1302,27 @@ def public_url(asset):
     if not base:
         return ""
     return base + asset_store.store().url(asset.hash, extension_of(asset))
+
+
+def upload_url():
+    """
+    The website's upload page, as somebody would type it into a browser.
+
+    The only way to keep a file off a player's own machine, and nothing in the
+    game said so: `create asset` fetches from a web address, and a player with
+    a sound on their desktop had no web address to give it. Read off the same
+    settings a browser is already sent here by -- `ASSET_BASE_URL`, then
+    whatever an OAuth callback uses -- so a server that set either once is
+    right everywhere.
+    """
+    from django.urls import NoReverseMatch, reverse
+
+    from world import service_auth
+
+    base = str(getattr(settings, "ASSET_BASE_URL", "") or "").rstrip("/") \
+        or service_auth.public_url()
+    try:
+        path = reverse("asset-upload")
+    except NoReverseMatch:
+        path = "/assets/upload/"
+    return base + path

@@ -7,7 +7,8 @@ Assets, as a subject of the verbs: files the game keeps. docs/archived/assets.md
   view assets pool                 what owners gave up, and what goes next
   view assets recent [<n>]         what was added lately (admins)
   view asset <name>                one, in full
-  create asset [<url>]             fetch one from a web address (a form)
+  create asset [<url>]             fetch one from a web address (a form),
+                                   which also gives the upload page's address
   edit asset <name>                change its name, description or credit
   edit asset <name> <field> <text> one of those in a line
   edit asset <name> giveup [yes]   hand it to the server's pool
@@ -141,7 +142,8 @@ def view_run(cmd, ctx, words):
     if not said:
         caller.msg(f"{_quota_line(account)}\n" + _listing(
             assets.search(), account,
-            "Nobody has added an asset yet. |wcreate asset|n fetches one."))
+            "Nobody has added an asset yet. |wcreate asset|n fetches one, "
+            f"and {assets.upload_url()} uploads one."))
         return
     if said == "missing":
         caller.msg(_listing(assets.search(status="missing"), account,
@@ -279,13 +281,18 @@ def _fields(creating):
     return fields
 
 
+def _upload_line():
+    return (f"A file on your own machine is uploaded on the website instead: "
+            f"{assets.upload_url()} , logged in with this account.")
+
+
 ASSET = menus.Form(
     key="asset", title="A new asset", guided=True,
     intro=lambda ctx: (
-        "A file for the game to keep. "
+        "A file for the game to keep, fetched from a web address. "
         + _quota_line(_account(ctx))
         + " Only files of a kind this server keeps are accepted, checked by "
-          "what is in them."),
+          "what is in them.\n" + _upload_line()),
     items=lambda ctx: _fields(True) + [
         menus.Action("keep", "Fetch it, and keep it", _keep,
                      after=menus.CLOSE)],
@@ -302,8 +309,8 @@ def create_items(ctx):
         return []
     return [menus.Submenu("asset", "A file for the game to keep", ASSET,
                           fresh_draft=True, command="create asset",
-                          help="Fetched from a web address. The website's "
-                               "upload page takes a file directly.")]
+                          help=lambda ctx: "Fetched from a web address. "
+                               + _upload_line())]
 
 
 # ---------------------------------------------------------------------------

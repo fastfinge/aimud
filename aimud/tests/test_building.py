@@ -3398,6 +3398,17 @@ class RequiringSomethingWhereNothingIsRequired(Building):
         self.assertEqual([(rule["id"], many) for rule, many in found],
                          [(rule_id, 1)])
 
+    def test_a_suspended_one_is_not_a_fault(self):
+        """It applies to nothing, so nothing it says is being ignored."""
+        from world import rulebooks, rulecheck
+
+        rule_id, _said = self.filed(
+            phase="carry_out",
+            conditions=[{"subject": "direct", "kind": "earth"}])
+        rulebooks.set_listed(self.root, rule_id, False)
+        findings = rulecheck.scan(rulecheck.of_world(self.root))
+        self.assertEqual(findings["untested_conditions"], [])
+
 
 @tag("unit")
 class WhatAnEditFormOpensHolding(Building):

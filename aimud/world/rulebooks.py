@@ -84,7 +84,7 @@ def get(world_root, rule_id):
 def blank(action=None, phase=CHECK, scope=None, about="direct", name="",
           when=None, conditions=None, effects=None, contest=None,
           outcome=None, source="generated", why="", overrides=None,
-          evidence=None, report=""):
+          evidence=None, report="", replaces=None):
     """
     A rule with every slot present, so nothing downstream has to guess.
 
@@ -114,6 +114,11 @@ def blank(action=None, phase=CHECK, scope=None, about="direct", name="",
         "source": str(source),
         "why": str(why or ""),
         "overrides": overrides,
+        # The rule a proposal is a corrected copy of, which accepting it
+        # suspends. Not `overrides`: an instead proposal overrides a rule by
+        # being more specific and leaves it in force for everything else.
+        # See `suggest.accept` and `rule_gen.fix_faults`.
+        "replaces": replaces,
         "evidence": dict(evidence or {}),
         # What this rule says people read, as an event template, when its
         # author wrote the words rather than leaving them to a narrator. It
@@ -235,7 +240,7 @@ def replace(world_root, rule_id, rule):
         return None
     record = _tidied(_calls_completed(world_root, rule))
     record["id"] = existing["id"]
-    for kept in ("born", "source", "evidence", "why", "overrides"):
+    for kept in ("born", "source", "evidence", "why", "overrides", "replaces"):
         record[kept] = existing.get(kept)
     return _filed(world_root, record, what="rules changed")
 

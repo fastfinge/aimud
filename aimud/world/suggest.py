@@ -95,7 +95,20 @@ def fingerprint(rule):
     doing = ";".join(sorted(
         f"{e.get('type')}:{e.get('add') or e.get('to') or e.get('action') or ''}"
         for e in (rule.get("effects") or []) if hasattr(e, "get")))
-    return f"{rule.get('phase')}|{rule.get('action')}|{where}|{doing}"
+    mark = f"{rule.get('phase')}|{rule.get('action')}|{where}|{doing}"
+    # A fix is told apart by what it requires and what it mends as well, or
+    # every check rule a model proposed for one verb at one scope would be
+    # the same proposal. Added only when there is one: no generator here
+    # writes conditions or replaces anything, so no fingerprint a world has
+    # already declined changes.
+    if rule.get("conditions") or rule.get("replaces"):
+        import json
+
+        mark += "|" + json.dumps([rule.get("conditions") or [],
+                                  rule.get("when") or [],
+                                  rule.get("replaces") or ""],
+                                 sort_keys=True, default=str)
+    return mark
 
 
 def declined(world_root):
@@ -109,15 +122,28 @@ def declined(world_root):
 # Offering one
 # ---------------------------------------------------------------------------
 
-def propose(world_root, rule, why, evidence, overrides=None):
+def propose(world_root, rule, why, evidence, overrides=None, replaces=None):
     """
     Put one proposal in the queue, or refuse to. Answers with it, or None.
 
     Every rail that can be checked from the proposal itself is checked here
     rather than in each generator, so a new generator cannot forget one.
+
+    `replaces` names a rule in force that this one is a corrected copy of,
+    and that accepting it takes out of its book.
     """
     if not world_root:
         return None
+
+    # A replacement must replace something real and in force, and never a
+    # proposal: putting one guess in place of another is not a fix.
+    if replaces:
+        replaced = rulebooks.get(world_root, replaces)
+        if (replaced is None or not replaced.get("listed", True)
+                or replaced.get("source") == DERIVED):
+            logger.log_info(f"suggest: refused, {replaces} is not a rule in "
+                            f"force -- {why}")
+            return None
 
     # RAIL 1: no evidence, no proposal. A count from this world or nothing --
     # which is what stops a lexical resource from filling the queue with things
@@ -132,6 +158,7 @@ def propose(world_root, rule, why, evidence, overrides=None):
     record["why"] = str(why or "")
     record["evidence"] = dict(evidence)
     record["overrides"] = overrides
+    record["replaces"] = replaces or None
 
     # RAIL 2: a proposal already declined is not offered again. Without this the
     # queue re-offers everything it has ever thought of, every time it runs,
@@ -204,6 +231,11 @@ def accept(world_root, rule_id):
         return None
     if rule.get("listed", True):
         return rule                      # already in force; nothing to do
+    # A corrected copy takes the place of what it corrects. Suspended, not
+    # deleted, the way every other repair here is: `edit rules <id> restore`
+    # puts the old one back if the correction was wrong.
+    if rule.get("replaces"):
+        rulebooks.set_listed(world_root, rule["replaces"], False)
     return rulebooks.set_listed(world_root, rule_id, True)
 
 
@@ -530,8 +562,16 @@ def said(rule, world_root=None):
         lines.append(f"    would {effects.say(effect)}")
     for condition in (rule.get("conditions") or []):
         lines.append(f"    would require: {conditions.describe(condition)}")
+    for condition in (rule.get("when") or []):
+        lines.append(f"    only when: {conditions.describe(condition)}")
     if rule.get("overrides"):
         lines.append(f"    overrides: {rule['overrides']}")
+    if rule.get("replaces"):
+        old = rulebooks.get(world_root, rule["replaces"]) if world_root else None
+        lines.append(f"    replaces : {rule['replaces']}"
+                     + (f" ({old.get('name')})" if old and old.get("name")
+                        else "")
+                     + ", which accepting this suspends")
     lines.append(f"    because  : {rule.get('why') or 'no reason recorded'}")
     return "\n".join(lines)
 

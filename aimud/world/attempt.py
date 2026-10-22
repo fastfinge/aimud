@@ -17,7 +17,7 @@ lights it for everyone rather than claiming to.
 
 from evennia.utils import logger
 
-from world import checks, choosing
+from world import checks, choosing, conditions
 from world import effects as effects_mod
 from world import counters, verb_gen, verbs
 from world import events as events_mod
@@ -301,7 +301,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
                 return
             _with_bindings(caller, room, sponsor, raw, verb, bound,
                            on_message, allow_effects, waiter,
-                           words=parsed["roles"])
+                           words=conditions.words_of(parsed))
 
         if _knows_the_word(_world_root(room), verb, bound, caller,
                            parsed["roles"], unbound):
@@ -311,7 +311,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
             # first is how `summon earth` came to produce two earths.
             _with_bindings(caller, room, sponsor, raw, verb, bound,
                            on_message, allow_effects, waiter,
-                           words=parsed["roles"])
+                           words=conditions.words_of(parsed))
             return
 
         # A noun that is not an object yet may still be real -- fixtures live
@@ -323,7 +323,7 @@ def attempt(caller, raw, sponsor, on_message, allow_effects=None, on_wait=None,
         return
 
     _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
-                   allow_effects, waiter, words=parsed["roles"])
+                   allow_effects, waiter, words=conditions.words_of(parsed))
 
 
 def _mechanics(caller, verb, parsed, bound, on_message):
@@ -784,7 +784,7 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
         # initiative has no sponsor to ask with.
         from world import actions
 
-        def declared(_spec):
+        def declared(_spec, asked=False):
             # "Launch what?" is the right answer right up until a rule exists
             # that knows what. An `instead` rule guarded by `unbound` is exactly
             # that rule -- aboard a ship, `launch` means launching the ship --
@@ -801,6 +801,18 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
                            or _knows_the_word(world_root, verb, bound, caller,
                                               words, [wanted])):
                 wanted = ""
+            # Said a way nobody settled -- "wave at the phone" for a verb
+            # declared from "wave the phone". Asked once, before refusing,
+            # because the declaration was made from one sentence and refusing
+            # every other way of saying the verb was never a decision anybody
+            # made. Asked at most once per attempt, whatever the answer.
+            if (wanted and not asked and sponsor is not None
+                    and actions.unsaid_shape(world_root, verb, bound)):
+                waiter(f"working out whether {verb} can be said that way")
+                actions.learn_shape(
+                    sponsor, world_root, verb, bound, caller,
+                    on_done=lambda: guarded(lambda: declared(_spec, True)))
+                return
             if wanted:
                 # The count the spaceship needs. "launch what?" eleven times
                 # aboard a ship is the evidence for a redirect rule, and until
@@ -882,6 +894,7 @@ def _with_bindings(caller, room, sponsor, raw, verb, bound, on_message,
             sponsor, world_root, verb, bound, caller,
             on_success=lambda rules: guarded(lambda: written(rules)),
             on_error=lambda err: release(f"|r{err}|n"),
+            words=words,
         )
 
     guarded(begin)

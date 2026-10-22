@@ -139,6 +139,10 @@ PREDICATE_GROUPS = (
     )),
     ("word", "The word that was used", (
         ("called", "was named by a particular word", "text"),
+        ("preposition", "was said with a particular preposition -- at, "
+                        "under, on", "prepositions"),
+        ("not_preposition", "was not said with a particular preposition",
+         "prepositions"),
     )),
     ("reach", "Reach, sight and being able", (
         ("reachable_by", "can be touched by whoever is acting", "flag"),
@@ -228,6 +232,11 @@ def keep_condition(ctx):
         if not wanted:
             raise menus.Refuse("Name at least one condition.")
         clause[predicate] = list(wanted)
+    elif takes == "prepositions":
+        wanted = ctx.draft.get("prepositions") or []
+        if not wanted:
+            raise menus.Refuse("Name at least one preposition: at, under, on.")
+        clause[predicate] = list(wanted)
     elif takes == "kinds":
         wanted = str(ctx.draft.get("kind") or "").strip()
         if not wanted:
@@ -312,7 +321,7 @@ NEW_CONDITION = menus.Form(
                           "something."),
         menus.Picker("group", "What sort of question", options=group_options,
                      required=True,
-                     help="Narrows what is asked next. There are twenty-six "
+                     help="Narrows what is asked next. There are twenty-nine "
                           "questions a condition can ask and no one writer "
                           "wants all of them at once."),
         menus.Picker("predicate", "The question", options=predicate_options,
@@ -346,6 +355,13 @@ NEW_CONDITION = menus.Form(
                     help="The thing it sits in. Left empty, anything will do "
                          "-- which is how `not placed under anything` says "
                          "that nothing covers it."),
+        menus.Field("prepositions", "Which prepositions",
+                    lock=_wants("prepositions"),
+                    parse=lambda ctx, text: _read_prepositions(ctx, text),
+                    show=lambda ctx, value: ", ".join(value or []) or "none",
+                    help="One or more, separated by spaces; any of them will "
+                         "do. |wwave at the phone|n is said with |wat|n, and "
+                         "|wput the book under the table|n with |wunder|n."),
         menus.Field("who", "Whose", lock=_wants("who"),
                     help="A role -- actor -- or somebody's name."),
         menus.Field("text", "Which", lock=_wants("text", "clock", "thing"),
@@ -366,6 +382,18 @@ def condition_line(ctx, clause):
 def _read_words(text):
     found = [word.strip().lower() for word in str(text or "").split()]
     return [word for word in found if word], ""
+
+
+def _read_prepositions(ctx, text):
+    from world import verbs
+
+    found, _ = _read_words(text)
+    wrong = [word for word in found if word not in verbs.PREPOSITION_ROLES]
+    if wrong:
+        return None, (f"{', '.join(wrong)} is not a preposition this game "
+                      f"reads. It knows: "
+                      + ", ".join(sorted(verbs.PREPOSITION_ROLES)) + ".")
+    return found, ""
 
 
 # ---------------------------------------------------------------------------
@@ -611,15 +639,7 @@ def _text_complaints(ctx, effect):
     for field in ("description", "new_description"):
         text = str(effect.get(field) or "")
         if text:
-            unknown = sorted(
-                name for name in token_lists.references(text)
-                if name not in fx._BUILTIN_SLOTS
-                and token_lists.get(root, name) is None)
-            if unknown:
-                said.append(
-                    f"this world keeps no word list called "
-                    f"{', '.join(unknown)} -- |wcreate tokens|n makes one, or "
-                    f"take the braces out")
+            said += token_lists.brace_complaints(text, root)
     return "; ".join(said).capitalize() + "." if said else ""
 
 

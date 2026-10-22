@@ -743,7 +743,9 @@ def _apply(world_root, doc, decided):
                         applies_to=entry.get("applies_to") or (),
                         means=str(entry.get("means") or ""),
                         despite=entry.get("despite") or (),
-                        must=entry.get("must") or ())
+                        must=entry.get("must") or (),
+                        shapes=entry.get("shapes") or (),
+                        refused_shapes=entry.get("refused_shapes") or ())
 
     added = []
     for rule in doc.get("rules") or []:
