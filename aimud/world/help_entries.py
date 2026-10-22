@@ -80,6 +80,14 @@ HELP_ENTRY_DICTS = [
             one knows almost none until somebody has played in it.
         """,
     },
+    # What a world sounds like, and making a sound: the manual's page, so an
+    # agent and a player read the same words. docs/archived/sound.md 9.4.
+    {
+        "key": "sound",
+        "aliases": ["sounds", "genny", "ambience"],
+        "category": "General",
+        "text": __import__("world.manual", fromlist=["SOUND"]).SOUND,
+    },
     {
         "key": "evennia",
         "aliases": ["ev"],

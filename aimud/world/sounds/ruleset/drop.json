@@ -1,0 +1,25 @@
+{
+  "name": "setting something down",
+  "description": "A light wooden tock as something is set down.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "steel_ball",
+          "params": {
+            "surface": "wood",
+            "force": 0.5
+          }
+        }
+      ],
+      "fx": [],
+      "normalize": -9,
+      "sr": 44100
+    }
+  }
+}

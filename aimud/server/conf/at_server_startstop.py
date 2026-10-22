@@ -48,6 +48,12 @@ def at_server_start():
     _claim_unowned_worlds()
     _normalise_world_modes()
     _take_in_world_folder()
+    _take_in_builtins()
+    # Menus make their sounds through the presenter they were built with a
+    # hook for. docs/archived/sound.md 8.
+    from world import sound
+
+    sound.install()
     _warm_lexicon()
     _arm_crossings()
 
@@ -155,6 +161,26 @@ def _take_in_world_folder():
     if added:
         logger.log_info(f"assets: took in {added} world document(s) from the "
                         f"shared folder")
+
+
+def _take_in_builtins():
+    """
+    Keep the assets the game ships -- the menu sounds, first -- in the
+    register, so a setting or a ruleset naming one finds it. Passed over by
+    hash once kept. docs/archived/sound.md 4.3.
+    """
+    from evennia.utils import logger
+
+    from world import assets
+
+    try:
+        added = assets.take_in_builtins()
+    except Exception:
+        logger.log_trace("assets: the built-in assets were not kept; has "
+                         "`evennia migrate` been run?")
+        return
+    if added:
+        logger.log_info(f"assets: kept {added} built-in asset(s)")
 
 
 def _normalise_world_modes():

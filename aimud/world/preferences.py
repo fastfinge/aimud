@@ -319,6 +319,224 @@ GENERAL = m.Form(
 
 
 # ---------------------------------------------------------------------------
+# Sound. docs/archived/sound.md 3.6
+# ---------------------------------------------------------------------------
+
+def _resounding(said):
+    """
+    A sound setting's message, and what it changes heard at once: turning
+    sound off stops the loops playing, and turning the ambience down turns
+    the wind down now rather than at the next room.
+    """
+    def told(ctx, value):
+        from world import sound
+
+        sound.refresh_account(ctx.account)
+        return said(ctx, value) if callable(said) else said
+
+    return told
+
+
+def _sound_said(ctx, value):
+    return ("Sounds are on." if value is None or value
+            else "Sounds are off. Nothing is sent to your client.")
+
+
+SOUND_ON = _attribute_setting(
+    "sound", "Sounds", "sound_on", True, kind=m.BOOLEAN,
+    help=("Whether the game sends sounds to a client that can play them: "
+          "menus opening and closing, and more as worlds make use of it. "
+          "Off sends nothing at all."),
+    said=_resounding(_sound_said),
+)
+
+_PROTOCOL_CHOICES = [
+    m.Choice("auto", "Whatever my client says it can play", keys=("auto",)),
+    m.Choice("media", "GMCP Client.Media, as Mudlet plays it",
+             keys=("media", "gmcp", "mcmp")),
+    m.Choice("msp", "MSP, for a client that never says it plays sounds",
+             keys=("msp",)),
+    m.Choice("off", "No sounds on any connection", keys=("off",)),
+]
+
+SOUND_PROTOCOL = _attribute_setting(
+    "soundprotocol", "How sounds are sent", "sound_protocol", "auto",
+    kind=m.CHOICE, choices=_PROTOCOL_CHOICES,
+    help=("A client says what it can play when it connects: Mudlet asks for "
+          "Client.Media, and MSP clients agree to MSP. Leave this on auto "
+          "unless your client plays MSP without saying so, as some do; then "
+          "choose MSP. A client that has both is only ever sent one."),
+    said=_resounding(lambda ctx, value: "Sounds will be sent " + {
+        None: "however your client says it can play them.",
+        "auto": "however your client says it can play them.",
+        "media": "as GMCP Client.Media.",
+        "msp": "as MSP, on telnet connections.",
+        "off": "to no connection at all."}[value]),
+)
+
+
+def _volume_field(category, label, help):
+    attr = "sound_volume_" + category
+
+    def put(ctx, value):
+        if value is None or value == 100:
+            ctx.account.attributes.remove(attr)
+        else:
+            ctx.account.attributes.add(attr, int(value))
+        # Back to the default changes what is heard as much as any value.
+        from world import sound
+
+        sound.refresh_account(ctx.account)
+        return f"{label} are at {100 if value is None else int(value)}."
+
+    def show(ctx, stored):
+        return f"{100 if stored is None else stored}" + _default_mark(stored)
+
+    return m.Field(category + "volume", label + " volume", kind=m.NUMBER,
+                   get=lambda ctx: ctx.account.attributes.get(attr),
+                   set=put, show=show, minimum=0, maximum=100,
+                   prompt="Type a volume from 0, silent, to 100", help=help)
+
+
+UI_VOLUME = _volume_field(
+    "ui", "Menu sounds",
+    "How loud the sounds menus make are, from 0 for none to 100.")
+
+EVENT_VOLUME = _volume_field(
+    "event", "Sounds of what happens",
+    "How loud the sounds a world plays when something happens are -- a door "
+    "creaking, a bell ringing -- from 0 for none to 100.")
+
+_CAPTION_CHOICES = [
+    m.Choice("auto", "Only on a connection that is not playing sounds",
+             keys=("auto",)),
+    m.Choice("on", "Always", keys=("on", "always", "yes")),
+    m.Choice("off", "Never", keys=("off", "never", "no")),
+]
+
+
+def _captions_field(kind, key, label, help):
+    return _attribute_setting(
+        key, label, "sound_captions_" + kind, "auto", kind=m.CHOICE,
+        choices=_CAPTION_CHOICES, help=help,
+        said=_resounding(lambda ctx, value: f"{label}: " + {
+            None: "only where sounds are not playing.",
+            "auto": "only where sounds are not playing.",
+            "on": "always.", "off": "never."}[value]))
+
+
+SOUND_PAN = _attribute_setting(
+    "soundpan", "Sounds from the left or the right", "sound_pan", True,
+    kind=m.BOOLEAN,
+    help=("A world may say where a sound comes from: a door slamming to the "
+          "east is heard on the right. Off plays every sound from the centre, "
+          "for anybody who hears with one ear or listens in mono."),
+    said=_resounding(lambda ctx, value: (
+        "Sounds come from where the world says." if value is None or value
+        else "Every sound plays from the centre.")),
+)
+
+AMBIENCE_VOLUME = _volume_field(
+    "ambience", "Sounds of where you are",
+    "How loud the sounds a place keeps making are -- wind, rain, a crowd, a "
+    "fire -- from 0 for none to 100.")
+
+AMBIENCE_CAPTIONS = _captions_field(
+    "ambience", "ambiencecaptions", "Where you are, written out",
+    "When what you can hear changes -- walking out of the rain, into a "
+    "tavern -- a line says so. Auto writes it only on a connection that is "
+    "not playing sounds. What a place sounds like is always at the end of "
+    "look, and listen asks for it.")
+
+EVENT_CAPTIONS = _captions_field(
+    "event", "eventcaptions", "Sounds written out",
+    "Every sound is also a line of text: what it is, in brackets, under "
+    "what happened. Auto writes it out only on a connection that is not "
+    "playing sounds -- an agent, or a client without them -- so a player "
+    "who can hear it is not told twice.")
+
+
+def _moment_field(moment, key, label, help):
+    """Which sound one menu or parser moment makes, for this player."""
+    from world import assets, sound
+
+    attr = sound.MOMENT_ATTR % moment
+
+    def put(ctx, value):
+        if value is None or value == "":
+            ctx.account.attributes.remove(attr)
+            return f"{label} is the game's own sound again."
+        if value == sound.SILENT:
+            ctx.account.attributes.add(attr, sound.SILENT)
+            return f"{label} makes no sound."
+        chosen = assets.find(value)
+        # A built-in is kept by its name, so that the game shipping a new
+        # version of it carries this choice along.
+        ref = assets.builtin_ref(chosen)
+        if ref == sound.MOMENTS[moment]:
+            ctx.account.attributes.remove(attr)
+        else:
+            ctx.account.attributes.add(attr, ref or value)
+        if ctx.session is not None:
+            sound.preload(ctx.session, [chosen])
+        return f"{label} is now {chosen.name if chosen else value}."
+
+    def show(ctx, stored):
+        if stored == sound.SILENT:
+            return "no sound"
+        found = sound.resolve(sound.ui_sound(ctx.account, moment))
+        name = found.name if found is not None else "the game's own"
+        return name + _default_mark(stored)
+
+    return assets.picker(
+        key, label, "sound",
+        extra=[m.Choice(sound.SILENT, "No sound", keys=("silent", "none"))],
+        get=lambda ctx: ctx.account.attributes.get(attr), set=put,
+        show=show, help=help + " Clear it for the game's own sound.")
+
+
+MOMENT_FIELDS = [
+    _moment_field("open", "menuopen", "A menu opening",
+                  "The sound a menu makes when it opens."),
+    _moment_field("close", "menuclose", "A menu closing",
+                  "The sound a menu makes when it closes, and when you answer "
+                  "no to a question."),
+    _moment_field("select", "menuselect", "Choosing in a menu",
+                  "The sound of choosing something in a menu, and of "
+                  "answering yes."),
+    _moment_field("error", "menuerror", "Not one of the choices",
+                  "The sound a menu makes when what you typed is not one of "
+                  "its choices, or what you chose could not be done."),
+    _moment_field("huh", "huhsound", "Not understood",
+                  "The sound the game makes when it does not understand "
+                  "what you typed as a command."),
+]
+
+
+def _sound_intro(ctx):
+    from world import sound
+
+    if not sound.configured():
+        return ("This server has not been told its own address "
+                "(ASSET_BASE_URL), so it cannot send sounds yet.")
+    speaking = sound.speaks(ctx.session, ctx.account)
+    if speaking == sound.MEDIA:
+        return "This connection plays sounds through GMCP Client.Media."
+    if speaking == sound.MSP:
+        return "This connection plays sounds through MSP."
+    return ("This connection is not playing sounds: either sounds are off, "
+            "or your client has not said it can play them.")
+
+
+SOUND = m.Form(
+    key="sound", title="Sound", intro=_sound_intro,
+    items=[SOUND_ON, SOUND_PROTOCOL, UI_VOLUME, EVENT_VOLUME,
+           AMBIENCE_VOLUME, SOUND_PAN, EVENT_CAPTIONS, AMBIENCE_CAPTIONS]
+    + MOMENT_FIELDS,
+)
+
+
+# ---------------------------------------------------------------------------
 # Confirmations
 # ---------------------------------------------------------------------------
 
@@ -1180,6 +1398,9 @@ GROUPS = [
      _has_account),
     ("confirmations", "Confirmations", ACCOUNT, CONFIRMATIONS_FORM,
      "Whether you are asked yes or no before each thing that asks.",
+     _has_account),
+    ("sound", "Sound", ACCOUNT, SOUND,
+     "Whether you hear sounds, how they are sent, and how loud they are.",
      _has_account),
     ("api", "API key and address", ACCOUNT, API,
      "The key your model calls are paid with, and where they are sent.",

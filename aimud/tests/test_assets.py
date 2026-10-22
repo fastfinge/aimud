@@ -169,7 +169,8 @@ class TheTypes(SimpleTestCase):
 
     def test_no_registered_type_is_code(self):
         for key, found in asset_types.every().items():
-            self.assertNotIn(found.extension, asset_types.NEVER, key)
+            for extension in found.every_extension():
+                self.assertNotIn(extension, asset_types.NEVER, key)
 
     def test_a_type_that_is_code_cannot_be_registered(self):
         class Script(asset_types.AssetType):
@@ -223,6 +224,7 @@ class TheStore(SimpleTestCase):
 @tag("world")
 class WhereItCanBeFetched(_Stored):
 
+    @override_settings(ASSET_BASE_URL="")
     def test_nowhere_until_the_server_knows_its_own_address(self):
         asset, _said = self.add()
         self.assertEqual(assets.public_url(asset), "")
@@ -758,6 +760,60 @@ class CarriedByAWorld(_Carrying):
     def test_a_broken_entry_is_refused_when_the_document_is_checked(self):
         self.assertTrue(assets.entry_problems([{"name": "x", "type": "nope"}]))
         self.assertEqual(assets.entry_problems([self.entry(b"SOUND")]), [])
+
+
+@tag("world")
+class NonCommercialOnesCarriedByAWorld(_Carrying):
+    """A world brings a CC-BY-NC file only to a non-commercial server, and
+    is built either way: the licence is the file's, not the world's."""
+
+    NC = "CC-BY-NC 4.0, https://creativecommons.org/licenses/by-nc/4.0/"
+
+    def nc_entry(self, data):
+        entry = self.entry(data)
+        entry["licence"] = self.NC
+        return entry
+
+    def test_it_is_left_out_unfetched_and_recorded_missing(self):
+        data = b"SOUND rain, non-commercially"
+        self.served["https://elsewhere.example/rain"] = data
+        problems = self.bring(self.nc_entry(data))
+        self.assertIn("left out", problems[0])
+        self.assertIn("non-commercial", problems[0])
+        self.assertEqual(self.fetched, [])
+        self.assertEqual(assets.find(self.entry(data)["hash"]).status,
+                         "missing")
+
+    def test_the_others_in_the_same_world_still_come(self):
+        nc, fine = b"SOUND nc", b"SOUND fine"
+        self.served["https://elsewhere.example/fine"] = fine
+        problems = self.bring(self.nc_entry(nc), self.entry(
+            fine, name="fine", url="https://elsewhere.example/fine"))
+        self.assertEqual(len(problems), 1)
+        self.assertEqual(assets.find(self.entry(fine)["hash"]).status,
+                         "present")
+
+    def test_it_is_not_counted_against_the_quota_it_will_not_use(self):
+        with override_settings(ASSET_QUOTA=10):
+            doc = {"assets": [self.nc_entry(b"SOUND " + b"x" * 100)]}
+            self.assertEqual(assets.room_to_bring(doc, self.account), "")
+
+    def test_nor_is_it_fetched_again(self):
+        data = b"SOUND nc"
+        self.bring(self.nc_entry(data))
+        self.served["https://elsewhere.example/rain"] = data
+        said = []
+        assets.fetch_again(self.account, assets.find(
+            self.entry(data)["hash"]), said.append)
+        self.assertIn("non-commercial", said[0])
+        self.assertEqual(self.fetched, [])
+
+    @override_settings(FREESOUND_NONCOMMERCIAL=True)
+    def test_a_non_commercial_server_brings_it(self):
+        data = b"SOUND rain, non-commercially"
+        self.served["https://elsewhere.example/rain"] = data
+        self.assertEqual(self.bring(self.nc_entry(data)), [])
+        self.assertEqual(assets.search("testsound").get().licence, self.NC)
 
 
 @tag("world")

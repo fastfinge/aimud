@@ -399,6 +399,7 @@ EFFECT_FIELDS = {
     "offer_quest": ("quest", "name_role", "role"),
     "set_goal": ("role", "goal"),
     "call_tool": ("tool", "args", "results"),
+    "play_sound": ("sound", "hearers", "volume", "pan", "direction"),
 }
 
 #: What a form deliberately does not ask for, and why. A gap on the record
@@ -494,7 +495,8 @@ def _asks(field):
 #: `taken_from` is the third: `from` is a Python keyword, so it cannot be a
 #: field name, and a form field called `from` would read as where the thing
 #: goes rather than where it comes out of.
-STORED_AS = {"way": "exit", "where": "location", "taken_from": "from"}
+STORED_AS = {"way": "exit", "where": "location", "taken_from": "from",
+             "hearers": "to"}
 
 #: Fields that hold several things, however few were typed.
 LISTED = frozenset(["add", "remove", "states"])
@@ -551,6 +553,14 @@ def keep_effect(ctx):
         wrong = tool_calls.complaints(effect)
         if wrong:
             raise menus.Refuse("; ".join(wrong).capitalize() + ".")
+    if etype == "play_sound":
+        from world import sound
+
+        chosen = sound.resolve(effect.get("sound"))
+        if chosen is None:
+            raise menus.Refuse("Say which sound it plays.")
+        effect["sound"] = chosen.hash
+        effect.setdefault("to", sound.EVERYONE)
     if etype == "set_goal" and not effect.get("goal"):
         raise menus.Refuse(
             "Say what they are to work towards. A purpose with nothing in it "
@@ -701,6 +711,8 @@ def _field_options(ctx):
                        if "enum" in schema else ""))
              for name, schema in services.outputs(_tool_info(ctx).get("output"))]
     found.append((tool_calls.TEXT, "text -- everything it says, in words"))
+    found.append((tool_calls.FILE, "file -- a sound it sends back, played "
+                                   "to whoever is named"))
     return found
 
 
@@ -822,6 +834,43 @@ def _result_said(ctx, entry):
 
 def _with_tool(ctx):
     return {"tool": ctx.draft.get("tool")}
+
+
+def _hearer_options(ctx):
+    from world import sound
+
+    found = [(value, f"{value} -- {said}")
+             for value, said in sound.HEARERS_SAID.items()]
+    return found + [(value, f"{value} -- {said}")
+                    for value, said in subject_options(ctx)
+                    if value not in NEVER_A_PERSON]
+
+
+def _sound_fields():
+    """What `play_sound` asks: which sound, for whom, how loud, from where."""
+    from world import assets
+
+    return [
+        assets.picker(
+            "sound", "Which sound", "sound", lock=_asks("sound"),
+            help="Any sound this server keeps, by name: |wview assets "
+                 "sound|n lists them, and |wcreate sound|n makes one. Its "
+                 "description is what a player without sound reads."),
+        menus.Picker("hearers", "Who hears it", options=_hearer_options,
+                     lock=_asks("hearers"),
+                     help="Everyone here, whoever acted, everyone else, or "
+                          "one part of what was typed. Left empty, everyone "
+                          "here."),
+        menus.Field("volume", "How loud", kind=menus.NUMBER, minimum=0,
+                    maximum=100, lock=_asks("volume"),
+                    help="0 to 100, before each player's own volume for "
+                         "sounds like this. Left empty, 100."),
+        menus.Field("pan", "From the left or the right", kind=menus.NUMBER,
+                    minimum=-100, maximum=100, lock=_asks("pan"),
+                    help="-100 is all the way left, 100 all the way right, "
+                         "0 the centre. A direction, below, works it out "
+                         "instead."),
+    ]
 
 
 EFFECT_INTRO = ("What a rule actually does. Everything a verb changes it "
@@ -987,8 +1036,14 @@ NEW_EFFECT = menus.Form(
                     help="The name of a way out of this room: north, the "
                          "hatch, down."),
         menus.Field("direction", "Which way", lock=_asks("direction"),
-                    help="north, down, in. The way the new place opens off "
-                         "this one."),
+                    help=lambda ctx: (
+                        "Where the sound comes from: a direction, or a way "
+                        "out of this room. East is heard on the right and "
+                        "west on the left. Leave it for the centre, or say "
+                        "the pan instead."
+                        if str(ctx.draft.get("type") or "") == "play_sound"
+                        else "north, down, in. The way the new place opens "
+                             "off this one.")),
         menus.Field("why", "What the place is", kind=menus.LONG_TEXT,
                     lock=_asks("why"), suggestible=True,
                     help="What is through there and how it came to be, for "
@@ -1032,6 +1087,7 @@ NEW_EFFECT = menus.Form(
             lock=_asks("results"),
             help="What becomes of what comes back. A call whose answer goes "
                  "nowhere is one made only for what it does out there."),
+        *_sound_fields(),
         making.keeper("keep", "Keep this effect", keep_effect),
     ],
 )

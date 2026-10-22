@@ -1220,9 +1220,10 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                     lambda actor_text, event=None: release(actor_text, event),
                     allow_effects, waiter, redirects + 1)
                 return
+        heard = []
         extra = effects_mod.apply(caller, room, aside.get("effects") or [],
                                   bound=bound, world_root=world_root,
-                                  found=found)
+                                  found=found, sounds=heard)
         counters.note(world_root, verb, bound, caller, counters.DONE)
         # What the rule says happens, when its author wrote it out. Without
         # one this phase answers with the rule's *name* -- "the lever is
@@ -1233,7 +1234,7 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         said = str(aside.get("report") or "").strip()
         event = events_mod.Event(
             actor=caller, room=room, verb=verb, roles=bound, raw=raw,
-            effects=list(extra) if said else [],
+            sounds=heard, effects=list(extra) if said else [],
             room_template=(events_mod.repair(said) if said
                            else " ".join(extra).strip()))
         release(events_mod.render(event.room_template, caller, event) if said
@@ -1372,9 +1373,12 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             if (allow_effects is None or e.get("type") in allow_effects)
             and not (allow_effects is not None and _hits_everyone(e))
         ]
+        # What the effects sound like waits for the event, so everybody
+        # hears it after reading what happened. docs/archived/sound.md 5.2.
+        heard = []
         extra = effects_mod.apply(caller, room, allowed, bound=bound,
                                   world_root=world_root, found=found,
-                                  told=told)
+                                  told=told, sounds=heard)
         if speaks:
             # The effects produced the words, and they are an answer to
             # whoever acted rather than an announcement to the room: a look is
@@ -1391,7 +1395,7 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
         event = events_mod.Event(
             actor=caller, room=room, verb=verb, roles=bound,
             outcome=outcome, effects=list(extra), raw=raw,
-            contested=result is not None,
+            contested=result is not None, sounds=heard,
             room_template=events_mod.repair(room_text))
         if written and not actor_text:
             # One sentence, read by everybody in their own words -- which is
@@ -1440,7 +1444,8 @@ def _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
             for later, mine in following:
                 extra += effects_mod.apply(
                     caller, room, later.get("effects") or [],
-                    bound=bound, world_root=world_root, found=mine)
+                    bound=bound, world_root=world_root, found=mine,
+                    sounds=heard)
 
         _remember(caller, event, actor_text)
         # A contested attempt that came out badly is still a thing that

@@ -1,0 +1,342 @@
+{
+  "name": "menu closing",
+  "description": "Three quick electronic chirps, each falling, the last one lower: a menu has closed.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "normalize": -7.3,
+      "trim": false,
+      "layers": [
+        {
+          "type": "group",
+          "at": 0.0,
+          "layers": [
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "367hz",
+              "dur": 0.055,
+              "at": 0.025,
+              "gain": 1.0,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "sweep",
+                  "kind": "bandpass",
+                  "start": 2600.0,
+                  "end": 1800.0,
+                  "q": 6,
+                  "curve": "exp"
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            },
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "367hz",
+              "dur": 0.03,
+              "at": 0,
+              "gain": 1.6,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "bandpass",
+                  "center": 2940.0,
+                  "q": 4
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            },
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "367hz",
+              "dur": 0.03,
+              "at": 0,
+              "gain": 4.0,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "bandpass",
+                  "center": 8800.0,
+                  "q": 3
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "group",
+          "at": 0.0845,
+          "layers": [
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "367hz",
+              "dur": 0.055,
+              "at": 0.025,
+              "gain": 1.0,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "sweep",
+                  "kind": "bandpass",
+                  "start": 2600.0,
+                  "end": 1800.0,
+                  "q": 6,
+                  "curve": "exp"
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            },
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "367hz",
+              "dur": 0.03,
+              "at": 0,
+              "gain": 1.6,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "bandpass",
+                  "center": 2940.0,
+                  "q": 4
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            },
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "367hz",
+              "dur": 0.03,
+              "at": 0,
+              "gain": 4.0,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "bandpass",
+                  "center": 8800.0,
+                  "q": 3
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "group",
+          "at": 0.169,
+          "layers": [
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "309hz",
+              "dur": 0.055,
+              "at": 0.025,
+              "gain": 1.0,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "sweep",
+                  "kind": "bandpass",
+                  "start": 2186.3306796596576,
+                  "end": 1513.613547456686,
+                  "q": 6,
+                  "curve": "exp"
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            },
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "309hz",
+              "dur": 0.03,
+              "at": 0,
+              "gain": 1.6,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "bandpass",
+                  "center": 2472.2354608459204,
+                  "q": 4
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            },
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "309hz",
+              "dur": 0.03,
+              "at": 0,
+              "gain": 4.0,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "bandpass",
+                  "center": 7399.888454232688,
+                  "q": 3
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "sr": 44100,
+      "max_loudness": null
+    }
+  }
+}

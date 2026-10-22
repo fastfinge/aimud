@@ -651,6 +651,29 @@ class DocumentsTravel(WorldTest):
         self.assertEqual(json.loads(first), json.loads(again))
         self.assertTrue(ObjectDB.objects.filter(id=built).exists())
 
+    def test_its_assets_come_with_it_or_are_said_to_be_missing(self):
+        # The same door `import world` uses, so an agent's import brings
+        # what a player's would, and leaves out what a player's would.
+        root = self.world()
+        session = self.standing_in(root)
+        first, _failed = self.tool(session, "export_world", {})
+        doc = json.loads(first)
+        doc["assets"] = [{
+            "name": "a creak", "type": "sound", "hash": "ab" * 32,
+            "size": 10, "url": "https://elsewhere.example/creak.ogg",
+            "description": "A door creaking.", "author": "someone",
+            "licence": "CC-BY-NC 4.0, "
+                       "https://creativecommons.org/licenses/by-nc/4.0/"}]
+        said, failed = self.tool(session, "import_world",
+                                  {"document": json.dumps(doc)})
+        self.assertFalse(failed, said)
+        self.assertIn("is yours", said)
+        self.assertIn("a creak was left out", said)
+
+        from world import assets
+
+        self.assertEqual(assets.find("ab" * 32).status, "missing")
+
     def test_a_document_that_is_not_one_is_refused_whole(self):
         session = self.standing_in(self.world())
         said, failed = self.tool(session, "import_world",

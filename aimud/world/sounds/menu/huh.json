@@ -1,0 +1,32 @@
+{
+  "name": "not understood",
+  "description": "A single short, damped low tom drum hit: the game did not understand what was typed.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "drum",
+          "kind": "tom",
+          "vel": 0.9,
+          "params": {
+            "tune": 110,
+            "decay": 0.14
+          }
+        }
+      ],
+      "sr": 44100,
+      "normalize": -4,
+      "fx": [
+        {
+          "type": "reverb",
+          "mix": 0.08,
+          "size": 0.25
+        }
+      ]
+    }
+  }
+}

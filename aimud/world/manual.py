@@ -100,6 +100,7 @@ What to read next:
   `commands`   the commands that make, change and read things
   `effects`    the closed list of everything a rule may do
   `services`   what this server lets the game reach outside itself for
+  `sound`      what a world sounds like, and making a sound
 """
 
 BUILDING = """
@@ -231,6 +232,60 @@ So the way to make a world do something new is a rule, a kind, a trait or a
 word -- and if what you want cannot be expressed that way, that is worth
 saying plainly rather than working around. The limit is the design.
 """
+
+SOUND = """
+Sounds: what a world sounds like, and how to make one.
+
+**Every sound is also text.** A sound is an asset of type `sound`, and its
+description is what anybody who cannot hear it reads instead -- you included.
+`look` ends with what a place sounds like, `listen` asks for it, and captions
+under what happens say what was heard. With sound off, nothing is missing
+but the noise.
+
+**Where sounds come from in a world.**
+
+* A rule's `play_sound` effect plays one when the rule runs: a verb's
+  `carry_out`, `after` or `instead`, or a `becomes` rule when something
+  becomes true. It says which sound, who hears it (`actor`, `others`,
+  `everyone` or a role), how loud, and the pan, or a direction it comes from.
+* Ambience is a sound something keeps making while anybody is near: a room,
+  its area, a sort of thing (and every sort under it), a condition (whatever
+  is `burning` crackles) or one thing. Set it from the edit form of each:
+  `edit room`, `edit item`, `edit kind <kind>`, `edit condition <name>`.
+  Walking between places, a sound in both carries on.
+
+**Making one with genny.** `create sound genny` opens a form built from
+genny's own catalog: a sound effect, an instrument playing notes, a drum, a
+voice, or effects on a sound already here, each with its parameters. Try it
+to hear it before keeping it. `sound_catalog` lists what genny has. A whole
+spec can be typed instead, as JSON:
+
+    {"layers": [{"type": "sfx", "kind": "wind", "params": {"dur": 4}}],
+     "fx": [{"type": "lowpass", "cutoff": 1500}],
+     "loop": true, "duration": 4}
+
+Layer types: synth, seq, drum, pattern, sfx, speech, file, silence, group. A
+`file` layer names a sound this server keeps by its id, never a path. A spec
+may be at most 30 seconds (60 for a loop), with at most 32 layers; it is
+refused, with what was wrong, before anything is made. The same spec gives
+back the sound it made before, for nothing.
+
+**Finding one on Freesound.** Where the server has a Freesound key, `create
+sound freesound <words>` searches freesound.org and lists what it finds, each
+with its length, its recordist and its licence. Choose one to hear it, give
+it a name and a description of what it sounds like, and keep it. Only CC0
+and CC-BY sounds are offered, and CC-BY-NC as well on a server whose owner
+says it is non-commercial; each kept sound carries who to credit, in its
+author and licence, into every world that uses it. Importing a world onto a
+server that does not take CC-BY-NC builds the world and leaves only those
+sounds out, recorded as missing.
+
+**Choosing one.** `list_assets` with type `sound` gives every sound's id and
+description; `show_asset` measures one -- how long, how loud, how sharp -- so
+a sound can be chosen by somebody who has never heard it. Name a sound by
+its id in a rule or an ambience list.
+"""
+
 
 TESTING = """
 What you are unusually good at here, and the reason this connection exists.
@@ -457,6 +512,7 @@ PAGES = {
     "effects": ("Everything a rule may do", _effects_page),
     "services": ("What this server may reach outside the game for",
                  _services_page),
+    "sound": ("Sounds: what a world sounds like, and making them", SOUND),
 }
 
 

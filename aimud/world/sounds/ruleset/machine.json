@@ -1,0 +1,32 @@
+{
+  "name": "a machine running",
+  "description": "The low, even hum of a machine running.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "engine",
+          "params": {
+            "rpm": 60,
+            "dur": 8
+          }
+        }
+      ],
+      "fx": [
+        {
+          "type": "lowpass",
+          "cutoff": 1500
+        }
+      ],
+      "duration": 8,
+      "loop": 0.5,
+      "normalize": -10,
+      "sr": 44100
+    }
+  }
+}

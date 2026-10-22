@@ -681,7 +681,7 @@ def _apply(world_root, doc, decided):
         if not hasattr(entry, "keys") or "state" not in entry:
             continue
         entry = dict(entry)
-        verbs.register_state(
+        settled = verbs.register_state(
             world_root, str(entry.get("state") or ""),
             means=str(entry.get("means") or ""),
             conflicts=entry.get("conflicts") or (),
@@ -689,14 +689,31 @@ def _apply(world_root, doc, decided):
             when=entry.get("when"),
             bonuses=entry.get("bonuses"),
             of=entry.get("of"))
+        # What anything in it sounds like. docs/archived/sound.md 6.1.
+        if settled and entry.get("ambience"):
+            from world import sound
+
+            sound.write_state_ambience(world_root, settled,
+                                       entry.get("ambience"))
 
     for entry in doc.get("kinds") or []:
         if not hasattr(entry, "keys"):
             continue
-        kinds.remember(world_root, str(entry.get("kind") or ""),
-                       entry.get("affordances") or {},
-                       accepts=entry.get("accepts") or (),
-                       under=str(entry.get("under") or ""))
+        # A kind named only to say what it sounds like is not settled by
+        # that: settling is first-one-wins, and a sound ruleset deciding
+        # what a forest affords would decide it for good.
+        # docs/archived/sound.md 10.
+        if any(field in entry for field in ("affordances", "accepts",
+                                            "under")):
+            kinds.remember(world_root, str(entry.get("kind") or ""),
+                           entry.get("affordances") or {},
+                           accepts=entry.get("accepts") or (),
+                           under=str(entry.get("under") or ""))
+        if entry.get("ambience"):
+            from world import sound
+
+            sound.write_kind_ambience(world_root, str(entry.get("kind") or ""),
+                                      entry.get("ambience"))
 
     # A word list may name another, so they are declared together and
     # `register_many` checks the references and the productivity of all of

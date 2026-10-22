@@ -17,6 +17,9 @@ So there are pools, each sized for what it does:
 * **memory** -- writing memories, in the background. Each world's writes are
   drained in order by one worker at a time (`world.memory`), so this only
   needs as many threads as worlds busy at once: `MEMORY_THREADS`.
+* **sound** -- genny renders, each a separate process this thread waits on
+  (`world.sound_gen`). The processes are what use the machine, so few:
+  `SOUND_RENDER_THREADS`.
 
 Asset downloads and anything else still on `deferToThread` use Twisted's own
 pool, which nothing here crowds any more.
@@ -33,8 +36,9 @@ from twisted.internet import reactor, threads
 from twisted.python.threadpool import ThreadPool
 
 #: Defaults, when settings say nothing.
-SIZES = {"model": 16, "memory": 4}
-SETTINGS = {"model": "MODEL_CALL_THREADS", "memory": "MEMORY_THREADS"}
+SIZES = {"model": 16, "memory": 4, "sound": 2}
+SETTINGS = {"model": "MODEL_CALL_THREADS", "memory": "MEMORY_THREADS",
+            "sound": "SOUND_RENDER_THREADS"}
 
 _pools = {}
 _making = threading.Lock()

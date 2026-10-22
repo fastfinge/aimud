@@ -42,10 +42,16 @@ class Asset(models.Model):
 
     UPLOAD, URL, IMPORT, TOOL = "upload", "url", "import", "tool"
     EXPORT, FOLDER = "export", "folder"
+    #: Shipped with the game (docs/archived/sound.md 4.3), and a copy made from
+    #: another asset, such as a sound panned left (docs/archived/sound.md 3.4).
+    #: Neither is anybody's, and neither is the pool's to evict.
+    BUILTIN, DERIVED = "builtin", "derived"
     ORIGINS = [(UPLOAD, "uploaded"), (URL, "fetched from a URL"),
                (IMPORT, "came with an imported world"), (TOOL, "made by a tool"),
                (EXPORT, "exported from a world here"),
-               (FOLDER, "put in the shared folder by hand")]
+               (FOLDER, "put in the shared folder by hand"),
+               (BUILTIN, "shipped with the game"),
+               (DERIVED, "made from another asset")]
     origin = models.CharField(max_length=16, choices=ORIGINS)
     #: Where it was fetched from, if anywhere: for fetching again.
     source = models.TextField(blank=True, default="")

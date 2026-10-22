@@ -1,0 +1,166 @@
+{
+  "name": "menu error",
+  "description": "Two harsh falling electronic buzzes: that was not one of the choices.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "normalize": -0.6,
+      "trim": false,
+      "layers": [
+        {
+          "type": "group",
+          "at": 0,
+          "layers": [
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "340hz",
+              "dur": 0.108,
+              "at": 0,
+              "gain": 1.0,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "sweep",
+                  "kind": "bandpass",
+                  "start": 4300,
+                  "end": 1600,
+                  "q": 4,
+                  "curve": "exp"
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            },
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "340hz",
+              "dur": 0.108,
+              "at": 0,
+              "gain": 0.5,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 5000
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "group",
+          "at": 0.112,
+          "layers": [
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "340hz",
+              "dur": 0.108,
+              "at": 0,
+              "gain": 1.0,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "sweep",
+                  "kind": "bandpass",
+                  "start": 4300,
+                  "end": 1600,
+                  "q": 4,
+                  "curve": "exp"
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            },
+            {
+              "type": "synth",
+              "inst": "synth",
+              "notes": "340hz",
+              "dur": 0.108,
+              "at": 0,
+              "gain": 0.5,
+              "params": {
+                "wave": "saw",
+                "width": 0.5,
+                "attack": 0.004,
+                "decay": 0.04,
+                "sustain": 0.85,
+                "release": 0.008,
+                "cutoff": 16000,
+                "res": 0.2
+              },
+              "fx": [
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 5000
+                },
+                {
+                  "type": "highpass",
+                  "cutoff": 900
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "sr": 44100,
+      "max_loudness": null
+    }
+  }
+}

@@ -99,3 +99,63 @@ def mcp_tool(session, ticket="", name="", args=None, **kwargs):
         answer = "Something went wrong running that tool.", True
     if answer is not None:
         reply(*answer)
+
+
+# ---------------------------------------------------------------------------
+# GMCP Core.Supports: what a client says it can do. docs/archived/sound.md 3.2
+# ---------------------------------------------------------------------------
+#
+# Mudlet, and the clients that copied it, list the GMCP packages they handle
+# as `Core.Supports.Set ["Char 1", "Client.Media 1", ...]`. Evennia maps that
+# to its `client_options`, which reads keyword arguments only, so a plain list
+# -- which is what every client sends -- told it nothing and got the session's
+# options sent back. These read the list for the one package this game acts
+# on, Client.Media, and hand anything else on as Evennia always did.
+
+#: The protocol flag `world/sound.py` reads.
+CLIENT_MEDIA = "CLIENT_MEDIA"
+
+
+def _packages(args):
+    """The package names in a Core.Supports list, without their versions."""
+    found = set()
+    for arg in args:
+        for each in (arg if isinstance(arg, (list, tuple)) else [arg]):
+            name = str(each or "").split()
+            if name:
+                found.add(name[0].lower())
+    return found
+
+
+def _set_flag(session, value):
+    was = session.protocol_flags.get(CLIENT_MEDIA)
+    session.protocol_flags[CLIENT_MEDIA] = value
+    session.sessionhandler.session_portal_partial_sync(
+        {session.sessid: {"protocol_flags": {CLIENT_MEDIA: value}}})
+    if value and not was and session.logged_in:
+        # Said after logging in rather than before: fetch the menu sounds
+        # now, as logging in would have.
+        from world import sound
+
+        sound.preload(session, sound.ui_sounds(session.account))
+
+
+def supports_set(session, *args, **kwargs):
+    """Core.Supports.Set: everything the client handles, replacing the last."""
+    from evennia.server.inputfuncs import client_options
+
+    _set_flag(session, "client.media" in _packages(args))
+    if kwargs:
+        client_options(session, **kwargs)
+
+
+def supports_add(session, *args, **kwargs):
+    """Core.Supports.Add: more the client handles."""
+    if "client.media" in _packages(args):
+        _set_flag(session, True)
+
+
+def supports_remove(session, *args, **kwargs):
+    """Core.Supports.Remove: what the client has stopped handling."""
+    if "client.media" in _packages(args):
+        _set_flag(session, False)

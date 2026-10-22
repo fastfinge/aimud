@@ -7,8 +7,12 @@ These are plans for things I want to do later maybe. They range from good ideas 
     * post to fediverse accounts from aimud?
     * our characters can be fediverse actors?
 * new action: rules can show player a menu with options to pick and get returned the result chosen
-* MSP (mud sound protocol) allowing associating sounds with actions or room kinds/traits, perhaps generating sounds with
- elevenlabs, or letting world creators provide sounds by url? Needs to intigrate with the webserver so clients supporting MSP can get the sounds. Search and use sounds from freesound.org?
+* what is left of sound (docs/archived/sound.md, built): hearing through walls -- a sound next door, quieter and
+muffled with genny's `muffle`, which needs a decision about how far sound carries; music, whose category and volume
+setting are reserved; footsteps on moving, which is a command rather than an attempt and so no rule hears it; the
+room and item generators writing ambience for what they make (`make_sound` exists, and only the rule loop is offered
+it); and a paid generator like ElevenLabs, which needs nothing but a service, since a tool's sound file
+already becomes a played asset (`sound:` results in `tool_calls`).
 * gmcp/msdp: sending all the data we have via OOB protocols to mud clients in a standard machine-readable format, so
 they can use mappers, create health gages, etc.
 * mccp (mud client compression protocol): to save bandwidth for hosted worlds.
@@ -31,14 +35,9 @@ shares a world will want to see what visitors spent, and perhaps a cap.
 * do something interesting with the web interface. Web editor? Examine stats in the browser? Prettier looking interface
 for playing in browser? Ability to read help files and documentation online, with hyperlinks?
 * let characters use Evennia's built-in discord/IRC support so characters can reach out of their world
-* what is left of assets (docs/archived/assets.md, built): the pieces that wait for a system that uses an asset.
-A `call_tool` result that is a file (`services.Answer.files`) becomes an asset through `assets.from_tool`, with
-`assets.made_before` so the same request is never paid for twice -- but nothing in a rule can hold an asset's id yet,
-so wiring it into `tool_calls` waits for the first type with a consumer (MSP's "play this sound"). The same goes for
-`assets.picker`, a `menus.Picker` over one type, which wants a form to sit in. Then: Freesound search (`find sound
-rain`), whose results arrive with author and licence already recorded; and offering a vision model (`~`, paid,
-never automatic) to describe an uploaded or generated image, because a description is all a screen reader user or
-a model ever has of one.
+* what is left of assets (docs/archived/assets.md, built): offering a vision model (`~`, paid, never automatic) to
+describe an uploaded or generated image, once there is an image type, because a description is all a screen reader
+user or a model ever has of one. Tool results that are files and `assets.picker` were built with sound.
 * affect plugins: let players write Python code that can be added to worlds as unique affects the other systems can use,
  expanding the hardcoded menu. Let them share plugins with other aimud owners. All the hardcoded lists and vocabularies
 should be extendable via plugin, so worlds can become unique in ways our models can't make them. Installing or enabling a plugin should require admin on the mud, plus access to the machine outside of the mud. Nobody just feeds the mud Python and has it run, not even admins. They have to put the files in the correct directory first. When there is a plugin surface,

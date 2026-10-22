@@ -1,0 +1,58 @@
+{
+  "name": "waves on a shore",
+  "description": "Waves rolling in and drawing back over sand.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "noise",
+          "params": {
+            "dur": 8,
+            "color": "brown"
+          },
+          "fx": [
+            {
+              "type": "lowpass",
+              "cutoff": 1200
+            },
+            {
+              "type": "tremolo",
+              "rate": 0.25,
+              "depth": 0.8
+            }
+          ]
+        },
+        {
+          "type": "sfx",
+          "kind": "noise",
+          "params": {
+            "dur": 8,
+            "color": "pink"
+          },
+          "gain": 0.2,
+          "fx": [
+            {
+              "type": "highpass",
+              "cutoff": 2000
+            },
+            {
+              "type": "tremolo",
+              "rate": 0.25,
+              "depth": 0.9
+            }
+          ]
+        }
+      ],
+      "fx": [],
+      "duration": 8,
+      "loop": 0.5,
+      "normalize": -10,
+      "sr": 44100
+    }
+  }
+}

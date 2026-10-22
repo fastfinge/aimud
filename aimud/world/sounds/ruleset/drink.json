@@ -1,0 +1,49 @@
+{
+  "name": "drinking",
+  "description": "A few gulps of something being drunk.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "bubble",
+          "params": {
+            "freq": 300
+          },
+          "at": 0,
+          "gain": 0.8
+        },
+        {
+          "type": "sfx",
+          "kind": "bubble",
+          "params": {
+            "freq": 300
+          },
+          "at": 0.25,
+          "gain": 0.8
+        },
+        {
+          "type": "sfx",
+          "kind": "bubble",
+          "params": {
+            "freq": 300
+          },
+          "at": 0.5,
+          "gain": 0.8
+        }
+      ],
+      "fx": [
+        {
+          "type": "lowpass",
+          "cutoff": 2000
+        }
+      ],
+      "normalize": -9,
+      "sr": 44100
+    }
+  }
+}

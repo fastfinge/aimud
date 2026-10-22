@@ -442,19 +442,42 @@ def _import_handler(ctx, args, answer):
     if account is None:
         answer(tb.complain("Only an account can hold a world."))
         return
-    try:
-        root = exchange.build(doc, account, ctx.actor)
-    except exchange.Refused as refusal:
-        answer(tb.complain(
-            "\n".join(str(said) for said in refusal.complaints[:10])))
-        return
-    from commands.world_subject import resolve_worlds
+    from world import assets
 
-    number = len(resolve_worlds(account))
-    answer(f"{lore.title(root)} is yours, "
-           f"{len(exchange.rooms_of(root))} room(s). "
-           f"`enter world {number}` goes there. Its text reaches your model "
-           f"on your key when you play it.")
+    # Checked before anything is fetched: a document that will be refused
+    # should not cost a download. Then its assets come with it, as they do
+    # for `import world` -- on this account's quota, and anything that
+    # cannot be brought recorded missing rather than stopping the build.
+    wrong = exchange.problems(doc)
+    if wrong:
+        answer(tb.complain("\n".join(str(said) for said in wrong[:10])))
+        return
+    no_room = assets.room_to_bring(doc, account)
+    if no_room:
+        answer(tb.complain(f"that world was not built: {no_room}"))
+        return
+
+    def build(problems):
+        try:
+            root = exchange.build(doc, account, ctx.actor)
+        except exchange.Refused as refusal:
+            answer(tb.complain(
+                "\n".join(str(said) for said in refusal.complaints[:10])))
+            return
+        from commands.world_subject import resolve_worlds
+
+        number = len(resolve_worlds(account))
+        said = (f"{lore.title(root)} is yours, "
+                f"{len(exchange.rooms_of(root))} room(s). "
+                f"`enter world {number}` goes there. Its text reaches your "
+                f"model on your key when you play it.")
+        if problems:
+            said += (f"\n{len(problems)} of its assets are missing: "
+                     + "; ".join(problems[:5])
+                     + ". `view assets missing` lists them.")
+        answer(said)
+
+    assets.bring_in(doc, account, build)
 
 
 def _account_of(ctx):

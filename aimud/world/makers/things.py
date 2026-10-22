@@ -18,6 +18,7 @@ guards a rule's.
 
 from commands.subjects import reachable
 from world import making, menus
+from world.makers import sounding
 
 # ---------------------------------------------------------------------------
 # Shared
@@ -358,6 +359,7 @@ _EDIT_THING = menus.Form(
         menus.Submenu("worth", _worth_label, _WORTH,
                       help="What it does for whoever has it, and when that "
                            "counts."),
+        sounding.submenu(sounding.of_object(lambda ctx: _target(ctx))),
     ],
 )
 
@@ -608,6 +610,18 @@ EDIT_ROOM = menus.Form(
                       help="What being in this place does to whoever is in "
                            "it. A forge is warm whether or not anything in "
                            "it is."),
+        sounding.submenu(
+            sounding.of_object(lambda ctx: _here(ctx)),
+            label="What this place sounds like",
+            help="Sounds this room keeps making. A room that says what it "
+                 "sounds like means exactly that: its area's sounds and its "
+                 "kind's are not heard here as well."),
+        sounding.submenu(
+            sounding.of_zone(lambda ctx: _here(ctx)),
+            label="What this whole area sounds like",
+            help="Sounds every room of this area makes, unless a room says "
+                 "otherwise. Walking between rooms of one area, they carry "
+                 "on rather than starting again."),
     ],
 )
 
@@ -929,6 +943,8 @@ EDIT_PERSON = menus.Form(
                       set=_set_states,
                       parse=lambda ctx, text: _read_words(text),
                       show=lambda ctx, value: ", ".join(value or []) or "none"),
+        sounding.submenu(sounding.of_object(lambda ctx: _target(ctx)),
+                         label="What they sound like"),
     ],
 )
 

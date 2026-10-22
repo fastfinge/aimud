@@ -1,0 +1,31 @@
+{
+  "name": "wind across open ground",
+  "description": "A steady wind across open ground, rising and falling.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "wind",
+          "params": {
+            "dur": 8
+          }
+        }
+      ],
+      "fx": [
+        {
+          "type": "lowpass",
+          "cutoff": 2500
+        }
+      ],
+      "duration": 8,
+      "loop": 0.5,
+      "normalize": -10,
+      "sr": 44100
+    }
+  }
+}

@@ -280,6 +280,26 @@ def validate(reply, offered, action, world_root=None):
                 "cannot carry, so write what the verb itself does and leave "
                 "setting anybody to work to a rule written by hand")
             continue
+        # A sound is chosen from what this server keeps, never named into
+        # being: a model writing a rule looks one up with list_assets, and
+        # one it imagined plays nothing for ever. docs/archived/sound.md 5.2.
+        from world import sound
+
+        unheard = [e for e in effects
+                   if str(e.get("type") or "") == "play_sound"
+                   and getattr(sound.resolve(e.get("sound")), "type",
+                               "") != "sound"]
+        if unheard:
+            complaints.append(
+                "a play_sound naming no sound this server keeps -- give the "
+                "id list_assets returns for one of type sound, or leave the "
+                "sound out")
+            continue
+        for e in effects:
+            if str(e.get("type") or "") == "play_sound":
+                # Kept by its whole hash, so a later asset sharing the id's
+                # first characters cannot change what this rule plays.
+                e["sound"] = sound.resolve(e.get("sound")).hash
         # A call to a service is held to what a person's is, less one thing:
         # a model may not have it ask, because a rule it writes is used by
         # characters and the planner, who cannot always be asked. What the
@@ -677,6 +697,33 @@ did name a thing, and powering a datapad would power the ship instead.
 """
 
 
+def _sounds_said(sponsor):
+    """
+    What the rule loop is told about sounds: how to play one this server
+    keeps, and how to make one only where the world permits it. Nothing on a
+    server with no sounds.
+    """
+    from world import assets
+
+    if not assets.search("sound").exists():
+        return ""
+    said = """
+"play_sound" plays a sound when the rule runs, heard by whoever "to" names
+("everyone", "others", "actor" or a role); its "sound" is an id list_assets
+gives for a sound. Only for a verb whose sound matters, and only a sound
+whose description fits.
+  {"type": "play_sound", "sound": "<id>", "to": "everyone"}"""
+    try:
+        making = sponsor is not None and sponsor.will("sounds")
+    except Exception:
+        making = False
+    if making:
+        said += """
+When none fits, make_sound makes one with genny (sound_catalog says what it
+has), and answers with its id."""
+    return said + "\n"
+
+
 def _tools_said():
     """
     What the rule loop is told about calling a service, when there is one.
@@ -809,16 +856,20 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
                  if rule.get("action") == action] if world_root else []
 
     system = _SYSTEM.replace("{conditions}", _CONDITIONS) \
-                    .replace("{effects}", _EFFECTS + _tools_said())
+                    .replace("{effects}", _EFFECTS + _tools_said()
+                             + _sounds_said(sponsor))
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": prompt(
             world_root, action, bound, actor, offered,
             hints(world_root, action, bound, proposals))},
     ]
+    from world import sound_gen
+
     box = tb.Toolbox(
         [rules_tool(action, offered, proposals)]
-        + lookups.named(*(LOOKUPS + TOOL_LOOKUPS)),
+        + lookups.named(*(LOOKUPS + TOOL_LOOKUPS + SOUND_LOOKUPS))
+        + [sound_gen.make_sound_tool()],
         tb.ToolContext(world_root=world_root,
                        room=getattr(actor, "location", None), actor=actor,
                        bound=bound, sponsor=sponsor, job="commands"))
@@ -1018,6 +1069,10 @@ LOOKUPS = ("list_states", "show_state", "list_state_groups", "list_traits",
 #: and not to a character's conversation: a tool reaches a world through a
 #: rule, and this is where rules are written. docs/archived/mcp-client.md §6, §7.6.
 TOOL_LOOKUPS = ("list_tools", "show_tool")
+
+#: The lookups for choosing a sound, offered to the rule loop with
+#: `make_sound`, which is offered only where the world permits sounds.
+SOUND_LOOKUPS = ("list_assets", "sound_catalog")
 
 #: The most wants shown as hints in one call (§5.1).
 MOST_WANTS = 3

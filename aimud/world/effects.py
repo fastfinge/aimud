@@ -174,7 +174,7 @@ def _protected(obj, room):
 
 
 def apply(actor, room, effects, bound=None, world_root=None, found=None,
-          told=None):
+          told=None, sounds=None):
     """
     Apply a list of effect dicts. Main thread only.
 
@@ -193,6 +193,9 @@ def apply(actor, room, effects, bound=None, world_root=None, found=None,
     used the verb to find out -- for the caller to add to what the actor
     reads. Never the room's: see `world/tool_calls.py` `_tell`. Left None, it
     is sent to them directly.
+
+    `sounds` collects what a `play_sound` plays, for the caller's `Event` to
+    carry (docs/archived/sound.md 5.2). Left None, they are played at once.
     """
     bound = bound or {}
     found = {} if found is None else found
@@ -200,9 +203,13 @@ def apply(actor, room, effects, bound=None, world_root=None, found=None,
 
     # Whatever these change was brought about by whoever is acting, unless a
     # cause is already being carried -- a becomes rule's own, down a chain.
-    from world import becoming
+    from world import becoming, sound
 
-    with becoming.caused_by(actor):
+    # The sounds these effects make. With a list from the caller they wait
+    # for the event the caller is about to deliver, so each listener hears
+    # one after reading what happened; with none they are heard now.
+    with (sound.gathering(sounds, actor=actor, room=room, roles=bound),
+          becoming.caused_by(actor)):
         for effect in effects or []:
             from world import tool_calls
 
@@ -626,6 +633,16 @@ VOCABULARY = {
         "fields": ("quest", "name_role", "role"),
         "backwards": False, "answers": False,
     },
+    "play_sound": {
+        "means": "plays a sound to whoever is there to hear it",
+        "takes": 'sound, to: "actor" | "others" | "everyone" | <role>, '
+                 "volume, pan | direction",
+        "fields": ("sound", "to", "volume", "pan", "direction"),
+        # Not backwards: a sound changes nothing a character could aim at,
+        # and nobody's purpose is ever to have heard a door. Whatever else
+        # the same rule does is read as usual. See docs/archived/sound.md 5.
+        "backwards": False, "answers": False,
+    },
     "call_tool": {
         "means": "asks a service outside the game something, or has it do "
                  "something, and puts what comes back into the world or "
@@ -822,6 +839,16 @@ def say(effect):
 
         return tool_calls.say(effect)
 
+    if etype == "play_sound":
+        from world import sound
+
+        found = sound.resolve(effect.get("sound"))
+        named = found.name if found is not None else "a sound that is missing"
+        who = sound.HEARERS_SAID.get(str(effect.get("to") or "everyone"))
+        if who is None:
+            who = _role_words({"role": effect.get("to")})
+        return f"plays {named} to {who}"
+
     return f"does something this game calls {etype or 'nothing'}"
 
 
@@ -993,6 +1020,14 @@ def _apply_one(actor, room, effect, bound, world_root, found=None):
         except Exception as exc:
             logger.log_info(f"at_desc failed on {obj}: {exc}")
         return said
+
+    if etype == "play_sound":
+        # Heard, never written: the sound is the event's, and the listener's
+        # own settings say whether it also arrives as a caption.
+        from world import sound
+
+        sound.add_effect(effect, actor=actor, room=room, roles=bound)
+        return None
 
     if etype == "narrate":
         # A verb whose whole result is that it was seen: smiling, humming,
@@ -1370,7 +1405,9 @@ def schema(ctx=None):
                                   "'room', a participant or a room's name; "
                                   "set_owner: 'actor', a participant or "
                                   "'nobody'; set_exit, move_actor: a room's "
-                                  "name"},
+                                  "name; play_sound: who hears it -- "
+                                  "'actor', 'others', 'everyone' or a "
+                                  "participant"},
             "preposition": {"type": "string",
                             "enum": list(relations.PREPOSITIONS),
                             "description": "move_object, move_contents to a "
@@ -1382,6 +1419,16 @@ def schema(ctx=None):
                                     "for everything it holds"},
             "exit": {"type": "string",
                      "description": "set_exit, move_actor: which way out"},
+            "sound": {"type": "string",
+                      "description": "play_sound: which sound, by the id "
+                                     "list_assets gives for one of type "
+                                     "sound"},
+            "volume": {"type": "number",
+                       "description": "play_sound: how loud, 0 to 100; "
+                                      "100 if left out"},
+            "pan": {"type": "number",
+                    "description": "play_sound: from the left (-100) to the "
+                                   "right (100); 0, the centre, if left out"},
             "new_name": {"type": "string",
                          "description": "modify_object, modify_room: what "
                                         "it is called from now on"},

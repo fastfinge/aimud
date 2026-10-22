@@ -40,8 +40,16 @@ class Room(ObjectParent, DefaultRoom):
 
         root = getattr(self.db, "world_root", None)
         if root is None or conditions.sees(looker, self, root):
-            return super().return_appearance(looker, **kwargs)
-        return conditions.darkness(looker, self, root)
+            seen = super().return_appearance(looker, **kwargs)
+        else:
+            seen = conditions.darkness(looker, self, root)
+        # And what it sounds like, for everybody, with sound or without: a
+        # world written for the ear stays fair to anybody reading it, and
+        # darkness hides nothing you can hear. docs/archived/sound.md 6.5.
+        from world import sound
+
+        heard = sound.heard_here(looker, self)
+        return f"{seen}\n{heard}" if heard and seen else (seen or heard)
 
     def filter_visible(self, objects, looker, **kwargs):
         """

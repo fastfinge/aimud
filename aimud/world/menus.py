@@ -1348,7 +1348,7 @@ class GameMenu(EvMenu):
             elif frame.kind == "proposal":
                 self._proposal_input(frame, text)
         except Refuse as refusal:
-            self.say(str(refusal))
+            self._refuse(str(refusal))
         except Exception:
             self._let_go()
 
@@ -1772,7 +1772,7 @@ class GameMenu(EvMenu):
         try:
             said = action.run(ctx)
         except Refuse as refusal:
-            return self.say(str(refusal))
+            return self._refuse(str(refusal))
         if isinstance(said, Picked):
             answered = self._answer(frame, said, action)
             if answered is not _NOBODY_WAITING:

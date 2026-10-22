@@ -797,6 +797,10 @@ def apply_states(world_root, zone_id, add=(), remove=()):
         current.add(settled)
     zones[zone_id]["states"] = sorted(current)
     world_root.db.zones = zones
+    # Rain on the whole moor is heard in every room of it.
+    from world import sound
+
+    sound.refresh_world(world_root)
     return set(zones[zone_id]["states"])
 
 

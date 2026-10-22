@@ -1,0 +1,43 @@
+{
+  "name": "a fire burning",
+  "description": "A fire crackling and popping, with a low roar under it.",
+  "author": "aimud, made with genny (github.com/ogomez92/genny)",
+  "licence": "BSD-3-Clause, as aimud",
+  "made_with": {
+    "tool": "genny",
+    "commit": "54f409e",
+    "spec": {
+      "layers": [
+        {
+          "type": "sfx",
+          "kind": "vinyl",
+          "params": {
+            "dur": 8,
+            "crackle": 25,
+            "hiss": 0.1
+          }
+        },
+        {
+          "type": "sfx",
+          "kind": "noise",
+          "params": {
+            "dur": 8,
+            "color": "brown"
+          },
+          "gain": 0.5,
+          "fx": [
+            {
+              "type": "lowpass",
+              "cutoff": 400
+            }
+          ]
+        }
+      ],
+      "fx": [],
+      "duration": 8,
+      "loop": 0.5,
+      "normalize": -10,
+      "sr": 44100
+    }
+  }
+}

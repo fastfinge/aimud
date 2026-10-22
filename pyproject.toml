@@ -8,7 +8,12 @@ dependencies = [
     "drawbridge==0.1.2",
     "evennia>=6.1.0",
     "fastmcp>=4.0.11",
+    "genny",
     "mcp>=2.1.1",
     "mnemosyne-memory[all]>=3.15.1",
     "nltk>=3.10.3",
+    "soundfile>=0.14.0",
 ]
+
+[tool.uv.sources]
+genny = { git = "https://github.com/ogomez92/genny", rev = "54f409e6292119ad8a87212fc4409ecc1cdb1797" }

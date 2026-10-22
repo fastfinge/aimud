@@ -96,6 +96,36 @@ ASSET_STORE = "world.asset_store.LocalStore"
 # Until it is set, exports name their assets by hash alone.
 ASSET_BASE_URL = ""
 
+# Telnet that also offers MSP, the MUD Sound Protocol, which Evennia does not
+# speak by itself. Telnet over TLS builds on this class, so it offers MSP
+# too. A client that declines is never sent a line of it. See
+# server/conf/telnet_msp.py and docs/archived/sound.md.
+TELNET_PROTOCOL_CLASS = "server.conf.telnet_msp.MspTelnetProtocol"
+
+# Making sounds with genny, which a spec must fit before anything is rendered,
+# and how many renders may run at once. Each render is a process of its own,
+# stopped if it runs over. See world/sound_gen.py and docs/archived/sound.md.
+SOUND_MOST_SECONDS = 30
+SOUND_MOST_LOOP_SECONDS = 60
+SOUND_MOST_LAYERS = 32
+SOUND_MOST_REPEATS = 64
+SOUND_RENDER_SECONDS = 20
+SOUND_RENDER_THREADS = 2
+
+# Freesound, which `create sound freesound` searches. Its API key is the
+# client secret Freesound gives an application, and belongs in
+# secret_settings.py; until it is set, Freesound is not offered. The client
+# id is only for signing players in to Freesound, which nothing here needs.
+# See world/freesound.py.
+FREESOUND_CLIENT_ID = ""
+FREESOUND_CLIENT_SECRET = ""
+
+# Whether this server makes no money from anybody, so that sounds Freesound
+# shares only for non-commercial use (CC-BY-NC) may be kept here too. Say so
+# only if it is true: a sound kept under it stays in every world that uses
+# it, and goes with every world exported from here.
+FREESOUND_NONCOMMERCIAL = False
+
 # Threads for model calls, which spend nearly all their time waiting on the
 # network: this many may be waiting at once, across every world on the
 # server. They have a pool of their own, so memory writes and downloads never
