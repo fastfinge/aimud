@@ -398,6 +398,38 @@ class MostSpecificFirst(GameTest):
         R.add(self.root, R.blank(action="power", name="second"))
         self.assertEqual(self.order(), ["first", "second"])
 
+    def test_but_the_worlds_own_rule_beats_a_rulesets(self):
+        """
+        A ruleset is seeded when the world is made, so it is always older,
+        and a world that gave a social a real meaning at the same scope
+        would otherwise never see its own rule fire.
+        """
+        R.add(self.root, R.blank(action="power", name="the ruleset's",
+                                 source="ruleset:socials"))
+        R.add(self.root, R.blank(action="power", name="the world's"))
+        self.assertEqual(self.order(), ["the world's", "the ruleset's"])
+
+    def test_and_view_faults_agrees_which_is_dead(self):
+        from world import rulecheck
+
+        R.add(self.root, R.blank(action="power", phase=R.CARRY_OUT,
+                                 name="the ruleset's",
+                                 source="ruleset:socials",
+                                 effects=[{"type": "narrate"}]))
+        R.add(self.root, R.blank(action="power", phase=R.CARRY_OUT,
+                                 name="the world's",
+                                 effects=[{"type": "narrate"}]))
+        dead = [loser["name"] for loser, _winner in rulecheck.shadowed(
+            {r["id"]: r for r in R.all_rules(self.root)}, self.root)]
+        self.assertEqual(dead, ["the ruleset's"])
+
+    def test_a_guard_still_outranks_whose_it_is(self):
+        R.add(self.root, R.blank(
+            action="power", name="the ruleset's", source="ruleset:socials",
+            when=[{"subject": "direct", "lacks": ["burning"]}]))
+        R.add(self.root, R.blank(action="power", name="the world's"))
+        self.assertEqual(self.order(), ["the ruleset's", "the world's"])
+
     def test_nothing_ever_actually_ties(self):
         """
         The id is last in the key, so two rules alike in every other way are

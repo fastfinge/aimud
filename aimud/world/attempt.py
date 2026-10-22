@@ -917,11 +917,12 @@ def _admitted(caller, room, sponsor, raw, verb, bound, rule, release,
     """
     from world import actions, kinds
 
-    if verb in actions.ALWAYS_ADMITTED:
+    if actions.admits_everything(world_root, verb):
         # No sort of thing has to be granted the right to be looked at. See
         # `actions.ALWAYS_ADMITTED`: asking cost a call per room and would have
         # frozen the answer for ever, where a check rule on `visible_to` says
-        # the same thing per object and can change its mind.
+        # the same thing per object and can change its mind. A world or a
+        # ruleset may say the same of its own verbs: a social, mostly.
         _with_rule(caller, room, sponsor, raw, verb, bound, rule, release,
                    allow_effects, world_root, waiter, guarded, redirects,
                    words)

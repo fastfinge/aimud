@@ -165,7 +165,8 @@ def keep_action(ctx):
         sense=str(ctx.draft.get("sense") or ""),
         means=means,
         despite=ctx.draft.get("despite") or (),
-        must=ctx.draft.get("must") or ())
+        must=ctx.draft.get("must") or (),
+        admits_all=bool(ctx.draft.get("admits_all")))
     if record is None:
         raise menus.Refuse(f"|w{word}|n could not be declared.")
     takes = ", ".join(r["role"] for r in record["applies_to"]) or "nothing"
@@ -251,6 +252,13 @@ NEW_ACTION = menus.Form(
                          "is the very thing that would end such a condition "
                          "-- reviving, struggling. A dead character who can "
                          "still open doors is not dead."),
+        menus.Field("admits_all", "Can be done to anything",
+                    kind=menus.BOOLEAN, default=False,
+                    help="Yes for a verb nothing needs permission for -- "
+                         "smiling at, nodding to, pointing at -- so the world "
+                         "never asks whether a sort of thing allows it. No, "
+                         "the usual answer, and the world asks once per sort "
+                         "of thing whether it can be done to it at all."),
         menus.Field("must", "What a rule about it must do", kind=menus.CHOICE,
                     choices=_must_choices, parse=lambda ctx, t: _read_must(t),
                     show=lambda ctx, value: _said_must(value),

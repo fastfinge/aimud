@@ -559,10 +559,16 @@ def rank(rule, tier=None, world_root=None):
         the tier it matched at -- see `matches`
         deeper in the taxonomy, or deeper in the zone tree, first
         a guarded rule before an open one, and more guards first
+        the world's own before a ruleset's
         older first
         and the id last, so no two rules can ever tie
+
+    The world's own first because a ruleset is seeded when the world is
+    made, so it is always the older: a world that gave `kick` a real meaning
+    at the same scope as a ruleset's social would otherwise lose to the
+    social for ever, and `view faults` would call its own rule dead.
     """
-    from world import kinds, lexicon, zones
+    from world import kinds, lexicon, rulesets, zones
 
     scope = rule.get("scope") or {}
     if tier is None:
@@ -580,6 +586,7 @@ def rank(rule, tier=None, world_root=None):
         depth,
         0 if guards else 1,
         -len(guards),
+        1 if rulesets.from_ruleset(rule) else 0,
         rule.get("born", 0),
         rule.get("id", ""),
     )
