@@ -78,6 +78,40 @@ ALLOW_EXISTENCE = 0.25
 #: same breath; asked on its own it is not in competition with anything.
 DENY_BODY_PART = 0.5
 
+#: How sure it has to be that a thing is part of something already here --
+#: the readout of a computer, a menu on a monitor -- for that something to be
+#: used instead of a new thing being made.
+#:
+#: Even-handed. The mistake one way is a verb landing on the computer when
+#: somebody meant a readout of their own; the other way is one more object,
+#: which is the mistake the question exists to stop. Measured on the starship
+#: bridge that prompted it, each thing against the one named:
+#:
+#:     a main bridge computer readout / Main Bridge Computer   0.85
+#:     a system menu / LG Status Monitor                       0.33
+#:     ----- 0.5 -----
+#:     a diagnostic tool / Hyundai Crash Couch                 0.23
+#:     a star chart / LG Status Monitor                        0.15
+#:     a chipped mug / Oak Table, a coffee cup / the computer  0.03
+#:
+#: The menu is under the line and stays there: a third of the way between
+#: the worst wrong answer and the best right one is not room to tune in, and
+#: the menu is refused anyway, by `DENY_INTANGIBLE`. Nothing gets made.
+PART_OF_HOST = 0.5
+
+#: How sure it has to be that a thing has no body -- a signal, a setting, a
+#: direction -- for it to be refused rather than made.
+#:
+#: High, because the middle is crowded with ordinary things. A star chart is
+#: a fine object and came within a hundredth of the even-handed line:
+#:
+#:     a telemetry signal 0.96   the beacon source direction 0.96
+#:     a slow pulse 0.90   a system menu 0.85
+#:     ----- 0.75 -----
+#:     a computer readout 0.64   a star chart 0.49
+#:     a diagnostic tool 0.31   a status monitor 0.11   a switch 0.03
+DENY_INTANGIBLE = 0.75
+
 #: How sure it has to be that a thing can be picked up.
 #:
 #: Even-handed: a fixed feature that can be pocketed and a loose tool that

@@ -410,6 +410,50 @@ def player_names():
     return [name for name in found if str(name or "").strip()]
 
 
+#: The fewest words a name must have for a phrase containing it to be taken
+#: as naming it. One word is too few: a "lamp post" contains a Lamp and is not
+#: one. Two or more is a name somebody made up for this thing in particular.
+NAMED_WITHIN_WORDS = 2
+
+
+def named_within(caller, phrase):
+    """
+    The thing in reach whose whole name `phrase` contains, or None.
+
+    `resemblance` asks the other question -- whether every word of the phrase
+    is in the name -- and the weakest word decides, which is right for a
+    player typing a name and wrong for a character saying a sentence. An NPC
+    on a starship bridge reached for "the deep-space gigahertz band slow",
+    every word of the Deep-Space Gigahertz Band was there plus one, and the
+    one sank the match: a second band was made beside the first, then a third.
+
+    For characters only (`instead_of_creating(fuzzy=True)`), whose words
+    arrive with whatever else they were thinking attached, and only by a name
+    of at least `NAMED_WITHIN_WORDS` words. The longest name wins, so a
+    "main bridge computer readout" is the computer and not something called
+    a Bridge; ties go to the oldest, as everywhere here. Keys only: an alias
+    is whatever somebody once said, and some of those were sentences.
+    """
+    from world import relations
+
+    if caller is None:
+        return None
+    said = {_one_of(word) for word in _words(phrase)}
+    if len(said) <= NAMED_WITHIN_WORDS - 1:
+        return None
+    best, best_size = None, 0
+    for obj in relations.reachable(caller):
+        if obj is caller:
+            continue
+        name = {_one_of(word) for word in _words(obj.key)}
+        if len(name) < NAMED_WITHIN_WORDS or not name <= said:
+            continue
+        if len(name) > best_size or (len(name) == best_size
+                                     and obj.id < best.id):
+            best, best_size = obj, len(name)
+    return best
+
+
 def instead_of_creating(caller, phrase, fuzzy=False):
     """
     What to do about a name nothing here answers to.
@@ -428,7 +472,8 @@ def instead_of_creating(caller, phrase, fuzzy=False):
     nobody to read a question put to a character, so the choice for them is
     between the thing that is probably meant and another near-duplicate on
     the floor -- and they are naming things from memory in their own words,
-    which is what the middle band is full of.
+    which is what the middle band is full of. It also lets a phrase that
+    holds a whole name with words to spare name that thing: `named_within`.
     """
     from world import anatomy
 
@@ -447,6 +492,10 @@ def instead_of_creating(caller, phrase, fuzzy=False):
         return person, complaint
 
     obj, score = best_match(caller, phrase)
+    if fuzzy and (obj is None or score < PLAUSIBLE):
+        inside = named_within(caller, phrase)
+        if inside is not None:
+            return inside, None
     if obj is None:
         return None, None
     if score >= CONFIDENT or (fuzzy and score >= PLAUSIBLE):

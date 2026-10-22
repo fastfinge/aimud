@@ -49,7 +49,55 @@ PREPOSITION_ROLES = {
     # spyglass" keeps the moon and the spyglass both, which `target` could not
     # -- the moon has already taken it.
     "through": "instrument",
+    # Where something is pointed, pressed or set, and what it is done by way
+    # of. Not knowing these is how "point the readout toward the pulse" bound
+    # a direct object called "readout toward pulse", which nothing resembled,
+    # and so an NPC on a starship bridge made a second Hanwha Distance Readout
+    # beside the first. See `TRAILING_PARTICLES` for why a list is right here.
+    "toward": "target",
+    "towards": "target",
+    "against": "target",
+    "near": "target",
+    "beside": "target",
+    "across": "target",
+    "along": "target",
+    "past": "target",
+    "upon": "target",
+    "above": "target",
+    "below": "target",
+    "beneath": "target",
+    "between": "target",
+    "via": "instrument",
 }
+
+#: Particles: the second half of "pick up", "switch off", "put down", and the
+#: "more" of "tune the band more". Each was being read as part of the noun --
+#: "pick up the lamp" bound a thing called "up lamp" -- and a noun phrase that
+#: resembles nothing is a noun phrase this game invents something for.
+#:
+#: **Why a list, when adverbs are asked of WordNet.** Adverbs are an open
+#: class: English has thousands and gains more, and nobody should be writing
+#: them down. Prepositions and particles are a closed class -- a few dozen
+#: words, the same ones for centuries -- and WordNet cannot answer for them
+#: anyway: it has no prepositions at all, and "up" is a noun, a verb and an
+#: adjective there as well as an adverb, so `is_only_adverb` rightly leaves it
+#: alone. NLTK's part-of-speech tagger was tried on the phrases that caused
+#: this and got the particles right and almost nothing else -- "diagnose",
+#: "scan" and "sweep" came back as adjectives and "drop-down" as one -- so the
+#: part it gets right is the part a list gets right, without a model.
+#:
+#: Taken off the end of any phrase, and off the front of the first one, where
+#: "pick up the lamp" puts them. Only ever when a word is left behind: "look
+#: up" alone is still somebody naming something called up.
+TRAILING_PARTICLES = frozenset([
+    "up", "down", "off", "away", "back", "again", "more", "less", "aside",
+    "apart", "together",
+])
+
+#: The particles that may also open the first phrase. Fewer, because a word
+#: in front of a noun is more often part of its name: a back door is a door,
+#: and "open back door" must not lose the "back".
+LEADING_PARTICLES = frozenset(["up", "down", "off", "away"])
 
 #: Verbs whose object may arrive behind a preposition, when nothing came
 #: before one. "look at the lamp", "look in the chest", "look through the
@@ -210,6 +258,22 @@ def parse(raw, world_root=None):
         # determiner in front of a noun from a pronoun standing in for one:
         # with "mine" and "yours" in the list, "get mine" dropped every word
         # it had and bound nothing at all.
+        #
+        # Particles come off first, never taking the last word: see
+        # `TRAILING_PARTICLES`. They are how it was done, so they go with the
+        # manner -- "switch the lamp off" and "switch the lamp on" differ.
+        while len(current) > 1 and current[-1] in TRAILING_PARTICLES:
+            manner.insert(0, current.pop())
+        if current_role == "direct" and not current_word:
+            while len(current) > 1 and current[0] in LEADING_PARTICLES:
+                manner.append(current.pop(0))
+        # "use the tool to diagnose the drop-down": the "to" opens a purpose
+        # rather than a destination, and its verb is not part of the thing.
+        # Only a word that can be nothing but a verb, which "diagnose" is and
+        # "scan" and "sweep" -- both nouns as well -- are not.
+        if (current_word == "to" and len(current) > 1
+                and lexicon.parts_of_speech(current[0]) == frozenset("v")):
+            current.pop(0)
         if current:
             phrase = nounphrase.read(" ".join(current)).plain
             if phrase:

@@ -395,8 +395,14 @@ class CmdAILook(_DefaultLook):
             _release_gen_lock(room, key)
             caller.msg(f"|rError: {err}|n")
 
+        def on_host(host):
+            # Part of something already here: looking at the readout is
+            # looking at the computer it is on.
+            wait.done()
+            _finish_look(caller, host, room, key)
+
         validate_object_existence(sponsor, room, query, on_valid, on_invalid,
-                                  on_error, wanted=wanted)
+                                  on_error, wanted=wanted, on_host=on_host)
 
 
 def _finish_look(caller, item, room, key):
@@ -652,8 +658,15 @@ class CmdAIGet(_DefaultGet):
             _release_gen_lock(room, key)
             caller.msg(f"|rError: {err}|n")
 
+        def on_host(host):
+            # Part of something already here, so it does not come away on its
+            # own: saying whose part it is teaches the rule, as a shoulder does.
+            wait.done()
+            _release_gen_lock(room, key)
+            caller.msg(f"That is part of {host.get_display_name(caller)}.")
+
         validate_object_existence(sponsor, room, query, on_valid, on_invalid,
-                                  on_error, wanted=wanted)
+                                  on_error, wanted=wanted, on_host=on_host)
 
 
 def _root(room):

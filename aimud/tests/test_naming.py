@@ -616,3 +616,96 @@ class NobodyIsEverConjured(Naming):
         found, complaint = naming.instead_of_creating(self.npc, "rose")
         self.assertIsNone(found)
         self.assertIsNone(complaint, "a rose is still a rose")
+
+
+@tag("world")
+class AWholeNameWithWordsToSpare(Naming):
+    """
+    A character's phrase that holds a whole name, and then some, names it.
+
+    From a starship bridge, where an NPC said "the deep-space gigahertz band
+    slow" and got a second Deep-Space Gigahertz Band: every word of the name
+    was there, and the one more sank the match.
+    """
+
+    def test_a_character_finds_the_thing_inside_the_phrase(self):
+        from world import naming
+
+        band = self.thing("Deep-Space Gigahertz Band")
+        found, complaint = naming.instead_of_creating(
+            self.char1, "deep-space gigahertz band slow", fuzzy=True)
+        self.assertIs(found, band)
+        self.assertIsNone(complaint)
+
+    def test_a_player_is_not_guessed_for(self):
+        from world import naming
+
+        self.thing("Deep-Space Gigahertz Band")
+        found, _complaint = naming.instead_of_creating(
+            self.char1, "deep-space gigahertz band slow")
+        self.assertIsNone(found)
+
+    def test_the_longest_name_wins(self):
+        from world import naming
+
+        self.thing("Bridge Computer")
+        main = self.thing("Main Bridge Computer")
+        found, _ = naming.instead_of_creating(
+            self.char1, "main bridge computer readout", fuzzy=True)
+        self.assertIs(found, main)
+
+    def test_one_word_is_too_few(self):
+        # A lamp post contains a Lamp and is not one.
+        from world import naming
+
+        self.thing("Lamp")
+        found, _ = naming.instead_of_creating(self.char1, "lamp post",
+                                              fuzzy=True)
+        self.assertIsNone(found)
+
+
+@tag("world")
+class WordsThatAreNotTheThing(SimpleTestCase):
+    """
+    The parser leaves particles and the prepositions it had no role for out of
+    the noun. Each sentence here is one an NPC said on that bridge, or one a
+    player types every day and was getting wrong the same way.
+    """
+
+    def roles(self, raw):
+        return verbs.parse(raw)["roles"]
+
+    def test_a_preposition_it_did_not_know_ends_the_phrase(self):
+        self.assertEqual(
+            self.roles("point hanwha distance readout toward fine pulse signal"),
+            {"direct": "hanwha distance readout", "target": "fine pulse signal"})
+        self.assertEqual(self.roles("lean against the wall"),
+                         {"target": "wall"})
+
+    def test_a_particle_is_how_and_not_what(self):
+        parsed = verbs.parse("switch language drop-down off")
+        self.assertEqual(parsed["roles"], {"direct": "language drop-down"})
+        self.assertEqual(parsed["manner"], ["off"])
+        self.assertEqual(self.roles("tune the band more"), {"direct": "band"})
+
+    def test_and_in_front_of_the_first_noun(self):
+        self.assertEqual(self.roles("pick up the lamp"), {"direct": "lamp"})
+        self.assertEqual(self.roles("turn off the lamp"), {"direct": "lamp"})
+
+    def test_but_never_the_last_word_or_a_name(self):
+        self.assertEqual(self.roles("look up"), {"direct": "up"})
+        self.assertEqual(self.roles("open the back door"),
+                         {"direct": "back door"})
+
+    def test_a_purpose_is_not_part_of_the_thing(self):
+        from world import lexicon
+
+        if not lexicon.available():
+            self.skipTest("needs WordNet to know diagnose is only a verb")
+        self.assertEqual(
+            self.roles("use the tool to diagnose the language drop-down"),
+            {"direct": "tool", "target": "language drop-down"})
+        # "scan" is a noun as well, so it stays.
+        self.assertEqual(
+            self.roles("use the scanner to scan surrounding frequencies"),
+            {"direct": "scanner", "target": "scan surrounding frequencies"})

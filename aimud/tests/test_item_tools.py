@@ -58,6 +58,52 @@ class _Room(GameTest):
 
 
 @tag("world")
+class NamedLikeSomethingHere(_Room):
+    """
+    The model named what it made after something the room already holds.
+
+    Nothing before this can see the name the model chose -- every earlier
+    check compares the words somebody reached for -- and on a starship bridge
+    three things were made with one name because of it.
+    """
+
+    def test_the_one_already_here_is_used(self):
+        from evennia import create_object
+
+        lamp = create_object("typeclasses.objects.Object", key="Brass Lamp",
+                             location=self.root)
+        item, failed, _ = self.make("lamp glowing faintly",
+                                    finishing(make_item=LAMP))
+        self.assertEqual(failed, [])
+        self.assertIs(item, lamp)
+        self.assertEqual(
+            [obj for obj in self.root.contents if obj.key == "Brass Lamp"],
+            [lamp])
+        self.assertIn("lamp glowing faintly", lamp.aliases.all())
+
+    def test_and_conjure_says_it_was_found_rather_than_made(self):
+        from evennia import create_object
+
+        lamp = create_object("typeclasses.objects.Object", key="Brass Lamp",
+                             location=self.root)
+        ready = []
+        with immediately(), deciding({"could_exist": 0.9}), \
+                replying(finishing(make_item=LAMP)):
+            item_gen.conjure(self.char1, self.root, FakeSponsor(),
+                             "glowing thing", lambda obj, made:
+                                 ready.append((obj, made)), self.fail)
+        self.assertEqual(ready, [(lamp, False)])
+
+    def test_a_different_name_is_still_made(self):
+        from evennia import create_object
+
+        create_object("typeclasses.objects.Object", key="Iron Lamp",
+                      location=self.root)
+        item, _failed, _ = self.make("lamp", finishing(make_item=LAMP))
+        self.assertEqual(item.key, "Brass Lamp")
+
+
+@tag("world")
 class Judging(_Room):
     """
     The two yes-or-no checks, now put to the decision model.
@@ -109,11 +155,72 @@ class Judging(_Room):
                              {"could_exist": 0.8, "is_body_part": 0.1})
         self.assertEqual([answer for answer, _why in said], ["valid"])
 
-    def test_both_questions_go_in_the_one_request(self):
+    def test_every_question_goes_in_the_one_request(self):
         _said, recorder = self.judge("a lamp", {"could_exist": 0.9})
         self.assertEqual(recorder.count, 1)
         self.assertEqual(sorted(recorder.questions(0)),
-                         ["could_exist", "is_body_part"])
+                         ["could_exist", "is_body_part", "is_intangible"])
+
+    def test_something_with_no_body_is_refused_however_plausible(self):
+        # A signal on a starship bridge is plausible, and is not an object.
+        said, _ = self.judge("a slow pulse",
+                             {"could_exist": 0.9, "is_intangible": 0.8})
+        self.assertEqual(said, [("invalid", item_gen.NOT_A_THING)])
+
+    def judge_parts(self, phrase, *answers):
+        said = []
+        with immediately(), deciding(*answers) as recorder:
+            item_gen.validate_object_existence(
+                FakeSponsor(), self.root, phrase,
+                on_valid=lambda r: said.append(("valid", r)),
+                on_invalid=lambda r: said.append(("invalid", r)),
+                on_error=self.fail,
+                on_host=lambda host: said.append(("host", host)))
+        return said, recorder
+
+    def test_part_of_something_here_is_that_something(self):
+        from evennia import create_object
+
+        computer = create_object("typeclasses.objects.Object",
+                                 key="Main Bridge Computer", location=self.root)
+        said, recorder = self.judge_parts(
+            "a computer readout", {"could_exist": 0.9, "part_of_0": 0.85,
+                                   "is_intangible": 0.7})
+        # Asked about the computer first, since it shares a word.
+        self.assertIn("Main Bridge Computer",
+                      str(recorder.questions(0)["part_of_0"]))
+        self.assertEqual(said, [("host", computer)])
+
+    def test_sitting_on_something_is_not_being_part_of_it(self):
+        from evennia import create_object
+
+        create_object("typeclasses.objects.Object", key="Kitchen Table",
+                      location=self.root)
+        said, _ = self.judge_parts("a chipped mug",
+                                   {"could_exist": 0.9, "part_of_0": 0.2})
+        self.assertEqual(said, [("valid", "")])
+
+    def test_nobody_is_asked_about_hosts_without_somewhere_to_send_one(self):
+        from evennia import create_object
+
+        create_object("typeclasses.objects.Object", key="Kitchen Table",
+                      location=self.root)
+        _said, recorder = self.judge("a chipped mug", {"could_exist": 0.9})
+        self.assertFalse([name for name in recorder.questions(0)
+                          if name.startswith("part_of_")])
+
+    def test_conjure_uses_the_host(self):
+        from evennia import create_object
+
+        computer = create_object("typeclasses.objects.Object",
+                                 key="Main Bridge Computer", location=self.root)
+        ready = []
+        with immediately(), deciding({"could_exist": 0.9, "part_of_0": 0.9}):
+            item_gen.conjure(self.char1, self.root, FakeSponsor(),
+                             "computer readout",
+                             lambda obj, made: ready.append((obj, made)),
+                             self.fail)
+        self.assertEqual(ready, [(computer, False)])
 
     def test_whether_it_can_be_picked_up(self):
         said = []

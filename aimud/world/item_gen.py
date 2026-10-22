@@ -33,6 +33,17 @@ from world import decisions, llm
 #: standing in the room, and a player told it has no way to learn the rule.
 PART_OF_SOMEBODY = "That is part of somebody, not a thing lying about."
 
+#: And the second: a signal, a setting or a direction is real enough to talk
+#: about and is not an object, and making it one is how a starship bridge came
+#: to have a Slow Pulse and a Beacon Source Direction standing on the deck.
+NOT_A_THING = "That is not a thing, so there is nothing here to point at."
+
+#: The most things in a room asked about as what something is part of. Each is
+#: a question of its own in the one request, so this bounds what a decision
+#: costs in a crowded room; the things sharing a word with what was asked for
+#: are asked about first, so the cut falls on the least likely.
+MOST_HOSTS = 16
+
 _ITEM_SYSTEM_PROMPT = """You generate items for a text-based MUD.
 Answer by calling make_item.
 
@@ -278,8 +289,30 @@ class Wanted:
 # Public async API
 # ---------------------------------------------------------------------------
 
+def _hosts(room, object_name):
+    """
+    What in `room` the thing asked for might be part of, likeliest first.
+
+    Loose things only: people have `anatomy`, and an exit is not a thing a
+    readout is shown on. Ordered by how many words they share with what was
+    asked for -- a "computer readout" is most likely the computer's -- and
+    then oldest first, and cut at `MOST_HOSTS`.
+    """
+    from world import naming
+
+    if room is None:
+        return []
+    asked = set(naming._words(object_name))
+    found = [obj for obj in room.contents
+             if not obj.destination and not getattr(obj, "has_account", False)
+             and not getattr(obj.db, "is_npc", False)]
+    found.sort(key=lambda obj: (-len(asked & set(naming._words(obj.key))),
+                                obj.id))
+    return found[:MOST_HOSTS]
+
+
 def validate_object_existence(sponsor, room, object_name, on_valid, on_invalid,
-                              on_error, wanted=None):
+                              on_error, wanted=None, on_host=None):
     """
     Async. Ask the decision model whether object_name could exist in room.
     Calls on_valid(reason) or on_invalid(reason) or on_error(msg) in the main thread.
@@ -288,19 +321,70 @@ def validate_object_existence(sponsor, room, object_name, on_valid, on_invalid,
     which is part of whether it could be there: a rope somebody wants to climb
     down is a different question from a rope somebody wants to look at.
 
-    Two questions rather than one, and both in the one request. The body-part
-    rule is not a caveat on plausibility -- it applies "however plausible it
-    sounds" -- so asking it as a condition on the same answer made it compete
-    for attention with everything else in a paragraph. Asked separately it
-    gets a number of its own, and the rule is enforced here in code where it
-    can be read.
+    Separate questions rather than one, and all in the one request. The
+    body-part rule is not a caveat on plausibility -- it applies "however
+    plausible it sounds" -- so asking it as a condition on the same answer
+    made it compete for attention with everything else in a paragraph. Asked
+    separately it gets a number of its own, and the rule is enforced here in
+    code where it can be read.
+
+    Two more, from the same bridge, and for the same reason. Whether the thing
+    is part of something already here -- a readout of the computer, a menu on
+    the monitor -- is asked of each thing in the room (`_hosts`), and the
+    likeliest past `decisions.PART_OF_HOST` is handed to `on_host(obj)`
+    instead of anything being made: the rule `anatomy` keeps for bodies, for
+    made things. Whether it has a body at all -- a signal, a setting, a
+    direction -- is asked once, and past `decisions.DENY_INTANGIBLE` it is
+    refused with `NOT_A_THING`. Part of something comes first: a pulse the
+    scanner picks up is the scanner's, and acting on the scanner is a better
+    answer than being told there is nothing to act on.
+
+    A caller with no `on_host` is not asked the host questions at all.
     """
     state = {"world_and_room": _world_and_room(room, "validation"),
              "thing_asked_for": object_name}
     why = _why(wanted, room, brief=True).strip()
     if why:
         state["why_it_is_wanted"] = why
+    hosts = _hosts(room, object_name) if on_host is not None else []
+    questions = existence_questions(
+        object_name, [host.db.room_title or host.key for host in hosts])
 
+    def host_of(answers):
+        best, best_certainty = None, 0.0
+        for number, host in enumerate(hosts):
+            sure = decisions.certainty(answers, f"part_of_{number}")
+            if sure > best_certainty:
+                best, best_certainty = host, sure
+        return best if best_certainty >= decisions.PART_OF_HOST else None
+
+    def answered(answers):
+        body = decisions.certainty(answers, "is_body_part")
+        exists = decisions.certainty(answers, "could_exist")
+        host = host_of(answers)
+        if body >= decisions.DENY_BODY_PART:
+            on_invalid(PART_OF_SOMEBODY)
+        elif host is not None:
+            on_host(host)
+        elif decisions.certainty(answers, "is_intangible") \
+                >= decisions.DENY_INTANGIBLE:
+            on_invalid(NOT_A_THING)
+        elif exists >= decisions.ALLOW_EXISTENCE:
+            on_valid("")
+        else:
+            on_invalid("")
+
+    decisions.ask(sponsor, state, questions,
+                  on_answers=answered, on_error=on_error)
+
+
+def existence_questions(object_name, host_names=()):
+    """
+    What `validate_object_existence` asks, by name: `part_of_<n>` for each of
+    `host_names` in order. Its own function so that the live calibration in
+    `tests/test_decisions_live.py` asks exactly these words, and a change to
+    one is measured.
+    """
     questions = {
         "could_exist": decisions.noul(
             f"Could '{object_name}' plausibly exist in this room?",
@@ -314,20 +398,23 @@ def validate_object_existence(sponsor, room, object_name, on_valid, on_invalid,
             "Part of a made thing, like a door handle, a table leg or a page "
             "of a book; or a part plainly cut free, like a severed hand, a "
             "mounted stag's head or a bone."),
+        "is_intangible": decisions.noul(
+            f"Is '{object_name}' something with no body of its own?",
+            "A signal, a frequency, a sound, a smell, a setting, a direction, "
+            "a reading, a piece of software, a feeling or an idea -- real "
+            "enough to talk about, and nothing anybody could lay a hand on.",
+            "A physical object, however small or fixed in place: a switch, a "
+            "screen, a coin, a beam of the roof."),
     }
-
-    def answered(answers):
-        body = decisions.certainty(answers, "is_body_part")
-        exists = decisions.certainty(answers, "could_exist")
-        if body >= decisions.DENY_BODY_PART:
-            on_invalid(PART_OF_SOMEBODY)
-        elif exists >= decisions.ALLOW_EXISTENCE:
-            on_valid("")
-        else:
-            on_invalid("")
-
-    decisions.ask(sponsor, state, questions,
-                  on_answers=answered, on_error=on_error)
+    for number, name in enumerate(host_names):
+        questions[f"part_of_{number}"] = decisions.noul(
+            f"Is '{object_name}' part of '{name}', or something '{name}' "
+            f"shows or picks up?",
+            f"A piece of {name} itself -- its handle, its screen, a readout "
+            f"or menu on it, a signal it receives, a setting it has.",
+            f"A separate object, even one sitting on, in or beside {name}; "
+            f"or nothing to do with {name} at all.")
+    return questions
 
 
 def validate_object_takeable(sponsor, room, obj, on_valid, on_invalid,
@@ -475,8 +562,39 @@ def ask_for_item(sponsor, object_name, on_spec, on_error, room=None,
                  rounds=ITEM_ROUNDS)
 
 
+def already_here(room, name):
+    """
+    The thing in `room` already called exactly `name`, or None.
+
+    The last of the checks against making a second one, and the only one
+    that can see what the model decided. Everything before it compares the
+    words somebody reached for; this compares the name the thing would have
+    been given. An NPC on a starship bridge asked for "the gigahertz band
+    slow toward the beacon source", nothing resembled that, and the model
+    called what it made a Deep-Space Gigahertz Band -- the name of the one
+    already there, for the third time.
+
+    Exactly the same words, and only among what is loose in the room: two
+    things the model named alike are one thing, and a near name is the
+    question `naming` has already answered.
+    """
+    from world import naming
+
+    if room is None or not str(name or "").strip():
+        return None
+    found = None
+    for obj in room.contents:
+        if obj.destination or getattr(obj, "has_account", False) \
+                or getattr(obj.db, "is_npc", False):
+            continue
+        if naming.resemblance(name, obj.key) >= 1.0 \
+                and (found is None or obj.id < found.id):
+            found = obj
+    return found
+
+
 def generate_item(sponsor, room, object_name, on_success, on_error,
-                  wanted=None):
+                  wanted=None, on_found=None):
     """
     Async. Ask the item model to create object_name and spawn it in room.
     The created object has db.ai_takeable already set from the model response.
@@ -484,12 +602,26 @@ def generate_item(sponsor, room, object_name, on_success, on_error,
 
     `wanted` is why it is being made -- see `Wanted` -- so that what is made
     fits what somebody is doing with it.
+
+    When the model names something the room already has (`already_here`),
+    nothing is made and that is handed back instead: to `on_found(obj)` for a
+    caller that says something different about a thing found than one made,
+    and otherwise to `on_success`, which for looking and taking is the same.
     """
     def _made(data):
         try:
             from world import clothing
 
             name = data["name"]
+            existing = already_here(room, name)
+            if existing is not None:
+                # Answering to what was asked for, as a new thing would, so
+                # the next time these words are used nothing is asked at all.
+                requested = str(object_name or "").strip().lower()
+                if requested and requested != existing.key.lower():
+                    existing.aliases.add(requested)
+                (on_found or on_success)(existing)
+                return
             # Built through the clothing layer so that anything the model
             # called wearable really can be put on. A coat found in a
             # wardrobe is the same kind of thing as a coat a character was
@@ -581,13 +713,17 @@ def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False,
         release()
         on_ready(item, True)
 
+    def found(item):
+        release()
+        on_ready(item, False)
+
     def failed(err):
         release()
         on_refused(f"|rCould not resolve {phrase}: {err}|n")
 
     def on_valid(_reason):
         generate_item(sponsor, room, phrase, on_success=made, on_error=failed,
-                      wanted=wanted)
+                      wanted=wanted, on_found=found)
 
     def on_invalid(why):
         release()
@@ -605,7 +741,7 @@ def conjure(caller, room, sponsor, phrase, on_ready, on_refused, fuzzy=False,
         on_refused(f"|rError: {err}|n")
 
     validate_object_existence(sponsor, room, phrase, on_valid, on_invalid,
-                              on_error, wanted=wanted)
+                              on_error, wanted=wanted, on_host=found)
 
 
 # ---------------------------------------------------------------------------

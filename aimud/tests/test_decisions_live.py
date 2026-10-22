@@ -27,6 +27,15 @@ CELLAR = {"world_and_room": "World: a damp medieval cellar under an inn.\n\n"
                             "Room:\n[Cellar]\nBarrels line the walls.",
           "thing_asked_for": ""}
 
+#: And one where the line between a thing and what it shows is the question:
+#: the starship bridge an NPC filled with signals, settings and readouts.
+BRIDGE = {"world_and_room": "World: a Korean-built deep-space survey ship.\n\n"
+                            "Room:\n[The Bridge]\nTwo worn crash couches sit "
+                            "bolted to the deck, wrapped in instrumentation "
+                            "and status monitors. A curve of screens shows "
+                            "the forward sensor arrays and deep space.",
+          "thing_asked_for": ""}
+
 
 @tag("llm")
 class AskingTheRealThing(SimpleTestCase):
@@ -38,29 +47,24 @@ class AskingTheRealThing(SimpleTestCase):
         state = dict(CELLAR, thing_asked_for=thing)
         return llm.decide(self.sponsor, decisions.JEV, state, questions)
 
-    def existence(self, thing):
-        """The two questions `item_gen.validate_object_existence` asks."""
-        return self.decide(
-            thing,
-            could_exist=decisions.noul(
-                f"Could '{thing}' plausibly exist in this room?",
-                "It is plausible for this world and this room. Be permissive.",
-                "It is a clear impossibility here, like a spaceship in a "
-                "medieval dungeon."),
-            is_body_part=decisions.noul(
-                f"Is '{thing}' part of a living body?",
-                "A hand, a shoulder, hair, a wing, an antenna -- something "
-                "that belongs to whoever has it rather than being a separate "
-                "object.",
-                "Part of a made thing, like a door handle, a table leg or a "
-                "page of a book; or a part plainly cut free, like a severed "
-                "hand, a mounted stag's head or a bone."))
+    def existence(self, thing, hosts=(), room=None):
+        """
+        The questions `item_gen.validate_object_existence` asks, in its own
+        words: asked through `existence_questions`, so a change to them is a
+        change measured here.
+        """
+        from world import item_gen
+
+        state = dict(room or CELLAR, thing_asked_for=thing)
+        return llm.decide(self.sponsor, decisions.JEV, state,
+                          item_gen.existence_questions(thing, hosts))
 
     # -- the contract ----------------------------------------------------
 
     def test_a_noul_comes_back_under_the_name_it_was_asked_under(self):
         answers = self.existence("an old lantern")
-        self.assertEqual(sorted(answers), ["could_exist", "is_body_part"])
+        self.assertEqual(sorted(answers),
+                         ["could_exist", "is_body_part", "is_intangible"])
         for name, answer in answers.items():
             self.assertEqual(answer["type"], "noul", name)
             self.assertIsInstance(answer["noul"], (int, float), name)
@@ -122,6 +126,70 @@ class AskingTheRealThing(SimpleTestCase):
         answers = self.existence("a severed hand")
         self.assertLess(decisions.certainty(answers, "is_body_part"),
                         decisions.DENY_BODY_PART)
+
+    # -- what a bridge full of things taught it --------------------------
+    #
+    # Every phrase here is one an NPC conjured into a real room. `measure`
+    # prints the numbers, which is how `PART_OF_HOST` and `DENY_INTANGIBLE`
+    # were chosen: run with `-v 2` and read them.
+
+    def measure(self, thing, hosts=(), room=None):
+        answers = self.existence(thing, hosts, room=room or BRIDGE)
+        print(f"\n  {thing!r}: " + ", ".join(
+            f"{name}={decisions.certainty(answers, name):.2f}"
+            for name in sorted(answers)))
+        return answers
+
+    def test_a_signal_has_no_body(self):
+        for thing in ("a slow pulse", "a telemetry signal",
+                      "the beacon source direction"):
+            answers = self.measure(thing)
+            self.assertGreaterEqual(
+                decisions.certainty(answers, "is_intangible"),
+                decisions.DENY_INTANGIBLE, thing)
+
+    def test_a_fixture_has_one(self):
+        for thing in ("an amber diagnostic switch", "a status monitor",
+                      "a crash couch"):
+            answers = self.measure(thing)
+            self.assertLess(decisions.certainty(answers, "is_intangible"),
+                            decisions.DENY_INTANGIBLE, thing)
+
+    def test_a_readout_is_part_of_its_computer(self):
+        answers = self.measure("a main bridge computer readout",
+                               ["Main Bridge Computer", "Hyundai Crash Couch"])
+        self.assertGreaterEqual(decisions.certainty(answers, "part_of_0"),
+                                decisions.PART_OF_HOST)
+        self.assertLess(decisions.certainty(answers, "part_of_1"),
+                        decisions.PART_OF_HOST)
+
+    def test_a_menu_on_a_screen_is_never_made(self):
+        """
+        Either its screen's or not a thing; which one is the model's to say,
+        and it says the second (see `decisions.PART_OF_HOST`). What must hold
+        is that one of them catches it.
+        """
+        answers = self.measure("a system menu", ["LG Status Monitor"])
+        self.assertTrue(
+            decisions.certainty(answers, "part_of_0") >= decisions.PART_OF_HOST
+            or decisions.certainty(answers, "is_intangible")
+            >= decisions.DENY_INTANGIBLE, answers)
+
+    def test_a_chart_is_a_thing(self):
+        """The nearest ordinary thing came to being refused as no thing."""
+        answers = self.measure("a star chart")
+        self.assertLess(decisions.certainty(answers, "is_intangible"),
+                        decisions.DENY_INTANGIBLE)
+
+    def test_sitting_on_something_is_not_being_part_of_it(self):
+        for thing, host, room in (
+                ("a chipped mug", "Oak Table", CELLAR),
+                ("a coffee cup", "Main Bridge Computer", BRIDGE),
+                ("a star chart", "LG Status Monitor", BRIDGE),
+                ("a diagnostic tool", "Hyundai Crash Couch", BRIDGE)):
+            answers = self.measure(thing, [host], room=room)
+            self.assertLess(decisions.certainty(answers, "part_of_0"),
+                            decisions.PART_OF_HOST, thing)
 
     def test_a_fixed_feature_cannot_be_picked_up(self):
         answers = self.decide(
