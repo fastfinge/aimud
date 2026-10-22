@@ -329,7 +329,7 @@ NEW_CONDITION = menus.Form(
         making.picker("states", "Which conditions", "condition",
                       options=state_options,
                       lock=_wants("states"),
-                      parse=lambda ctx, text: _read_words(text),
+                      several=True, parse=lambda ctx, text: _read_words(text),
                       show=lambda ctx, value: ", ".join(value or []) or "none",
                       help="One or more, separated by spaces. Every one of "
                            "them must hold."),
@@ -968,12 +968,12 @@ NEW_EFFECT = menus.Form(
                               "happens to.")),
         making.picker("add", "Puts it into", "condition",
                       options=state_options, lock=_asks("add"),
-                      parse=lambda ctx, text: _read_words(text),
+                      several=True, parse=lambda ctx, text: _read_words(text),
                       show=lambda ctx, value: ", ".join(value or []) or "none",
                       help="One or more conditions, separated by spaces."),
         making.picker("remove", "Takes it out of", "condition",
                       options=state_options, lock=_asks("remove"),
-                      parse=lambda ctx, text: _read_words(text),
+                      several=True, parse=lambda ctx, text: _read_words(text),
                       show=lambda ctx, value: ", ".join(value or []) or "none"),
         making.picker("trait", "Which attribute", "attribute",
                       options=trait_options, lock=_asks("trait")),
@@ -1006,7 +1006,7 @@ NEW_EFFECT = menus.Form(
                          "once."),
         making.picker("states", "What condition it is made in", "condition",
                       options=state_options, lock=_asks("states"),
-                      parse=lambda ctx, text: _read_words(text),
+                      several=True, parse=lambda ctx, text: _read_words(text),
                       show=lambda ctx, value: ", ".join(value or []) or "none",
                       help="Conditions it exists in from the moment it is "
                            "made: lit, wet, brewed. Several, separated by "

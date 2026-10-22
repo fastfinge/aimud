@@ -116,6 +116,11 @@ FILTER_FROM = 10
 #: Put in front of input to have it read as text rather than as a key.
 ESCAPE = "/"
 
+#: Said under the help of a field that holds several values.
+SEVERAL_HELP = ("Choosing one adds it, and choosing one already there takes "
+                "it away. To say the whole list at once, type |w"
+                f"{ESCAPE}|n and then all of them, separated by spaces.")
+
 #: Above the puppet's exits (101), so a menu run on the account is not robbed
 #: of `n` and `p` by an exit called north. Found the hard way by the models
 #: menu; kept here so no menu has to find it again.
@@ -377,9 +382,14 @@ class Field(Item):
                  parse=None, choices=None, show=None, prompt=None,
                  required=False, minimum=None, maximum=None,
                  suggestible=False, empty="not set", confirm=None,
-                 after=STAY, **kwargs):
+                 after=STAY, several=False, **kwargs):
         super().__init__(key, label, help=help, **kwargs)
         self.kind = kind
+        # A field whose value is a list -- a thing's conditions. One choice
+        # picked from it is added to what is there, or taken away if it was
+        # there already; typing still replaces the whole list. Without this a
+        # picked "lit" was the whole value, and a string is a list of letters.
+        self.several = several
         # What setting it does to the menu. `CLOSE` is for a field that is the
         # whole point of its form: what you want to remember, a new goal.
         self.after = after
@@ -399,6 +409,12 @@ class Field(Item):
         # A secret is never offered to a model, whatever the form says.
         self.suggestible = suggestible and kind != SECRET
 
+    def help_for(self, ctx):
+        text = super().help_for(ctx)
+        if not self.several:
+            return text
+        return (text + "\n" if text else "") + SEVERAL_HELP
+
     def value(self, ctx):
         if self.get is not None:
             return self.get(ctx)
@@ -415,6 +431,11 @@ class Field(Item):
         Only a draft marks the form as changed: a live setting is already
         written, so there is nothing to throw away by quitting.
         """
+        if self.several and value is not None \
+                and not isinstance(value, (list, tuple, set)):
+            held = list(self.value(ctx) or [])
+            value = ([one for one in held if one != value] if value in held
+                     else held + [value])
         if self.set is not None:
             return self.set(ctx, value)
         if value is None:
@@ -1531,6 +1552,13 @@ class GameMenu(EvMenu):
                 if (self._navigate(frame, text)
                         or self._turn_page(frame, text, entries)):
                     return None
+            elif field.several:
+                # "/lit wet" is the whole list typed out, which is what the
+                # help of every such field says to do.
+                value, complaint = field.read(ctx, literal)
+                if complaint:
+                    return self._refuse(complaint)
+                return self._set_field(frame, value)
             if len(entries) > FILTER_FROM:
                 return self._set_filter(frame, literal)
             return self._refuse()

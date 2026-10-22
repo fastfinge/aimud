@@ -3484,3 +3484,57 @@ class AListingSaysEachThingOnce(SimpleTestCase):
         self.assertIn("box.n.01|n -- get", said)
         self.assertNotIn("box.n.01 -- box.n.01", said)
         self.assertIn("dawn|n -- the sun coming up", said)
+
+
+@tag("world")
+class PickingAConditionOffTheList(Building):
+    """
+    A condition chosen from the list is one condition, not its letters.
+
+    Reported from play: "It is c, d, e, f, i, m, n, o, powered, and r." A
+    picked choice is one value, and a field holding a list was handed the
+    word "confirmed" and spelled it. Choosing adds it now, and choosing it
+    again takes it away; typing still says the whole list at once.
+    """
+
+    loose_objects = 1
+
+    def setUp(self):
+        super().setUp()
+        from world import verbs
+
+        verbs.register_state(self.root, "lit")
+        verbs.register_state(self.root, "wet")
+        self.obj1.db.states = ["lit"]
+
+    def choose(self, *picked):
+        from world.makers import things
+
+        self.open(things._EDIT_THING, world_root=self.root, target=self.obj1)
+        for word in picked:
+            self.type("states")
+            self.type(word)
+
+    def test_a_chosen_condition_is_added_whole(self):
+        self.choose("wet")
+        self.assertEqual(self.obj1.db.states, ["lit", "wet"])
+
+    def test_and_choosing_one_it_is_in_takes_it_away(self):
+        self.choose("lit")
+        self.assertEqual(self.obj1.db.states, [])
+
+    def test_typing_them_still_says_the_whole_list(self):
+        self.choose("/wet  lit")
+        self.assertEqual(self.obj1.db.states, ["lit", "wet"])
+
+    def test_a_draft_holds_a_list_too(self):
+        """The making forms keep it in a draft first, and spelled it there."""
+        from world.makers import things
+
+        field = next(item for item in things.NEW_ITEM.items_for(
+            menus.Context(self.char1, world_root=self.root))
+            if getattr(item, "key", "") == "states")
+        ctx = menus.Context(self.char1, world_root=self.root)
+        field.store(ctx, "wet")
+        field.store(ctx, "lit")
+        self.assertEqual(ctx.draft["states"], ["wet", "lit"])

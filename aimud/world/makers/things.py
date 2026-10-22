@@ -243,7 +243,7 @@ NEW_ITEM = menus.Form(
                            "sort of thing will reach."),
         making.picker("states", "What condition it is in", "condition",
                       options=state_options,
-                      parse=lambda ctx, text: _read_words(text),
+                      several=True, parse=lambda ctx, text: _read_words(text),
                       show=lambda ctx, value: ", ".join(value or []) or "none",
                       help="Conditions it starts in: lit, shut, wet. Several, "
                            "separated by spaces."),
@@ -391,7 +391,7 @@ _EDIT_THING = menus.Form(
                           getattr(getattr(_target(ctx), "db", None),
                                   "states", None) or []),
                       set=_set_states,
-                      parse=lambda ctx, text: _read_words(text),
+                      several=True, parse=lambda ctx, text: _read_words(text),
                       show=lambda ctx, value: ", ".join(value or []) or "none",
                       help="Several, separated by spaces. A condition this "
                            "world does not keep can be made from here."),
@@ -642,7 +642,7 @@ EDIT_ROOM = menus.Form(
                         getattr(getattr(_here(ctx), "db", None), "states",
                                 None) or []),
                     set=lambda ctx, value: _set_room_states(ctx, value),
-                    parse=lambda ctx, text: _read_words(text),
+                    several=True, parse=lambda ctx, text: _read_words(text),
                     show=lambda ctx, value: ", ".join(value or []) or "none"),
         menus.Submenu("worth", _room_worth_label, _ROOM_WORTH,
                       help="What being in this place does to whoever is in "
@@ -918,7 +918,7 @@ def _npc_items(ctx):
                       help="How everybody here speaks about them."),
         making.picker("states", "What condition they are in", "condition",
                       options=state_options,
-                      parse=lambda ctx, text: _read_words(text),
+                      several=True, parse=lambda ctx, text: _read_words(text),
                       show=lambda ctx, value: ", ".join(value or []) or "none"),
         making.listing_field(
             "traits", "Figures about them", NEW_TRAIT_VALUE, _trait_line,
@@ -983,7 +983,7 @@ EDIT_PERSON = menus.Form(
                           getattr(getattr(_target(ctx), "db", None),
                                   "states", None) or []),
                       set=_set_states,
-                      parse=lambda ctx, text: _read_words(text),
+                      several=True, parse=lambda ctx, text: _read_words(text),
                       show=lambda ctx, value: ", ".join(value or []) or "none"),
         sounding.submenu(sounding.of_object(lambda ctx: _target(ctx)),
                          label="What they sound like"),
