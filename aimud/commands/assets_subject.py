@@ -354,11 +354,18 @@ TYPED = ("name", "description", "author", "licence")
 
 
 def edit_run(cmd, ctx, words):
+    from commands.subjects import verb_form
+
     caller = cmd.caller
     account = account_of(caller)
     words, already = answered(words)
     if not words:
-        caller.msg("Which asset? |wview assets|n lists them.")
+        if not _changeable(ctx).exists():
+            caller.msg("You have no assets to change. |wview assets|n lists "
+                       "everybody's.")
+            return None
+        menus.open_menu(caller, verb_form("edit"), session=cmd.session,
+                        path=["asset"])
         return None
 
     # The asset's name may be several words, so the action is looked for at
@@ -440,34 +447,115 @@ def _edit_quota(caller, account, words):
     return None
 
 
-def _mine(ctx):
+def _changeable(ctx, type_=None):
+    """What this account may change: its own, or everything for an admin.
+
+    Copies made from another asset are the game's, made on demand, and are
+    left out as `assets.picker` leaves them out.
+    """
     account = _account(ctx)
     if account is None:
-        return []
-    if assets.is_admin(account):
-        return list(assets.search(status=None)[:100])
-    return list(assets.search(status=None).filter(charged_to=account)[:100])
+        return assets.search(status=None).none()
+    found = assets.search(type_, status=None).exclude(origin="derived")
+    if not assets.is_admin(account):
+        found = found.filter(charged_to=account)
+    return found
+
+
+def _mine(ctx, type_=None):
+    return list(_changeable(ctx, type_).order_by("name")[:100])
+
+
+def _types_held(ctx):
+    """[(type key, how it is said, how many)], in the order types registered."""
+    from world import asset_types
+
+    counted = {}
+    for key in _changeable(ctx).values_list("type", flat=True):
+        counted[key] = counted.get(key, 0) + 1
+    order = list(asset_types.every())
+    held = sorted(counted, key=lambda key: (
+        order.index(key) if key in order else len(order), key))
+    return [(key, getattr(asset_types.get(key), "label", "") or key,
+             counted[key]) for key in held]
+
+
+def _of_type(verb, key, label, entry):
+    return menus.Form(
+        key=f"{verb}-assets-{key}", title=label,
+        intro=lambda ctx: "" if _mine(ctx, key) else f"There are no {key} "
+                                                      f"assets here.",
+        items=lambda ctx: [entry(ctx, asset) for asset in _mine(ctx, key)])
+
+
+def _which(verb, entry, empty):
+    """
+    The assets one may `edit` or `delete`, a type at a time.
+
+    Every asset on the server in one list was the whole of a bare `edit`'s
+    menu for an admin, with the worlds and everything else lost among them.
+    The verb's own menu holds one entry for assets, as it does for every
+    other subject, and this one asks which sort before which file.
+    """
+    def items(ctx):
+        return [menus.Submenu(key, f"{label} ({count})",
+                              _of_type(verb, key, label, entry),
+                              command=f"view assets {key}")
+                for key, label, count in _types_held(ctx)]
+
+    return menus.Form(
+        key=f"{verb}-assets", title=f"{verb.capitalize()} which asset?",
+        intro=lambda ctx: "" if _types_held(ctx) else empty,
+        items=items, choices_line="Which sort:")
+
+
+def _edit_entry(ctx, asset):
+    return menus.Submenu(f"asset-{asset.hash[:8]}", line(asset, _account(ctx)),
+                         EDIT, fresh_draft=True,
+                         draft=lambda ctx, a=asset: _draft_of(a),
+                         command=f"edit asset {asset.hash[:8]}")
+
+
+EDIT_WHICH = _which("edit", _edit_entry, "You have no assets to change.")
 
 
 def edit_items(ctx):
-    return [menus.Submenu(f"asset-{asset.hash[:8]}", line(asset, _account(ctx)),
-                          EDIT, fresh_draft=True,
-                          draft=lambda ctx, a=asset: _draft_of(a),
-                          command=f"edit asset {asset.hash[:8]}")
-            for asset in _mine(ctx)]
+    if not _changeable(ctx).exists():
+        return []
+    return [menus.Submenu("asset", "A file the game keeps", EDIT_WHICH,
+                          help="Change an asset's name, description or "
+                               "credit, chosen by its sort and then by name.",
+                          command="edit asset")]
 
 
 # ---------------------------------------------------------------------------
 # delete asset
 # ---------------------------------------------------------------------------
 
+def delete_refusal(asset):
+    """Why an asset something is using is not deleted, and what to do instead."""
+    return (f"{asset.name} is in use: " + "; ".join(
+        str(use.get("said", use)) for use in assets.uses_of(asset))
+        + ". |wedit asset " + asset.hash[:8] + " giveup|n hands it to the "
+          "server instead, which frees your quota and keeps it for them.")
+
+
 def delete_run(cmd, ctx, words):
+    from commands.subjects import verb_form
+
     caller = cmd.caller
     account = account_of(caller)
     words, already = answered(words)
     force = bool(words) and words[-1].lower() == "force"
     if force:
         words = words[:-1]
+    if not words:
+        if not _changeable(ctx).exists():
+            caller.msg("You have no assets to delete.")
+            return None
+        menus.open_menu(caller, verb_form("delete"), session=cmd.session,
+                        path=["asset"])
+        return None
     asset, why = assets.named(" ".join(words), status=None)
     if asset is None:
         caller.msg(why)
@@ -480,10 +568,7 @@ def delete_run(cmd, ctx, words):
         return None
     using = assets.uses_of(asset)
     if using and not force:
-        caller.msg(f"{asset.name} is in use: " + "; ".join(
-            str(use.get("said", use)) for use in using)
-            + ". |wedit asset " + asset.hash[:8] + " giveup|n hands it to the "
-              "server instead, which frees your quota and keeps it for them.")
+        caller.msg(delete_refusal(asset))
         return None
 
     def do():
@@ -502,13 +587,30 @@ def delete_run(cmd, ctx, words):
                   do, already)
 
 
-def delete_items(ctx):
-    return [menus.Action(
+def _delete_entry(ctx, asset):
+    if assets.uses_of(asset):
+        # Listed, so the sort's count holds, but refused before anything is
+        # asked, as `delete world` does for the world you are standing in.
+        return menus.Action(
+            f"asset-{asset.hash[:8]}", line(asset, _account(ctx)),
+            run=lambda c, a=asset: delete_refusal(a))
+    return menus.Action(
         f"asset-{asset.hash[:8]}", line(asset, _account(ctx)),
         run=lambda c, a=asset: assets.delete(a),
         confirm="delete_asset", question=f"Delete {asset.name}?",
         command=f"delete asset {asset.hash[:8]}")
-        for asset in _mine(ctx) if not assets.uses_of(asset)]
+
+
+DELETE_WHICH = _which("delete", _delete_entry, "You have no assets to delete.")
+
+
+def delete_items(ctx):
+    if not _changeable(ctx).exists():
+        return []
+    return [menus.Submenu("asset", "A file the game keeps", DELETE_WHICH,
+                          help="Delete an asset nothing is using, chosen by "
+                               "its sort and then by name.",
+                          command="delete asset")]
 
 
 SUBJECTS = [

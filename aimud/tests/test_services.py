@@ -547,6 +547,41 @@ class ForgettingAService(_AsSomebody):
 
 
 @tag("world")
+class ChosenFromAMenu(_AsSomebody):
+    """A bare `edit` or `delete` holds one entry for services, not one each."""
+
+    def test_the_verb_menu_holds_one_entry_for_them(self):
+        from world import menus
+
+        self.be("Admin")
+        with serving():
+            ctx = menus.Context(self.char1)
+            for verb in ("edit", "delete"):
+                keys = [item.key for item in
+                        subjects.verb_form(verb).items_for(ctx)]
+                self.assertEqual(keys.count("service"), 1, verb)
+                self.assertNotIn("service-weather", keys, verb)
+
+    def test_and_it_lists_them(self):
+        from world import menus
+
+        self.be("Admin")
+        with serving():
+            ctx = menus.Context(self.char1)
+            for which in (services_subject.EDIT_WHICH,
+                          services_subject.DELETE_WHICH):
+                self.assertEqual([item.key for item in which.items_for(ctx)],
+                                 ["service-weather"])
+
+    def test_with_none_it_says_so(self):
+        self.be("Admin")
+        self.assertIn("no services you can change",
+                      self.call(CmdEdit(), "service"))
+        self.assertIn("no services you can remove",
+                      self.call(CmdDelete(), "service"))
+
+
+@tag("world")
 class TheManualPage(GameTest):
     """Generated off the register, so it cannot fall behind it."""
 

@@ -606,10 +606,22 @@ def _edit_tool(caller, record, words):
     caller.msg(f"{tool_line(tool, info)}.")
 
 
+def _open_which(cmd, ctx, verb, empty):
+    """`edit service` or `delete service` alone: the menu of them, or why not."""
+    from commands.subjects import verb_form
+
+    if not _changeable(ctx):
+        cmd.caller.msg(empty)
+        return
+    menus.open_menu(cmd.caller, verb_form(verb), session=cmd.session,
+                    path=["service"])
+
+
 def edit_run(cmd, ctx, words):
     caller = cmd.caller
     if not words:
-        caller.msg("Which service? |wview services|n lists them.")
+        _open_which(cmd, ctx, "edit", "There are no services you can change. "
+                                      "|wview services|n lists them.")
         return
     record = services.get(words[0])
     if record is None:
@@ -656,19 +668,46 @@ def edit_run(cmd, ctx, words):
                f"|wedit service {record['name']} refresh|n connects with it.")
 
 
+def _changeable(ctx):
+    """The services this caller may change: those of a kind they may run."""
+    return [name for name in services.names()
+            if may_run_kind(_caller(ctx),
+                            (services.get(name) or {}).get("kind"))]
+
+
+def _which(verb, entry, empty):
+    """
+    The services one may `edit` or `delete`, as one entry in the verb's menu.
+
+    Each service used to be an entry of its own in a bare `edit`, among the
+    worlds and everything else, where every other subject has one.
+    """
+    return menus.Form(
+        key=f"{verb}-services", title=f"{verb.capitalize()} which service?",
+        intro=lambda ctx: "" if _changeable(ctx) else empty,
+        items=lambda ctx: [entry(ctx, name) for name in _changeable(ctx)])
+
+
+def _edit_entry(ctx, name):
+    record = services.get(name) or {}
+    draft = {field: record.get(field) for field in record
+             if field not in ("tools", "recent", "status", "oauth")}
+    return menus.Submenu(
+        f"service-{name}", f"The service {name}", SERVICE,
+        data={"existing": True}, draft=lambda ctx, d=draft: dict(d),
+        command=f"edit service {name}")
+
+
+EDIT_WHICH = _which("edit", _edit_entry, "There are no services you can change.")
+
+
 def edit_items(ctx):
-    found = []
-    for name in services.names():
-        record = services.get(name)
-        if not may_run_kind(_caller(ctx), record.get("kind")):
-            continue
-        draft = {field: record.get(field) for field in record
-                 if field not in ("tools", "recent", "status", "oauth")}
-        found.append(menus.Submenu(
-            f"service-{name}", f"The service {name}", SERVICE,
-            data={"existing": True}, draft=lambda ctx, d=draft: dict(d),
-            command=f"edit service {name}"))
-    return found
+    if not _changeable(ctx):
+        return []
+    return [menus.Submenu("service", "A service this game may reach",
+                          EDIT_WHICH, command="edit service",
+                          help="Change where a service is, how it is "
+                               "reached, or its key.")]
 
 
 def create_run(cmd, ctx, words):
@@ -730,7 +769,8 @@ def delete_run(cmd, ctx, words):
     caller = cmd.caller
     words, already = answered(words)
     if not words:
-        caller.msg("Which service? |wview services|n lists them.")
+        _open_which(cmd, ctx, "delete", "There are no services you can "
+                                        "remove.")
         return
     record = services.get(words[0])
     if record is None:
@@ -754,14 +794,25 @@ def delete_run(cmd, ctx, words):
            "delete_service", f"delete service {name}", do, already)
 
 
+def _delete_entry(ctx, name):
+    return menus.Action(f"service-{name}", f"The service {name}",
+                        run=lambda c, n=name: (services.remove(n) and f"Forgot {n}.") or "",
+                        confirm="delete_service",
+                        question=f"Forget the service {name}?",
+                        command=f"delete service {name}")
+
+
+DELETE_WHICH = _which("delete", _delete_entry,
+                      "There are no services you can remove.")
+
+
 def delete_items(ctx):
-    return [menus.Action(f"service-{name}", f"The service {name}",
-                         run=lambda c, n=name: (services.remove(n) and f"Forgot {n}.") or "",
-                         confirm="delete_service",
-                         question=f"Forget the service {name}?",
-                         command=f"delete service {name}")
-            for name in services.names()
-            if may_run_kind(_caller(ctx), (services.get(name) or {}).get("kind"))]
+    if not _changeable(ctx):
+        return []
+    return [menus.Submenu("service", "A service this game may reach",
+                          DELETE_WHICH, command="delete service",
+                          help="Forget a service. Rules that call its tools "
+                               "stop being able to.")]
 
 
 SUBJECTS = [

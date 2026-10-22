@@ -608,6 +608,78 @@ class TypingIt(_Typed):
 
 
 @tag("world")
+class ChosenFromAMenu(_Typed):
+    """A bare `edit` or `delete` holds one entry for assets, sorted by type."""
+
+    def setUp(self):
+        super().setUp()
+        self.sound(b"rain", name="rain", by=self.account)
+        self.sound(b"wind", name="wind", by=self.account)
+        self.add(name="The School", added_by=self.account)
+
+    def labels(self, form, ctx):
+        return [item.label_for(ctx) for item in form.items_for(ctx)]
+
+    def keys(self, form, ctx):
+        return [item.key for item in form.items_for(ctx)]
+
+    def test_the_verb_menu_holds_one_entry_for_them(self):
+        from commands import subjects
+        from world import menus
+
+        ctx = menus.Context(self.char1)
+        for verb in ("edit", "delete"):
+            listed = self.keys(subjects.verb_form(verb), ctx)
+            self.assertEqual(listed.count("asset"), 1, verb)
+            self.assertFalse([key for key in listed
+                              if key.startswith("asset-")], verb)
+
+    def test_it_asks_which_sort_and_then_which_one(self):
+        from commands import assets_subject
+        from world import menus
+
+        ctx = menus.Context(self.char1)
+        sorts = assets_subject.EDIT_WHICH
+        self.assertEqual(self.keys(sorts, ctx), ["world", "testsound"])
+        self.assertIn("(2)", self.labels(sorts, ctx)[1])
+        sounds = sorts.items_for(ctx)[1].form
+        listed = self.labels(sounds, ctx)
+        self.assertEqual(len(listed), 2)
+        self.assertIn("rain", listed[0])
+        self.assertIn("wind", listed[1])
+
+    def test_only_your_own_unless_an_admin(self):
+        from commands import assets_subject
+        from world import menus
+
+        self.sound(b"hail", name="hail", by=self.account2)
+        ctx = menus.Context(self.char1)
+        sorts = assets_subject.EDIT_WHICH
+        self.assertIn("(2)", self.labels(sorts, ctx)[1])
+        self.admin()
+        self.assertIn("(3)", self.labels(sorts, ctx)[1])
+
+    def test_one_in_use_is_listed_but_refused(self):
+        from commands import assets_subject
+        from world import menus
+
+        rain = assets.named("rain")[0]
+        self.used_here(rain)
+        ctx = menus.Context(self.char1)
+        sounds = assets_subject.DELETE_WHICH.items_for(ctx)[1].form
+        entry = sounds.items_for(ctx)[0]
+        self.assertIsNone(entry.confirm)
+        self.assertIn("giveup", entry.run(ctx))
+        self.assertIsNotNone(assets.find(rain.hash))
+
+    def test_nothing_to_change_says_so(self):
+        for asset in list(assets.search(status=None)):
+            assets.delete(asset)
+        self.assertIn("no assets to change", self.type("edit", "asset"))
+        self.assertIn("no assets to delete", self.type("delete", "asset"))
+
+
+@tag("world")
 class FetchingFromTheCommand(_Typed):
     """`create asset`'s save: fetched in a thread, kept on the main one."""
 
