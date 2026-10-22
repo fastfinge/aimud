@@ -227,6 +227,101 @@ class TheCommand(GameCommandTest):
 
 
 @tag("unit")
+class BracesThatAreNotAList(SimpleTestCase):
+    """What a model writes when told braces choose a word: alternatives."""
+
+    def test_alternatives_are_stray(self):
+        self.assertEqual(token_lists.stray_braces(
+            "A {blue|green|red} ball."), ["{blue|green|red}"])
+
+    def test_so_is_a_brace_left_open_or_shut_alone(self):
+        self.assertEqual(token_lists.stray_braces("A {big ball."), ["{big ball."])
+        self.assertEqual(token_lists.stray_braces("A big} ball."), ["}"])
+
+    def test_a_slot_is_not(self):
+        self.assertEqual(token_lists.stray_braces(
+            "A {color} ball for {user}'s {self.possessive} hand."), [])
+
+    def test_nor_an_escaped_brace_or_an_old_user(self):
+        self.assertEqual(token_lists.stray_braces(r"A \{set\} for {{user}}."),
+                         [])
+
+    def test_and_the_complaint_says_what_to_do_instead(self):
+        said = " ".join(token_lists.brace_complaints("A {blue|red} ball.",
+                                                     None))
+        self.assertIn("{blue|red}", said)
+        self.assertIn("create tokens", said)
+
+
+@tag("world")
+class DescribedInAForm(World):
+    """
+    The description fields, which `~` fills through the same check a typed
+    value gets -- and whose help used to say {smell} to every model.
+    """
+
+    def field(self, form, key):
+        from world import menus
+
+        ctx = menus.Context(self.char1, world_root=self.root)
+        return ctx, next(item for item in form.items_for(ctx)
+                         if getattr(item, "key", "") == key)
+
+    def test_alternatives_are_refused_at_the_field(self):
+        from world.makers import things
+
+        ctx, field = self.field(things.NEW_ITEM, "description")
+        value, complaint = field.read(ctx, "A {blue|green|red} ball.")
+        self.assertIsNone(value)
+        self.assertIn("not a word list", complaint)
+
+    def test_so_is_a_list_the_world_has_not_got(self):
+        from world.makers import things
+
+        ctx, field = self.field(things.NEW_ITEM, "description")
+        value, complaint = field.read(ctx, "It smells of {smell}.")
+        self.assertIsNone(value)
+        self.assertIn("{smell}", complaint)
+
+    def test_and_one_it_keeps_is_taken(self):
+        from world.makers import things
+
+        token_lists.register(self.root, "smell", SMELL)
+        ctx, field = self.field(things.NEW_ITEM, "description")
+        self.assertEqual(field.read(ctx, "It smells of {smell}."),
+                         ("It smells of {smell}.", ""))
+
+    def test_the_help_names_no_list_the_world_does_not_keep(self):
+        from world.makers import things
+
+        ctx, field = self.field(things.NEW_ITEM, "description")
+        self.assertNotIn("{smell}", field.help_for(ctx))
+        self.assertIn("no word lists", field.help_for(ctx))
+
+    def test_and_names_the_ones_it_does(self):
+        from world.makers import things
+
+        token_lists.register(self.root, "color", COLOR)
+        ctx, field = self.field(things.NEW_ROOM, "description")
+        self.assertIn("{color}", field.help_for(ctx))
+
+    def test_which_is_what_a_model_filling_it_in_is_shown(self):
+        from world import menus, suggesting
+        from world.makers import things
+
+        ctx = menus.Context(self.char1, world_root=self.root)
+        said = suggesting.prompt(ctx, things.NEW_ITEM, [])[1]["content"]
+        self.assertNotIn("{smell}", said)
+        self.assertIn("write no braces", said)
+
+    def test_a_required_one_is_still_required(self):
+        from world.makers import things
+
+        ctx, field = self.field(things.NEW_ROOM, "description")
+        self.assertEqual(field.read(ctx, "")[0], None)
+
+
+@tag("unit")
 class NoPromptReadsARawDescription(SimpleTestCase):
     """
     The structural guard. A description keeps its tokens, so a module that

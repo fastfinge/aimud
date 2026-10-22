@@ -234,6 +234,54 @@ def clean_roles(applies_to):
     return out
 
 
+def clean_shapes(shapes):
+    """
+    The ways a verb can be said, as sorted lists of role names, deduplicated.
+
+    A shape is the roles that must all be named for one way of saying it to
+    be a whole sentence: `wave` is ["direct"] (wave the flag) and ["target"]
+    (wave at the guard), and `wave` alone is [] when somebody can just wave.
+    """
+    found = []
+    for shape in (shapes or []):
+        if isinstance(shape, str):
+            shape = [shape]
+        try:
+            roles = sorted({str(role).strip().lower() for role in shape})
+        except TypeError:
+            continue
+        if all(role in ROLES for role in roles) and roles not in found:
+            found.append(roles)
+    return found
+
+
+def shapes_of(settled):
+    """
+    Every way a declared action may be said, as lists of required roles.
+
+    A declaration from before shapes existed, or one that gave none, has one:
+    its required roles, which is exactly what `missing_role` always asked for.
+    """
+    if not settled:
+        return []
+    given = clean_shapes(settled.get("shapes"))
+    if given:
+        return given
+    required = []
+    for entry in settled.get("applies_to") or []:
+        try:
+            if not entry.get("optional"):
+                required.append(str(entry.get("role") or ""))
+        except AttributeError:
+            continue
+    return [sorted(role for role in required if role)]
+
+
+def _named(bound):
+    """The roles an attempt filled, as a sorted list."""
+    return sorted(role for role in (bound or {}) if role in ROLES)
+
+
 def clean_gates(despite):
     """The gates a declaration waives, with anything unusable dropped."""
     found = []
@@ -262,7 +310,7 @@ def waives(world_root, action, gate):
 
 
 def declare(world_root, action, applies_to=(), sense="", means="", despite=(),
-            must=()):
+            must=(), shapes=(), refused_shapes=()):
     """
     Settle what an action takes, once, and answer with what was settled.
 
@@ -295,6 +343,18 @@ def declare(world_root, action, applies_to=(), sense="", means="", despite=(),
         "despite": clean_gates(despite),
         "must": clean_must(must),
     }
+    # Every role a shape names is one the action takes, so a shape cannot
+    # name a role nothing says how near to be.
+    record["shapes"] = clean_shapes(shapes)
+    record["refused_shapes"] = clean_shapes(refused_shapes)
+    taken = {entry["role"] for entry in record["applies_to"]}
+    for shape in record["shapes"]:
+        for role in shape:
+            if role not in taken:
+                taken.add(role)
+                record["applies_to"].append(
+                    {"role": role, "access": DEFAULT_ACCESS,
+                     "optional": True})
     if world_root:
         store = _store(world_root)
         store[action] = record
@@ -343,16 +403,86 @@ def missing_role(world_root, action, bound):
     settled = spec(world_root, action)
     if not settled:
         return ""
-    for entry in (settled.get("applies_to") or []):
-        try:
-            if entry.get("optional"):
-                continue
-            role = str(entry.get("role") or "")
-        except AttributeError:
-            continue
-        if role and role not in (bound or {}):
-            return role
-    return ""
+    named = set(_named(bound))
+    shapes = shapes_of(settled)
+    if any(set(shape) <= named for shape in shapes):
+        return ""
+    # The way of saying it nearest to what was said: the one most of whose
+    # roles were named, and then the first declared. "Wave" alone, for a verb
+    # that is either "wave the flag" or "wave at the guard", asks "wave what?".
+    nearest = max(shapes, key=lambda shape: len(set(shape) & named))
+    return next((role for role in nearest if role not in named), "")
+
+
+def unsaid_shape(world_root, action, bound):
+    """
+    The way this attempt said the verb, when it is one nobody has settled.
+
+    The roles it named, when they fit no declared shape and nobody has been
+    asked about them yet -- "wave at the phone" for a verb so far only said
+    as "wave the phone". None otherwise: when the attempt fits, when it named
+    nothing (a bare verb is not a new way of saying it, only an unfinished
+    one), and when that shape was asked about and refused.
+    """
+    settled = spec(world_root, action)
+    named = _named(bound)
+    if not settled or not named or not missing_role(world_root, action, bound):
+        return None
+    if named in clean_shapes(settled.get("refused_shapes")):
+        return None
+    return named
+
+
+def add_shape(world_root, action, roles, access=None):
+    """
+    Settle that an action may also be said this way. Answers with the record.
+
+    The one change a settled declaration takes, and the reason it may: a
+    shape only lets more sentences through. Every rule was written against
+    a way of saying the verb that still works exactly as it did, so "first
+    answer stands" is kept for everything it protects.
+    """
+    settled = spec(world_root, action)
+    roles = (clean_shapes([roles]) or [None])[0]
+    if not settled or roles is None:
+        return settled
+    record = dict(settled)
+    shapes = shapes_of(record)
+    if roles not in shapes:
+        shapes.append(roles)
+    record["shapes"] = shapes
+    applies = [dict(entry) for entry in record.get("applies_to") or []]
+    taken = {entry.get("role") for entry in applies}
+    for role in roles:
+        if role not in taken:
+            wanted = str((access or {}).get(role) or "").strip().lower()
+            applies.append({"role": role,
+                            "access": wanted if wanted in ACCESS
+                            else DEFAULT_ACCESS,
+                            "optional": True})
+    record["applies_to"] = applies
+    return _keep(world_root, record)
+
+
+def refuse_shape(world_root, action, roles):
+    """Settle that an action is never said this way, so nobody asks again."""
+    settled = spec(world_root, action)
+    roles = (clean_shapes([roles]) or [None])[0]
+    if not settled or roles is None:
+        return settled
+    record = dict(settled)
+    refused = clean_shapes(record.get("refused_shapes"))
+    if roles not in refused:
+        refused.append(roles)
+    record["refused_shapes"] = refused
+    return _keep(world_root, record)
+
+
+def _keep(world_root, record):
+    store = _store(world_root)
+    store[record["action"]] = record
+    setattr(world_root.db, ATTR, store)
+    return dict(record)
 
 
 def asking_for(action, role):
@@ -421,6 +551,13 @@ def prompt_block(world_root, action):
         "optional is for a role that may be left unsaid, where the world can",
         'work out what was meant: "launch" aboard a ship means the ship.',
         "",
+        "shapes is for a verb that can be said more than one way, each a",
+        "complete sentence with different roles. Wave the flag, wave at the",
+        'guard, and simply wave are three: [["direct"], ["target"], []]. List',
+        "every way it is ordinarily said, not only the way it was typed now,",
+        "because a way left out is answered \"wave what?\" until somebody asks",
+        "again. Leave shapes out for a verb with one way: applies_to says it.",
+        "",
         "despite is almost always the empty list, and you should need a",
         "moment's thought before it is not. Some conditions stop a person",
         "doing anything at all -- being dead, being tied up, being gagged --",
@@ -485,6 +622,13 @@ def declaration_tool(action):
                            "description": "The roles it takes; empty for none"},
             "means": {"type": "string",
                       "description": "Optional. What it means, in a sentence"},
+            "shapes": {"type": "array",
+                       "items": {"type": "array",
+                                 "items": {"type": "string",
+                                           "enum": list(ROLES)}},
+                       "description": "Optional. Each way it can be said, as "
+                                      "the roles that must all be named; "
+                                      "see the instructions"},
             "despite": {"type": "array",
                         "items": {"type": "string", "enum": list(GATES)},
                         "description": "Almost always empty; see the "
@@ -585,7 +729,8 @@ def learn(sponsor, world_root, action, bound, actor, on_success,
         on_success(declare(world_root, action, applies_to=roles,
                            sense=str(reply.get("sense") or ""),
                            means=str(reply.get("means") or ""),
-                           despite=reply.get("despite") or []))
+                           despite=reply.get("despite") or [],
+                           shapes=reply.get("shapes") or []))
 
     # Rounds out is the same as no answer: what the attempt shows stands in.
     box = tb.Toolbox([declaration_tool(action)] + lookups.named("verb_info"),
@@ -596,6 +741,117 @@ def learn(sponsor, world_root, action, bound, actor, on_success,
                  on_done=answered, on_error=fall_back,
                  on_exhausted=lambda _last: fall_back(), rounds=LEARN_ROUNDS)
 
+
+
+#: Rounds the question about a new way of saying a verb may take.
+SHAPE_ROUNDS = 4
+
+#: How each role reads in a sentence, for asking about one.
+_ROLE_SAID = {"direct": "something", "instrument": "with something",
+              "target": "at or to something", "container": "in something",
+              "source": "from something"}
+
+
+def shape_tool(action, roles):
+    """`declare_shape`, the finish tool `learn_shape` answers with."""
+    from world import toolbox as tb
+
+    def parameters(ctx):
+        return tb.params({
+            "takes": {"type": "boolean",
+                      "description": f"Whether {action} is ordinarily said "
+                                     f"this way"},
+            "access": {"type": "array",
+                       "items": {"type": "object",
+                                 "properties": {
+                                     "role": {"type": "string",
+                                              "enum": list(roles)},
+                                     "access": {"type": "string",
+                                                "enum": list(ACCESS)}},
+                                 "required": ["role", "access"]},
+                       "description": "Optional, when it does: how near each "
+                                      "role must be; touchable is the "
+                                      "ordinary answer"},
+        }, ["takes"])
+
+    return tb.Tool(
+        "declare_shape",
+        f'Say whether "{action}" can be said this way.',
+        parameters, lambda ctx, args, answer: answer(tb.accept(args)),
+        finishes=True)
+
+
+def learn_shape(sponsor, world_root, action, bound, actor, on_done):
+    """
+    Async. Ask whether an action can be said the way this attempt said it.
+
+    The second half of "first answer stands". A declaration made from "wave
+    the phone" did not think of "wave at the phone", and answered that with
+    "wave what?" for ever. Asked once for each new way: a yes adds the shape
+    (`add_shape`), and a no is kept (`refuse_shape`), so the question is never
+    bought twice.
+
+    `on_done()` either way, and never fails the attempt: with no key, no
+    answer, or a world that writes no verbs, nothing is settled and the
+    attempt goes on to say what it would have said anyway. The caller does
+    not ask again in the same attempt.
+    """
+    from world import llm, lore, verbs
+    from world import toolbox as tb
+
+    roles = unsaid_shape(world_root, action, bound)
+    if roles is None or not sponsor.will("verbs"):
+        on_done()
+        return
+    try:
+        sponsor.key()
+    except (AttributeError, ValueError):
+        on_done()
+        return
+
+    action = verbs.canonical_verb(str(action or "").strip().lower())
+    settled = spec(world_root, action) or {}
+    known = [" ".join([action] + [_ROLE_SAID[role] for role in shape])
+             for shape in shapes_of(settled)]
+    asked = " ".join([action] + [_ROLE_SAID[role] for role in roles])
+    messages = [
+        {"role": "system", "content": (
+            f'"{action}" is a verb this world has already settled. Say '
+            f"whether it can also be said another way, by calling "
+            f"declare_shape. Yes when it is an ordinary way to say this verb "
+            f"-- waving at somebody is as ordinary as waving a flag. No when "
+            f"it is not a sentence anybody means: nobody powers at a "
+            f"datapad.")},
+        {"role": "user", "content": (
+            f"{lore.description(world_root, actor)}\n\n"
+            f"It means: {settled.get('means') or 'what it ordinarily means'}."
+            f"\nIt is said: " + "; ".join(known) + "."
+            f"\nSomebody has just said: {asked}. Is that a way to say it?")},
+    ]
+
+    def answered(reply):
+        if isinstance(reply, dict) and "takes" in reply:
+            if reply.get("takes"):
+                access = {}
+                for entry in reply.get("access") or []:
+                    try:
+                        access[str(entry.get("role"))] = entry.get("access")
+                    except AttributeError:
+                        continue
+                add_shape(world_root, action, roles, access)
+                logger.log_info(f"actions: {action} may also be said "
+                                f"{', '.join(roles)}")
+            else:
+                refuse_shape(world_root, action, roles)
+        on_done()
+
+    box = tb.Toolbox([shape_tool(action, roles)],
+                     tb.ToolContext(world_root=world_root, actor=actor,
+                                    bound=bound, sponsor=sponsor,
+                                    job="commands"))
+    llm.converse(sponsor, sponsor.model_for("commands"), messages, box,
+                 on_done=answered, on_error=lambda _why: on_done(),
+                 on_exhausted=lambda _last: on_done(), rounds=SHAPE_ROUNDS)
 
 
 # ---------------------------------------------------------------------------
@@ -631,17 +887,24 @@ def lookup_tools():
 
 def tools():
     """
-    `declare_action`, as declared: the action generator's answer.
+    `declare_action` and `declare_shape`, as declared: the action
+    generator's answers.
 
-    Built per call by `declaration_tool(action)`, which knows which
-    action is being declared. See `world/toolkit.py`.
+    Built per call by `declaration_tool(action)` and `shape_tool(action,
+    roles)`, which know which action is being asked about. See
+    `world/toolkit.py`.
     """
     from world import toolbox as tb
 
     return [
         tb.Tool(
             "declare_action",
-            "Say what one action means: what it does to what, and when it can" 
+            "Say what one action means: what it does to what, and when it can"
             "be done at all.",
+            finishes=True),
+        tb.Tool(
+            "declare_shape",
+            "Say whether an action already settled can also be said another "
+            "way: waving at something as well as waving it.",
             finishes=True),
     ]

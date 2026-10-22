@@ -557,6 +557,151 @@ class TheCarryOutTheWorldAlreadyHeld(GameTest):
 
 
 @tag("unit")
+class ConditionsOnlyACheckReads(SimpleTestCase):
+    """
+    `view faults` called these untested conditions: a carry-out given
+    conditions fires every time, because only a check rule's are read. The
+    tool had no `when` to offer instead, so the model had nowhere else to put
+    "only for a lit lamp".
+    """
+
+    def setUp(self):
+        self.offered = [("world", "everywhere", {"world": True})]
+
+    def keep(self, *rules):
+        return rule_gen.validate({"rules": list(rules)}, self.offered, "wave")
+
+    def test_conditions_on_a_carry_out_are_refused_with_where_they_go(self):
+        kept, complaints = self.keep(
+            {"phase": "carry_out", "scope": "world",
+             "conditions": [{"subject": "direct", "is": ["lit"]}],
+             "effects": [{"type": "narrate"}]})
+        self.assertEqual(kept, [])
+        self.assertIn("put them in when", complaints[0])
+        self.assertIn("check rule", complaints[0])
+
+    def test_a_when_is_kept_as_a_guard(self):
+        kept, complaints = self.keep(
+            {"phase": "carry_out", "scope": "world",
+             "when": [{"subject": "direct", "is": ["lit"]}],
+             "effects": [{"type": "narrate"}]})
+        self.assertEqual(complaints, [])
+        self.assertEqual(kept[0]["when"], [{"subject": "direct",
+                                            "is": ["lit"]}])
+        self.assertEqual(kept[0]["conditions"], [])
+
+    def test_the_tool_offers_a_when(self):
+        from world import toolbox as tb
+
+        tool = rule_gen.rules_tool("wave", self.offered)
+        rule = tool.parameters(tb.ToolContext())["properties"]["rules"]["items"]
+        self.assertIn("when", rule["properties"])
+
+    def test_and_the_prompt_guards_try_with_it(self):
+        self.assertIn('"when": [{"subject": "direct", "unbound": true}]',
+                      rule_gen._EFFECTS)
+
+
+@tag("world")
+class ARuleThatCouldNeverFire(GameTest):
+    """
+    What `view faults` reports as shadowed, refused before it is filed: a
+    carry-out an older unguarded one at the same scope always beats.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+        self.offered = [("world", "everywhere", {"world": True})]
+
+    def keep(self, *rules):
+        return rule_gen.validate({"rules": list(rules)}, self.offered,
+                                 "summon", self.root)
+
+    def summons(self, what, when=None):
+        rule = {"phase": "carry_out", "scope": "world",
+                "effects": [{"type": "create_object", "name": what,
+                             "why": "summoned"}]}
+        if when:
+            rule["when"] = when
+        return rule
+
+    def test_beaten_by_a_rule_the_world_holds(self):
+        R.add(self.root, R.blank(
+            action="summon", phase=R.CARRY_OUT, scope={"world": True},
+            name="summoning brings earth",
+            effects=[{"type": "create_object", "name": "earth",
+                      "why": "summoned"}]))
+        kept, complaints = self.keep(self.summons("air"))
+        self.assertEqual(kept, [])
+        self.assertIn("could never fire", complaints[0])
+        self.assertIn("summoning brings earth", complaints[0])
+
+    def test_or_by_another_in_the_same_answer(self):
+        kept, complaints = self.keep(self.summons("earth"),
+                                     self.summons("air"))
+        self.assertEqual(len(kept), 1)
+        self.assertIn("another rule in this answer", complaints[0])
+
+    def test_a_when_tells_them_apart(self):
+        kept, complaints = self.keep(
+            self.summons("air", when=[{"subject": "here", "is": ["windy"]}]),
+            self.summons("earth"))
+        self.assertEqual(complaints, [])
+        self.assertEqual(len(kept), 2)
+
+    def test_a_rule_wanting_a_thing_and_its_opposite(self):
+        kept, complaints = self.keep(
+            {"phase": "check", "scope": "world",
+             "conditions": [{"subject": "direct", "is": ["lit"]},
+                            {"subject": "direct", "lacks": ["lit"]}]})
+        self.assertEqual(kept, [])
+        self.assertIn("its opposite", complaints[0])
+
+
+@tag("world")
+class TheVerbThatUndoesIt(GameTest):
+    """
+    One attempt may also write the way back, which is the commonest fault in
+    every world: a lamp lit and never put out.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+        self.offered = [("world", "everywhere", {"world": True})]
+
+    def test_its_rule_is_filed_under_the_other_verb(self):
+        kept, complaints = rule_gen.validate({"rules": [
+            {"phase": "carry_out", "scope": "world",
+             "effects": [{"type": "set_state", "role": "direct",
+                          "add": ["lit"]}]},
+            {"phase": "carry_out", "scope": "world", "action": "extinguish",
+             "effects": [{"type": "set_state", "role": "direct",
+                          "remove": ["lit"]}]},
+        ]}, self.offered, "light", self.root)
+        self.assertEqual(complaints, [])
+        # Folded as typing it would be.
+        self.assertEqual([r["action"] for r in kept], ["light", "douse"])
+
+    def test_and_what_this_verb_makes_is_not_held_against_it(self):
+        """A check on putting out that wants it lit is right, not dead."""
+        kept, complaints = rule_gen.validate({"rules": [
+            {"phase": "carry_out", "scope": "world",
+             "effects": [{"type": "set_state", "role": "direct",
+                          "add": ["lit"]}]},
+            {"phase": "check", "scope": "world", "action": "douse",
+             "conditions": [{"subject": "direct", "is": ["lit"]}]},
+        ]}, self.offered, "light", self.root)
+        self.assertEqual(complaints, [])
+        self.assertEqual(len(kept), 2)
+
+
+@tag("unit")
 class TheGambleTheCutoverDropped(SimpleTestCase):
     """
     `contest` is what makes a verb a gamble rather than a certainty, and the
@@ -651,3 +796,146 @@ class TheWorldsOwnRules(GameTest):
 
     def test_the_description_is_still_there(self):
         self.assertIn("endless alchemy", self.asked())
+
+
+@tag("world")
+class MendingTheFaults(GameTest):
+    """
+    `edit faults`: the fault report handed to the rules model, and what it
+    proposes put in the suggestions queue -- never in force until accepted.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.root = self.room1
+        self.root.db.is_world_root = True
+        self.room1.db.world_root = self.root
+        verbs.register_state(self.root, "lit", means="it is burning")
+        # Lit and never put out: one way.
+        self.lights = R.add(self.root, R.blank(
+            action="light", phase=R.CARRY_OUT, scope={"world": True},
+            name="lighting it lights it",
+            effects=[{"type": "set_state", "role": "direct",
+                      "add": ["lit"]}]))
+        # And a carry-out whose conditions nothing reads.
+        self.waves = R.add(self.root, R.blank(
+            action="wave", phase=R.CARRY_OUT, scope={"world": True},
+            name="waving a lit thing",
+            conditions=[{"subject": "direct", "is": ["lit"]}],
+            effects=[{"type": "narrate"}]))
+
+    def mend(self, *replies):
+        from tests.support import FakeSponsor, finishing, immediately, replying
+
+        found, errors = [], []
+        with immediately(), replying(*[finishing(propose_fixes=reply)
+                                       for reply in replies]) as script:
+            rule_gen.fix_faults(
+                FakeSponsor(), self.root,
+                on_success=lambda queued, left: found.append((queued, left)),
+                on_error=errors.append)
+            self.script = script
+        self.assertEqual(errors, [])
+        return found[0]
+
+    def corrected_wave(self, **changes):
+        rule = {"phase": "carry_out", "scope": "world", "action": "wave",
+                "name": "waving a lit thing",
+                "when": [{"subject": "direct", "is": ["lit"]}],
+                "effects": [{"type": "narrate"}]}
+        rule.update(changes)
+        return {"fault": "its conditions were never read",
+                "replaces": self.waves["id"], "rule": rule}
+
+    def test_the_model_reads_the_fault_report(self):
+        self.mend({"fixes": []})
+        asked = self.script.prompts[0][1]["content"]
+        self.assertIn("lit", asked)
+        self.assertNotIn("|w", asked)
+
+    def test_a_corrected_copy_waits_and_names_what_it_replaces(self):
+        queued, _left = self.mend({"fixes": [self.corrected_wave()]})
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(queued[0]["replaces"], self.waves["id"])
+        self.assertFalse(queued[0]["listed"])
+        self.assertTrue(R.get(self.root, self.waves["id"])["listed"],
+                        "nothing changes until it is accepted")
+
+    def test_and_accepting_it_suspends_the_original(self):
+        from world import suggest
+
+        queued, _left = self.mend({"fixes": [self.corrected_wave()]})
+        suggest.accept(self.root, queued[0]["id"])
+        self.assertFalse(R.get(self.root, self.waves["id"])["listed"])
+        self.assertTrue(R.get(self.root, queued[0]["id"])["listed"])
+
+    def test_and_view_faults_no_longer_reports_it(self):
+        """
+        Found in play: the original stayed in the report once suspended, so
+        `edit faults` asked to fix it again and was refused for naming a rule
+        no longer in force.
+        """
+        from world import rulecheck, suggest
+
+        def untested():
+            found = rulecheck.scan(rulecheck.of_world(self.root))
+            return [rule["id"] for rule, _many
+                    in found["untested_conditions"]]
+
+        self.assertEqual(untested(), [self.waves["id"]])
+        queued, _left = self.mend({"fixes": [self.corrected_wave()]})
+        self.assertEqual(untested(), [self.waves["id"]],
+                         "a waiting proposal changes nothing yet")
+        suggest.accept(self.root, queued[0]["id"])
+        self.assertEqual(untested(), [])
+
+    def test_the_way_back_is_a_new_rule_for_the_other_verb(self):
+        queued, _left = self.mend({"fixes": [{
+            "fault": "lit can be set and never unset",
+            "rule": {"phase": "carry_out", "scope": "world",
+                     "action": "extinguish", "name": "putting it out",
+                     "effects": [{"type": "set_state", "role": "direct",
+                                  "remove": ["lit"]}]}}]})
+        self.assertEqual([r["action"] for r in queued], ["douse"])
+        self.assertIsNone(queued[0]["replaces"])
+
+    def test_a_fix_with_the_same_fault_is_sent_back_to_be_put_right(self):
+        bad = self.corrected_wave(
+            conditions=[{"subject": "direct", "is": ["lit"]}])
+        bad["rule"].pop("when")
+        queued, _left = self.mend({"fixes": [bad]},
+                                  {"fixes": [self.corrected_wave()]})
+        self.assertEqual(len(queued), 1)
+        sent_back = str(self.script.prompts[1])
+        self.assertIn("put them in when", sent_back)
+
+    def test_replacing_a_rule_that_is_not_there_is_refused(self):
+        fix = self.corrected_wave()
+        fix["replaces"] = "r999"
+        queued, _left = self.mend({"fixes": [fix]})
+        self.assertEqual(queued, [])
+
+    def test_what_it_left_alone_is_said(self):
+        _queued, left = self.mend({"fixes": [],
+                                   "left_alone": "nothing needs putting out"})
+        self.assertEqual(left, "nothing needs putting out")
+
+    def test_a_world_that_writes_no_verbs_is_not_asked(self):
+        from tests.support import FakeSponsor
+
+        errors = []
+        sponsor = FakeSponsor()
+        sponsor.may = lambda making: making != "verbs"
+        rule_gen.fix_faults(sponsor, self.root, on_success=lambda *a: None,
+                            on_error=errors.append)
+        self.assertTrue(errors)
+
+    def test_the_scopes_offered_include_where_the_rules_already_are(self):
+        tokens = [token for token, _said, _scope in
+                  rule_gen.world_menu(self.root)]
+        self.assertIn("world", tokens)
+
+    def test_view_faults_says_how_to_have_them_mended(self):
+        from commands.rules_subject import faults_report
+
+        self.assertIn("edit faults", faults_report(self.root))

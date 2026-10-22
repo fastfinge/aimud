@@ -65,6 +65,45 @@ def _complaints(ctx, name, description, obj=None):
         world_root=_root(ctx), room=_here(ctx))
 
 
+def _description_help(lead):
+    """A description field's help: what to write, and the lists it may name."""
+    from world import token_lists
+
+    return lambda ctx: f"{lead} {token_lists.lists_said(_root(ctx))}".strip()
+
+
+def _description(required=False):
+    """
+    A description field's `parse`: braces are checked as it is typed.
+
+    Here and not only where the thing is kept, because `~` is answered
+    through this and nothing else. A model that wrote "{blue|green|red}" used
+    to be told it was fine, and the form then refused it -- or, for the
+    alternatives, kept it and showed every player the braces.
+    """
+    from world import token_lists
+
+    def parse(ctx, text):
+        text = str(text or "").strip()
+        if not text:
+            return (None, "This one cannot be left empty.") if required \
+                else ("", "")
+        wrong = token_lists.brace_complaints(text, _root(ctx))
+        if wrong:
+            return None, "; ".join(wrong).capitalize() + "."
+        return text, ""
+
+    return parse
+
+
+#: What the help says before the lists. One place, so the forms agree.
+_THING_LOOKS = "Two or three sentences about the thing alone."
+_ROOM_LOOKS = ("What is here and what it is like. A word list chosen for "
+               "this room is kept, which is how twenty rooms written from "
+               "one description differ.")
+_PERSON_LOOKS = "What anybody sees of them at a glance."
+
+
 class _placeholder:
     """
     Stands in for a thing that does not exist yet, so one checker serves both.
@@ -195,10 +234,8 @@ NEW_ITEM = menus.Form(
                          "half-empty are conditions, and something can undo "
                          "them."),
         menus.Field("description", "What it looks like", kind=menus.LONG_TEXT,
-                    suggestible=True,
-                    help="Two or three sentences about the thing alone. A "
-                         "word list in braces -- {smell} -- is chosen once "
-                         "and kept."),
+                    suggestible=True, parse=_description(),
+                    help=_description_help(_THING_LOOKS)),
         making.picker("kind", "What sort of thing it is", "kind",
                       options=kind_options, required=True,
                       help="Which sort it belongs to. This is where its "
@@ -343,6 +380,8 @@ _EDIT_THING = menus.Form(
                     set=_thing_writer("new_name")),
         menus.Field("new_description", "What it looks like",
                     kind=menus.LONG_TEXT, suggestible=True,
+                    parse=_description(),
+                    help=_description_help(_THING_LOOKS),
                     get=lambda ctx: getattr(getattr(_target(ctx), "db", None),
                                             "desc", ""),
                     set=_thing_writer("new_description")),
@@ -474,10 +513,8 @@ NEW_ROOM = menus.Form(
                     help="What somebody sees at the top of the room."),
         menus.Field("description", "What it looks like", kind=menus.LONG_TEXT,
                     required=True, suggestible=True,
-                    help="What is here and what it is like. A word list in "
-                         "braces -- {weather}, {smell} -- is chosen once for "
-                         "this room and kept, which is how twenty rooms "
-                         "written from one description differ."),
+                    parse=_description(required=True),
+                    help=_description_help(_ROOM_LOOKS)),
         making.picker("zone", "Which area", "zone", options=zone_options,
                       make=lambda ctx: NEW_ZONE,
                       none="None of these -- start a new area",
@@ -592,7 +629,8 @@ EDIT_ROOM = menus.Form(
                     get=lambda ctx: getattr(_here(ctx), "key", ""),
                     set=_room_writer("key")),
         menus.Field("desc", "What it looks like", kind=menus.LONG_TEXT,
-                    suggestible=True,
+                    suggestible=True, parse=_description(),
+                    help=_description_help(_ROOM_LOOKS),
                     get=lambda ctx: getattr(getattr(_here(ctx), "db", None),
                                             "desc", ""),
                     set=_room_writer("desc")),
@@ -870,7 +908,9 @@ def _npc_items(ctx):
         menus.Field("name", "What they are called", required=True,
                     suggestible=True),
         menus.Field("description", "What they look like",
-                    kind=menus.LONG_TEXT, suggestible=True),
+                    kind=menus.LONG_TEXT, suggestible=True,
+                    parse=_description(),
+                    help=_description_help(_PERSON_LOOKS)),
         _manner_field(),
         making.picker("pronouns", "Pronouns", "pronoun",
                       options=pronoun_options, make=_new_pronoun_form,
@@ -928,6 +968,8 @@ EDIT_PERSON = menus.Form(
                     set=_thing_writer("new_name")),
         menus.Field("new_description", "What they look like",
                     kind=menus.LONG_TEXT, suggestible=True,
+                    parse=_description(),
+                    help=_description_help(_PERSON_LOOKS),
                     get=lambda ctx: getattr(getattr(_target(ctx), "db", None),
                                             "desc", ""),
                     set=_thing_writer("new_description")),

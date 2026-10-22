@@ -16,10 +16,12 @@ whoever made it.
   edit suggestions judge [yes]  ask a model to rule on the whole queue
   view effects [<verb>]         what a verb will actually do
   view faults [<world number>]  what the rules say about each other
+  edit faults [yes]             ask the rules model to propose fixes for them
   reset verb <verb> [yes]       forget what a verb takes, so it is asked again
 
-Only `judge` costs anything. The rest is read out of what the world already
-wrote down.
+Only `judge` and `edit faults` cost anything. The rest is read out of what the
+world already wrote down. A fix is a suggestion like any other: nothing is in
+force until somebody accepts it.
 
 **The plural is here and the singular is the maker's.** `view rules` is all of
 them and `view rule r3` is one; `edit rules` suspends and restores across the
@@ -785,7 +787,55 @@ def faults_report(root):
     if standing:
         lines += ["", f"|w{standing} suggestions|n are waiting. "
                       f"|wview suggestions|n reads them."]
+    lines += ["", "|wedit faults|n asks the rules model to propose fixes, "
+                  "which wait in the suggestions for you to accept."]
     return "\n".join(lines)
+
+
+def fix_faults(caller, root):
+    """
+    Hand the fault report to the rules model, and queue what it proposes.
+
+    Paid for by the world, like everything else its rules cost. Nothing it
+    proposes is in force until somebody accepts it.
+    """
+    from world import busy, rule_gen, suggest
+
+    def done(queued, left_alone):
+        if queued:
+            lines = [f"|w{len(queued)} fixes|n proposed:"]
+            lines += [suggest.said(rule, root) for rule in queued]
+            lines.append("|wedit suggestions <id> accept|n puts one in force; "
+                         "a fix that replaces a rule suspends that rule when "
+                         "it is accepted.")
+        else:
+            lines = ["Nothing was proposed that could be kept."]
+        if left_alone:
+            lines.append(f"|xLeft alone: {left_alone}|n")
+        caller.msg("\n".join(lines))
+
+    caller.msg("Asking the rules model to mend this world's faults...")
+    wait = busy.start(caller, "mending this world's faults")
+    rule_gen.fix_faults(
+        sponsor_mod.of(caller), root,
+        on_success=busy.closing(wait, done),
+        on_error=busy.closing(wait, lambda err: caller.msg(f"|r{err}|n")))
+    return None
+
+
+FIX_QUESTION = ("Ask the rules model to propose fixes for this world's faults? "
+                "That is a model call, paid for by this world; what it proposes "
+                "waits in the suggestions for you.")
+
+
+def edit_faults_run(cmd, ctx, words):
+    caller = cmd.caller
+    root = require_world(caller)
+    if root is None or not require_owner(caller, root, "change its rules"):
+        return
+    _words, yes = answered(words)
+    asking(cmd, FIX_QUESTION, "spend", "edit faults",
+           lambda: said(caller, fix_faults(caller, root)), already=yes)
 
 
 def view_faults_run(cmd, ctx, words):
@@ -938,8 +988,18 @@ SUBJECTS = [
             lambda ctx: faults_report(_root(ctx)),
             "Conditions nothing can bring about, rules that cannot fire, and "
             "what the world has refused and why.", "view faults"),
-            offered=lambda ctx: builder(ctx) and in_world(ctx))},
-        help="What this world's rules cannot do between them. For builders.",
+            offered=lambda ctx: builder(ctx) and in_world(ctx)),
+              "edit": Use(edit_faults_run, lambda ctx: [menus.Action(
+                  "faults", "Ask the rules model to fix this world's faults",
+                  run=lambda ctx: fix_faults(_caller(ctx), _root(ctx)),
+                  confirm="spend", question=FIX_QUESTION,
+                  after=menus.CLOSE, command=lambda ctx: "edit faults",
+                  help="It proposes rules that mend what view faults "
+                       "found; each waits in the suggestions until you "
+                       "accept it.")],
+                  offered=owns_here)},
+        help="What this world's rules cannot do between them, and having "
+             "them mended. For builders.",
     ),
     Subject(
         "verb", ("verb",),

@@ -107,9 +107,36 @@ THING, ROOM, ZONE, NOWHERE = "thing", "room", "zone", "nowhere"
 #: binds nothing, and a rule that knows how to make air has to be reachable
 #: from the sentence asking for it. Empty everywhere an attempt is not being
 #: run, and `called` then falls back to whatever is bound.
+#: `prepositions` is the word that introduced each role -- {"target": "at"} --
+#: which is the difference between waving at a phone and waving one, and
+#: between a book put on a table and one put under it: both are `target`.
 Context = namedtuple("Context",
-                     "bound actor world_root action room found words")
-Context.__new__.__defaults__ = (None, None, None, "", None, None, None)
+                     "bound actor world_root action room found words "
+                     "prepositions")
+Context.__new__.__defaults__ = (None, None, None, "", None, None, None, None)
+
+
+class Words(dict):
+    """
+    What was typed for each role, and the preposition that introduced each.
+
+    A dict of the words, as `words` has always been, so everything that
+    passes them along -- an attempt hands them through a dozen calls before
+    a condition reads them -- carries the prepositions too without a second
+    argument in every one of those signatures. Held in memory for one
+    attempt and never stored.
+    """
+
+    def __init__(self, words=None, prepositions=None):
+        super().__init__(words or {})
+        self.prepositions = {str(role): str(word).lower()
+                             for role, word in dict(prepositions or {}).items()
+                             if word}
+
+
+def words_of(parsed):
+    """The `Words` of a parse from `verbs.parse`."""
+    return Words(parsed.get("roles"), parsed.get("prepositions"))
 
 
 def context(bound=None, actor=None, world_root=None, action="", room=None,
@@ -120,7 +147,8 @@ def context(bound=None, actor=None, world_root=None, action="", room=None,
         world_root = getattr(where.db, "world_root", None) if where else None
     return Context(dict(bound or {}), actor, world_root, str(action or ""),
                    room, {} if found is None else found,
-                   dict(words or {}))
+                   dict(words or {}),
+                   dict(getattr(words, "prepositions", None) or {}))
 
 
 def _still_here(obj):
@@ -306,7 +334,7 @@ PREDICATES = ("is", "lacks", "affords", "kind", "not_kind", "holds",
               "placed", "not_placed", "trait", "in_room", "not_in_room",
               "exists", "gone", "able", "reachable_by", "visible_to",
               "leads_to", "not_leads_to", "never", "unbound", "called",
-              "clock")
+              "preposition", "not_preposition", "clock")
 
 
 def predicate_of(condition):
@@ -420,13 +448,21 @@ def _readable(name, value):
     """
     Whether a leaf says something this game can actually test.
 
-    Only the quantified predicates can fail this, and only by naming a count
-    that is nonsense or over the ceiling, or a spec with nothing in it to
-    match on. Refused here rather than at evaluation, for the reason
+    Only the quantified predicates can fail this, by naming a count that is
+    nonsense or over the ceiling, or a spec with nothing in it to match on --
+    and the preposition pair, by naming a word that is not one. Refused here rather than at evaluation, for the reason
     `normalise` refuses a condition too deep to store: a requirement that
     cannot be read is a check that will not check, and the cheapest place to
     find that out is before it is written down.
     """
+    if name in ("preposition", "not_preposition"):
+        # Only words the parser reads as prepositions: anything else is a
+        # role nobody could ever introduce with it, and the rule never fires.
+        from world import verbs
+
+        words = [str(word).lower() for word in _listed(value)]
+        return bool(words) and all(word in verbs.PREPOSITION_ROLES
+                                   for word in words)
     if name not in QUANTIFIED:
         return True
     from world import quantity
@@ -731,6 +767,7 @@ OPPOSITES = {
     "owned_by": "not_owned_by", "not_owned_by": "owned_by",
     "exists": "gone", "gone": "exists",
     "unbound": "unbound",
+    "preposition": "not_preposition", "not_preposition": "preposition",
     "trait": "trait",
     "clock": "clock",
 }
@@ -1072,6 +1109,10 @@ def _abstractly(condition):
                 else f"somebody said {subject}")
     if name == "called":
         return f"{subject} was named as {_word_said(value) or value}"
+    if name in ("preposition", "not_preposition"):
+        words = " or ".join(f'"{word}"' for word in _listed(value))
+        return (f"{subject} was {'not ' if name == 'not_preposition' else ''}"
+                f"said with {words}")
     return ""
 
 
@@ -1752,6 +1793,40 @@ def _p_called(subject, value, condition, ctx, mood):
     return False, ""
 
 
+def _preposition_used(condition, ctx):
+    """The preposition that introduced this condition's role, or ""."""
+    return str((ctx.prepositions or {}).get(role_of(condition)) or "").lower()
+
+
+def _p_preposition(subject, value, condition, ctx, mood):
+    """
+    Whether the role was introduced by one of these words.
+
+    The parser gives several prepositions one role -- "on", "under" and "at"
+    are all `target` -- because a role is what a thing is to the sentence.
+    What it is to the meaning can differ: a book put on the table and one put
+    under it, a phone waved at and one waved. A list is any of them, since a
+    role is introduced by one word: ["on", "onto", "upon"].
+
+    About the sentence, like `called`, so it answers whether or not anything
+    was found for the role. A role nobody named was said with nothing.
+    """
+    used = _preposition_used(condition, ctx)
+    met = bool(used) and used in {str(word).lower() for word in _listed(value)}
+    if not met and mood == WANT:
+        return False, "say it another way"
+    return met, ""
+
+
+def _p_not_preposition(subject, value, condition, ctx, mood):
+    """The opposite: introduced by none of these words, or by none at all."""
+    used = _preposition_used(condition, ctx)
+    met = used not in {str(word).lower() for word in _listed(value)}
+    if not met and mood == WANT:
+        return False, "say it another way"
+    return met, ""
+
+
 def _answers_to(subject, wanted):
     """Whether what was bound is of that sort, or goes by that name."""
     if wanted in {_word_said(kind) for kind in subject.kinds()}:
@@ -2071,6 +2146,8 @@ _PREDICATES = {
     "clock": _p_clock,
     "unbound": _p_unbound,
     "called": _p_called,
+    "preposition": _p_preposition,
+    "not_preposition": _p_not_preposition,
 }
 
 
@@ -2741,6 +2818,12 @@ def _leaf_schema(names, known_traits, tb, wanted=None):
                                       "here answers to it: how a rule is "
                                       "reached for a thing that does not "
                                       "exist yet"},
+            "preposition": names("the words this role may have been "
+                                 "introduced by, any of them: [\"at\"] for "
+                                 "waving at something, [\"under\"] for "
+                                 "putting it under something"),
+            "not_preposition": names("the words this role must not have been "
+                                     "introduced by"),
             "clock": {"type": "object",
                       "properties": {
                           "from": {"type": "number",

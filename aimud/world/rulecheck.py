@@ -411,6 +411,12 @@ def untested_conditions(rules):
 
     found = []
     for rule in _records(rules):
+        # A suspended rule applies to nothing, so nothing it says is ignored.
+        # Missing this kept every original a fix replaced in the report after
+        # the corrected copy was accepted -- and `edit faults` then asked for
+        # the same fix again.
+        if not rule.get("listed", True):
+            continue
         phase = str(rule.get("phase") or "")
         if phase in (rulebooks.CHECK, rulebooks.BECOMES):
             continue
@@ -825,6 +831,8 @@ def unreachable_calls(rules):
     found = []
     for rule_id, rule in sorted((rules or {}).items()):
         try:
+            if not rule.get("listed", True):
+                continue        # suspended: it calls nothing until restored
             effects = rule.get("effects") or []
         except AttributeError:
             continue

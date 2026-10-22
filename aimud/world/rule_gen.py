@@ -185,7 +185,7 @@ def too_general(scope, world_root=None):
 # Reading what came back
 # ---------------------------------------------------------------------------
 
-def validate(reply, offered, action, world_root=None):
+def validate(reply, offered, action, world_root=None, replacing=()):
     """
     The rules in a reply that are worth keeping, and what was wrong with the
     rest.
@@ -199,12 +199,15 @@ def validate(reply, offered, action, world_root=None):
 
     And one check that is about meaning rather than about shape, earned by
     measurement: see `_self_defeating`.
+
+    `replacing` names rules in force that these would take the place of, so
+    that a corrected copy is not refused for being beaten by its original.
     """
-    from world import actions, conditions
+    from world import actions, conditions, verbs
 
     scopes = {token: scope for token, _said, scope in offered}
     kept, complaints = [], []
-    produced = _states_produced(reply, world_root, action)
+    produced = {}
 
     try:
         given = list(reply.get("rules") or [])
@@ -222,6 +225,16 @@ def validate(reply, offered, action, world_root=None):
         if phase not in PHASES:
             complaints.append(f"unknown phase {phase!r}")
             continue
+
+        # Which verb the rule is about: this one, unless it is the partner
+        # that undoes it (**action** in `_SYSTEM`). Folded like anything typed, so
+        # "extinguish" files under the verb the world already calls it.
+        verb = action
+        named = str(entry.get("action") or "").strip().lower()
+        if named:
+            verb = verbs.canonical_verb(named, world_root) or action
+        if verb not in produced:
+            produced[verb] = _states_produced(reply, world_root, verb, action)
 
         token = str(entry.get("scope") or "").strip()
         if token not in scopes:
@@ -241,17 +254,29 @@ def validate(reply, offered, action, world_root=None):
         if phase == rulebooks.CHECK and not conds:
             complaints.append("a check rule that checks nothing")
             continue
+        # The commonest way a generated rule did nothing it said. Only a
+        # check rule's conditions are ever tested (`rulecheck.
+        # untested_conditions`), so a carry-out "only for a lit lamp" written
+        # with conditions fired on every lamp, and an instead guarded by
+        # `unbound` that way fired when somebody did name a thing.
+        if phase != rulebooks.CHECK and conds:
+            complaints.append(
+                f"a {phase} rule with conditions, which nothing reads outside "
+                f"a check rule -- if it should only apply sometimes, put them "
+                f"in when; if {verb} must not happen at all otherwise, that "
+                f"is a check rule of its own")
+            continue
         if phase == rulebooks.CHECK and _packed(entry.get("conditions"),
                                                 conditions):
             complaints.append(
                 "a check rule packed into one all -- write one check rule per "
                 "requirement, and keep any and all for saying \"or\"")
             continue
-        dead = _self_defeating(conds, produced)
+        dead = _self_defeating(conds, produced[verb])
         if phase == rulebooks.CHECK and dead:
             complaints.append(
                 f"a check rule demanding {', '.join(dead)}, which is what "
-                f"{action} itself produces -- it could never fire")
+                f"{verb} itself produces -- it could never fire")
             continue
         if phase in (rulebooks.CARRY_OUT, rulebooks.AFTER) and not effects:
             complaints.append(f"a {phase} rule that changes nothing")
@@ -262,12 +287,12 @@ def validate(reply, offered, action, world_root=None):
         # earth-and-water as prose for the life of the world, and nothing
         # asks again. See `actions.MUST`.
         if phase == rulebooks.CARRY_OUT:
-            short = actions.unmet(world_root, action, effects)
+            short = actions.unmet(world_root, verb, effects)
             if short:
                 complaints.append(
-                    f"a carry_out rule for {action} that does not "
+                    f"a carry_out rule for {verb} that does not "
                     + " or ".join(actions.said_must(name) for name in short)
-                    + f" -- this world declares that {action} always does, so "
+                    + f" -- this world declares that {verb} always does, so "
                     f"the rule is not finished until it says how")
                 continue
         empty = [e for e in effects
@@ -328,27 +353,82 @@ def validate(reply, offered, action, world_root=None):
         from world import checks
 
         kept.append(rulebooks.blank(
-            action=action, phase=phase, scope=scopes[token],
+            action=verb, phase=phase, scope=scopes[token],
             about=str(entry.get("about") or "direct"),
             name=str(entry.get("name") or "").strip(),
             when=guards, conditions=conds, effects=effects,
             contest=checks.clean(entry.get("contest")), source="generated"))
-    return kept, complaints
+    kept, more = _never_fire(kept, world_root, replacing)
+    return kept, complaints + more
 
 
-def _states_produced(reply, world_root, action):
+def _never_fire(kept, world_root, replacing=()):
+    """
+    The kept rules less any that could never fire once filed, and why.
+
+    Read off the world's own fault scan rather than reasoned about again, so
+    that what `view faults` would report the moment a rule is filed is what
+    stops it being filed: a carry-out that an older unguarded one at the same
+    scope always beats (`rulecheck.shadowed` -- the new rule is the younger,
+    so it is the one that loses), and a rule demanding a thing and its
+    opposite (`rulecheck.contradictory`). Two rules in one answer can shadow
+    each other as well, and do: the model writes a carry-out per outcome and
+    guards neither.
+    """
+    if world_root is None or not kept:
+        return kept, []
+    from world import rulecheck
+
+    gone = {str(rule_id) for rule_id in replacing or ()}
+    book = {rule["id"]: rule for rule in rulebooks.all_rules(world_root)
+            if rule.get("id") and rule["id"] not in gone}
+    new = {}
+    for number, rule in enumerate(kept, 1):
+        # Younger than everything, as it will be once `rulebooks.add` dates
+        # it, and with an id no real rule has.
+        new[f"new{number}"] = dict(rule, id=f"new{number}", born=float("inf"))
+
+    said, dead = [], set()
+    for loser, winner in rulecheck.shadowed({**book, **new}, world_root):
+        if loser.get("id") not in new or loser["id"] in dead:
+            continue
+        dead.add(loser["id"])
+        beaten_by = ("another rule in this answer" if winner.get("id") in new
+                     else f"{winner['id']} ({winner.get('name') or 'unnamed'})")
+        said.append(
+            f"a {loser['phase']} rule for {loser.get('action')} that could "
+            f"never fire: {beaten_by} already answers every attempt it would, "
+            f"at the same scope with no when to tell them apart -- give it a "
+            f"when, file it more narrowly, or leave it out")
+    for rule_id, name in rulecheck.contradictory(new):
+        if rule_id not in dead:
+            dead.add(rule_id)
+            said.append(f"a rule demanding a thing and its opposite at once "
+                        f"({name or 'unnamed'}), which can never pass")
+    return [rule for number, rule in enumerate(kept, 1)
+            if f"new{number}" not in dead], said
+
+
+def _states_produced(reply, world_root, action, asked=None):
     """
     Every state this verb's carry-out rules put on the thing acted on.
 
     Both halves: the rules in this reply, and the ones the world already
-    holds, because the two arrive in separate calls as often as not.
+    holds, because the two arrive in separate calls as often as not. A rule
+    in the reply is about `asked` -- the verb the model was asked about --
+    unless it names another.
     """
-    from world import rulecheck
+    from world import rulecheck, verbs
 
     found = set()
     for entry in (reply.get("rules") or []) if hasattr(reply, "get") else []:
         try:
             if str(entry.get("phase") or "") != rulebooks.CARRY_OUT:
+                continue
+            said = str(entry.get("action") or "").strip().lower()
+            about = (verbs.canonical_verb(said, world_root) if said
+                     else asked or action)
+            if about != action:
                 continue
             for effect in (entry.get("effects") or []):
                 if str(effect.get("type") or "") == "set_state":
@@ -505,6 +585,17 @@ already be oiled", never "it is already oiled".
              genuinely differs rather than the conditions.
   after      what follows once it has worked. Needs "effects".
 
+**conditions belong to check rules and nothing else.** A carry_out, instead
+or after rule given conditions ignores them and fires every time, so they are
+refused. Which one you want depends on what you mean:
+  - "it only works if..."  -> a check rule with those conditions.
+  - "if..., it does this, and otherwise something else" -> carry_out rules
+    with "when", one per case: {"phase": "carry_out", "when": [...], ...}.
+  - "after it works, if..., this follows" -> an after rule with "when".
+"when" uses exactly the same conditions as a check rule. Two carry_out rules
+at one scope with no "when" between them are one rule that works and one that
+can never fire, so they are refused too.
+
 **scope** says what your rule is about, and must be copied exactly from the
 list offered. File it as generally as is *true*: a rule about opening that
 holds for every container belongs on the container, not on this one chest.
@@ -563,6 +654,13 @@ for a condition the world already has is two facts that cannot see each other.
 **new_traits** does the same for a trait a condition or effect named, with
 "slug", "name", "means" and "trait_type" ("counter" or "gauge").
 
+**action** is for one thing only: the verb that undoes this one. A world in
+which a lamp can be lit and never put out, or a door opened and never shut,
+is the commonest fault there is, and you are the one who knows the way back
+-- so when this verb sets a state nothing here can undo (list_rules shows
+what exists), you may add the rule for its partner: "action": "douse" on a
+carry_out that removes lit. Every other rule leaves "action" out.
+
 **adopt**, when it is offered, takes the ids of rules this world has already
 worked out for this verb and is waiting to put into force. Adopt one only if
 this verb genuinely does that; it is better than writing the same rule again.
@@ -589,6 +687,8 @@ check rule it says what must hold before the verb may happen at all:
   {"subject": {"enclosure": "<a kind>"}, "is": ["powered"]}
   {"subject": {"zone": true}, "lacks": ["port_closed"]}
   {"subject": "direct", "unbound": true}            nobody named one
+  {"subject": "target", "preposition": ["at"]}     it was said with "at"
+  {"subject": "target", "not_preposition": ["under"]}
 Subjects are the roles, "actor", "here", {"enclosure": kind} or {"zone": true}.
 
 Every predicate that has an opposite says it with its own word, never "not":
@@ -604,6 +704,13 @@ a subject and a predicate:
 "any" is for "or" and nothing else. A list of conditions already means all of
 them, so a check rule with two requirements is two check rules, never one rule
 wrapped around both.
+
+"preposition" is how one role said two ways is told apart. "on", "under",
+"at" and "behind" all name the target, so putting a book under the table and
+on it are one verb with one target -- a rule for only one of them says which
+words with "preposition", any of them: ["on", "onto", "upon"]. A thing
+waved AT and a thing waved are two roles already (target and direct), and
+need no preposition to tell them apart.
 
 "holds", "wears" and their opposites may say how many of what sort instead of
 naming a thing: {"of_kind": "<a synset>", "count": 2}. "of_kind" matches
@@ -691,9 +798,10 @@ about again for ever. Use it alone and never beside another effect: a verb that
 changes something is described by what it changes.
 
 "try" is how a verb typed with no object comes to have one: aboard a ship,
-"launch" means launching the ship. Use it in an "instead" rule, guarded by
-{"subject": "direct", "unbound": true} -- otherwise it fires when somebody
-did name a thing, and powering a datapad would power the ship instead.
+"launch" means launching the ship. Use it in an "instead" rule with
+"when": [{"subject": "direct", "unbound": true}] -- otherwise it fires when
+somebody did name a thing, and powering a datapad would power the ship
+instead.
 """
 
 
@@ -758,7 +866,7 @@ another verb's call puts something in.
 """
 
 
-def prompt(world_root, action, bound, actor, offered, hints=()):
+def prompt(world_root, action, bound, actor, offered, hints=(), words=None):
     """Everything the model is shown, assembled."""
     from world import actions, conditions, lore
 
@@ -796,6 +904,20 @@ def prompt(world_root, action, bound, actor, offered, hints=()):
 
         lines.append("\n" + _describe_objects(bound, actor))
 
+    # How it was said. "wave at the phone" and "wave the phone" are one verb
+    # with the phone in two roles, and "on the table" and "under the table"
+    # are one role said two ways; the model is told which, so a rule that
+    # only holds for one of them can say so.
+    used = getattr(words, "prepositions", None) or {}
+    if used:
+        lines.append(
+            "\nHow it was said: "
+            + ", ".join(f'the {role} with "{word}"'
+                        for role, word in sorted(used.items()))
+            + '. If a rule only holds when it is said that way, test it with '
+              '"preposition" -- {"subject": "target", "preposition": ["at"]} '
+              '-- in a check rule\'s conditions or another rule\'s when.')
+
     # Not the registers, which are behind lookup tools now and checked for
     # near-duplicates when an answer comes back, but the few states worth
     # putting in front of the rest: what things of these sorts have been in.
@@ -830,9 +952,13 @@ def prompt(world_root, action, bound, actor, offered, hints=()):
     return "\n".join(lines)
 
 
-def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
+def learn(sponsor, world_root, action, bound, actor, on_success, on_error,
+          words=None):
     """
     Async. Ask this world what `action` should do here, and file the answer.
+
+    `words` is what was typed, as `conditions.Words`, so the model knows how
+    the sentence was said as well as what it named.
 
     `on_success` is given the rules that were kept, which may be none: a
     model that says it cannot express something has answered, and the world
@@ -862,7 +988,7 @@ def learn(sponsor, world_root, action, bound, actor, on_success, on_error):
         {"role": "system", "content": system},
         {"role": "user", "content": prompt(
             world_root, action, bound, actor, offered,
-            hints(world_root, action, bound, proposals))},
+            hints(world_root, action, bound, proposals), words=words)},
     ]
     from world import sound_gen
 
@@ -1078,6 +1204,61 @@ SOUND_LOOKUPS = ("list_assets", "sound_catalog")
 MOST_WANTS = 3
 
 
+def _rule_schema(ctx, tokens, action_said, action_required=False):
+    """One rule, as `validate` reads it: the shape both finish tools offer."""
+    from world import actions, conditions, traits
+    from world import effects as effects_mod
+    from world import toolbox as tb
+
+    known = (sorted(traits.vocabulary(ctx.world_root))
+             if ctx.world_root is not None else [])
+    return {
+        "type": "object",
+        "properties": {
+            "phase": {"type": "string", "enum": list(PHASES),
+                      "description": "check, carry_out, instead or after"},
+            "scope": {"type": "string", "enum": tokens,
+                      "description": "Where it is filed: one of the "
+                                     "scopes offered"},
+            "about": {"type": "string",
+                      "enum": list(actions.ROLES) + ["enclosure"],
+                      "description": "Which participant the scope is "
+                                     "matched against"},
+            "name": {"type": "string",
+                     "description": "What must be so, in one short "
+                                    "sentence"},
+            "conditions": {"type": "array",
+                           "items": conditions.schema(ctx),
+                           "description": "A check rule's requirements. "
+                                          "Only a check rule has any"},
+            "when": {"type": "array", "items": conditions.schema(ctx),
+                     "description": "Optional. When a carry_out, instead "
+                                    "or after rule applies at all; left "
+                                    "out, it always does"},
+            "action": {"type": "string", "description": action_said},
+            "effects": {"type": "array", "items": effects_mod.schema(ctx),
+                        "description": "What a carry_out, instead or "
+                                       "after rule does"},
+            "contest": {
+                "type": "object",
+                "properties": {
+                    "trait": tb.choice(known, "The actor's figure that "
+                                              "decides it",
+                                       ask="list_traits"),
+                    "against": {"type": "object", "properties": {
+                        "role": {"type": "string",
+                                 "enum": list(actions.ROLES)},
+                        "trait": {"type": "string"}}},
+                    "difficulty": {"type": "number"},
+                },
+                "description": "Only for a verb a capable person could "
+                               "fail at"},
+        },
+        "required": ["phase", "scope"] + (["action"] if action_required
+                                          else []),
+    }
+
+
 def rules_tool(action, offered, proposals=()):
     """
     `file_rules`, the finish tool `learn` answers with.
@@ -1090,54 +1271,16 @@ def rules_tool(action, offered, proposals=()):
     logged is sent back instead, with any near-duplicate words, so a rule
     refused in one round can be put right in the next.
     """
-    from world import actions, conditions, traits, verbs
-    from world import effects as effects_mod
+    from world import traits, verbs
     from world import toolbox as tb
 
     tokens = [token for token, _said, _scope in offered]
     ids = [str(rule.get("id")) for rule in proposals or () if rule.get("id")]
 
     def parameters(ctx):
-        known = (sorted(traits.vocabulary(ctx.world_root))
-                 if ctx.world_root is not None else [])
-        rule = {
-            "type": "object",
-            "properties": {
-                "phase": {"type": "string", "enum": list(PHASES),
-                          "description": "check, carry_out, instead or after"},
-                "scope": {"type": "string", "enum": tokens,
-                          "description": "Where it is filed: one of the "
-                                         "scopes offered"},
-                "about": {"type": "string",
-                          "enum": list(actions.ROLES) + ["enclosure"],
-                          "description": "Which participant the scope is "
-                                         "matched against"},
-                "name": {"type": "string",
-                         "description": "What must be so, in one short "
-                                        "sentence"},
-                "conditions": {"type": "array",
-                               "items": conditions.schema(ctx),
-                               "description": "A check rule's requirements"},
-                "effects": {"type": "array", "items": effects_mod.schema(ctx),
-                            "description": "What a carry_out, instead or "
-                                           "after rule does"},
-                "contest": {
-                    "type": "object",
-                    "properties": {
-                        "trait": tb.choice(known, "The actor's figure that "
-                                                  "decides it",
-                                           ask="list_traits"),
-                        "against": {"type": "object", "properties": {
-                            "role": {"type": "string",
-                                     "enum": list(actions.ROLES)},
-                            "trait": {"type": "string"}}},
-                        "difficulty": {"type": "number"},
-                    },
-                    "description": "Only for a verb a capable person could "
-                                   "fail at"},
-            },
-            "required": ["phase", "scope"],
-        }
+        rule = _rule_schema(ctx, tokens, (
+            f"Optional. Only for the verb that undoes what {action} does; "
+            f"otherwise the rule is about {action}"))
         properties = {
             "rules": {"type": "array", "items": rule, "maxItems": 4,
                       "description": "The fewest rules that make it behave; "
@@ -1539,6 +1682,282 @@ def learn_becoming(sponsor, world_root, slug, on_success=None,
                  rounds=BECOMING_ROUNDS)
 
 
+# ---------------------------------------------------------------------------
+# Mending what `view faults` found (`edit faults`)
+# ---------------------------------------------------------------------------
+
+#: Most fixes one answer may propose. Few, because each is something the
+#: owner reads and says yes or no to, and the queue they go into holds
+#: `suggest.MAX_QUEUE` in all.
+MOST_FIXES = 8
+
+#: Rounds a fix may take: enough to read the rules involved and be told what
+#: was refused, as `LEARN_ROUNDS` is for one verb.
+FIX_ROUNDS = 10
+
+#: What a fix is worth to `suggest.propose`, which takes nothing without
+#: evidence. A fault is a fact the scan proved, counted once.
+FIX_EVIDENCE = "faults"
+
+
+def world_menu(world_root):
+    """
+    Every scope a fix may be filed against, as `menu` gives them for one
+    attempt: where the world's rules already are, every sort of thing it
+    knows, each of its areas, and everywhere.
+
+    The scopes rules already sit at come first, because the commonest fix is
+    a corrected copy filed exactly where its original was.
+    """
+    from world import kinds, lexicon, zones
+
+    found, seen = [], set()
+
+    def offer(token, said, scope):
+        if token and token not in seen:
+            seen.add(token)
+            found.append((token, said, scope))
+
+    def offer_scope(scope):
+        scope = dict(scope or {})
+        if rulebooks.KIND in scope:
+            kind = scope[rulebooks.KIND]
+            offer(kind, f"any {lexicon.word_of(kind)}", {rulebooks.KIND: kind})
+        elif rulebooks.ZONE in scope:
+            zone_id = scope[rulebooks.ZONE]
+            offer(zone_id, f"the area {zones.name_of(world_root, zone_id)}",
+                  {rulebooks.ZONE: zone_id})
+        elif rulebooks.ROOM in scope:
+            offer(f"room_{scope[rulebooks.ROOM]}",
+                  f"one room, #{scope[rulebooks.ROOM]}",
+                  {rulebooks.ROOM: scope[rulebooks.ROOM]})
+        elif rulebooks.OBJECT in scope:
+            offer(f"object_{scope[rulebooks.OBJECT]}",
+                  f"one thing, #{scope[rulebooks.OBJECT]}",
+                  {rulebooks.OBJECT: scope[rulebooks.OBJECT]})
+
+    for rule in rulebooks.all_rules(world_root):
+        offer_scope(rule.get("scope"))
+    for kind in kinds.vocabulary(world_root):
+        if not too_general({rulebooks.KIND: kind}):
+            offer(kind, f"any {lexicon.word_of(kind)}", {rulebooks.KIND: kind})
+    for zone_id in sorted(zones.all_zones(world_root)):
+        if zone_id != zones.ROOT:
+            offer(zone_id, f"the area {zones.name_of(world_root, zone_id)}",
+                  {rulebooks.ZONE: zone_id})
+    offer("world", "everywhere, in every part of this world",
+          {rulebooks.WORLD: True})
+    return [entry for entry in found if not too_general(entry[2])]
+
+
+_FIX_SYSTEM = """You mend the rules of a text MUD. Its own fault scan has found
+the problems below, and you propose the rules that put them right. Nothing you
+propose is in force until the world's owner accepts it, one at a time, so say
+in each fix exactly which fault it mends.
+
+Answer by calling propose_fixes. Read before you write: list_rules and
+show_rule show what a rule says now, and world_faults narrows the report to
+one verb or one sort of thing.
+
+A fix is one rule, either new or a corrected copy of one already in force.
+
+**A corrected copy** names the rule it replaces in "replaces", and accepting
+it suspends the original. This is the fix for a rule that is wrong in itself:
+  - a check demanding the state its own verb produces: the same check with
+    "lacks" where it had "is";
+  - a carry_out, instead or after rule with conditions, which nothing reads:
+    the same rule with them moved to "when" -- or, if they were really saying
+    the verb must not happen otherwise, a check rule for them, and the copy
+    without them;
+  - a rule an older one always beats: the same rule with a "when" that tells
+    the two apart, or filed more narrowly;
+  - a rule demanding a thing and its opposite: whichever it meant.
+Copy everything about the original that was right. Change only the fault.
+
+**A new rule** mends what nothing in the world does yet:
+  - a state that can be set and never unset is a missing rule for the verb
+    that undoes it: something lit needs putting out, something opened needs
+    shutting. Name that verb in "action" and write its carry_out.
+  - a state some rule requires and nothing can set is a missing rule for the
+    verb that brings it about.
+Reuse the world's own words for both: list_states shows its conditions, and
+a verb it already has rules for is better than a new one.
+
+Leave a fault alone when mending it would be a guess about what the world
+meant -- a refusal that is the world working correctly, or a state nobody
+needs to undo. Fewer, right fixes are worth more than many.
+
+Every rule needs "action": the verb it is about.
+
+{conditions}
+{effects}"""
+
+
+def fix_prompt(world_root, findings=None):
+    """The fault report, as a model reads it."""
+    import re
+
+    from world import lore, rulecheck
+
+    findings = findings or rulecheck.scan(rulecheck.of_world(world_root))
+    text = rulecheck.report(findings, lore.title(world_root))
+    return (re.sub(r"\|[a-zA-Z]", "", text)
+            + f"\n\nPropose at most {MOST_FIXES} fixes, the faults that most "
+              f"stop this world working first.")
+
+
+def fixes_tool(offered):
+    """
+    `propose_fixes`, the finish tool `fix_faults` answers with.
+
+    Every rule goes through `validate`, one at a time and against the verb it
+    names, so a fix is held to exactly what a rule written during play is --
+    including that it cannot be one `view faults` would report the moment it
+    was filed. What is refused is sent back to be put right.
+    """
+    from world import toolbox as tb
+
+    tokens = [token for token, _said, _scope in offered]
+
+    def parameters(ctx):
+        return tb.params({
+            "fixes": {
+                "type": "array", "maxItems": MOST_FIXES,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "fault": {"type": "string",
+                                  "description": "Which fault it mends, in "
+                                                 "one sentence"},
+                        "replaces": {"type": "string",
+                                     "description": "Optional. The id of the "
+                                                    "rule in force this is a "
+                                                    "corrected copy of"},
+                        "rule": _rule_schema(
+                            ctx, tokens, "The verb this rule is about",
+                            action_required=True),
+                    },
+                    "required": ["fault", "rule"]},
+                "description": "The fixes, the most important first"},
+            "left_alone": {"type": "string",
+                           "description": "Optional. Faults you did not fix, "
+                                          "and why, in a sentence or two"},
+        }, ["fixes"])
+
+    def handler(ctx, args, answer):
+        _kept, said = read_fixes(args, offered, ctx.world_root)
+        if said:
+            answer(tb.complain("Not proposed: " + "; ".join(said) + ". Send "
+                               "every fix again with that put right, or leave "
+                               "that one out.", value=args))
+            return
+        answer(tb.accept(args))
+
+    return tb.Tool("propose_fixes", "Propose the rules that mend this world's "
+                                    "faults.", parameters, handler,
+                   finishes=True)
+
+
+def read_fixes(reply, offered, world_root):
+    """
+    ([(rule, fault, replaces)], complaints) for an answer to `fix_faults`.
+
+    Each fix is validated on its own, so one refused rule names itself and
+    the others still stand.
+    """
+    from world import verbs
+
+    kept, said = [], []
+    try:
+        given = list(reply.get("fixes") or [])
+    except AttributeError:
+        return [], ["the reply was not a list of fixes"]
+    for number, fix in enumerate(given, 1):
+        try:
+            fix = dict(fix)
+            rule = dict(fix.get("rule") or {})
+        except (TypeError, ValueError):
+            said.append(f"fix {number} was not an object")
+            continue
+        fault = str(fix.get("fault") or "").strip()
+        replaces = str(fix.get("replaces") or "").strip()
+        named = str(rule.get("action") or "").strip().lower()
+        if not named:
+            said.append(f"fix {number} names no verb in its rule's action")
+            continue
+        action = verbs.canonical_verb(named, world_root) or named
+        if replaces:
+            old = rulebooks.get(world_root, replaces) if world_root else None
+            if old is None or not old.get("listed", True):
+                said.append(f"fix {number} replaces {replaces}, which is not "
+                            f"a rule in force")
+                continue
+        rule["action"] = action
+        rules, wrong = validate({"rules": [rule]}, offered, action,
+                                world_root,
+                                replacing=[replaces] if replaces else ())
+        said += [f"fix {number}: {line}" for line in wrong]
+        kept += [(found, fault, replaces) for found in rules]
+    return kept, said
+
+
+def fix_faults(sponsor, world_root, on_success, on_error):
+    """
+    Async. Ask the rules model to mend what this world's fault scan found,
+    and put what it proposes in the suggestions queue.
+
+    `on_success(proposals, left_alone)` with the proposals as queued, which
+    may be none. Nothing is put in force: every fix waits in `view
+    suggestions` for its owner, the same as anything the world derived for
+    itself, and a corrected copy suspends its original only when accepted.
+    """
+    if not sponsor.will("verbs"):
+        on_error(sponsor.refusal("verbs")
+                 or "Nothing new of that sort happens here.")
+        return
+    try:
+        sponsor.key()
+    except ValueError as err:
+        on_error(str(err))
+        return
+    from world import lookups, rulecheck, suggest
+    from world import toolbox as tb
+
+    findings = rulecheck.scan(rulecheck.of_world(world_root))
+    offered = world_menu(world_root)
+    system = _FIX_SYSTEM.replace("{conditions}", _CONDITIONS) \
+                        .replace("{effects}", _EFFECTS + _tools_said()
+                                 + _sounds_said(sponsor))
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": fix_prompt(world_root, findings)},
+    ]
+    box = tb.Toolbox(
+        [fixes_tool(offered)]
+        + lookups.named(*(LOOKUPS + TOOL_LOOKUPS + SOUND_LOOKUPS)),
+        tb.ToolContext(world_root=world_root, sponsor=sponsor,
+                       job="commands"))
+
+    def answered(reply):
+        reply = reply if isinstance(reply, dict) else {}
+        kept, complaints = read_fixes(reply, offered, world_root)
+        for complaint in complaints:
+            logger.log_info(f"rule_gen: fix dropped -- {complaint}")
+        queued = []
+        for rule, fault, replaces in kept:
+            stored = suggest.propose(
+                world_root, rule, fault or "mends a fault in view faults",
+                {FIX_EVIDENCE: 1}, replaces=replaces or None)
+            if stored is not None:
+                queued.append(stored)
+        flesh_out(sponsor, world_root, queued)
+        on_success(queued, str(reply.get("left_alone") or "").strip())
+
+    llm.converse(sponsor, sponsor.model_for("commands"), messages, box,
+                 on_done=answered, on_error=on_error, on_exhausted=answered,
+                 rounds=FIX_ROUNDS)
+
+
 def flesh_out(sponsor, world_root, rules):
     """
     Async. Ask the item generator, once, what each thing a rule makes is.
@@ -1616,9 +2035,10 @@ def ask_when_it_runs_out(character, slug, world_root):
 
 def tools():
     """
-    The rule generator's two answers, as declared. `rules_tool` is built
-    per call for one action and `becoming_tool` for one figure running
-    out. `verb_info` is a lookup and `lookup_tools` answers for it. See
+    The rule generator's three answers, as declared. `rules_tool` is built
+    per call for one action, `becoming_tool` for one figure running out and
+    `fixes_tool` for one world's faults. `verb_info` is a lookup and
+    `lookup_tools` answers for it. See
     `world/toolkit.py`.
     """
     from world import toolbox as tb
@@ -1631,7 +2051,12 @@ def tools():
             finishes=True),
         tb.Tool(
             "file_becoming",
-            "File what running out of a figure means for whoever it belongs" 
+            "File what running out of a figure means for whoever it belongs"
             "to.",
+            finishes=True),
+        tb.Tool(
+            "propose_fixes",
+            "Propose the rules that mend what a world's fault scan found, for "
+            "its owner to accept or decline.",
             finishes=True),
     ]

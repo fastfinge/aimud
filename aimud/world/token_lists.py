@@ -194,6 +194,85 @@ def references(text):
     return found
 
 
+def unknown(text, world_root):
+    """The lists a piece of text asks for that nothing here answers, sorted."""
+    from world import effects, tokens
+
+    return sorted(
+        name for name in references(text)
+        if name not in effects._BUILTIN_SLOTS
+        and name not in tokens._PROVIDED_SLOTS
+        and (world_root is None or get(world_root, name) is None))
+
+
+#: A brace and what it holds, up to the next brace either way.
+_BRACED = re.compile(r"\{[^{}]*\}?|\}")
+
+
+def stray_braces(text):
+    """
+    Everything in braces that is not a slot at all, as written.
+
+    A slot nothing answers is at least a name somebody could declare. This is
+    the other thing a model writes when told braces choose a word:
+    "{blue|green|red}", which no grammar here reads, so it was kept and shown
+    to every player braces and all. Escaped braces are text and are left
+    alone, and so are the older spellings of `{user}`.
+    """
+    from world import tokens
+
+    bare = re.sub(r"\\.", "", str(text or ""))
+    bare = tokens.USER_ALIAS.sub("", bare)
+    bare = tokens._SLOT.sub("", bare)
+    return [found.group(0) for found in _BRACED.finditer(bare)]
+
+
+def brace_complaints(text, world_root):
+    """
+    What is wrong with the braces in a description, as short sentences.
+
+    One check for every door a description comes in by -- a form somebody
+    types in, `~` filling that form, a rule that rewrites a thing -- so a
+    player and a model are told the same thing in the same words.
+    """
+    said = []
+    stray = stray_braces(text)
+    if stray:
+        said.append(
+            f"{', '.join(dict.fromkeys(stray))} is not a word list: braces "
+            f"only ever hold the name of one this world keeps, like {{colour}}. "
+            f"Write one of the words itself, or make a list of them with "
+            f"create tokens and name that")
+    missing = unknown(text, world_root)
+    if missing:
+        said.append(
+            "the description asks for word lists this world does not keep: "
+            + ", ".join("{" + name + "}" for name in missing)
+            + " -- create tokens makes one, or take the braces out")
+    return said
+
+
+def lists_said(world_root, most=12):
+    """
+    The lists a description here may name, as one sentence for a form's help.
+
+    What a person -- or a model filling the form in with `~` -- needs in
+    front of them to use braces properly, and what the help used to replace
+    with one example, {smell}, which every model then wrote whether or not
+    the world kept it, and which made every description it filled mention a
+    smell.
+    """
+    kept = sorted(vocabulary(world_root))
+    if not kept:
+        return ("This world keeps no word lists, so write no braces: say what "
+                "is there.")
+    shown = ", ".join("{" + name + "}" for name in kept[:most])
+    more = f", and {len(kept) - most} more" if len(kept) > most else ""
+    return (f"Braces may name one of this world's word lists -- {shown}{more} "
+            f"-- and one entry is chosen and kept. Most descriptions need "
+            f"none, and braces never hold anything else.")
+
+
 def productive(lists):
     """
     The names of every list that can finish expanding.
@@ -822,21 +901,22 @@ def lookup_tools():
         return "\n".join(said)
 
     def trying(ctx, args):
-        from world import effects, tokens
+        from world import tokens
 
         text = str(args.get("text") or "")
-        unknown = sorted(
-            name for name in references(text)
-            if name not in effects._BUILTIN_SLOTS
-            and name not in tokens._PROVIDED_SLOTS
-            and get(ctx.world_root, name) is None)
+        missing = unknown(text, ctx.world_root)
         shown = tokens.text(text, tokens.Context(
             viewer=ctx.actor, world_root=ctx.world_root, purpose="display"))
         said = f"That comes to: {shown}"
-        if unknown:
+        if missing:
             said += ("\nThis world keeps no list called "
-                     + ", ".join("{" + name + "}" for name in unknown)
+                     + ", ".join("{" + name + "}" for name in missing)
                      + "; declare it, or use one it keeps.")
+        stray = stray_braces(text)
+        if stray:
+            said += ("\n" + ", ".join(dict.fromkeys(stray)) + " is not a word "
+                     "list and is shown exactly as written; braces only name "
+                     "a list.")
         return said
 
     return [
