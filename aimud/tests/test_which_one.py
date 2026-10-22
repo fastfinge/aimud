@@ -153,6 +153,61 @@ class TheCommandsAskToo(_TwoCoins):
         self.assertEqual(self.silver.location, self.char1)
         self.assertEqual(self.gold.location, self.room1)
 
+    def test_looking_asks_too(self):
+        from commands.look_take_cmds import CmdAILook
+
+        self.gold.location = self.room1
+        self.silver.location = self.room1
+        self.connected()
+        with mock.patch("world.attempt.attempt") as attempting:
+            self.call(CmdAILook(), "coin")
+            self.assertIsNotNone(self.char1.ndb._evmenu, "no question was put")
+            attempting.assert_not_called()
+            self.type("2")
+        self.assertIs(attempting.call_args.kwargs["chosen"]["direct"],
+                      self.silver)
+
+    def test_and_said_with_at(self):
+        from commands.look_take_cmds import CmdAILook
+
+        self.connected()
+        with mock.patch("world.attempt.attempt") as attempting:
+            self.call(CmdAILook(), "at coin")
+            self.assertIsNotNone(self.char1.ndb._evmenu, "no question was put")
+            self.type("1")
+        self.assertIs(attempting.call_args.kwargs["chosen"]["direct"],
+                      self.gold)
+
+    def test_looking_asks_even_between_things_alike(self):
+        """
+        Reported: two Hanwha Distance Readouts, pointed at different signals,
+        and "look readout" answered with Evennia's dump of every alias. Taking
+        one of things alike takes the oldest; looking is how they are told
+        apart, so it asks.
+        """
+        from commands.look_take_cmds import CmdAILook
+
+        self.silver.key = "gold coin"
+        self.gold.location = self.room1
+        self.silver.location = self.room1
+        self.connected()
+        with mock.patch("world.attempt.attempt") as attempting:
+            said = self.call(CmdAILook(), "coin")
+            self.assertIsNotNone(self.char1.ndb._evmenu, "no question was put")
+            self.assertNotIn("More than one match", said)
+            self.type("2")
+        self.assertIs(attempting.call_args.kwargs["chosen"]["direct"],
+                      self.silver)
+
+    def test_and_in_words_says_how_to_count_them(self):
+        from commands.look_take_cmds import CmdAILook
+
+        self.silver.key = "gold coin"
+        with mock.patch("world.attempt.attempt"):
+            said = self.call(CmdAILook(), "coin")
+        self.assertIn("Which coin do you mean -- first gold coin or second "
+                      "gold coin?", said)
+
     def test_dropping_asks_and_drops_the_one_chosen(self):
         from commands.drop_cmds import CmdAIDrop
 

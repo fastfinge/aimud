@@ -412,6 +412,34 @@ class TheVerbTheCommandSetStillAnswers(GameTest):
         self.assertEqual(set(self.room2.contents), before,
                          "nothing should have been conjured")
 
+    def test_a_name_in_any_alphabet_is_a_name(self):
+        """
+        Reported: get found 지우 and look did not. Getting a plain noun never
+        asks the parser; looking does, and the parser read no letter outside
+        a-z, so "look 지우" lost its object and looked at the room instead.
+        """
+        self.obj1.key = "지우"
+        before = set(self.room2.contents)
+        for raw in ("look 지우", "look at 지우", "l 지우", "examine 지우"):
+            joined = " ".join(self.typed(raw))
+            self.assertEqual(joined.count("dented brass lantern"), 1, raw)
+            self.assertNotIn("low stone cellar", joined, raw)
+        self.assertEqual(set(self.room2.contents), before,
+                         "nothing should have been conjured")
+
+    def test_a_pronoun_means_what_was_last_meant(self):
+        self.typed("look lantern")
+        joined = " ".join(self.typed("look it"))
+        self.assertEqual(joined.count("dented brass lantern"), 1)
+
+    def test_and_with_nothing_to_mean_conjures_nothing(self):
+        """Reported: "look her" went off to create a her, and failed."""
+        before = set(self.room2.contents)
+        for raw in ("look her", "look at him", "x her", "get her"):
+            joined = " ".join(self.typed(raw))
+            self.assertNotIn("look carefully for", joined, raw)
+            self.assertEqual(set(self.room2.contents), before, raw)
+
     def test_and_bare_looking_describes_the_room_once(self):
         for raw in ("look", "l"):
             joined = " ".join(self.typed(raw))

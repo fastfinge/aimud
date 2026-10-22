@@ -367,7 +367,8 @@ def _words(text):
     """
     return [
         lexicon.lemma(w, "n")
-        for w in re.findall(r"[a-z0-9]+", (text or "").lower())
+        # Any letter, not only an English one: see `nounphrase._words`.
+        for w in re.findall(r"[^\W_]+", (text or "").lower())
         if w and w not in _NOISE
     ]
 

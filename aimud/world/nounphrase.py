@@ -301,8 +301,13 @@ def words_of(text):
     `verbs.similarity` and `naming.resemblance` both split on anything that is
     not a letter or a digit, so "second-best wrench" still resembles a Second
     Best Wrench exactly as much as it did.
+
+    And a letter is any letter, not only an English one. "지우" was no word at
+    all to `[a-z]`, so the phrase read as empty, the parser dropped the role,
+    and "look 지우" became a bare look at the room.
     """
-    return re.findall(r"[a-z0-9']+(?:-[a-z0-9']+)*", (text or "").lower())
+    return re.findall(r"(?:[^\W_]|')+(?:-(?:[^\W_]|')+)*",
+                      (text or "").lower())
 
 
 def read(phrase, world_root=None):

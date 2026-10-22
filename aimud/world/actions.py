@@ -282,6 +282,22 @@ def _named(bound):
     return sorted(role for role in (bound or {}) if role in ROLES)
 
 
+def admits_everything(world_root, action):
+    """
+    Whether every sort of thing admits this action, so nobody is asked.
+
+    `ALWAYS_ADMITTED` says this of looking, in code. This is the same answer
+    as data, for a world or a ruleset to give its own verbs: smiling at a
+    lamp is odd and harmless, and asking a model once per sort of thing
+    whether a person can be smiled at, and once more for nodding at one,
+    is a hundred calls a socials ruleset exists to save.
+    """
+    if action in ALWAYS_ADMITTED:
+        return True
+    settled = spec(world_root, action)
+    return bool(settled and settled.get("admits_all"))
+
+
 def clean_gates(despite):
     """The gates a declaration waives, with anything unusable dropped."""
     found = []
@@ -310,7 +326,7 @@ def waives(world_root, action, gate):
 
 
 def declare(world_root, action, applies_to=(), sense="", means="", despite=(),
-            must=(), shapes=(), refused_shapes=()):
+            must=(), shapes=(), refused_shapes=(), admits_all=False):
     """
     Settle what an action takes, once, and answer with what was settled.
 
@@ -347,6 +363,8 @@ def declare(world_root, action, applies_to=(), sense="", means="", despite=(),
     # name a role nothing says how near to be.
     record["shapes"] = clean_shapes(shapes)
     record["refused_shapes"] = clean_shapes(refused_shapes)
+    # See `admits_everything`.
+    record["admits_all"] = bool(admits_all)
     taken = {entry["role"] for entry in record["applies_to"]}
     for shape in record["shapes"]:
         for role in shape:

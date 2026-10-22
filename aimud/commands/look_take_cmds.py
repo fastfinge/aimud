@@ -163,6 +163,66 @@ def _find_one(caller, query, **search_kwargs):
     return None, True
 
 
+def _alike(caller, query):
+    """
+    Everything a name found several of, from the nearest place that has any.
+
+    Carried first and then the room, each oldest first, which is the order
+    "the second readout" counts them in -- see `verbs.candidates`.
+    """
+    result = caller.search(query, quiet=True)
+    if hasattr(result, "return_appearance"):
+        result = [result]
+    found = [obj for obj in (result or ())
+             if obj is not None and obj is not caller
+             and getattr(obj, "destination", None) is None]
+    for place in (caller, caller.location):
+        here = sorted((obj for obj in found if obj.location == place),
+                      key=lambda obj: obj.id)
+        if here:
+            return here
+    return sorted(found, key=lambda obj: obj.id)
+
+
+def _nth(number):
+    """
+    "first", "second": what a menu calls the nth of several things with one
+    name, in the words the parser already counts with, so what is chosen here
+    can also be typed.
+    """
+    from world import nounphrase
+
+    for word, n in nounphrase.ORDINALS.items():
+        if n == number and word.isalpha() and word != "other":
+            return word
+    return f"#{number}"
+
+
+def _which_alike(caller, query, alike, on_chosen, session=None):
+    """
+    Ask which of several things going by one name was meant.
+
+    `choosing.which` takes the oldest of things alike, which is right for
+    taking one of three plain tuning forks and wrong for looking: two Hanwha
+    Distance Readouts pointed at different signals are told apart by looking
+    at them, so looking cannot be the thing that refuses to. Evennia's own
+    answer was a dump of every alias, state tags and all.
+    """
+    from world import choosing, verbs
+
+    labelled = {}
+    for number, obj in enumerate(alike, 1):
+        labelled[f"{_nth(number)} {obj.get_display_name(caller)}"] = obj
+    choosing.ask(caller, verbs.plain(query), list(labelled),
+                 on_chosen=lambda label: on_chosen(labelled[label]),
+                 session=session)
+
+
+def _nobody_called(word):
+    """What to say when a pronoun stands for nothing in reach."""
+    return f'There is nothing here that "{word}" could mean.'
+
+
 def _acquire_gen_lock(room, key):
     """
     Claim a per-room generation slot for `key` (lowercased query string).
@@ -284,6 +344,15 @@ class CmdAILook(_DefaultLook):
 
         named = verbs.parse(f"look {query}")["roles"].get("direct") or query
 
+        # A pronoun is not a name, and nothing below may search for it: what
+        # is not found is conjured, and "look her" went off to invent a her.
+        from world import nounphrase
+
+        word = nounphrase.read(named, root).pronoun
+        if word:
+            self._look_at_pronoun(caller, word, query, root)
+            return
+
         # Several differently named things answering is a question, and
         # choosing one looks at it.
         from world import choosing
@@ -301,8 +370,14 @@ class CmdAILook(_DefaultLook):
             obj, multiple = _find_one(caller, named)
 
         if multiple:
-            caller.search(named)  # let Evennia show disambiguation
-            return
+            alike = _alike(caller, named)
+            if len(alike) != 1:
+                _which_alike(caller, named, alike,
+                             lambda chosen: self._look_at(caller, chosen,
+                                                          query, root),
+                             session=self.session)
+                return
+            obj = alike[0]
 
         if not obj:
             # Before conjuring anything, look outward: on the table, in the
@@ -342,6 +417,26 @@ class CmdAILook(_DefaultLook):
             obj.at_desc(looker=caller)
             return
         self._attempt(caller, f"look {query}", chosen={"direct": obj})
+
+    def _look_at_pronoun(self, caller, word, query, root):
+        """
+        Look at whoever "her" or "it" stands for, the way the pipeline binds
+        one: the only one it could be, or the one last meant, or a question.
+        """
+        from world import choosing, verbs
+
+        obj, asked = verbs.resolve_pronoun(caller, word, verb="look")
+        if asked:
+            choosing.which(caller, word,
+                           verbs.pronoun_candidates(caller, word, verb="look"),
+                           lambda chosen: self._look_at(caller, chosen,
+                                                        query, root),
+                           session=self.session)
+            return
+        if obj is None:
+            caller.msg(_nobody_called(word))
+            return
+        self._look_at(caller, obj, query, root)
 
     def _attempt(self, caller, raw, chosen=None):
         """Hand the look to the rulebooks, and say whatever they answer."""
@@ -531,6 +626,14 @@ class CmdAIGet(_DefaultGet):
             obj = _verbs.bind_or_pronoun(caller, query, verb="get")
             if obj is not None and obj.location is not room:
                 obj = None
+            # And a pronoun with nothing to stand for stops here, rather than
+            # being searched for as a name and then conjured.
+            from world import nounphrase
+
+            word = nounphrase.read(query, _world_root(room)).pronoun
+            if obj is None and word:
+                caller.msg(_nobody_called(word))
+                return
         if obj is None:
             obj, multiple = _find_one(caller, query, location=room)
 
